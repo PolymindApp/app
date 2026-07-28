@@ -1,0 +1,22 @@
+html,
+body,
+#app {
+  min-height: 100%;
+}
+
+html {
+  background: rgb(var(--v-theme-background));
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100dvh;
+}
+
+.app-shell {
+  min-height: 100dvh;
+  padding-top: max(1rem, env(safe-area-inset-top));
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}
