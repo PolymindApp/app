@@ -1,0 +1,329 @@
+<script setup lang="ts">
+import { computed, onMounted, ref } from 'vue'
+import { addDays, addWeeks, endOfWeek, format, isSameDay, isSameWeek, startOfWeek } from 'date-fns'
+import { storeToRefs } from 'pinia'
+import TaskCard from '@/components/TaskCard.vue'
+import { useAuthStore } from '@/stores/auth'
+import { useTaskStore } from '@/stores/tasks'
+import type { TaskProgress } from '@/types/domain'
+
+const store = useTaskStore()
+const auth = useAuthStore()
+const { selectedDate, selectedProgress, completionRate, loading, error } = storeToRefs(store)
+const busy = ref(false)
+const exactDialog = ref(false)
+const exactProgress = ref<TaskProgress>()
+const exactAmount = ref<number | null>(null)
+const exactNote = ref('')
+const exactAction = ref<'add' | 'set'>()
+const reviewSheet = ref(false)
+
+const visibleWeekStart = computed(() => startOfWeek(selectedDate.value, { weekStartsOn: 1 }))
+const days = computed(() => Array.from({ length: 7 }, (_, index) => {
+  const date = addDays(visibleWeekStart.value, index)
+  return { date, day: format(date, 'EEE').slice(0, 2), number: format(date, 'd') }
+}))
+const weekLabel = computed(() => {
+  const start = visibleWeekStart.value
+  const end = endOfWeek(start, { weekStartsOn: 1 })
+  return start.getMonth() === end.getMonth()
+    ? `${format(start, 'MMM d')} – ${format(end, 'd')}`
+    : `${format(start, 'MMM d')} – ${format(end, 'MMM d')}`
+})
+const isCurrentWeek = computed(() => isSameWeek(selectedDate.value, new Date(), { weekStartsOn: 1 }))
+
+const required = computed(() => selectedProgress.value.filter((item) => item.task.mandatory))
+const optional = computed(() => selectedProgress.value.filter((item) => !item.task.mandatory))
+const reviewItems = computed(() => selectedProgress.value.filter((item) => item.task.reviewWhenMissed && !item.complete))
+const doneCount = computed(() => selectedProgress.value.filter((item) => item.complete).length)
+onMounted(async () => {
+  try { await store.load() } catch { /* Error state is displayed in the view. */ }
+})
+
+async function run(action: () => Promise<void>) {
+  busy.value = true
+  try { await action() } finally { busy.value = false }
+}
+
+function moveWeek(amount: number) {
+  selectedDate.value = addWeeks(selectedDate.value, amount)
+}
+
+function goToCurrentWeek() {
+  selectedDate.value = new Date()
+}
+
+function openExact(progress: TaskProgress) {
+  exactProgress.value = progress
+  exactAmount.value = null
+  exactNote.value = ''
+  exactAction.value = undefined
+  exactDialog.value = true
+}
+
+async function submitExact(mode: 'add' | 'set') {
+  if (!exactProgress.value || exactAmount.value === null) return
+  exactAction.value = mode
+  const amount = mode === 'set' ? exactAmount.value - exactProgress.value.value : exactAmount.value
+  try {
+    await run(() => store.addEntry(exactProgress.value!, amount, mode === 'set' ? 'adjustment' : undefined, exactNote.value))
+    exactDialog.value = false
+  } finally {
+    exactAction.value = undefined
+  }
+}
+</script>
+
+<template>
+  <main class="app-page today-page">
+    <header class="mb-6">
+      <div>
+        <h1 class="display-title text-h3 mt-2">LET'S WORK<span class="text-secondary">.</span></h1>
+        <p class="text-body-2 muted mt-2">Good {{ new Date().getHours() < 12 ? 'morning' : 'work' }}, {{ auth.firstName }}.</p>
+      </div>
+    </header>
+
+    <div class="week-nav mb-3">
+      <v-btn
+        icon="mdi-chevron-left"
+        variant="text"
+        size="small"
+        aria-label="Previous week"
+        @click="moveWeek(-1)"
+      />
+      <button class="week-nav__label" :disabled="isCurrentWeek" @click="goToCurrentWeek">
+        <strong>{{ weekLabel }}</strong>
+        <span>{{ isCurrentWeek ? 'Current week' : 'Back to current week' }}</span>
+      </button>
+      <v-btn
+        icon="mdi-chevron-right"
+        variant="text"
+        size="small"
+        aria-label="Next week"
+        @click="moveWeek(1)"
+      />
+    </div>
+
+    <div class="date-strip mb-5" role="list" aria-label="Choose a date">
+      <button
+        v-for="day in days"
+        :key="day.date.toISOString()"
+        class="date-chip"
+        :class="{ 'date-chip--active': isSameDay(selectedDate, day.date) }"
+        @click="selectedDate = day.date"
+      >
+        <span>{{ day.day }}</span>
+        <strong>{{ day.number }}</strong>
+        <i v-if="isSameDay(new Date(), day.date)" />
+      </button>
+    </div>
+
+    <v-card class="score-card pa-5" color="surface">
+      <div class="score-pattern" />
+      <div class="position-relative d-flex align-center justify-space-between ga-4">
+        <div>
+          <div class="d-flex align-end ga-2 mt-2">
+            <span class="score-number">{{ completionRate }}</span><span class="score-percent">%</span>
+          </div>
+          <p class="text-caption text-medium-emphasis mt-1">
+            {{ doneCount }} of {{ selectedProgress.length }} scheduled reps complete
+          </p>
+        </div>
+        <v-progress-circular
+          :model-value="completionRate"
+          color="secondary"
+          bg-color="#363A35"
+          :size="92"
+          :width="10"
+        >
+          <v-icon :icon="completionRate === 100 ? 'mdi-trophy' : 'mdi-arrow-top-right-thick'" color="secondary" size="30" />
+        </v-progress-circular>
+      </div>
+      <v-btn
+        v-if="reviewItems.length"
+        size="small"
+        variant="tonal"
+        color="secondary"
+        class="mt-5"
+        prepend-icon="mdi-clipboard-check-outline"
+        @click="reviewSheet = true"
+      >
+        Review {{ reviewItems.length }} open
+      </v-btn>
+    </v-card>
+
+    <v-alert v-if="error" type="error" variant="tonal" class="mt-4">
+      {{ error }}
+      <template #append><v-btn size="small" variant="text" @click="store.load">Retry</v-btn></template>
+    </v-alert>
+
+    <template v-if="selectedProgress.length">
+      <section v-if="required.length">
+        <div class="section-heading"><h2>Required work</h2><span class="text-caption muted">{{ required.filter(i => i.complete).length }}/{{ required.length }}</span></div>
+        <div class="task-stack">
+          <TaskCard
+            v-for="item in required"
+            :key="`${item.task.id}-${item.programStep?.id || ''}`"
+            :progress="item"
+            :busy="busy"
+            @toggle="run(() => store.toggleComplete($event))"
+            @add="(progress, amount) => run(() => store.addEntry(progress, amount))"
+            @exact="openExact"
+          />
+        </div>
+      </section>
+
+      <section v-if="optional.length">
+        <div class="section-heading"><h2>Extra credit</h2><span class="text-caption muted">Optional</span></div>
+        <div class="task-stack">
+          <TaskCard
+            v-for="item in optional"
+            :key="`${item.task.id}-${item.programStep?.id || ''}`"
+            :progress="item"
+            :busy="busy"
+            @toggle="run(() => store.toggleComplete($event))"
+            @add="(progress, amount) => run(() => store.addEntry(progress, amount))"
+            @exact="openExact"
+          />
+        </div>
+      </section>
+    </template>
+
+    <v-card v-else-if="!loading" class="surface-card empty-card pa-8 mt-6 text-center">
+      <div class="empty-icon mx-auto mb-4"><v-icon icon="mdi-arm-flex-outline" size="32" /></div>
+      <h2 class="text-h6 font-weight-black">No reps scheduled</h2>
+      <p class="text-body-2 muted mt-2 mb-5">Build your first routine and it will show up here.</p>
+      <v-btn color="secondary" append-icon="mdi-plus" to="/tasks/new">Create a task</v-btn>
+    </v-card>
+
+    <v-dialog v-model="exactDialog" max-width="440">
+      <v-card class="pa-5">
+        <div class="d-flex align-center justify-space-between mb-5">
+          <h2 class="text-h6 font-weight-black">{{ exactProgress?.programStep?.name || exactProgress?.task.name }}</h2>
+          <v-btn icon="mdi-close" variant="text" @click="exactDialog = false" />
+        </div>
+        <div class="dialog-fields mb-4">
+          <v-text-field v-model.number="exactAmount" label="Amount" type="number" autofocus suffix="" />
+          <v-text-field v-model="exactNote" label="Note (optional)" />
+        </div>
+        <div class="exact-actions">
+          <v-btn
+            block
+            size="large"
+            color="secondary"
+            :loading="busy && exactAction === 'add'"
+            :disabled="exactAmount === null || (busy && exactAction !== 'add')"
+            @click="submitExact('add')"
+          >
+            Add amount
+          </v-btn>
+          <v-btn
+            block
+            size="large"
+            variant="outlined"
+            :loading="busy && exactAction === 'set'"
+            :disabled="exactAmount === null || (busy && exactAction !== 'set')"
+            @click="submitExact('set')"
+          >
+            Set total
+          </v-btn>
+        </div>
+      </v-card>
+    </v-dialog>
+
+    <v-bottom-sheet v-model="reviewSheet">
+      <v-card class="pa-5 safe-bottom" rounded="t-xl">
+        <h2 class="text-h5 font-weight-black mb-5">Resolve open work</h2>
+        <div v-for="item in reviewItems" :key="`${item.task.id}-${item.programStep?.id || ''}`" class="review-row py-3">
+          <div class="flex-grow-1"><strong>{{ item.programStep?.name || item.task.name }}</strong><p class="text-caption muted">Choose how this attempt ends.</p></div>
+          <v-menu>
+            <template #activator="{ props }"><v-btn v-bind="props" size="small" variant="tonal">Resolve</v-btn></template>
+            <v-list>
+              <v-list-item title="Mark missed" prepend-icon="mdi-close-circle-outline" @click="run(() => store.setStatus(item, 'missed'))" />
+              <v-list-item title="Carry forward" prepend-icon="mdi-arrow-right-bold" @click="run(() => store.setStatus(item, 'carried'))" />
+              <v-list-item v-if="item.programStep" title="Shift program" prepend-icon="mdi-calendar-arrow-right" @click="run(() => store.shiftProgram(item))" />
+            </v-list>
+          </v-menu>
+        </div>
+      </v-card>
+    </v-bottom-sheet>
+  </main>
+</template>
+
+<style scoped>
+.dialog-fields {
+  display: grid;
+  gap: 1rem;
+}
+
+.week-nav {
+  display: grid;
+  grid-template-columns: 40px 1fr 40px;
+  align-items: center;
+  gap: .5rem;
+}
+
+.week-nav__label {
+  display: flex;
+  min-height: 44px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  color: rgb(var(--v-theme-on-background));
+  cursor: pointer;
+}
+
+.week-nav__label:disabled {
+  cursor: default;
+}
+
+.week-nav__label strong {
+  font-size: .82rem;
+}
+
+.week-nav__label span {
+  margin-top: 1px;
+  color: rgb(var(--v-theme-on-background) / .48);
+  font-size: .62rem;
+}
+
+.date-strip {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(42px, 1fr));
+  gap: .35rem;
+}
+
+.date-chip {
+  position: relative;
+  display: flex;
+  min-height: 62px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 16px;
+  background: transparent;
+  color: #737872;
+  cursor: pointer;
+}
+
+.date-chip span { font-size: .64rem; font-weight: 800; text-transform: uppercase; }
+.date-chip strong { margin-top: 2px; font-size: 1rem; }
+.date-chip i { position: absolute; bottom: 5px; width: 4px; height: 4px; border-radius: 50%; background: #c7f464; }
+.date-chip--active { background: #c7f464; color: #17200f; box-shadow: 0 8px 20px rgba(199,244,100,.16); }
+
+.score-card { position: relative; overflow: hidden; }
+.score-pattern { position: absolute; top: -70px; right: -40px; width: 220px; height: 220px; border: 35px solid rgba(199,244,100,.07); border-radius: 50%; }
+.score-number { font-family: Impact, "Arial Narrow", sans-serif; font-size: 3.2rem; line-height: .9; letter-spacing: -.03em; }
+.score-percent { color: #c7f464; font-size: 1.2rem; font-weight: 900; }
+.task-stack { display: grid; gap: .7rem; }
+.empty-icon { display: grid; width: 64px; height: 64px; place-items: center; border-radius: 20px; background: #c7f464; color: #17200f; }
+.exact-actions { display: grid; gap: 1rem; }
+.review-row { display: flex; align-items: center; gap: 1rem; border-top: 1px solid rgba(255,255,255,.08); }
+
+@media (min-width: 700px) {
+  .task-stack { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+</style>
