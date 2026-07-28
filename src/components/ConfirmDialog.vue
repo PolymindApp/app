@@ -28,7 +28,7 @@ const emit = defineEmits<{
   >
     <v-card class="pa-5">
       <div class="confirm-heading">
-        <div class="confirm-icon">
+        <div class="confirm-icon" :class="`confirm-icon--${confirmColor}`">
           <v-icon :icon="icon" size="24" />
         </div>
         <h2 class="text-h6 font-weight-black">{{ title }}</h2>
@@ -62,6 +62,16 @@ const emit = defineEmits<{
   border-radius: 15px;
   background: rgb(var(--v-theme-error) / .16);
   color: rgb(var(--v-theme-error));
+}
+
+.confirm-icon--warning {
+  background: rgb(var(--v-theme-warning) / .16);
+  color: rgb(var(--v-theme-warning));
+}
+
+.confirm-icon--secondary {
+  background: rgb(var(--v-theme-secondary) / .16);
+  color: rgb(var(--v-theme-secondary));
 }
 
 .confirm-actions {

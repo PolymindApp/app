@@ -58,10 +58,12 @@ function toggleFromCard() {
   <v-card
     class="task-card surface-card pa-4"
     :class="{ 'task-card--done': progress.complete, 'task-card--clickable': canToggleFromCard }"
-    @click="toggleFromCard"
+    :ripple="canToggleFromCard"
+    v-on="canToggleFromCard ? { click: toggleFromCard } : {}"
   >
     <div class="d-flex align-start ga-3">
       <button
+        v-if="isCheck"
         class="check-control"
         :class="{ 'check-control--done': progress.complete }"
         :aria-label="progress.complete ? `Mark ${title} incomplete` : `Complete ${title}`"
@@ -70,6 +72,14 @@ function toggleFromCard() {
       >
         <v-icon :icon="stateIcon" :color="stateIconColor" size="20" />
       </button>
+      <div
+        v-else
+        class="check-control check-control--status"
+        :class="{ 'check-control--done': progress.complete }"
+        aria-hidden="true"
+      >
+        <v-icon :icon="stateIcon" :color="stateIconColor" size="20" />
+      </div>
 
       <div class="flex-grow-1 min-width-0">
         <div class="d-flex align-center ga-2 flex-wrap">
@@ -170,6 +180,10 @@ function toggleFromCard() {
 .check-control--done {
   background: rgb(var(--v-theme-secondary));
   color: #192113;
+}
+
+.check-control--status {
+  cursor: default;
 }
 
 .task-title {

@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { format } from 'date-fns'
 import { storeToRefs } from 'pinia'
 import { useRoute, useRouter } from 'vue-router'
+import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import IntervalPlanList from '@/components/IntervalPlanList.vue'
 import { nextScheduledDates } from '@/services/schedule'
 import { useTaskStore } from '@/stores/tasks'
@@ -14,6 +15,9 @@ const router = useRouter()
 const { tasks, steps, loading } = storeToRefs(store)
 const filter = ref<'active' | 'paused'>('active')
 const selectedArea = ref<string>()
+const pendingStatusTask = ref<Task>()
+const statusDialog = ref(false)
+const updatingStatus = ref(false)
 const planTab = computed({
   get: () => route.query.tab === 'intervals' ? 'intervals' : 'tasks',
   set: (tab: string) => router.replace({ query: { ...route.query, tab: tab === 'intervals' ? 'intervals' : undefined } }),
@@ -49,11 +53,28 @@ function nextLabel(task: Task) {
 function toggleArea(areaId: string) {
   selectedArea.value = selectedArea.value === areaId ? undefined : areaId
 }
+
+function requestStatusChange(task: Task) {
+  pendingStatusTask.value = task
+  statusDialog.value = true
+}
+
+async function confirmStatusChange() {
+  if (!pendingStatusTask.value) return
+  updatingStatus.value = true
+  try {
+    await store.toggleTaskActive(pendingStatusTask.value)
+    statusDialog.value = false
+    pendingStatusTask.value = undefined
+  } finally {
+    updatingStatus.value = false
+  }
+}
 </script>
 
 <template>
   <main class="app-page plan-page">
-    <header class="d-flex align-end justify-space-between mb-6">
+    <header class="d-flex align-start justify-space-between mb-6">
       <div>
         <h1 class="display-title text-h3 mt-2">THE PLAN<span class="text-secondary">.</span></h1>
         <p class="text-body-2 muted mt-2">{{ planTab === 'tasks' ? 'Design routines that fit the way you train.' : 'Build reusable sequences for focused sessions.' }}</p>
@@ -129,8 +150,8 @@ function toggleArea(areaId: string) {
             :color="task.active ? undefined : 'secondary'"
             variant="tonal"
             size="small"
-            :aria-label="task.active ? `Pause ${task.name}` : `Resume ${task.name}`"
-            @click.stop="store.toggleTaskActive(task)"
+            :aria-label="task.active ? `Pause ${task.name}` : `Activate ${task.name}`"
+            @click.stop="requestStatusChange(task)"
           />
         </div>
         <v-divider class="my-3" />
@@ -161,6 +182,19 @@ function toggleArea(areaId: string) {
     </template>
 
     <IntervalPlanList v-else />
+
+    <ConfirmDialog
+      v-model="statusDialog"
+      :title="pendingStatusTask?.active ? 'Pause this task?' : 'Activate this task?'"
+      :message="pendingStatusTask?.active
+        ? `${pendingStatusTask?.name || 'This task'} will stop appearing in your schedule until you activate it again. Its history will be preserved.`
+        : `${pendingStatusTask?.name || 'This task'} will return to its schedule based on its recurrence settings.`"
+      :confirm-text="pendingStatusTask?.active ? 'Pause task' : 'Activate task'"
+      :confirm-color="pendingStatusTask?.active ? 'warning' : 'secondary'"
+      :icon="pendingStatusTask?.active ? 'mdi-pause' : 'mdi-play'"
+      :loading="updatingStatus"
+      @confirm="confirmStatusChange"
+    />
   </main>
 </template>
 

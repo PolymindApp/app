@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { nextTick, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 
@@ -12,10 +12,23 @@ const password = ref('')
 const visible = ref(false)
 const form = ref()
 const backendOffline = ref(false)
+const emailField = ref<{ focus: () => void }>()
+const nameField = ref<{ focus: () => void }>()
 
 const required = (value: string) => Boolean(value) || 'Required'
 const validEmail = (value: string) => /.+@.+\..+/.test(value) || 'Enter a valid email'
 const strongPassword = (value: string) => value.length >= 8 || 'Use at least 8 characters'
+
+onMounted(async () => {
+  await nextTick()
+  emailField.value?.focus()
+})
+
+watch(mode, async (nextMode) => {
+  await nextTick()
+  if (nextMode === 'register') nameField.value?.focus()
+  else emailField.value?.focus()
+})
 
 async function submit() {
   const result = await form.value?.validate()
@@ -80,10 +93,11 @@ async function submit() {
             {{ auth.error }}
           </v-alert>
 
-          <v-form ref="form" validate-on="lazy" autocomplete="off" @submit.prevent="submit">
+          <v-form ref="form" validate-on="submit" autocomplete="off" @submit.prevent="submit">
             <div class="auth-fields">
               <v-text-field
                 v-if="mode === 'register'"
+                ref="nameField"
                 v-model="name"
                 label="Your name"
                 autocomplete="off"
@@ -91,6 +105,7 @@ async function submit() {
                 :rules="[required]"
               />
               <v-text-field
+                ref="emailField"
                 v-model="email"
                 label="Email"
                 type="email"

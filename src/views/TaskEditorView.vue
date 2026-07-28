@@ -275,7 +275,7 @@ async function removeTask() {
             v-model="draft.weekdays"
             multiple
             class="weekday-picker mt-2"
-            color="primary"
+            color="secondary"
             selected-class="day-picker--selected"
           >
             <v-btn v-for="day in weekdays" :key="day.value" :value="day.value" size="small">{{ day.label }}</v-btn>
@@ -462,9 +462,13 @@ async function removeTask() {
 .setting-row strong { font-size: .83rem; }
 .setting-row p { margin-top: .15rem; color: rgb(var(--v-theme-on-surface) / .5); font-size: .7rem; }
 .field-label { color: rgb(var(--v-theme-on-surface) / .68); font-size: .75rem; font-weight: 750; }
-.weekday-picker { display: flex; justify-content: space-between; width: 100%; }
+.weekday-picker { display: flex; justify-content: space-between; gap: 1rem; width: 100%; }
 .weekday-picker :deep(.v-btn) { min-width: 0; flex: 1 1 0; }
-.weekday-picker :deep(.day-picker--selected),
+.weekday-picker :deep(.day-picker--selected) {
+  background: rgb(var(--v-theme-secondary)) !important;
+  color: rgb(var(--v-theme-on-secondary)) !important;
+  opacity: 1;
+}
 .cycle-day-picker :deep(.day-picker--selected) {
   background: rgb(var(--v-theme-primary)) !important;
   color: rgb(var(--v-theme-on-primary)) !important;
