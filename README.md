@@ -7,6 +7,7 @@ A mobile-first routine, daily-task, and programmable interval tracker built with
 - Node.js 22+
 - pnpm 11+
 - `curl` and `unzip` for the one-time PocketBase download
+- Android Studio 2025.2.1+ and an Android SDK for Android builds
 
 ## Start locally
 
@@ -28,5 +29,49 @@ PocketBase data and the downloaded binary live under `.pocketbase/` and are inte
 - `pnpm typecheck` — validate TypeScript and Vue templates
 - `pnpm test` — run unit tests
 - `pnpm build` — type-check and create a production build
+- `pnpm android:sync` — build the web app and sync it into Android
+- `pnpm android:assets` — regenerate launcher and splash assets from `assets/`
+- `pnpm android:dev` — launch a connected USB device with live reload and PocketBase
+- `pnpm android:open` — open the native project in Android Studio
+- `pnpm android:run` — sync and run on a selected emulator or device
+- `pnpm android:build` — create a debug APK
+- `pnpm android:build:release` — create an unsigned release APK
+- `pnpm android:bundle` — create an unsigned release AAB for signing and Play Store upload
 
 Set `VITE_POCKETBASE_URL` to use a PocketBase server other than `http://127.0.0.1:8090`.
+
+## Android
+
+The Capacitor project uses the app name `REP`, application ID `com.yolarx.rep`, and the Vite `dist/` directory. Change the application ID in `capacitor.config.ts` before publishing if another reverse-domain identifier is required.
+
+Build an installable debug APK:
+
+```bash
+VITE_POCKETBASE_URL=https://your-pocketbase.example.com pnpm android:build
+```
+
+The APK is written to `android/app/build/outputs/apk/debug/app-debug.apk`.
+
+For Google Play, configure release signing in Android Studio or Gradle, then run:
+
+```bash
+VITE_POCKETBASE_URL=https://your-pocketbase.example.com pnpm android:bundle
+```
+
+The unsigned AAB is written to `android/app/build/outputs/bundle/release/app-release.aab`. A phone or emulator cannot reach the computer through `127.0.0.1`; use a reachable PocketBase URL. Android production builds should use HTTPS.
+
+### Develop on a connected Android phone
+
+Connect one phone with USB debugging enabled, then run:
+
+```bash
+pnpm android:dev
+```
+
+The command waits for USB authorization, starts PocketBase and Vite when needed, forwards ports `5173` and `8090` over USB, installs REP, and stays attached for hot updates. Press `Ctrl+C` to stop it and clean up processes and port forwarding.
+
+If more than one device is connected, select one explicitly:
+
+```bash
+ANDROID_SERIAL=<device-id> pnpm android:dev
+```

@@ -19,7 +19,6 @@ const router = createRouter({
         { path: 'intervals', name: 'intervals', component: () => import('@/views/IntervalsView.vue') },
         { path: 'intervals/quick', name: 'interval-quick', component: () => import('@/views/QuickIntervalView.vue') },
         { path: 'intervals/run/:sessionId', name: 'interval-runner', component: () => import('@/views/IntervalRunnerView.vue'), meta: { immersive: true } },
-        { path: 'history', name: 'history', component: () => import('@/views/HistoryView.vue') },
         { path: 'tasks/new', name: 'task-new', component: () => import('@/views/TaskEditorView.vue') },
         { path: 'tasks/:id', name: 'task-edit', component: () => import('@/views/TaskEditorView.vue') },
       ],

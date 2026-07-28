@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { addDays, addWeeks, endOfWeek, format, isSameDay, isSameWeek, startOfWeek } from 'date-fns'
 import { storeToRefs } from 'pinia'
+import { useDisplay } from 'vuetify'
 import TaskCard from '@/components/TaskCard.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useTaskStore } from '@/stores/tasks'
@@ -9,14 +10,20 @@ import type { TaskProgress } from '@/types/domain'
 
 const store = useTaskStore()
 const auth = useAuthStore()
+const { smAndUp } = useDisplay()
 const { selectedDate, selectedProgress, completionRate, loading, error } = storeToRefs(store)
 const busy = ref(false)
 const exactDialog = ref(false)
 const exactProgress = ref<TaskProgress>()
-const exactAmount = ref<number | null>(null)
-const exactNote = ref('')
+const exactAmountInput = ref('')
 const exactAction = ref<'add' | 'set'>()
 const reviewSheet = ref(false)
+const exactAmount = computed(() => {
+  if (!exactAmountInput.value || exactAmountInput.value === '.') return null
+  const value = Number(exactAmountInput.value)
+  return Number.isFinite(value) ? value : null
+})
+const keypadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'backspace'] as const
 
 const visibleWeekStart = computed(() => startOfWeek(selectedDate.value, { weekStartsOn: 1 }))
 const days = computed(() => Array.from({ length: 7 }, (_, index) => {
@@ -55,10 +62,22 @@ function goToCurrentWeek() {
 
 function openExact(progress: TaskProgress) {
   exactProgress.value = progress
-  exactAmount.value = null
-  exactNote.value = ''
+  exactAmountInput.value = ''
   exactAction.value = undefined
   exactDialog.value = true
+}
+
+function pressKeypad(key: typeof keypadKeys[number]) {
+  if (key === 'backspace') {
+    exactAmountInput.value = exactAmountInput.value.slice(0, -1)
+    return
+  }
+  if (key === '.') {
+    if (!exactAmountInput.value.includes('.')) exactAmountInput.value = `${exactAmountInput.value || '0'}.`
+    return
+  }
+  if (exactAmountInput.value.length >= 10) return
+  exactAmountInput.value = exactAmountInput.value === '0' ? key : `${exactAmountInput.value}${key}`
 }
 
 async function submitExact(mode: 'add' | 'set') {
@@ -66,7 +85,7 @@ async function submitExact(mode: 'add' | 'set') {
   exactAction.value = mode
   const amount = mode === 'set' ? exactAmount.value - exactProgress.value.value : exactAmount.value
   try {
-    await run(() => store.addEntry(exactProgress.value!, amount, mode === 'set' ? 'adjustment' : undefined, exactNote.value))
+    await run(() => store.addEntry(exactProgress.value!, amount, mode === 'set' ? 'adjustment' : undefined))
     exactDialog.value = false
   } finally {
     exactAction.value = undefined
@@ -202,9 +221,34 @@ async function submitExact(mode: 'add' | 'set') {
           <h2 class="text-h6 font-weight-black">{{ exactProgress?.programStep?.name || exactProgress?.task.name }}</h2>
           <v-btn icon="mdi-close" variant="text" @click="exactDialog = false" />
         </div>
-        <div class="dialog-fields mb-4">
-          <v-text-field v-model.number="exactAmount" label="Amount" type="number" autofocus suffix="" />
-          <v-text-field v-model="exactNote" label="Note (optional)" />
+        <div class="amount-entry mb-4">
+          <v-text-field
+            v-if="smAndUp"
+            v-model="exactAmountInput"
+            label="Amount"
+            type="number"
+            inputmode="decimal"
+            autofocus
+          />
+          <div v-else class="amount-keypad">
+            <output class="amount-keypad__display" aria-live="polite">
+              {{ exactAmountInput || '0' }}
+            </output>
+            <div class="amount-keypad__keys">
+              <v-btn
+                v-for="key in keypadKeys"
+                :key="key"
+                size="large"
+                variant="tonal"
+                :aria-label="key === 'backspace' ? 'Delete last digit' : key === '.' ? 'Decimal point' : key"
+                :disabled="key === '.' && exactAmountInput.includes('.')"
+                @click="pressKeypad(key)"
+              >
+                <v-icon v-if="key === 'backspace'" icon="mdi-backspace-outline" />
+                <template v-else>{{ key }}</template>
+              </v-btn>
+            </div>
+          </div>
         </div>
         <div class="exact-actions">
           <v-btn
@@ -251,11 +295,6 @@ async function submitExact(mode: 'add' | 'set') {
 </template>
 
 <style scoped>
-.dialog-fields {
-  display: grid;
-  gap: 1rem;
-}
-
 .week-nav {
   display: grid;
   grid-template-columns: 40px 1fr 40px;
@@ -320,6 +359,10 @@ async function submitExact(mode: 'add' | 'set') {
 .score-percent { color: #c7f464; font-size: 1.2rem; font-weight: 900; }
 .task-stack { display: grid; gap: .7rem; }
 .empty-icon { display: grid; width: 64px; height: 64px; place-items: center; border-radius: 20px; background: #c7f464; color: #17200f; }
+.amount-keypad { display: grid; gap: 1rem; }
+.amount-keypad__display { display: flex; min-height: 72px; align-items: center; justify-content: flex-end; padding: .75rem 1rem; border: 1px solid rgb(var(--v-theme-on-surface) / .16); border-radius: 16px; background: rgb(var(--v-theme-surface-variant)); font-size: 2rem; font-weight: 900; line-height: 1; }
+.amount-keypad__keys { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .65rem; }
+.amount-keypad__keys .v-btn { min-width: 0; height: 54px; font-size: 1.05rem; font-weight: 850; }
 .exact-actions { display: grid; gap: 1rem; }
 .review-row { display: flex; align-items: center; gap: 1rem; border-top: 1px solid rgba(255,255,255,.08); }
 

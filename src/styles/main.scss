@@ -22,6 +22,53 @@ body {
   min-height: 100dvh;
 }
 
+html.platform-android body::before,
+html.platform-android body::after {
+  position: fixed;
+  z-index: 10001;
+  right: 0;
+  left: 0;
+  background: #101310;
+  content: "";
+  pointer-events: none;
+}
+
+html.platform-android body::before {
+  top: 0;
+  height: max(env(safe-area-inset-top, 0px), var(--safe-area-inset-top, 0px));
+}
+
+html.platform-android body::after {
+  bottom: 0;
+  height: max(env(safe-area-inset-bottom, 0px), var(--safe-area-inset-bottom, 0px));
+}
+
+/*
+ * Let the main content keep its native overscroll effect while preventing the
+ * root WebView—and therefore fixed navigation/action bars—from stretching.
+ */
+html.platform-android,
+html.platform-android body,
+html.platform-android #app {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+html.platform-android .v-application {
+  height: 100dvh;
+  overflow: hidden;
+}
+
+html.platform-android .app-scroll {
+  height: 100dvh;
+  max-height: 100dvh;
+  overflow-x: hidden;
+  overflow-y: auto !important;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
 .display-title {
   font-family: "Arial Narrow", "Roboto Condensed", Impact, sans-serif;
   font-stretch: condensed;

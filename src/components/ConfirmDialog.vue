@@ -35,11 +35,11 @@ const emit = defineEmits<{
       </div>
       <p class="text-body-2 muted mt-2">{{ message }}</p>
       <div class="confirm-actions mt-6">
-        <v-btn variant="text" :disabled="loading" @click="emit('update:modelValue', false)">
-          Cancel
-        </v-btn>
-        <v-btn :color="confirmColor" :loading="loading" @click="emit('confirm')">
+        <v-btn class="confirm-actions__primary" :color="confirmColor" :loading="loading" @click="emit('confirm')">
           {{ confirmText }}
+        </v-btn>
+        <v-btn class="confirm-actions__cancel" variant="text" :disabled="loading" @click="emit('update:modelValue', false)">
+          Cancel
         </v-btn>
       </div>
     </v-card>
@@ -92,6 +92,14 @@ const emit = defineEmits<{
 
   .confirm-actions .v-btn {
     width: auto;
+  }
+
+  .confirm-actions__cancel {
+    order: 1;
+  }
+
+  .confirm-actions__primary {
+    order: 2;
   }
 }
 </style>

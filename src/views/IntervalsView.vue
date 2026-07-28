@@ -46,10 +46,12 @@ async function start(template: IntervalTemplate) {
     </v-card>
 
     <v-card class="quick-card surface-card pa-5 mb-6">
-      <div class="quick-icon"><v-icon icon="mdi-flash-outline" size="24" /></div>
-      <div class="flex-grow-1">
-        <h2 class="text-h6 font-weight-black">Quick interval</h2>
-        <p class="text-body-2 muted mt-1">Work, rest, rounds, and go. Nothing is added to your Plan.</p>
+      <div class="quick-card__intro">
+        <div class="quick-icon"><v-icon icon="mdi-flash-outline" size="24" /></div>
+        <div class="flex-grow-1 min-width-0">
+          <h2 class="text-h6 font-weight-black">Quick interval</h2>
+          <p class="text-body-2 muted mt-1">Work, rest, rounds, and go. Nothing is added to your Plan.</p>
+        </div>
       </div>
       <v-btn color="secondary" append-icon="mdi-play" to="/intervals/quick">Build</v-btn>
     </v-card>
@@ -98,7 +100,8 @@ async function start(template: IntervalTemplate) {
 .active-session { display: flex; align-items: center; justify-content: space-between; gap: 1rem; color: rgb(var(--v-theme-on-secondary)); }
 .active-label { font-size: .65rem; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
 .active-copy { color: rgb(var(--v-theme-on-secondary) / .7); font-size: .75rem; }
-.quick-card { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem; }
+.quick-card { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 1rem; }
+.quick-card__intro { display: flex; min-width: 0; flex: 1 1 230px; align-items: flex-start; gap: 1rem; }
 .quick-icon, .template-icon { display: grid; width: 44px; height: 44px; flex: 0 0 auto; place-items: center; border-radius: 14px; background: rgb(var(--v-theme-surface-variant)); color: rgb(var(--v-theme-secondary)); }
 .template-icon { color: #17200f; }
 .template-launcher { display: grid; gap: .75rem; }

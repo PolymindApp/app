@@ -74,7 +74,7 @@ async function confirmStatusChange() {
 
 <template>
   <main class="app-page plan-page">
-    <header class="d-flex align-start justify-space-between mb-6">
+    <header class="d-flex align-center justify-space-between mb-6">
       <div>
         <h1 class="display-title text-h3 mt-2">THE PLAN<span class="text-secondary">.</span></h1>
         <p class="text-body-2 muted mt-2">{{ planTab === 'tasks' ? 'Design routines that fit the way you train.' : 'Build reusable sequences for focused sessions.' }}</p>
@@ -202,8 +202,8 @@ async function confirmStatusChange() {
 .plan-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; width: 100%; }
 .plan-tabs :deep(.v-btn) { width: 100%; }
 .plan-status-toggle { gap: 1rem; }
-.area-row { display: grid; grid-template-columns: repeat(3, minmax(115px, 1fr)); gap: .65rem; overflow-x: auto; padding: 2px; }
-.area-tile { min-width: 115px; display: flex; flex-direction: column; border-radius: 24px; background: rgb(var(--v-theme-surface)); color: rgb(var(--v-theme-on-surface)); font: inherit; text-align: left; cursor: pointer; }
+.area-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .65rem; padding: 2px; }
+.area-tile { display: flex; min-width: 0; width: 100%; flex-direction: column; border-radius: 24px; background: rgb(var(--v-theme-surface)); color: rgb(var(--v-theme-on-surface)); font: inherit; text-align: left; cursor: pointer; }
 .area-tile--active { border-color: #c7f464; background: rgb(var(--v-theme-surface-variant)); box-shadow: inset 0 0 0 1px #c7f464, 0 12px 30px rgba(0,0,0,.2) !important; }
 .area-tile:focus-visible { outline: 2px solid #c7f464; outline-offset: 3px; }
 .area-tile strong { margin-top: .55rem; font-size: .78rem; }
@@ -223,5 +223,9 @@ async function confirmStatusChange() {
   color: #17200f;
   font-weight: 750;
 }
-@media (min-width: 700px) { .plan-list { grid-template-columns: repeat(2, minmax(0,1fr)); } }
+@media (min-width: 700px) {
+  .area-row { grid-template-columns: repeat(3, minmax(115px, 1fr)); }
+  .area-tile { min-width: 115px; }
+  .plan-list { grid-template-columns: repeat(2, minmax(0,1fr)); }
+}
 </style>

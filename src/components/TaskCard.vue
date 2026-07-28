@@ -23,10 +23,11 @@ const quickAmounts = computed(() =>
 const operator = computed(() => ({ gte: 'at least', lte: 'at most', eq: 'exactly' })[step.value?.targetOperator || task.value.targetOperator || 'gte'])
 const targetOperator = computed(() => step.value?.targetOperator || task.value.targetOperator || 'gte')
 const currentGoalState = computed(() => isCheck.value ? 'neutral' : goalState(props.progress.value, target.value, targetOperator.value))
+const taskColor = computed(() => task.value.color || '#C7F464')
 const stateColor = computed(() => {
   if (currentGoalState.value === 'exceeded') return 'warning'
   if (currentGoalState.value === 'not_enough') return 'error'
-  return props.progress.complete ? 'success' : 'secondary'
+  return taskColor.value
 })
 const stateIcon = computed(() => {
   if (props.progress.locked) return 'mdi-lock-outline'
@@ -36,9 +37,7 @@ const stateIcon = computed(() => {
   return isCheck.value ? 'mdi-circle-outline' : 'mdi-lightning-bolt'
 })
 const stateIconColor = computed(() => {
-  if (currentGoalState.value === 'exceeded' || currentGoalState.value === 'not_enough') return stateColor.value
-  if (props.progress.complete) return 'on-secondary'
-  return isCheck.value ? undefined : stateColor.value
+  return stateColor.value
 })
 const title = computed(() => step.value?.name || task.value.name)
 const subtitle = computed(() => step.value ? `${task.value.name} · Program step` : task.value.areaName || task.value.description)
@@ -66,6 +65,7 @@ function toggleFromCard() {
         v-if="isCheck"
         class="check-control"
         :class="{ 'check-control--done': progress.complete }"
+        :style="{ '--task-color': taskColor }"
         :aria-label="progress.complete ? `Mark ${title} incomplete` : `Complete ${title}`"
         :disabled="busy || progress.locked"
         @click.stop="emit('toggle', progress)"
@@ -76,6 +76,7 @@ function toggleFromCard() {
         v-else
         class="check-control check-control--status"
         :class="{ 'check-control--done': progress.complete }"
+        :style="{ '--task-color': taskColor }"
         aria-hidden="true"
       >
         <v-icon :icon="stateIcon" :color="stateIconColor" size="20" />
@@ -129,7 +130,15 @@ function toggleFromCard() {
         >
           +{{ task.type === 'duration' && !step ? `${amount}h` : `${amount}${unit ? ` ${unit}` : ''}` }}
         </v-btn>
-        <v-btn size="small" variant="text" icon="mdi-tune-variant" aria-label="Enter an exact amount" :disabled="progress.locked" @click="emit('exact', progress)" />
+        <v-btn
+          size="small"
+          variant="tonal"
+          prepend-icon="mdi-pencil-plus-outline"
+          :disabled="busy || progress.locked"
+          @click="emit('exact', progress)"
+        >
+          Custom
+        </v-btn>
       </div>
     </template>
 
@@ -178,8 +187,9 @@ function toggleFromCard() {
 }
 
 .check-control--done {
-  background: rgb(var(--v-theme-secondary));
-  color: #192113;
+  border: 1px solid var(--task-color);
+  background: color-mix(in srgb, var(--task-color) 18%, transparent);
+  color: var(--task-color);
 }
 
 .check-control--status {

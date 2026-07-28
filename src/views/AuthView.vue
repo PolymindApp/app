@@ -46,7 +46,7 @@ async function submit() {
 
 <template>
   <v-app>
-    <v-main class="auth-page">
+    <v-main class="auth-page app-scroll">
       <div class="auth-glow" />
       <v-container class="auth-wrap px-5 py-8">
         <section class="auth-intro">

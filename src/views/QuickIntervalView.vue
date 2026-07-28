@@ -137,4 +137,20 @@ async function start() {
 .quick-summary div { display: flex; flex-direction: column; }
 .quick-summary span { font-size: .65rem; font-weight: 850; text-transform: uppercase; }
 .quick-summary strong { font-size: 1.5rem; }
+
+@media (max-width: 959px) {
+  .quick-page {
+    padding-bottom: calc(7rem + env(safe-area-inset-bottom));
+  }
+
+  .quick-summary {
+    position: fixed;
+    z-index: 20;
+    right: 0;
+    bottom: calc(72px + env(safe-area-inset-bottom));
+    left: 0;
+    border-radius: 0 !important;
+    box-shadow: 0 -12px 30px rgba(0, 0, 0, .28) !important;
+  }
+}
 </style>

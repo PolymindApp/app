@@ -12,9 +12,8 @@ const logoutDialog = ref(false)
 
 const items = [
   { title: 'Today', icon: 'mdi-lightning-bolt', to: '/today' },
-  { title: 'Plan', icon: 'mdi-calendar-edit', to: '/plan' },
   { title: 'Intervals', icon: 'mdi-timer-outline', to: '/intervals' },
-  { title: 'History', icon: 'mdi-chart-timeline-variant', to: '/history' },
+  { title: 'Plan', icon: 'mdi-calendar-edit', to: '/plan' },
 ]
 
 const immersive = computed(() => Boolean(router.currentRoute.value.meta.immersive))
@@ -65,7 +64,7 @@ function logout() {
       </template>
     </v-navigation-drawer>
 
-    <v-main>
+    <v-main class="app-scroll">
       <router-view />
     </v-main>
 

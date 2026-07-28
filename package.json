@@ -9,11 +9,21 @@
     "pb:download": "bash scripts/setup-pocketbase.sh",
     "pb:serve": "bash scripts/run-pocketbase.sh",
     "build": "vue-tsc --noEmit && vite build",
+    "android:sync": "pnpm build && cap sync android",
+    "android:assets": "capacitor-assets generate --android",
+    "android:dev": "bash scripts/android-dev.sh",
+    "android:open": "cap open android",
+    "android:run": "pnpm android:sync && cap run android",
+    "android:build": "bash scripts/build-android.sh",
+    "android:build:release": "bash scripts/build-android.sh release",
+    "android:bundle": "bash scripts/build-android.sh bundle",
     "preview": "vite preview",
     "typecheck": "vue-tsc --noEmit",
     "test": "vitest run"
   },
   "dependencies": {
+    "@capacitor/android": "8.4.2",
+    "@capacitor/core": "8.4.2",
     "@mdi/font": "^7.4.47",
     "date-fns": "^4.4.0",
     "pinia": "^4.0.2",
@@ -23,6 +33,8 @@
     "vuetify": "^3.7.6"
   },
   "devDependencies": {
+    "@capacitor/assets": "3.0.5",
+    "@capacitor/cli": "8.4.2",
     "@types/node": "^22.10.1",
     "@vitejs/plugin-vue": "^5.2.1",
     "@vue/test-utils": "^2.4.11",
