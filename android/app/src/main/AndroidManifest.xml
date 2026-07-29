@@ -34,7 +34,8 @@
             android:foregroundServiceType="specialUse">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="User-started interval timer with scheduled audio and haptic cues" />
+                android:value="User-started interval timer with scheduled audio and haptic cues"
+            />
         </service>
     </application>
 
