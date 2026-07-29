@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { onBeforeUnmount, onMounted } from 'vue'
 import { format } from 'date-fns'
 import { useRouter } from 'vue-router'
 import { prepareIntervalCues } from '@/services/intervalCues'
@@ -10,8 +10,18 @@ import type { IntervalTemplate } from '@/types/domain'
 const store = useIntervalStore()
 const router = useRouter()
 
+async function reconcileWhenVisible() {
+  if (document.visibilityState !== 'visible') return
+  await store.reconcileActiveSession().catch(() => undefined)
+}
+
 onMounted(() => {
   store.load().catch(() => undefined)
+  document.addEventListener('visibilitychange', reconcileWhenVisible)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('visibilitychange', reconcileWhenVisible)
 })
 
 async function start(template: IntervalTemplate) {
@@ -51,9 +61,9 @@ async function start(template: IntervalTemplate) {
         <div class="flex-grow-1 min-width-0">
           <h2 class="text-h6 font-weight-black">Quick interval</h2>
           <p class="text-body-2 muted mt-1">Work, rest, rounds, and go. Nothing is added to your Plan.</p>
+          <v-btn class="mt-3" color="secondary" append-icon="mdi-play" to="/intervals/quick">Build</v-btn>
         </div>
       </div>
-      <v-btn color="secondary" append-icon="mdi-play" to="/intervals/quick">Build</v-btn>
     </v-card>
 
     <div class="section-heading"><h2>Your templates</h2><v-btn size="small" variant="text" :to="{ path: '/plan', query: { tab: 'intervals' } }">Manage</v-btn></div>

@@ -1,7 +1,7 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { pb } from '@/lib/pocketbase'
-import { createRuntimeState, intervalDuration } from '@/services/intervals'
+import { createRuntimeState, intervalDuration, reconcileIntervalRuntime } from '@/services/intervals'
 import type {
   IntervalCueSettings,
   IntervalDefinition,
@@ -90,8 +90,10 @@ export const useIntervalStore = defineStore('intervals', () => {
       const active = activeSession.value
       if (active && recovery?.sessionId === active.id && recovery.runtime.updatedAt > active.runtime.updatedAt) {
         active.runtime = recovery.runtime
-        void updateSession(active.id, { runtime: recovery.runtime })
-      } else if (!active) {
+      }
+      if (active) {
+        await reconcileActiveSession()
+      } else {
         localStorage.removeItem(RECOVERY_KEY)
       }
     } catch (cause) {
@@ -217,6 +219,30 @@ export const useIntervalStore = defineStore('intervals', () => {
     return mapped
   }
 
+  async function reconcileActiveSession() {
+    const active = activeSession.value
+    if (!active || active.status !== 'running') return active
+
+    const now = new Date()
+    const result = reconcileIntervalRuntime(active.definition, active.runtime, now)
+    if (result.completed) {
+      return updateSession(active.id, {
+        status: 'completed',
+        runtime: result.runtime,
+        elapsedSeconds: Math.round(result.runtime.accumulatedMs / 1000),
+        endedAt: now.toISOString(),
+      })
+    }
+
+    if (result.transitions > 0 || result.runtime.remainingMs !== active.runtime.remainingMs) {
+      return updateSession(active.id, {
+        runtime: result.runtime,
+        elapsedSeconds: Math.round(result.runtime.accumulatedMs / 1000),
+      })
+    }
+    return active
+  }
+
   function mirrorRuntime(sessionId: string, runtime: IntervalRuntimeState) {
     const session = sessions.value.find((item) => item.id === sessionId)
     if (session) session.runtime = runtime
@@ -251,6 +277,7 @@ export const useIntervalStore = defineStore('intervals', () => {
     reorderTemplates,
     startSession,
     updateSession,
+    reconcileActiveSession,
     mirrorRuntime,
     getQuickCues,
     rememberQuickCues,

@@ -9,17 +9,18 @@ const transitionName = computed(() => enteringApp.value ? 'session-forward' : 's
 </script>
 
 <template>
-  <router-view v-slot="{ Component, route: viewRoute }">
-    <transition
-      :name="transitionName"
-      mode="out-in"
-      @before-leave="transitioning = true"
-      @after-enter="transitioning = false"
-      @leave-cancelled="transitioning = false"
-    >
-      <component :is="Component" :key="viewRoute.meta.guest ? 'guest' : 'app'" />
-    </transition>
-  </router-view>
+  <div class="session-transition-stage">
+    <router-view v-slot="{ Component, route: viewRoute }">
+      <transition
+        :name="transitionName"
+        @before-leave="transitioning = true"
+        @after-enter="transitioning = false"
+        @leave-cancelled="transitioning = false"
+      >
+        <component :is="Component" :key="viewRoute.meta.guest ? 'guest' : 'app'" />
+      </transition>
+    </router-view>
+  </div>
 
   <transition name="session-loader">
     <div v-if="transitioning" class="session-loading" role="status" aria-live="polite">
@@ -30,13 +31,28 @@ const transitionName = computed(() => enteringApp.value ? 'session-forward' : 's
 </template>
 
 <style>
+.session-transition-stage {
+  display: grid;
+  min-height: 100dvh;
+}
+
+.session-transition-stage > * {
+  min-width: 0;
+  grid-area: 1 / 1;
+}
+
 .session-forward-enter-active,
 .session-forward-leave-active,
 .session-back-enter-active,
 .session-back-leave-active {
   transition:
     opacity 240ms ease,
-    transform 360ms cubic-bezier(.22, 1, .36, 1);
+    transform 300ms cubic-bezier(.22, 1, .36, 1);
+}
+
+.session-forward-leave-active,
+.session-back-leave-active {
+  pointer-events: none;
 }
 
 .session-forward-enter-from {
@@ -88,12 +104,4 @@ const transitionName = computed(() => enteringApp.value ? 'session-forward' : 's
   opacity: 0;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .session-forward-enter-from,
-  .session-forward-leave-to,
-  .session-back-enter-from,
-  .session-back-leave-to {
-    transform: none;
-  }
-}
 </style>

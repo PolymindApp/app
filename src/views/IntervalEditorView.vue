@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { useDisplay } from 'vuetify'
 import { useRoute, useRouter } from 'vue-router'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import IntervalNodeEditor from '@/components/IntervalNodeEditor.vue'
@@ -19,7 +18,6 @@ import type { IntervalCueSound, IntervalGroupNode, IntervalNode, IntervalTemplat
 
 const route = useRoute()
 const router = useRouter()
-const { mdAndUp } = useDisplay()
 const store = useIntervalStore()
 const form = ref()
 const saving = ref(false)
@@ -276,11 +274,19 @@ async function removeTemplate() {
       </div>
     </v-form>
 
-    <div class="editor-save-bar">
+    <div class="editor-save-bar page-action-area">
       <div class="editor-save-bar__inner">
-        <v-btn color="secondary" size="large" :loading="saving" append-icon="mdi-arrow-right" @click="save">Save interval</v-btn>
-        <v-btn :variant="mdAndUp ? 'text' : 'outlined'" @click="router.back()">Cancel</v-btn>
-        <v-btn v-if="isEditing" color="error" :variant="mdAndUp ? 'text' : 'outlined'" prepend-icon="mdi-delete-outline" @click="deleteDialog = true">Delete interval</v-btn>
+        <v-btn class="editor-save-bar__save" color="secondary" :loading="saving" @click="save">Save</v-btn>
+        <v-btn class="editor-save-bar__cancel" variant="text" @click="router.back()">Cancel</v-btn>
+        <v-btn
+          v-if="isEditing"
+          class="editor-save-bar__delete"
+          icon="mdi-delete-outline"
+          color="error"
+          variant="text"
+          aria-label="Delete interval"
+          @click="deleteDialog = true"
+        />
       </div>
     </div>
 
@@ -297,7 +303,7 @@ async function removeTemplate() {
 </template>
 
 <style scoped>
-.interval-editor { max-width: 760px; padding-bottom: 16rem; }
+.interval-editor { max-width: 760px; padding-bottom: 6rem; }
 .editor-header { display: grid; grid-template-columns: 44px 1fr 44px; align-items: center; }
 .field-stack, .sequence-tree { display: grid; gap: 1rem; }
 .field-label { color: rgb(var(--v-theme-on-surface) / .68); font-size: .75rem; font-weight: 750; }
@@ -310,16 +316,19 @@ async function removeTemplate() {
 .summary-grid strong { font-size: 1.35rem; }
 .setting-row { display: flex; min-height: 64px; align-items: center; justify-content: space-between; gap: 1rem; }
 .setting-row p { margin-top: .15rem; color: rgb(var(--v-theme-on-surface) / .5); font-size: .7rem; }
-.editor-save-bar { position: fixed; z-index: 20; right: 0; bottom: calc(72px + env(safe-area-inset-bottom)); left: 0; padding: .75rem 1rem; border-top: 1px solid rgb(var(--v-theme-on-surface) / .08); background: rgb(var(--v-theme-background) / .94); backdrop-filter: blur(14px); }
-.editor-save-bar__inner { display: flex; max-width: 760px; margin: 0 auto; flex-direction: column; gap: .5rem; }
-.editor-save-bar__inner .v-btn { width: 100%; }
+.editor-save-bar { position: fixed; z-index: 20; right: 0; bottom: calc(72px + env(safe-area-inset-bottom)); left: 0; padding: .75rem 1rem; border-top: 1px solid rgba(255,255,255,.08); background: rgb(var(--v-theme-background) / .94); backdrop-filter: blur(14px); }
+.editor-save-bar__inner { display: flex; width: 100%; max-width: 760px; margin: 0 auto; align-items: center; gap: .5rem; }
+.editor-save-bar__inner > .v-btn { height: 48px; }
+.editor-save-bar__save,
+.editor-save-bar__cancel { min-width: 0; flex: 1 1 0; }
+.editor-save-bar__delete { order: 1; width: 48px; min-width: 48px; flex: 0 0 48px; }
+.editor-save-bar__cancel { order: 2; margin-left: auto; }
+.editor-save-bar__save { order: 3; }
 @media (min-width: 960px) {
   .interval-editor { padding-bottom: 6rem; }
   .editor-save-bar { left: 224px; bottom: 0; }
-  .editor-save-bar__inner { flex-direction: row; }
-  .editor-save-bar__inner .v-btn { width: auto; }
-  .editor-save-bar__inner .v-btn:first-child { order: 3; }
-  .editor-save-bar__inner .v-btn:nth-child(2) { order: 2; margin-left: auto; }
-  .editor-save-bar__inner .v-btn:last-child:not(:nth-child(2)) { order: 1; }
+  .editor-save-bar__inner { justify-content: flex-end; }
+  .editor-save-bar__save,
+  .editor-save-bar__cancel { max-width: 160px; }
 }
 </style>

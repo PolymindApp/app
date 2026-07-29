@@ -18,6 +18,8 @@ const exactProgress = ref<TaskProgress>()
 const exactAmountInput = ref('')
 const exactAction = ref<'add' | 'set'>()
 const reviewSheet = ref(false)
+const weekDirection = ref<'previous' | 'next'>('next')
+const visibleWeekStart = ref(startOfWeek(selectedDate.value, { weekStartsOn: 1 }))
 const exactAmount = computed(() => {
   if (!exactAmountInput.value || exactAmountInput.value === '.') return null
   const value = Number(exactAmountInput.value)
@@ -25,7 +27,6 @@ const exactAmount = computed(() => {
 })
 const keypadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'backspace'] as const
 
-const visibleWeekStart = computed(() => startOfWeek(selectedDate.value, { weekStartsOn: 1 }))
 const days = computed(() => Array.from({ length: 7 }, (_, index) => {
   const date = addDays(visibleWeekStart.value, index)
   return { date, day: format(date, 'EEE').slice(0, 2), number: format(date, 'd') }
@@ -37,11 +38,13 @@ const weekLabel = computed(() => {
     ? `${format(start, 'MMM d')} – ${format(end, 'd')}`
     : `${format(start, 'MMM d')} – ${format(end, 'MMM d')}`
 })
-const isCurrentWeek = computed(() => isSameWeek(selectedDate.value, new Date(), { weekStartsOn: 1 }))
+const isCurrentWeek = computed(() => isSameWeek(visibleWeekStart.value, new Date(), { weekStartsOn: 1 }))
 
 const required = computed(() => selectedProgress.value.filter((item) => item.task.mandatory))
 const optional = computed(() => selectedProgress.value.filter((item) => !item.task.mandatory))
-const reviewItems = computed(() => selectedProgress.value.filter((item) => item.task.reviewWhenMissed && !item.complete))
+const reviewItems = computed(() =>
+  selectedProgress.value.filter((item) => item.task.reviewWhenMissed && item.status === 'pending' && !item.complete),
+)
 const doneCount = computed(() => selectedProgress.value.filter((item) => item.complete).length)
 onMounted(async () => {
   try { await store.load() } catch { /* Error state is displayed in the view. */ }
@@ -52,12 +55,19 @@ async function run(action: () => Promise<void>) {
   try { await action() } finally { busy.value = false }
 }
 
+async function resolveReview(item: TaskProgress, status: 'missed' | 'carried') {
+  await run(() => store.setStatus(item, status))
+  reviewSheet.value = false
+}
+
 function moveWeek(amount: number) {
-  selectedDate.value = addWeeks(selectedDate.value, amount)
+  weekDirection.value = amount < 0 ? 'previous' : 'next'
+  visibleWeekStart.value = addWeeks(visibleWeekStart.value, amount)
 }
 
 function goToCurrentWeek() {
-  selectedDate.value = new Date()
+  weekDirection.value = visibleWeekStart.value > new Date() ? 'previous' : 'next'
+  visibleWeekStart.value = startOfWeek(new Date(), { weekStartsOn: 1 })
 }
 
 function openExact(progress: TaskProgress) {
@@ -123,18 +133,22 @@ async function submitExact(mode: 'add' | 'set') {
       />
     </div>
 
-    <div class="date-strip mb-5" role="list" aria-label="Choose a date">
-      <button
-        v-for="day in days"
-        :key="day.date.toISOString()"
-        class="date-chip"
-        :class="{ 'date-chip--active': isSameDay(selectedDate, day.date) }"
-        @click="selectedDate = day.date"
-      >
-        <span>{{ day.day }}</span>
-        <strong>{{ day.number }}</strong>
-        <i v-if="isSameDay(new Date(), day.date)" />
-      </button>
+    <div class="date-strip-window mb-5">
+      <transition :name="`week-${weekDirection}`">
+        <div :key="visibleWeekStart.toISOString()" class="date-strip" role="list" aria-label="Choose a date">
+          <button
+            v-for="day in days"
+            :key="day.date.toISOString()"
+            class="date-chip"
+            :class="{ 'date-chip--active': isSameDay(selectedDate, day.date) }"
+            @click="selectedDate = day.date"
+          >
+            <span>{{ day.day }}</span>
+            <strong>{{ day.number }}</strong>
+            <i v-if="isSameDay(new Date(), day.date)" />
+          </button>
+        </div>
+      </transition>
     </div>
 
     <v-card class="score-card pa-5" color="surface">
@@ -280,14 +294,37 @@ async function submitExact(mode: 'add' | 'set') {
         <h2 class="text-h5 font-weight-black mb-5">Resolve open work</h2>
         <div v-for="item in reviewItems" :key="`${item.task.id}-${item.programStep?.id || ''}`" class="review-row py-3">
           <div class="flex-grow-1"><strong>{{ item.programStep?.name || item.task.name }}</strong><p class="text-caption muted">Choose how this attempt ends.</p></div>
-          <v-menu>
-            <template #activator="{ props }"><v-btn v-bind="props" size="small" variant="tonal">Resolve</v-btn></template>
-            <v-list>
-              <v-list-item title="Mark missed" prepend-icon="mdi-close-circle-outline" @click="run(() => store.setStatus(item, 'missed'))" />
-              <v-list-item title="Carry forward" prepend-icon="mdi-arrow-right-bold" @click="run(() => store.setStatus(item, 'carried'))" />
-              <v-list-item v-if="item.programStep" title="Shift program" prepend-icon="mdi-calendar-arrow-right" @click="run(() => store.shiftProgram(item))" />
-            </v-list>
-          </v-menu>
+          <div class="review-actions">
+            <v-btn
+              size="large"
+              variant="tonal"
+              color="error"
+              prepend-icon="mdi-close-circle-outline"
+              :disabled="busy"
+              @click="resolveReview(item, 'missed')"
+            >
+              Mark missed
+            </v-btn>
+            <v-btn
+              size="large"
+              variant="tonal"
+              prepend-icon="mdi-arrow-right-bold"
+              :disabled="busy"
+              @click="resolveReview(item, 'carried')"
+            >
+              Carry forward
+            </v-btn>
+            <v-btn
+              v-if="item.programStep"
+              size="large"
+              variant="tonal"
+              prepend-icon="mdi-calendar-arrow-right"
+              :disabled="busy"
+              @click="run(() => store.shiftProgram(item))"
+            >
+              Shift program
+            </v-btn>
+          </div>
         </div>
       </v-card>
     </v-bottom-sheet>
@@ -334,6 +371,36 @@ async function submitExact(mode: 'add' | 'set') {
   gap: .35rem;
 }
 
+.date-strip-window {
+  position: relative;
+  min-height: 62px;
+  overflow-x: hidden;
+}
+
+.week-next-enter-active,
+.week-next-leave-active,
+.week-previous-enter-active,
+.week-previous-leave-active {
+  transition: transform 180ms cubic-bezier(.22, 1, .36, 1);
+}
+
+.week-next-leave-active,
+.week-previous-leave-active {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+}
+
+.week-next-enter-from,
+.week-previous-leave-to {
+  transform: translateX(100%);
+}
+
+.week-next-leave-to,
+.week-previous-enter-from {
+  transform: translateX(-100%);
+}
+
 .date-chip {
   position: relative;
   display: flex;
@@ -364,9 +431,21 @@ async function submitExact(mode: 'add' | 'set') {
 .amount-keypad__keys { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .65rem; }
 .amount-keypad__keys .v-btn { min-width: 0; height: 54px; font-size: 1.05rem; font-weight: 850; }
 .exact-actions { display: grid; gap: 1rem; }
-.review-row { display: flex; align-items: center; gap: 1rem; border-top: 1px solid rgba(255,255,255,.08); }
+.review-row { display: flex; flex-direction: column; align-items: stretch; gap: 1rem; border-top: 1px solid rgba(255,255,255,.08); }
+.review-actions { display: grid; gap: .5rem; }
+.review-actions .v-btn { width: 100%; }
 
 @media (min-width: 700px) {
   .task-stack { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .review-actions { grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .week-next-enter-from,
+  .week-next-leave-to,
+  .week-previous-enter-from,
+  .week-previous-leave-to {
+    transform: none;
+  }
 }
 </style>

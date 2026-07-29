@@ -121,7 +121,7 @@ async function start() {
       </div>
     </v-card>
 
-    <v-card class="quick-summary pa-5" color="secondary">
+    <v-card class="quick-summary page-action-area pa-5" color="secondary">
       <div><span>Total time</span><strong>{{ formatIntervalDuration(totalDuration) }}</strong></div>
       <v-btn color="primary" size="large" append-icon="mdi-play" :loading="starting" @click="start">Start</v-btn>
     </v-card>

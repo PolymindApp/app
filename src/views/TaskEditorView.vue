@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { format } from 'date-fns'
-import { useDisplay } from 'vuetify'
 import { useRoute, useRouter } from 'vue-router'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import QuickAmountsEditor from '@/components/QuickAmountsEditor.vue'
@@ -10,7 +9,6 @@ import type { TaskDraft, TaskType } from '@/types/domain'
 
 const route = useRoute()
 const router = useRouter()
-const { mdAndUp } = useDisplay()
 const store = useTaskStore()
 const form = ref()
 const saving = ref(false)
@@ -271,18 +269,20 @@ async function removeTask() {
         />
         <div v-if="draft.recurrenceType !== 'daily'">
           <label class="field-label">Training days</label>
-          <v-btn-toggle
-            v-model="draft.weekdays"
-            multiple
-            class="weekday-picker mt-2"
-            color="secondary"
-            selected-class="day-picker--selected"
-          >
-            <v-btn v-for="day in weekdays" :key="day.value" :value="day.value" size="small">{{ day.label }}</v-btn>
-          </v-btn-toggle>
+          <div class="weekday-scroll mt-2">
+            <v-btn-toggle
+              v-model="draft.weekdays"
+              multiple
+              class="weekday-picker"
+              color="secondary"
+              selected-class="day-picker--selected"
+            >
+              <v-btn v-for="day in weekdays" :key="day.value" :value="day.value" size="small">{{ day.label }}</v-btn>
+            </v-btn-toggle>
+          </div>
         </div>
         <v-text-field v-if="draft.recurrenceType === 'interval_weeks'" v-model.number="draft.intervalWeeks" label="Repeat every" type="number" min="1" max="52" suffix="weeks" />
-        <div class="date-grid">
+        <div class="date-grid date-range-grid">
           <v-text-field v-model="draft.startDate" label="Starts" type="date" />
           <v-text-field v-model="draft.endDate" label="Ends (optional)" type="date" clearable />
         </div>
@@ -393,7 +393,14 @@ async function removeTask() {
                     @click="moveStep(index, 1)"
                   />
                 </div>
-                <v-btn color="error" variant="text" prepend-icon="mdi-delete-outline" @click="removeStep(index)">Remove step</v-btn>
+                <v-btn
+                  icon="mdi-delete-outline"
+                  color="error"
+                  variant="text"
+                  size="small"
+                  :aria-label="`Remove ${step.name || `step ${index + 1}`}`"
+                  @click="removeStep(index)"
+                />
               </div>
             </v-expansion-panel-text>
           </v-expansion-panel>
@@ -401,22 +408,19 @@ async function removeTask() {
       </template>
     </v-form>
 
-    <div class="save-bar">
+    <div class="save-bar page-action-area">
       <div class="save-bar__inner">
         <v-btn
           class="save-bar__save"
           color="secondary"
-          size="large"
-          min-width="150"
           :loading="saving"
-          append-icon="mdi-arrow-right"
           @click="save"
         >
-          Save routine
+          Save
         </v-btn>
         <v-btn
           class="save-bar__cancel"
-          :variant="mdAndUp ? 'text' : 'outlined'"
+          variant="text"
           @click="router.back()"
         >
           Cancel
@@ -424,14 +428,12 @@ async function removeTask() {
         <v-btn
           v-if="isEditing"
           class="save-bar__delete"
-          prepend-icon="mdi-delete-outline"
-          :variant="mdAndUp ? 'text' : 'outlined'"
+          icon="mdi-delete-outline"
+          variant="text"
           color="error"
           aria-label="Delete routine"
           @click="deleteDialog = true"
-        >
-          Delete routine
-        </v-btn>
+        />
       </div>
     </div>
 
@@ -462,8 +464,10 @@ async function removeTask() {
 .setting-row strong { font-size: .83rem; }
 .setting-row p { margin-top: .15rem; color: rgb(var(--v-theme-on-surface) / .5); font-size: .7rem; }
 .field-label { color: rgb(var(--v-theme-on-surface) / .68); font-size: .75rem; font-weight: 750; }
-.weekday-picker { display: flex; justify-content: space-between; gap: 1rem; width: 100%; }
-.weekday-picker :deep(.v-btn) { min-width: 0; flex: 1 1 0; }
+.weekday-scroll { width: 100%; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; }
+.weekday-scroll::-webkit-scrollbar { display: none; }
+.weekday-picker { display: inline-flex; width: max-content; min-width: 100%; max-width: none; justify-content: flex-start; gap: 1rem; }
+.weekday-picker :deep(.v-btn) { width: 44px; min-width: 44px; flex: 0 0 44px; }
 .weekday-picker :deep(.day-picker--selected) {
   background: rgb(var(--v-theme-secondary)) !important;
   color: rgb(var(--v-theme-on-secondary)) !important;
@@ -476,6 +480,7 @@ async function removeTask() {
 }
 .field-stack { display: grid; gap: 1rem; }
 .date-grid, .target-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.date-range-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); }
 .area-swatch { display: block; width: 12px; height: 12px; border-radius: 50%; }
 .routine-colors { display: flex; flex-wrap: wrap; align-items: center; gap: .55rem; }
 .color-swatch, .custom-color { display: grid; width: 38px; height: 38px; place-items: center; border: 2px solid transparent; border-radius: 12px; color: #17200f; cursor: pointer; }
@@ -487,19 +492,26 @@ async function removeTask() {
 .step-number { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 11px; background: rgb(var(--v-theme-secondary)); color: rgb(var(--v-theme-on-secondary)); font-size: .75rem; font-weight: 900; }
 .cycle-day-picker { max-height: 145px; overflow-y: auto; }
 .step-actions { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
-.editor-page { padding-bottom: 13rem; }
-.editor-page--editing { padding-bottom: 10rem; }
+.editor-page,
+.editor-page--editing { padding-bottom: 6rem; }
 .save-bar { position: fixed; z-index: 20; right: 0; bottom: calc(72px + env(safe-area-inset-bottom)); left: 0; padding: .75rem 1rem; border-top: 1px solid rgba(255,255,255,.08); background: rgba(16,19,16,.9); backdrop-filter: blur(14px); }
-.save-bar__inner { display: flex; width: 100%; max-width: 760px; margin: 0 auto; flex-direction: column; gap: .5rem; }
-.save-bar__inner > .v-btn { width: 100%; }
+.save-bar__inner { display: flex; width: 100%; max-width: 760px; margin: 0 auto; align-items: center; gap: .5rem; }
+.save-bar__inner > .v-btn { height: 48px; }
+.save-bar__save,
+.save-bar__cancel { min-width: 0; flex: 1 1 0; }
+.save-bar__delete { order: 1; width: 48px; min-width: 48px; flex: 0 0 48px; }
+.save-bar__cancel { order: 2; margin-left: auto; }
+.save-bar__save { order: 3; }
 @media (min-width: 960px) {
   .save-bar { left: 224px; bottom: 0; }
   .editor-page,
   .editor-page--editing { max-width: 760px; padding-bottom: 6rem; }
-  .save-bar__inner { flex-direction: row; align-items: center; justify-content: space-between; }
-  .save-bar__inner > .v-btn { width: auto; }
-  .save-bar__delete { order: 1; }
-  .save-bar__cancel { order: 2; margin-left: auto; }
-  .save-bar__save { order: 3; }
+  .save-bar__inner { justify-content: flex-end; }
+  .save-bar__save,
+  .save-bar__cancel { max-width: 160px; }
+}
+@media (min-width: 600px) {
+  .weekday-picker { display: flex; width: 100%; }
+  .weekday-picker :deep(.v-btn) { width: auto; min-width: 0; flex: 1 1 0; }
 }
 </style>

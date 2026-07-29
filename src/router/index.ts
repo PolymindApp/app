@@ -3,7 +3,6 @@ import { pb } from '@/lib/pocketbase'
 
 const router = createRouter({
   history: createWebHistory(),
-  scrollBehavior: () => ({ top: 0 }),
   routes: [
     { path: '/auth', name: 'auth', component: () => import('@/views/AuthView.vue'), meta: { guest: true } },
     {
@@ -12,15 +11,15 @@ const router = createRouter({
       meta: { auth: true },
       children: [
         { path: '', redirect: '/today' },
-        { path: 'today', name: 'today', component: () => import('@/views/TodayView.vue') },
-        { path: 'plan', name: 'plan', component: () => import('@/views/PlanView.vue') },
-        { path: 'plan/intervals/new', name: 'interval-new', component: () => import('@/views/IntervalEditorView.vue') },
-        { path: 'plan/intervals/:id', name: 'interval-edit', component: () => import('@/views/IntervalEditorView.vue') },
-        { path: 'intervals', name: 'intervals', component: () => import('@/views/IntervalsView.vue') },
-        { path: 'intervals/quick', name: 'interval-quick', component: () => import('@/views/QuickIntervalView.vue') },
-        { path: 'intervals/run/:sessionId', name: 'interval-runner', component: () => import('@/views/IntervalRunnerView.vue'), meta: { immersive: true } },
-        { path: 'tasks/new', name: 'task-new', component: () => import('@/views/TaskEditorView.vue') },
-        { path: 'tasks/:id', name: 'task-edit', component: () => import('@/views/TaskEditorView.vue') },
+        { path: 'today', name: 'today', component: () => import('@/views/TodayView.vue'), meta: { pageDepth: 0, pageOrder: 0 } },
+        { path: 'intervals', name: 'intervals', component: () => import('@/views/IntervalsView.vue'), meta: { pageDepth: 0, pageOrder: 1 } },
+        { path: 'plan', name: 'plan', component: () => import('@/views/PlanView.vue'), meta: { pageDepth: 0, pageOrder: 2 } },
+        { path: 'intervals/quick', name: 'interval-quick', component: () => import('@/views/QuickIntervalView.vue'), meta: { pageDepth: 1, pageOrder: 1 } },
+        { path: 'plan/intervals/new', name: 'interval-new', component: () => import('@/views/IntervalEditorView.vue'), meta: { pageDepth: 1, pageOrder: 2 } },
+        { path: 'plan/intervals/:id', name: 'interval-edit', component: () => import('@/views/IntervalEditorView.vue'), meta: { pageDepth: 1, pageOrder: 2 } },
+        { path: 'tasks/new', name: 'task-new', component: () => import('@/views/TaskEditorView.vue'), meta: { pageDepth: 1, pageOrder: 2 } },
+        { path: 'tasks/:id', name: 'task-edit', component: () => import('@/views/TaskEditorView.vue'), meta: { pageDepth: 1, pageOrder: 2 } },
+        { path: 'intervals/run/:sessionId', name: 'interval-runner', component: () => import('@/views/IntervalRunnerView.vue'), meta: { immersive: true, pageDepth: 2, pageOrder: 1 } },
       ],
     },
   ],

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { format } from 'date-fns'
 import { storeToRefs } from 'pinia'
 import { useRoute, useRouter } from 'vue-router'
@@ -18,9 +18,19 @@ const selectedArea = ref<string>()
 const pendingStatusTask = ref<Task>()
 const statusDialog = ref(false)
 const updatingStatus = ref(false)
+const tabDirection = ref<'forward' | 'back'>('forward')
+const statusDirection = ref<'forward' | 'back'>('forward')
 const planTab = computed({
   get: () => route.query.tab === 'intervals' ? 'intervals' : 'tasks',
   set: (tab: string) => router.replace({ query: { ...route.query, tab: tab === 'intervals' ? 'intervals' : undefined } }),
+})
+
+watch(planTab, (tab, previousTab) => {
+  tabDirection.value = tab === 'intervals' && previousTab === 'tasks' ? 'forward' : 'back'
+})
+
+watch(filter, (status, previousStatus) => {
+  statusDirection.value = status === 'paused' && previousStatus === 'active' ? 'forward' : 'back'
 })
 
 const visibleTasks = computed(() => tasks.value.filter((task) =>
@@ -74,10 +84,10 @@ async function confirmStatusChange() {
 
 <template>
   <main class="app-page plan-page">
-    <header class="d-flex align-center justify-space-between mb-6">
+    <header class="plan-header d-flex align-center justify-space-between mb-6">
       <div>
         <h1 class="display-title text-h3 mt-2">THE PLAN<span class="text-secondary">.</span></h1>
-        <p class="text-body-2 muted mt-2">{{ planTab === 'tasks' ? 'Design routines that fit the way you train.' : 'Build reusable sequences for focused sessions.' }}</p>
+        <p class="text-body-2 muted mt-2">Design routines and timed sequences that fit the way you train.</p>
       </div>
       <v-btn
         icon="mdi-plus"
@@ -93,6 +103,9 @@ async function confirmStatusChange() {
       <v-btn value="intervals" prepend-icon="mdi-timer-outline">Intervals</v-btn>
     </v-btn-toggle>
 
+    <div class="plan-tab-viewport">
+      <transition :name="`plan-slide-${tabDirection}`">
+        <div :key="planTab" class="plan-tab-content">
     <template v-if="planTab === 'tasks'">
     <div class="area-row mb-6">
       <button
@@ -118,6 +131,9 @@ async function confirmStatusChange() {
       <span class="text-caption muted">{{ visibleTasks.length }} total</span>
     </div>
 
+    <div class="plan-status-stage">
+      <transition :name="`plan-slide-${statusDirection}`">
+        <div :key="filter" class="plan-status-content">
     <div v-if="visibleTasks.length" class="plan-list">
       <v-card
         v-for="task in visibleTasks"
@@ -179,9 +195,15 @@ async function confirmStatusChange() {
         Create task
       </v-btn>
     </v-card>
+        </div>
+      </transition>
+    </div>
     </template>
 
     <IntervalPlanList v-else />
+        </div>
+      </transition>
+    </div>
 
     <ConfirmDialog
       v-model="statusDialog"
@@ -200,7 +222,39 @@ async function confirmStatusChange() {
 
 <style scoped>
 .plan-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; width: 100%; }
+.plan-header { gap: 1rem; }
+.plan-header > .v-btn { flex: 0 0 auto; }
 .plan-tabs :deep(.v-btn) { width: 100%; }
+.plan-tab-viewport,
+.plan-status-stage { display: grid; width: 100%; min-width: 0; overflow-x: clip; }
+.plan-tab-content,
+.plan-status-content { width: 100%; min-width: 0; grid-area: 1 / 1; }
+.plan-slide-forward-enter-active,
+.plan-slide-forward-leave-active,
+.plan-slide-back-enter-active,
+.plan-slide-back-leave-active {
+  transition:
+    opacity 240ms ease,
+    transform 240ms cubic-bezier(.22, 1, .36, 1);
+}
+.plan-slide-forward-leave-active,
+.plan-slide-back-leave-active { pointer-events: none; }
+.plan-slide-forward-enter-from {
+  opacity: 0;
+  transform: translateX(1.5rem);
+}
+.plan-slide-forward-leave-to {
+  opacity: 0;
+  transform: translateX(-1rem);
+}
+.plan-slide-back-enter-from {
+  opacity: 0;
+  transform: translateX(-1.5rem);
+}
+.plan-slide-back-leave-to {
+  opacity: 0;
+  transform: translateX(1rem);
+}
 .plan-status-toggle { gap: 1rem; }
 .area-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .65rem; padding: 2px; }
 .area-tile { display: flex; min-width: 0; width: 100%; flex-direction: column; border-radius: 24px; background: rgb(var(--v-theme-surface)); color: rgb(var(--v-theme-on-surface)); font: inherit; text-align: left; cursor: pointer; }
