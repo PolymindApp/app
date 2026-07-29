@@ -10,9 +10,11 @@ import com.getcapacitor.BridgeActivity;
 public class MainActivity extends BridgeActivity {
 
     private static final int APP_BACKGROUND = Color.rgb(16, 19, 16);
+    private static volatile boolean appVisible = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        registerPlugin(BackgroundIntervalPlugin.class);
         super.onCreate(savedInstanceState);
 
         WindowCompat.enableEdgeToEdge(getWindow());
@@ -32,5 +34,21 @@ public class MainActivity extends BridgeActivity {
         if (getBridge() != null && getBridge().getWebView() != null) {
             getBridge().getWebView().setBackgroundColor(APP_BACKGROUND);
         }
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        appVisible = true;
+    }
+
+    @Override
+    public void onPause() {
+        appVisible = false;
+        super.onPause();
+    }
+
+    public static boolean isAppVisible() {
+        return appVisible;
     }
 }

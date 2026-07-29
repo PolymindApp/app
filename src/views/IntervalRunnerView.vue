@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import { stopBackgroundInterval, syncBackgroundInterval } from '@/services/backgroundInterval'
 import { notifyIntervalTransition, playIntervalCue, prepareIntervalCues, requestIntervalWakeLock } from '@/services/intervalCues'
 import {
   createRuntimeState,
@@ -19,6 +20,7 @@ const displayRemainingMs = ref(0)
 const syncing = ref(false)
 const endDialog = ref(false)
 const error = ref('')
+const backgroundError = ref('')
 let ticker: number | undefined
 let wakeLock: { release: () => Promise<void> } | undefined
 
@@ -57,6 +59,7 @@ onMounted(async () => {
       wakeLock = await requestIntervalWakeLock()
     }
     await tick()
+    if (session.value?.status === 'running') await syncNativeTimer(session.value)
     ticker = window.setInterval(tick, 250)
     document.addEventListener('visibilitychange', handleVisibility)
     window.addEventListener('pagehide', mirrorCurrentRuntime)
@@ -76,6 +79,15 @@ function reconciled(item: IntervalSession) {
   return item.status === 'running'
     ? reconcileIntervalRuntime(item.definition, item.runtime)
     : { runtime: { ...item.runtime }, completed: false, transitions: 0 }
+}
+
+async function syncNativeTimer(item: IntervalSession) {
+  try {
+    await syncBackgroundInterval(item)
+    backgroundError.value = ''
+  } catch (cause) {
+    backgroundError.value = cause instanceof Error ? cause.message : 'Background interval timing is unavailable.'
+  }
 }
 
 function mirrorCurrentRuntime() {
@@ -127,6 +139,7 @@ async function tick() {
 async function completeSession(item: IntervalSession, runtime: IntervalRuntimeState) {
   playIntervalCue(item.cues)
   await notifyIntervalTransition(`${item.name} complete`, 'Your interval session is finished.')
+  await stopBackgroundInterval()
   await store.updateSession(item.id, {
     status: 'completed',
     runtime,
@@ -149,6 +162,7 @@ async function pause() {
     elapsedSeconds: Math.round(runtime.accumulatedMs / 1000),
   })
   displayRemainingMs.value = runtime.remainingMs
+  await stopBackgroundInterval()
   await wakeLock?.release()
   wakeLock = undefined
 }
@@ -159,7 +173,8 @@ async function resume() {
   const now = new Date().toISOString()
   const runtime = { ...item.runtime, stepStartedAt: now, updatedAt: now }
   await prepareIntervalCues(item.cues)
-  await store.updateSession(item.id, { status: 'running', runtime })
+  const updated = await store.updateSession(item.id, { status: 'running', runtime })
+  await syncNativeTimer(updated)
   wakeLock = await requestIntervalWakeLock()
 }
 
@@ -178,8 +193,9 @@ async function skip() {
     stepStartedAt: item.status === 'running' ? now : undefined,
     updatedAt: now,
   }
-  await store.updateSession(item.id, { runtime, elapsedSeconds: Math.round(runtime.accumulatedMs / 1000) })
+  const updated = await store.updateSession(item.id, { runtime, elapsedSeconds: Math.round(runtime.accumulatedMs / 1000) })
   displayRemainingMs.value = runtime.remainingMs
+  if (updated.status === 'running') await syncNativeTimer(updated)
   playIntervalCue(item.cues)
 }
 
@@ -198,8 +214,9 @@ async function previous() {
     stepStartedAt: item.status === 'running' ? now : undefined,
     updatedAt: now,
   }
-  await store.updateSession(item.id, { runtime, elapsedSeconds: Math.round(runtime.accumulatedMs / 1000) })
+  const updated = await store.updateSession(item.id, { runtime, elapsedSeconds: Math.round(runtime.accumulatedMs / 1000) })
   displayRemainingMs.value = runtime.remainingMs
+  if (updated.status === 'running') await syncNativeTimer(updated)
 }
 
 async function restart() {
@@ -207,8 +224,9 @@ async function restart() {
   if (!item) return
   const runtime = createRuntimeState(item.definition)
   if (item.status === 'paused') runtime.stepStartedAt = undefined
-  await store.updateSession(item.id, { status: item.status === 'paused' ? 'paused' : 'running', runtime, elapsedSeconds: 0 })
+  const updated = await store.updateSession(item.id, { status: item.status === 'paused' ? 'paused' : 'running', runtime, elapsedSeconds: 0 })
   displayRemainingMs.value = runtime.remainingMs
+  if (updated.status === 'running') await syncNativeTimer(updated)
 }
 
 async function endEarly() {
@@ -223,6 +241,7 @@ async function endEarly() {
     endedAt: new Date().toISOString(),
   })
   endDialog.value = false
+  await stopBackgroundInterval()
   await wakeLock?.release()
   wakeLock = undefined
 }
@@ -240,12 +259,14 @@ async function runAgain() {
   })
   await router.replace(`/intervals/run/${nextSession.id}`)
   displayRemainingMs.value = nextSession.runtime.remainingMs
+  await syncNativeTimer(nextSession)
   wakeLock = await requestIntervalWakeLock()
 }
 </script>
 
 <template>
   <main class="runner-page">
+    <v-alert v-if="backgroundError" type="warning" variant="tonal" class="mb-3">{{ backgroundError }}</v-alert>
     <v-alert v-if="error" type="error" variant="tonal">{{ error }}</v-alert>
 
     <template v-else-if="session && finished">
