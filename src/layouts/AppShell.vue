@@ -21,9 +21,9 @@ const items = [
 ]
 
 const immersive = computed(() => Boolean(router.currentRoute.value.meta.immersive))
-const pageTitle = computed(() => String(router.currentRoute.value.meta.title || 'REP'))
+const pageTitle = computed(() => String(router.currentRoute.value.meta.title || 'Mom'))
 const canGoBack = computed(() => Number(router.currentRoute.value.meta.pageDepth ?? 0) > 0)
-const accountName = computed(() => auth.user?.name || auth.firstName || 'Athlete')
+const accountName = computed(() => auth.user?.name || auth.firstName || 'You')
 const accountEmail = computed(() => auth.user?.email || '')
 const accountInitials = computed(() => {
   const source = auth.user?.name || auth.user?.email || 'A'
@@ -79,9 +79,9 @@ function beginPageScrollReset() {
     <v-navigation-drawer v-if="mdAndUp && !immersive" permanent width="224" color="background">
       <div class="pa-6 pt-8">
         <div class="brand-mark mb-3">
-          <img src="/brand/rep-wordmark.png" alt="REP" />
+          <img src="/brand/mom-wordmark.png" alt="Mom" />
         </div>
-        <p class="text-caption text-medium-emphasis mt-2">Consistency, measured.</p>
+        <p class="text-caption text-medium-emphasis mt-2">Management of Me.</p>
       </div>
 
       <v-list nav class="px-3 mt-6">
@@ -104,62 +104,68 @@ function beginPageScrollReset() {
       </template>
     </v-navigation-drawer>
 
-    <header
-      v-if="!immersive"
-      class="app-bar"
-      :class="{ 'app-bar--ios': isIos, 'app-bar--back': canGoBack }"
-    >
-      <div class="app-bar__inner">
-        <div class="app-bar__leading">
-          <v-btn
-            v-if="canGoBack"
-            icon="mdi-chevron-left"
-            variant="text"
-            aria-label="Go back"
-            @click="router.back()"
-          />
-        </div>
-
-        <h1 class="app-bar__title">{{ pageTitle }}</h1>
-
-        <v-menu location="bottom end" :offset="8">
-          <template #activator="{ props }">
-            <v-btn
-              v-bind="props"
-              icon
-              variant="text"
-              class="app-bar__account"
-              :aria-label="`Open account menu for ${accountName}`"
-            >
-              <v-avatar color="secondary" size="36">
-                <span>{{ accountInitials }}</span>
-              </v-avatar>
-            </v-btn>
-          </template>
-
-          <v-card class="account-menu" min-width="240">
-            <div class="account-menu__identity pa-4">
-              <v-avatar color="secondary" size="40">
-                <span>{{ accountInitials }}</span>
-              </v-avatar>
-              <div class="min-width-0">
-                <strong class="d-block text-truncate">{{ accountName }}</strong>
-                <span v-if="accountEmail" class="d-block text-caption muted text-truncate">{{ accountEmail }}</span>
+    <transition name="app-chrome">
+      <header
+        v-if="!immersive"
+        class="app-bar"
+        :class="{ 'app-bar--ios': isIos, 'app-bar--back': canGoBack }"
+      >
+        <div class="app-bar__inner">
+          <div class="app-bar__leading">
+            <transition name="app-bar-button">
+              <div v-if="canGoBack" class="app-bar__back-control">
+                <v-btn
+                  icon="mdi-chevron-left"
+                  variant="text"
+                  density="compact"
+                  aria-label="Go back"
+                  @click="router.back()"
+                />
               </div>
-            </div>
-            <v-divider />
-            <v-list density="compact" class="pa-2">
-              <v-list-item
-                title="Sign out"
-                prepend-icon="mdi-logout"
-                rounded="lg"
-                @click="logoutDialog = true"
-              />
-            </v-list>
-          </v-card>
-        </v-menu>
-      </div>
-    </header>
+            </transition>
+          </div>
+
+          <h1 class="app-bar__title">{{ pageTitle }}</h1>
+
+          <v-menu location="bottom end" :offset="8">
+            <template #activator="{ props }">
+              <v-btn
+                v-bind="props"
+                icon
+                variant="text"
+                class="app-bar__account"
+                :aria-label="`Open account menu for ${accountName}`"
+              >
+                <v-avatar color="secondary" size="36">
+                  <span>{{ accountInitials }}</span>
+                </v-avatar>
+              </v-btn>
+            </template>
+
+            <v-card class="account-menu" min-width="240">
+              <div class="account-menu__identity pa-4">
+                <v-avatar color="secondary" size="40">
+                  <span>{{ accountInitials }}</span>
+                </v-avatar>
+                <div class="min-width-0">
+                  <strong class="d-block text-truncate">{{ accountName }}</strong>
+                  <span v-if="accountEmail" class="d-block text-caption muted text-truncate">{{ accountEmail }}</span>
+                </div>
+              </div>
+              <v-divider />
+              <v-list density="compact" class="pa-2">
+                <v-list-item
+                  title="Sign out"
+                  prepend-icon="mdi-logout"
+                  rounded="lg"
+                  @click="logoutDialog = true"
+                />
+              </v-list>
+            </v-card>
+          </v-menu>
+        </div>
+      </header>
+    </transition>
 
     <v-main
       ref="appScroll"
@@ -179,23 +185,25 @@ function beginPageScrollReset() {
       </div>
     </v-main>
 
-    <nav
-      v-if="!mdAndUp && !immersive"
-      class="bottom-nav"
-      aria-label="Primary navigation"
-    >
-      <router-link
-        v-for="item in items"
-        :key="item.to"
-        :to="item.to"
-        class="bottom-nav__link"
-        :class="{ 'bottom-nav__link--active': current === item.to }"
-        :aria-current="current === item.to ? 'page' : undefined"
+    <transition name="app-chrome">
+      <nav
+        v-if="!mdAndUp && !immersive"
+        class="bottom-nav"
+        aria-label="Primary navigation"
       >
-        <v-icon :icon="item.icon" size="24" />
-        <span>{{ item.title }}</span>
-      </router-link>
-    </nav>
+        <router-link
+          v-for="item in items"
+          :key="item.to"
+          :to="item.to"
+          class="bottom-nav__link"
+          :class="{ 'bottom-nav__link--active': current === item.to }"
+          :aria-current="current === item.to ? 'page' : undefined"
+        >
+          <v-icon :icon="item.icon" size="24" />
+          <span>{{ item.title }}</span>
+        </router-link>
+      </nav>
+    </transition>
 
     <ConfirmDialog
       v-model="logoutDialog"
@@ -232,12 +240,51 @@ function beginPageScrollReset() {
   grid-template-columns: 0 minmax(0, 1fr) 44px;
   align-items: center;
   gap: 0;
+  transition:
+    grid-template-columns 220ms ease,
+    gap 220ms ease;
 }
 
 .app-bar__leading {
   display: grid;
   width: 0;
+  overflow: hidden;
   place-items: center;
+  transition: width 220ms ease;
+}
+
+.app-bar__back-control {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
+  overflow: hidden;
+  place-items: center;
+}
+
+.app-bar-button-enter-active,
+.app-bar-button-leave-active {
+  transition:
+    width 220ms ease,
+    opacity 160ms ease,
+    transform 220ms ease;
+}
+
+.app-bar-button-enter-from,
+.app-bar-button-leave-to {
+  width: 0;
+  opacity: 0;
+  transform: translateX(-.5rem);
+}
+
+.app-chrome-enter-active,
+.app-chrome-leave-active {
+  transition: opacity 200ms ease;
+}
+
+.app-chrome-enter-from,
+.app-chrome-leave-to {
+  opacity: 0;
 }
 
 .app-bar__title {
@@ -266,7 +313,7 @@ function beginPageScrollReset() {
 
 .app-bar--back .app-bar__inner {
   grid-template-columns: 44px minmax(0, 1fr) 44px;
-  gap: .35rem;
+  gap: 1rem;
 }
 
 .app-bar--back .app-bar__leading {
@@ -285,6 +332,10 @@ function beginPageScrollReset() {
 
 .app-bar--ios .app-bar__title {
   text-align: center;
+}
+
+.app-bar--ios.app-bar--back .app-bar__inner {
+  gap: 1rem;
 }
 
 .account-menu {
@@ -354,6 +405,9 @@ function beginPageScrollReset() {
 
 .app-scroll {
   overflow-x: hidden;
+  transition:
+    padding-top 240ms ease,
+    padding-bottom 240ms ease;
 }
 
 .app-scroll--with-nav {

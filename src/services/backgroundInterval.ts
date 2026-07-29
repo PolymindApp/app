@@ -16,7 +16,6 @@ interface BackgroundIntervalPlugin {
     remainingMs: number
     soundEnabled: boolean
     vibrationEnabled: boolean
-    sound: string
   }): Promise<void>
   stop(): Promise<void>
 }
@@ -52,7 +51,6 @@ export async function syncBackgroundInterval(session: IntervalSession) {
     remainingMs: Math.max(1, Math.round(session.runtime.remainingMs)),
     soundEnabled: session.cues.soundEnabled,
     vibrationEnabled: session.cues.vibrationEnabled,
-    sound: session.cues.sound,
   })
 }
 

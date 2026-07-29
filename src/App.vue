@@ -25,7 +25,7 @@ const transitionName = computed(() => enteringApp.value ? 'session-forward' : 's
   <transition name="session-loader">
     <div v-if="transitioning" class="session-loading" role="status" aria-live="polite">
       <v-progress-circular indeterminate color="secondary" size="30" width="3" />
-      <span>{{ enteringApp ? 'Entering REP…' : 'Signing out…' }}</span>
+      <span>{{ enteringApp ? 'Opening Mom…' : 'Signing out…' }}</span>
     </div>
   </transition>
 </template>

@@ -121,7 +121,7 @@ fi
 adb -s "$device_serial" reverse "tcp:$vite_port" "tcp:$vite_port"
 adb -s "$device_serial" reverse "tcp:$pocketbase_port" "tcp:$pocketbase_port"
 
-echo "Launching REP with live reload. Press Ctrl+C to stop."
+echo "Launching Mom with live reload. Press Ctrl+C to stop."
 set +e
 pnpm exec cap run android \
   --target "$device_serial" \

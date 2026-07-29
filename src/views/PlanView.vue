@@ -14,7 +14,6 @@ const route = useRoute()
 const router = useRouter()
 const { tasks, steps, loading } = storeToRefs(store)
 const filter = ref<'active' | 'paused'>('active')
-const selectedArea = ref<string>()
 const pendingStatusTask = ref<Task>()
 const statusDialog = ref(false)
 const updatingStatus = ref(false)
@@ -34,8 +33,7 @@ watch(filter, (status, previousStatus) => {
 })
 
 const visibleTasks = computed(() => tasks.value.filter((task) =>
-  task.active === (filter.value === 'active') &&
-  (!selectedArea.value || task.area === selectedArea.value),
+  task.active === (filter.value === 'active'),
 ))
 
 const typeInfo: Record<TaskType, { label: string; icon: string; color: string }> = {
@@ -58,10 +56,6 @@ function scheduleLabel(task: Task) {
 function nextLabel(task: Task) {
   const next = nextScheduledDates(task, 1)[0]
   return next ? format(next, 'EEE, MMM d') : 'No upcoming dates'
-}
-
-function toggleArea(areaId: string) {
-  selectedArea.value = selectedArea.value === areaId ? undefined : areaId
 }
 
 function requestStatusChange(task: Task) {
@@ -93,7 +87,7 @@ async function confirmStatusChange() {
         icon="mdi-plus"
         color="secondary"
         :aria-label="planTab === 'tasks' ? 'Create duration routine' : 'Create interval template'"
-        @click="planTab === 'tasks' ? router.push({ path: '/tasks/new', query: { type: 'duration' } }) : router.push('/plan/intervals/new')"
+        @click="planTab === 'tasks' ? router.push('/tasks/new') : router.push('/plan/intervals/new')"
       />
     </div>
 
@@ -101,22 +95,6 @@ async function confirmStatusChange() {
       <transition :name="`plan-slide-${tabDirection}`">
         <div :key="planTab" class="plan-tab-content">
     <template v-if="planTab === 'tasks'">
-    <div class="area-row mb-6">
-      <button
-        v-for="area in store.areas"
-        :key="area.id"
-        type="button"
-        class="area-tile pa-3 surface-card"
-        :class="{ 'area-tile--active': selectedArea === area.id }"
-        :aria-pressed="selectedArea === area.id"
-        @click="toggleArea(area.id)"
-      >
-        <div class="area-icon" :style="{ background: area.color }"><v-icon :icon="area.icon" size="20" /></div>
-        <strong>{{ area.name }}</strong>
-        <span>{{ tasks.filter(task => task.area === area.id).length }} tasks</span>
-      </button>
-    </div>
-
     <div class="d-flex align-center justify-space-between mb-4">
       <v-btn-toggle v-model="filter" mandatory color="primary" divided density="comfortable" class="plan-status-toggle">
         <v-btn value="active">Active</v-btn>
@@ -165,9 +143,8 @@ async function confirmStatusChange() {
           />
         </div>
         <v-divider class="my-3" />
-        <div class="d-flex align-center justify-space-between text-caption">
+        <div class="text-caption">
           <span class="muted"><v-icon icon="mdi-calendar-blank-outline" size="15" class="mr-1" />Next: {{ nextLabel(task) }}</span>
-          <span v-if="task.areaName" class="area-pill" :style="{ '--area-color': task.areaColor }">{{ task.areaName }}</span>
         </div>
       </v-card>
     </div>
@@ -175,16 +152,15 @@ async function confirmStatusChange() {
     <v-card v-else-if="!loading" class="surface-card pa-8 text-center">
       <v-icon :icon="filter === 'active' ? 'mdi-clipboard-plus-outline' : 'mdi-pause-circle-outline'" size="42" class="mb-3" />
       <h2 class="text-h6 font-weight-black">
-        {{ selectedArea ? 'No routines in this area' : filter === 'active' ? 'Build your first routine' : 'Nothing paused' }}
+        {{ filter === 'active' ? 'Build your first routine' : 'Nothing paused' }}
       </h2>
       <p class="text-body-2 muted mt-2 mb-5">
-        {{ selectedArea ? 'Clear the area filter to see the rest of your plan.' : filter === 'active' ? 'Choose a task style and make it yours.' : 'Paused tasks will wait here without losing history.' }}
+        {{ filter === 'active' ? 'Choose a task style and make it yours.' : 'Paused tasks will wait here without losing history.' }}
       </p>
-      <v-btn v-if="selectedArea" color="secondary" variant="tonal" @click="selectedArea = undefined">Clear filter</v-btn>
       <v-btn
-        v-else-if="filter === 'active'"
+        v-if="filter === 'active'"
         color="secondary"
-        @click="router.push({ path: '/tasks/new', query: { type: 'duration' } })"
+        @click="router.push('/tasks/new')"
       >
         Create task
       </v-btn>
@@ -250,30 +226,14 @@ async function confirmStatusChange() {
   transform: translateX(1rem);
 }
 .plan-status-toggle { gap: 1rem; }
-.area-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .65rem; padding: 2px; }
-.area-tile { display: flex; min-width: 0; width: 100%; flex-direction: column; border-radius: 24px; background: rgb(var(--v-theme-surface)); color: rgb(var(--v-theme-on-surface)); font: inherit; text-align: left; cursor: pointer; }
-.area-tile--active { border-color: #c7f464; background: rgb(var(--v-theme-surface-variant)); box-shadow: inset 0 0 0 1px #c7f464, 0 12px 30px rgba(0,0,0,.2) !important; }
-.area-tile:focus-visible { outline: 2px solid #c7f464; outline-offset: 3px; }
-.area-tile strong { margin-top: .55rem; font-size: .78rem; }
-.area-tile span { color: rgb(var(--v-theme-on-surface) / .48); font-size: .65rem; }
-.area-icon, .type-icon { display: grid; width: 39px; height: 39px; flex: 0 0 auto; place-items: center; border-radius: 13px; color: #191c19; }
+.type-icon { display: grid; width: 39px; height: 39px; flex: 0 0 auto; place-items: center; border-radius: 13px; color: #191c19; }
 .plan-list { display: grid; gap: .75rem; }
 .plan-card { cursor: pointer; transition: transform .18s ease, box-shadow .18s ease; }
 .plan-card:hover { transform: translateY(-2px); box-shadow: 0 16px 34px rgba(0,0,0,.32) !important; }
 .step-preview { display: flex; gap: .35rem; overflow: hidden; }
 .step-preview span { padding: 4px 8px; border-radius: 999px; background: rgb(var(--v-theme-surface-variant)); font-size: .62rem; white-space: nowrap; }
 .target-copy { color: rgb(var(--v-theme-on-surface) / .6); font-size: .73rem; }
-.area-pill {
-  padding: 3px 9px 3px 11px;
-  border: 1px solid transparent;
-  border-radius: 999px;
-  background: var(--area-color, #c7f464);
-  color: #17200f;
-  font-weight: 750;
-}
 @media (min-width: 700px) {
-  .area-row { grid-template-columns: repeat(3, minmax(115px, 1fr)); }
-  .area-tile { min-width: 115px; }
   .plan-list { grid-template-columns: repeat(2, minmax(0,1fr)); }
 }
 </style>

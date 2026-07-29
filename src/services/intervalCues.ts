@@ -1,10 +1,25 @@
 import type { IntervalCueSettings } from '@/types/domain'
 
 let audioContext: AudioContext | undefined
+const cueUrls = {
+  count: '/sounds/count.mp3',
+  go: '/sounds/go.mp3',
+} as const
+const cueBuffers: Partial<Record<keyof typeof cueUrls, AudioBuffer>> = {}
 
-async function prepareIntervalAudio() {
+async function loadCue(name: keyof typeof cueUrls) {
   audioContext ||= new AudioContext()
   if (audioContext.state === 'suspended') await audioContext.resume()
+  if (cueBuffers[name]) return cueBuffers[name]
+  const response = await fetch(cueUrls[name])
+  if (!response.ok) throw new Error(`Could not load ${name} interval cue.`)
+  const buffer = await audioContext.decodeAudioData(await response.arrayBuffer())
+  cueBuffers[name] = buffer
+  return buffer
+}
+
+async function prepareIntervalAudio() {
+  await Promise.all([loadCue('count'), loadCue('go')])
 }
 
 export async function prepareIntervalCues(cues: IntervalCueSettings) {
@@ -22,44 +37,37 @@ export async function prepareIntervalCues(cues: IntervalCueSettings) {
   }
 }
 
-export function playIntervalCue(cues: IntervalCueSettings) {
-  try {
-    if (cues.soundEnabled) {
-      audioContext ||= new AudioContext()
-      const oscillator = audioContext.createOscillator()
-      const gain = audioContext.createGain()
-      const frequencies = { beep: 880, bell: 660, soft: 440 }
-      oscillator.frequency.value = frequencies[cues.sound]
-      oscillator.type = cues.sound === 'soft' ? 'sine' : 'triangle'
-      gain.gain.setValueAtTime(.0001, audioContext.currentTime)
-      gain.gain.exponentialRampToValueAtTime(.22, audioContext.currentTime + .02)
-      gain.gain.exponentialRampToValueAtTime(.0001, audioContext.currentTime + (cues.sound === 'bell' ? .8 : .32))
-      oscillator.connect(gain).connect(audioContext.destination)
-      oscillator.start()
-      oscillator.stop(audioContext.currentTime + (cues.sound === 'bell' ? .85 : .36))
-    }
-  } catch {
-    // Continue silently if audio is unavailable.
-  }
-  if (cues.vibrationEnabled && 'vibrate' in navigator) navigator.vibrate([120, 60, 120])
+function playCue(name: keyof typeof cueUrls, cues: IntervalCueSettings) {
+  if (!cues.soundEnabled) return
+  void loadCue(name)
+    .then((buffer) => {
+      if (!audioContext) return
+      const source = audioContext.createBufferSource()
+      source.buffer = buffer
+      source.connect(audioContext.destination)
+      source.start()
+    })
+    .catch(() => {
+      // Continue silently if audio is unavailable.
+    })
 }
 
-export async function previewIntervalCue(cues: IntervalCueSettings) {
-  try {
-    await prepareIntervalAudio()
-    playIntervalCue({ ...cues, soundEnabled: true, vibrationEnabled: false })
-  } catch {
-    // Sound previews remain best-effort when audio is unavailable.
-  }
+export function playIntervalCountCue(cues: IntervalCueSettings) {
+  playCue('count', cues)
+}
+
+export function playIntervalGoCue(cues: IntervalCueSettings) {
+  playCue('go', cues)
+  if (cues.vibrationEnabled && 'vibrate' in navigator) navigator.vibrate([120, 60, 120])
 }
 
 export async function notifyIntervalTransition(title: string, body: string) {
   if (!('Notification' in window) || Notification.permission !== 'granted' || document.visibilityState === 'visible') return
   const options = {
     body,
-    icon: '/brand/rep-mark.png',
-    badge: '/brand/rep-mark.png',
-    tag: 'rep-interval',
+    icon: '/brand/mom-mark.png',
+    badge: '/brand/mom-mark.png',
+    tag: 'mom-interval',
     renotify: true,
   }
   const registration = await navigator.serviceWorker?.getRegistration()

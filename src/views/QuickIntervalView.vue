@@ -1,35 +1,40 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import DurationInput from '@/components/DurationInput.vue'
-import { prepareIntervalCues, previewIntervalCue } from '@/services/intervalCues'
+import TimerWheelPicker from '@/components/TimerWheelPicker.vue'
+import { prepareIntervalCues } from '@/services/intervalCues'
 import { formatIntervalDuration, intervalDuration, quickIntervalDefinition } from '@/services/intervals'
 import { useIntervalStore } from '@/stores/intervals'
-import type { IntervalCueSound, QuickIntervalDraft } from '@/types/domain'
+import type { QuickIntervalDraft } from '@/types/domain'
 
 const router = useRouter()
 const store = useIntervalStore()
 const starting = ref(false)
 const error = ref('')
+const includeRest = ref(false)
 const draft = reactive<QuickIntervalDraft>({
   warmupSeconds: 0,
   workSeconds: 30,
   restSeconds: 15,
-  rounds: 5,
+  rounds: 1,
   cooldownSeconds: 0,
   restAfterLastRound: false,
   cues: store.getQuickCues(),
 })
-const definition = computed(() => quickIntervalDefinition(draft))
+const definition = computed(() => quickIntervalDefinition({
+  ...draft,
+  restSeconds: includeRest.value ? draft.restSeconds : 0,
+  restAfterLastRound: includeRest.value,
+}))
 const totalDuration = computed(() => intervalDuration(definition.value))
-
-function previewSound(sound: unknown = draft.cues.sound) {
-  return previewIntervalCue({ ...draft.cues, sound: sound as IntervalCueSound })
-}
 
 async function start() {
   if (draft.workSeconds <= 0 || !Number.isInteger(draft.rounds) || draft.rounds <= 0) {
     error.value = 'Add a positive work duration and at least one round.'
+    return
+  }
+  if (includeRest.value && draft.restSeconds <= 0) {
+    error.value = 'Add a positive rest duration or turn off the rest period.'
     return
   }
   starting.value = true
@@ -55,59 +60,64 @@ async function start() {
 
 <template>
   <main class="app-page quick-page">
-    <v-alert v-if="error" type="error" variant="tonal" class="mb-4">{{ error }}</v-alert>
+    <v-alert v-if="error" type="error" variant="tonal">{{ error }}</v-alert>
 
-    <v-card class="surface-card pa-5 mb-4">
+    <v-card class="surface-card pa-5">
       <div class="quick-fields">
-        <DurationInput v-model="draft.warmupSeconds" label="Warm-up (optional)" />
-        <DurationInput v-model="draft.workSeconds" label="Work" />
-        <DurationInput v-model="draft.restSeconds" label="Rest" />
-        <v-text-field v-model.number="draft.rounds" label="Rounds" type="number" min="1" />
-        <DurationInput v-model="draft.cooldownSeconds" label="Cooldown (optional)" />
-      </div>
-      <div class="setting-row mt-4">
-        <div><strong>Rest after final round</strong><p>Include the final rest before cooldown</p></div>
-        <v-switch v-model="draft.restAfterLastRound" color="secondary" hide-details inset />
+        <header class="quick-intro">
+          <h1>Set your timing</h1>
+          <p>Build a one-time timer with focused work, optional rest, and repeatable rounds.</p>
+        </header>
+        <fieldset class="duration-wheel">
+          <legend>Work</legend>
+          <TimerWheelPicker v-model="draft.workSeconds" />
+        </fieldset>
+        <div class="rest-control">
+          <v-checkbox
+            v-model="includeRest"
+            label="Include rest period"
+            color="secondary"
+            density="comfortable"
+            hide-details
+          />
+          <v-expand-transition>
+            <div v-show="includeRest" class="rest-control__expand">
+              <div class="rest-control__content">
+                <fieldset class="duration-wheel">
+                  <legend>Rest</legend>
+                  <TimerWheelPicker v-model="draft.restSeconds" :active="includeRest" />
+                </fieldset>
+              </div>
+            </div>
+          </v-expand-transition>
+        </div>
+        <div class="rounds-control">
+          <div class="rounds-control__heading">
+            <span>Rounds</span>
+            <strong>{{ draft.rounds }}</strong>
+          </div>
+          <v-slider
+            v-model="draft.rounds"
+            :min="1"
+            :max="15"
+            :step="1"
+            color="secondary"
+            hide-details
+            aria-label="Rounds"
+          />
+          <div class="rounds-control__range" aria-hidden="true">
+            <span>1</span>
+            <span>15</span>
+          </div>
+        </div>
       </div>
     </v-card>
 
-    <v-card class="surface-card pa-5 mb-4">
+    <v-card class="surface-card pa-5">
       <div class="setting-row">
-        <div><strong>Sound cues</strong><p>Signal each transition</p></div>
+        <div><strong>Sound cues</strong><p>Count down the final three seconds and signal each interval</p></div>
         <v-switch v-model="draft.cues.soundEnabled" color="secondary" hide-details inset />
       </div>
-      <v-select
-        v-if="draft.cues.soundEnabled"
-        v-model="draft.cues.sound"
-        label="Cue sound"
-        :items="[{ title: 'Beep', value: 'beep' }, { title: 'Bell', value: 'bell' }, { title: 'Soft', value: 'soft' }]"
-        class="mt-4"
-      >
-        <template #append-inner>
-          <v-btn
-            icon="mdi-play"
-            variant="text"
-            size="small"
-            aria-label="Preview cue sound"
-            @mousedown.stop
-            @click.stop="previewSound()"
-          />
-        </template>
-        <template #item="{ props, item }">
-          <v-list-item v-bind="props">
-            <template #append>
-              <v-btn
-                icon="mdi-play"
-                variant="text"
-                size="small"
-                :aria-label="`Preview ${item.title} sound`"
-                @mousedown.stop
-                @click.stop="previewSound(item.value)"
-              />
-            </template>
-          </v-list-item>
-        </template>
-      </v-select>
       <v-divider class="my-3" />
       <div class="setting-row">
         <div><strong>Vibration</strong><p>Use supported device haptics</p></div>
@@ -123,8 +133,20 @@ async function start() {
 </template>
 
 <style scoped>
+.quick-page { display: grid; gap: 1rem; }
+.quick-intro { display: grid; gap: .35rem; }
+.quick-intro h1 { font-size: 1.4rem; font-weight: 900; letter-spacing: -.025em; line-height: 1.2; }
+.quick-intro p { max-width: 38rem; color: rgb(var(--v-theme-on-background) / .58); font-size: .82rem; line-height: 1.5; }
 .quick-fields { display: grid; gap: 1rem; }
-.setting-row { display: flex; min-height: 64px; align-items: center; justify-content: space-between; gap: 1rem; }
+.duration-wheel { min-width: 0; margin: 0; padding: 0; border: 0; }
+.duration-wheel > legend { margin-bottom: .5rem; color: rgb(var(--v-theme-on-surface) / .68); font-size: .75rem; font-weight: 800; }
+.rest-control__expand { overflow: hidden; }
+.rest-control__content { padding-top: 1rem; }
+.rounds-control__heading { display: flex; margin-bottom: .25rem; align-items: center; justify-content: space-between; gap: 1rem; color: rgb(var(--v-theme-on-surface) / .68); font-size: .75rem; font-weight: 800; }
+.rounds-control__heading strong { display: grid; min-width: 2rem; height: 2rem; padding: 0 .5rem; place-items: center; border-radius: 10px; background: rgb(var(--v-theme-secondary)); color: rgb(var(--v-theme-on-secondary)); font-size: .8rem; }
+.rounds-control__range { display: flex; margin-top: -.2rem; padding: 0 .5rem; justify-content: space-between; color: rgb(var(--v-theme-on-surface) / .5); font-size: .7rem; font-weight: 700; }
+.setting-row { display: grid; min-height: 64px; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 1rem; }
+.setting-row > div { min-width: 0; }
 .setting-row p { margin-top: .15rem; color: rgb(var(--v-theme-on-surface) / .5); font-size: .7rem; }
 .quick-summary { display: flex; align-items: center; justify-content: space-between; gap: 1rem; color: rgb(var(--v-theme-on-secondary)); }
 .quick-summary div { display: flex; flex-direction: column; }
@@ -146,4 +168,5 @@ async function start() {
     box-shadow: 0 -12px 30px rgba(0, 0, 0, .28) !important;
   }
 }
+
 </style>

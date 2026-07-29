@@ -4,13 +4,6 @@ export type GoalPeriod = 'occurrence' | 'week'
 export type TargetOperator = 'gte' | 'lte' | 'eq'
 export type OccurrenceStatus = 'pending' | 'completed' | 'missed' | 'carried' | 'rescheduled'
 
-export interface Area {
-  id: string
-  name: string
-  color: string
-  icon: string
-}
-
 export interface Tag {
   id: string
   name: string
@@ -21,9 +14,6 @@ export interface Task {
   name: string
   description: string
   type: TaskType
-  area?: string
-  areaName?: string
-  areaColor?: string
   color?: string
   mandatory: boolean
   reviewWhenMissed: boolean
@@ -67,6 +57,7 @@ export interface Occurrence {
   programStep?: string
   scheduledDate: string
   status: OccurrenceStatus
+  sealed: boolean
   completedAt?: string
   snapshotName: string
   snapshotTarget?: number
@@ -91,6 +82,7 @@ export interface TaskProgress {
   value: number
   percent: number
   complete: boolean
+  sealed?: boolean
   status: OccurrenceStatus
   programStep?: ProgramStep
   locked?: boolean
@@ -100,20 +92,19 @@ export interface ProgramStepDraft extends Omit<ProgramStep, 'id' | 'task'> {
   id?: string
 }
 
-export interface TaskDraft extends Omit<Task, 'id' | 'areaName' | 'areaColor'> {
+export interface TaskDraft extends Omit<Task, 'id'> {
   id?: string
   steps: ProgramStepDraft[]
 }
 
 export type IntervalStepKind = 'work' | 'rest' | 'prepare' | 'meditation' | 'custom'
-export type IntervalCueSound = 'beep' | 'bell' | 'soft'
 export type IntervalSessionStatus = 'running' | 'paused' | 'completed' | 'ended'
 
 export interface IntervalStepNode {
   id: string
   type: 'step'
   name: string
-  kind: IntervalStepKind
+  kind: IntervalStepKind | ''
   durationSeconds: number
   color?: string
 }
@@ -136,7 +127,6 @@ export interface IntervalDefinition {
 export interface IntervalCueSettings {
   soundEnabled: boolean
   vibrationEnabled: boolean
-  sound: IntervalCueSound
 }
 
 export interface IntervalTemplate {

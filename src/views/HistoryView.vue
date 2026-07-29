@@ -115,7 +115,7 @@ function valueColor(item: TaskProgress) {
           </span>
           <div class="flex-grow-1 min-width-0">
             <strong class="text-body-2">{{ item.programStep?.name || item.task.name }}</strong>
-            <p class="text-caption muted">{{ item.programStep ? item.task.name : item.task.areaName || 'Personal' }}</p>
+            <p class="text-caption muted">{{ item.programStep ? item.task.name : item.task.description || 'Personal' }}</p>
           </div>
           <span v-if="item.value" class="history-value" :class="valueColor(item)">{{ Number(item.value.toFixed(2)) }} {{ item.programStep?.customUnit || item.programStep?.unit || item.task.customUnit || item.task.unit }}</span>
           <span v-else class="text-caption muted text-capitalize">{{ item.status }}</span>

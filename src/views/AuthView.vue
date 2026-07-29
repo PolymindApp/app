@@ -51,11 +51,11 @@ async function submit() {
       <v-container class="auth-wrap px-5 py-8">
         <section class="auth-intro">
           <div class="logo-box">
-            <img src="/brand/rep-mark.png" alt="REP" />
+            <img src="/brand/mom-wordmark.png" alt="Mom" />
           </div>
-          <h1 class="display-title auth-title mt-3">EVERY REP<br />COUNTS<span class="text-secondary">.</span></h1>
+          <h1 class="display-title auth-title mt-3">MAKE IT<br />YOURS<span class="text-secondary">.</span></h1>
           <p class="auth-copy mt-5">
-            Plan the work. Log the effort. Build a routine that survives real life.
+            Management of Me keeps tasks, plans, habits, workouts, and timed sessions together—one flexible system for real life.
           </p>
         </section>
 
@@ -75,12 +75,12 @@ async function submit() {
               :color="mode === 'register' ? 'secondary' : undefined"
               @click="mode = 'register'"
             >
-              Join REP
+              Join Mom
             </v-btn>
           </div>
 
           <h2 class="text-h5 font-weight-black mb-1">
-            {{ mode === 'login' ? 'Welcome back' : 'Start your program' }}
+            {{ mode === 'login' ? 'Welcome back' : 'Create your space' }}
           </h2>
           <p class="text-body-2 muted mb-6">
             {{ mode === 'login' ? 'Pick up where you left off.' : 'Create a private, synced workspace.' }}
@@ -133,7 +133,7 @@ async function submit() {
               :loading="auth.loading"
               append-icon="mdi-arrow-right"
             >
-              {{ mode === 'login' ? 'Enter your plan' : 'Create account' }}
+              {{ mode === 'login' ? 'Open your day' : 'Create account' }}
             </v-btn>
           </v-form>
         </v-card>
@@ -181,15 +181,17 @@ async function submit() {
 
 .logo-box {
   display: grid;
-  width: 56px;
+  width: 168px;
   height: 56px;
-  place-items: center;
+  align-items: center;
+  justify-items: start;
 }
 
 .logo-box img {
-  width: 56px;
+  width: 168px;
   height: 56px;
   object-fit: contain;
+  object-position: left center;
 }
 
 .auth-title {

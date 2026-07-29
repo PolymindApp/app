@@ -12,7 +12,7 @@ export const useAuthStore = defineStore('auth', () => {
   })
 
   const isAuthenticated = computed(() => pb.authStore.isValid)
-  const firstName = computed(() => user.value?.name?.split(' ')[0] || 'Athlete')
+  const firstName = computed(() => user.value?.name?.split(' ')[0] || 'You')
 
   async function login(email: string, password: string) {
     loading.value = true

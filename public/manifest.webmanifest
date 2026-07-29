@@ -1,14 +1,14 @@
 {
-  "name": "REP — Daily Tasks & Intervals",
-  "short_name": "REP",
-  "description": "Plan routines, track daily work, and run programmable interval sessions.",
+  "name": "Mom — Management of Me",
+  "short_name": "Mom",
+  "description": "Manage tasks, plans, habits, workouts, and timed sessions in one flexible personal system.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#101310",
   "theme_color": "#101310",
   "icons": [
     {
-      "src": "/brand/rep-mark.png",
+      "src": "/brand/mom-app-icon.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"

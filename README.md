@@ -1,6 +1,6 @@
-# REP — Daily Tasks
+# Mom — Management of Me
 
-A mobile-first routine, daily-task, and programmable interval tracker built with Vue 3, Vuetify, TypeScript, and PocketBase. Interval templates support nested repeat groups, one-time Quick sessions, recovery, and an installable PWA runner.
+A mobile-first personal management app for tasks, plans, habits, workouts, and programmable intervals, built with Vue 3, Vuetify, TypeScript, and PocketBase. Interval templates support nested repeat groups, one-time Quick sessions, recovery, and an installable PWA runner.
 
 ## Requirements
 
@@ -42,7 +42,7 @@ Set `VITE_POCKETBASE_URL` to use a PocketBase server other than `http://127.0.0.
 
 ## Android
 
-The Capacitor project uses the app name `REP`, application ID `com.yolarx.rep`, and the Vite `dist/` directory. Change the application ID in `capacitor.config.ts` before publishing if another reverse-domain identifier is required.
+The Capacitor project uses the app name `Mom`, application ID `com.coulombe.mom`, and the Vite `dist/` directory.
 
 Build an installable debug APK:
 
@@ -68,7 +68,7 @@ Connect one phone with USB debugging enabled, then run:
 pnpm android:dev
 ```
 
-The command waits for USB authorization, starts PocketBase and Vite when needed, forwards ports `5173` and `8090` over USB, installs REP, and stays attached for hot updates. Press `Ctrl+C` to stop it and clean up processes and port forwarding.
+The command waits for USB authorization, starts PocketBase and Vite when needed, forwards ports `5173` and `8090` over USB, installs Mom, and stays attached for hot updates. Press `Ctrl+C` to stop it and clean up processes and port forwarding.
 
 If more than one device is connected, select one explicitly:
 

@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import IntervalNodeEditor from '@/components/IntervalNodeEditor.vue'
-import { previewIntervalCue } from '@/services/intervalCues'
 import {
   createIntervalGroup,
   createIntervalId,
@@ -14,7 +13,7 @@ import {
   validateIntervalDefinition,
 } from '@/services/intervals'
 import { useIntervalStore } from '@/stores/intervals'
-import type { IntervalCueSound, IntervalGroupNode, IntervalNode, IntervalTemplateDraft } from '@/types/domain'
+import type { IntervalGroupNode, IntervalNode, IntervalTemplateDraft } from '@/types/domain'
 
 const route = useRoute()
 const router = useRouter()
@@ -23,31 +22,22 @@ const form = ref()
 const saving = ref(false)
 const deleting = ref(false)
 const deleteDialog = ref(false)
+const pendingNodeDelete = ref<{ id: string; name: string; type: IntervalNode['type'] }>()
 const error = ref('')
 const isEditing = computed(() => Boolean(route.params.id))
-
-const starterGroup = createIntervalGroup('Rounds', 4)
-starterGroup.children = [
-  createIntervalStep('Work', 'work', 30),
-  createIntervalStep('Rest', 'rest', 15),
-]
 
 const draft = reactive<IntervalTemplateDraft>({
   name: '',
   description: '',
   color: '#C7F464',
-  definition: { version: 1, children: [starterGroup] },
-  cues: { soundEnabled: true, vibrationEnabled: true, sound: 'beep' },
+  definition: { version: 1, children: [] },
+  cues: { soundEnabled: true, vibrationEnabled: true },
   sortOrder: 0,
 })
 
 const colors = ['#C7F464', '#8FB8FF', '#FFB86B', '#D4A5FF', '#79C174', '#FF776B']
 const totalDuration = computed(() => intervalDuration(draft.definition))
 const totalSteps = computed(() => intervalStepCount(draft.definition))
-
-function previewSound(sound: unknown = draft.cues.sound) {
-  return previewIntervalCue({ ...draft.cues, sound: sound as IntervalCueSound })
-}
 
 interface NodeLocation {
   nodes: IntervalNode[]
@@ -79,12 +69,33 @@ function cloneNode(node: IntervalNode): IntervalNode {
   }
 }
 
+function createNode(type: 'step' | 'group') {
+  return type === 'step'
+    ? createIntervalStep()
+    : createIntervalGroup('')
+}
+
+async function scrollToNode(nodeId: string) {
+  await nextTick()
+  const node = Array.from(document.querySelectorAll<HTMLElement>('[data-interval-node-id]'))
+    .find((element) => element.dataset.intervalNodeId === nodeId)
+  node?.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' })
+}
+
+function addRootNode(type: 'step' | 'group') {
+  const node = createNode(type)
+  draft.definition.children.push(node)
+  void scrollToNode(node.id)
+}
+
 const actions = {
   add(parentId: string, type: 'step' | 'group') {
     const location = findNode(draft.definition.children, parentId)
     const parent = location?.nodes[location.index]
     if (!parent || parent.type !== 'group') return
-    parent.children.push(type === 'step' ? createIntervalStep('', 'work', 30) : createIntervalGroup('', 2))
+    const node = createNode(type)
+    parent.children.push(node)
+    void scrollToNode(node.id)
   },
   move(id: string, direction: -1 | 1) {
     const location = findNode(draft.definition.children, id)
@@ -115,8 +126,21 @@ const actions = {
   },
   remove(id: string) {
     const location = findNode(draft.definition.children, id)
-    if (location) location.nodes.splice(location.index, 1)
+    const node = location?.nodes[location.index]
+    if (!node) return
+    pendingNodeDelete.value = {
+      id,
+      name: node.name || (node.type === 'group' ? 'Untitled group' : 'Untitled interval'),
+      type: node.type,
+    }
   },
+}
+
+function confirmNodeDelete() {
+  if (!pendingNodeDelete.value) return
+  const location = findNode(draft.definition.children, pendingNodeDelete.value.id)
+  if (location) location.nodes.splice(location.index, 1)
+  pendingNodeDelete.value = undefined
 }
 
 onMounted(async () => {
@@ -173,7 +197,8 @@ async function removeTemplate() {
     <v-alert v-if="error" type="error" variant="tonal" class="mb-4">{{ error }}</v-alert>
 
     <v-form ref="form" validate-on="lazy" @submit.prevent="save">
-      <v-card class="surface-card pa-5 mb-4">
+      <div class="interval-form-cards">
+      <v-card class="surface-card pa-5">
         <div class="field-stack">
           <v-text-field v-model="draft.name" label="Template name" :rules="[value => Boolean(value) || 'Name is required']" />
           <v-textarea v-model="draft.description" label="Description (optional)" rows="2" auto-grow />
@@ -192,79 +217,67 @@ async function removeTemplate() {
           >
             <v-icon v-if="draft.color === color" icon="mdi-check-bold" size="16" />
           </button>
+          <label class="custom-color" aria-label="Choose a custom interval template color">
+            <input v-model="draft.color" type="color" />
+            <v-icon icon="mdi-eyedropper-variant" size="18" />
+          </label>
         </div>
       </v-card>
 
-      <v-card class="surface-card pa-5 mb-4">
+      <v-card class="surface-card pa-5">
         <div class="summary-grid">
           <div><span>Duration</span><strong>{{ formatIntervalDuration(totalDuration) }}</strong></div>
           <div><span>Intervals</span><strong>{{ totalSteps }}</strong></div>
         </div>
       </v-card>
 
-      <v-card class="surface-card pa-5 mb-4">
+      <v-card class="surface-card pa-5">
         <div class="setting-row">
-          <div><strong>Sound cues</strong><p>Play a cue when intervals change</p></div>
+          <div><strong>Sound cues</strong><p>Count down the final three seconds and signal each interval</p></div>
           <v-switch v-model="draft.cues.soundEnabled" color="secondary" hide-details inset />
         </div>
-        <v-select
-          v-if="draft.cues.soundEnabled"
-          v-model="draft.cues.sound"
-          label="Cue sound"
-          :items="[{ title: 'Beep', value: 'beep' }, { title: 'Bell', value: 'bell' }, { title: 'Soft', value: 'soft' }]"
-          class="mt-4"
-        >
-          <template #append-inner>
-            <v-btn
-              icon="mdi-play"
-              variant="text"
-              size="small"
-              aria-label="Preview cue sound"
-              @mousedown.stop
-              @click.stop="previewSound()"
-            />
-          </template>
-          <template #item="{ props, item }">
-            <v-list-item v-bind="props">
-              <template #append>
-                <v-btn
-                  icon="mdi-play"
-                  variant="text"
-                  size="small"
-                  :aria-label="`Preview ${item.title} sound`"
-                  @mousedown.stop
-                  @click.stop="previewSound(item.value)"
-                />
-              </template>
-            </v-list-item>
-          </template>
-        </v-select>
         <v-divider class="my-3" />
         <div class="setting-row">
           <div><strong>Vibration</strong><p>Vibrate on supported devices</p></div>
           <v-switch v-model="draft.cues.vibrationEnabled" color="secondary" hide-details inset />
         </div>
       </v-card>
+      </div>
 
       <div class="section-heading">
         <h2>Sequence</h2>
-        <div class="d-flex ga-2">
-          <v-btn size="small" variant="tonal" icon="mdi-timer-plus-outline" aria-label="Add interval" @click="draft.definition.children.push(createIntervalStep('', 'work', 30))" />
-          <v-btn size="small" variant="tonal" icon="mdi-folder-plus-outline" aria-label="Add group" @click="draft.definition.children.push(createIntervalGroup('', 2))" />
+        <div v-if="draft.definition.children.length" class="d-flex ga-2">
+          <v-btn size="small" variant="tonal" icon="mdi-timer-plus-outline" aria-label="Add interval" @click="addRootNode('step')" />
+          <v-btn size="small" variant="tonal" icon="mdi-folder-plus-outline" aria-label="Add group" @click="addRootNode('group')" />
         </div>
       </div>
       <div class="sequence-tree">
-        <IntervalNodeEditor
-          v-for="(node, index) in draft.definition.children"
-          :key="node.id"
-          :node="node"
-          :index="index"
-          :sibling-count="draft.definition.children.length"
-          :depth="0"
-          :can-indent="index > 0 && draft.definition.children[index - 1]?.type === 'group'"
-          :can-outdent="false"
-          :actions="actions"
-        />
+        <div v-if="!draft.definition.children.length" class="sequence-empty">
+          <span class="sequence-empty__icon">
+            <v-icon icon="mdi-timeline-plus-outline" size="28" />
+          </span>
+          <div>
+            <strong>Build your sequence</strong>
+            <p>Add individual intervals or group them into repeatable sets.</p>
+          </div>
+          <div class="sequence-empty__actions">
+            <v-btn variant="tonal" prepend-icon="mdi-timer-plus-outline" @click="addRootNode('step')">Add interval</v-btn>
+            <v-btn variant="tonal" prepend-icon="mdi-folder-plus-outline" @click="addRootNode('group')">Add group</v-btn>
+          </div>
+        </div>
+        <template v-else>
+          <IntervalNodeEditor
+            v-for="(node, index) in draft.definition.children"
+            :key="node.id"
+            :node="node"
+            :index="index"
+            :sibling-count="draft.definition.children.length"
+            :depth="0"
+            :can-indent="index > 0 && draft.definition.children[index - 1]?.type === 'group'"
+            :can-outdent="false"
+            :actions="actions"
+          />
+        </template>
       </div>
     </v-form>
 
@@ -285,6 +298,18 @@ async function removeTemplate() {
     </div>
 
     <ConfirmDialog
+      :model-value="Boolean(pendingNodeDelete)"
+      :title="pendingNodeDelete?.type === 'group' ? 'Delete this group?' : 'Delete this interval?'"
+      :message="pendingNodeDelete?.type === 'group'
+        ? `${pendingNodeDelete?.name || 'This group'} and every interval or group inside it will be removed from the sequence.`
+        : `${pendingNodeDelete?.name || 'This interval'} will be removed from the sequence.`"
+      :confirm-text="pendingNodeDelete?.type === 'group' ? 'Delete group' : 'Delete interval'"
+      icon="mdi-delete-outline"
+      @update:model-value="!$event && (pendingNodeDelete = undefined)"
+      @confirm="confirmNodeDelete"
+    />
+
+    <ConfirmDialog
       v-model="deleteDialog"
       title="Delete this interval?"
       message="The template will be removed, but completed session history will remain."
@@ -298,16 +323,26 @@ async function removeTemplate() {
 
 <style scoped>
 .interval-editor { max-width: 760px; padding-bottom: 6rem; }
+.interval-form-cards { display: grid; gap: 1rem; }
 .field-stack, .sequence-tree { display: grid; gap: 1rem; }
+.sequence-empty { display: grid; justify-items: center; gap: 1rem; padding: 2rem 1.25rem; border: 1px dashed rgb(var(--v-theme-on-surface) / .22); border-radius: 20px; background: rgb(var(--v-theme-surface-variant) / .28); text-align: center; }
+.sequence-empty__icon { display: grid; width: 54px; height: 54px; place-items: center; border-radius: 16px; background: rgb(var(--v-theme-secondary) / .14); color: rgb(var(--v-theme-secondary)); }
+.sequence-empty p { max-width: 28rem; margin-top: .25rem; color: rgb(var(--v-theme-on-surface) / .58); font-size: .75rem; }
+.sequence-empty__actions { display: grid; width: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
+.sequence-empty__actions .v-btn { width: 100%; }
 .field-label { color: rgb(var(--v-theme-on-surface) / .68); font-size: .75rem; font-weight: 750; }
 .color-row { display: flex; flex-wrap: wrap; gap: .55rem; }
-.color-choice { display: grid; width: 38px; height: 38px; place-items: center; border: 2px solid transparent; border-radius: 12px; color: #17200f; cursor: pointer; }
+.color-choice, .custom-color { display: grid; width: 38px; height: 38px; place-items: center; border: 2px solid transparent; border-radius: 12px; color: #17200f; cursor: pointer; }
 .color-choice--selected { border-color: rgb(var(--v-theme-on-surface)); box-shadow: 0 0 0 2px rgb(var(--v-theme-background)); }
+.custom-color { position: relative; overflow: hidden; border-color: rgb(var(--v-theme-on-surface) / .18); background: rgb(var(--v-theme-surface-variant)); color: rgb(var(--v-theme-on-surface)); }
+.custom-color input { position: absolute; inset: -8px; width: 56px; height: 56px; opacity: 0; cursor: pointer; }
+.custom-color .v-icon { pointer-events: none; }
 .summary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
 .summary-grid div { display: flex; flex-direction: column; gap: .25rem; }
 .summary-grid span { color: rgb(var(--v-theme-on-surface) / .56); font-size: .7rem; text-transform: uppercase; }
 .summary-grid strong { font-size: 1.35rem; }
-.setting-row { display: flex; min-height: 64px; align-items: center; justify-content: space-between; gap: 1rem; }
+.setting-row { display: grid; min-height: 64px; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 1rem; }
+.setting-row > div { min-width: 0; }
 .setting-row p { margin-top: .15rem; color: rgb(var(--v-theme-on-surface) / .5); font-size: .7rem; }
 .editor-save-bar { position: fixed; z-index: 20; right: 0; bottom: calc(72px + env(safe-area-inset-bottom)); left: 0; padding: .75rem 1rem; border-top: 1px solid rgba(255,255,255,.08); background: rgb(var(--v-theme-background) / .94); backdrop-filter: blur(14px); }
 .editor-save-bar__inner { display: flex; width: 100%; max-width: 760px; margin: 0 auto; align-items: center; gap: .5rem; }

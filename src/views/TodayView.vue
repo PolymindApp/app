@@ -195,6 +195,7 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
             :progress="item"
             :busy="busy"
             @toggle="run(() => store.toggleComplete($event))"
+            @seal="run(() => store.setDailyTotalSealed($event))"
             @add="(progress, amount) => run(() => store.addEntry(progress, amount))"
             @exact="openExact"
           />
@@ -210,6 +211,7 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
             :progress="item"
             :busy="busy"
             @toggle="run(() => store.toggleComplete($event))"
+            @seal="run(() => store.setDailyTotalSealed($event))"
             @add="(progress, amount) => run(() => store.addEntry(progress, amount))"
             @exact="openExact"
           />

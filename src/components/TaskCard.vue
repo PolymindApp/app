@@ -6,6 +6,7 @@ import type { TaskProgress } from '@/types/domain'
 const props = defineProps<{ progress: TaskProgress; busy?: boolean }>()
 const emit = defineEmits<{
   toggle: [progress: TaskProgress]
+  seal: [progress: TaskProgress]
   add: [progress: TaskProgress, amount: number]
   exact: [progress: TaskProgress]
   review: [progress: TaskProgress]
@@ -14,6 +15,7 @@ const emit = defineEmits<{
 const task = computed(() => props.progress.task)
 const step = computed(() => props.progress.programStep)
 const isCheck = computed(() => (step.value ? step.value.completionType === 'check' : task.value.type === 'check'))
+const isDailyTotal = computed(() => !step.value && task.value.type === 'daily_total')
 const canToggleFromCard = computed(() => isCheck.value && !props.busy && !props.progress.locked)
 const target = computed(() => step.value?.targetValue || task.value.targetValue || 0)
 const unit = computed(() => step.value?.customUnit || step.value?.unit || task.value.customUnit || task.value.unit || '')
@@ -33,6 +35,7 @@ const stateIcon = computed(() => {
   if (props.progress.locked) return 'mdi-lock-outline'
   if (currentGoalState.value === 'exceeded') return 'mdi-alert-outline'
   if (currentGoalState.value === 'not_enough') return 'mdi-trending-down'
+  if (props.progress.sealed) return 'mdi-lock-check'
   if (props.progress.complete) return 'mdi-check-bold'
   return isCheck.value ? 'mdi-circle-outline' : 'mdi-lightning-bolt'
 })
@@ -40,7 +43,7 @@ const stateIconColor = computed(() => {
   return stateColor.value
 })
 const title = computed(() => step.value?.name || task.value.name)
-const subtitle = computed(() => step.value ? `${task.value.name} · Program step` : task.value.areaName || task.value.description)
+const subtitle = computed(() => step.value ? `${task.value.name} · Program step` : task.value.description)
 
 function formatValue(value: number) {
   if (task.value.type === 'duration' && !step.value) return `${value % 1 === 0 ? value : value.toFixed(2)}h`
@@ -56,7 +59,7 @@ function toggleFromCard() {
 <template>
   <v-card
     class="task-card surface-card pa-4"
-    :class="{ 'task-card--done': progress.complete, 'task-card--clickable': canToggleFromCard }"
+    :class="{ 'task-card--done': progress.complete, 'task-card--clickable': canToggleFromCard, 'task-card--sealed': progress.sealed }"
     :ripple="canToggleFromCard"
     v-on="canToggleFromCard ? { click: toggleFromCard } : {}"
   >
@@ -125,7 +128,7 @@ function toggleFromCard() {
           :key="amount"
           size="small"
           variant="tonal"
-          :disabled="busy || progress.locked"
+          :disabled="busy || progress.locked || progress.sealed"
           @click="emit('add', progress, amount)"
         >
           +{{ task.type === 'duration' && !step ? `${amount}h` : `${amount}${unit ? ` ${unit}` : ''}` }}
@@ -134,12 +137,24 @@ function toggleFromCard() {
           size="small"
           variant="tonal"
           prepend-icon="mdi-pencil-plus-outline"
-          :disabled="busy || progress.locked"
+          :disabled="busy || progress.locked || progress.sealed"
           @click="emit('exact', progress)"
         >
           Custom
         </v-btn>
       </div>
+      <v-btn
+        v-if="isDailyTotal"
+        block
+        class="mt-4"
+        variant="tonal"
+        :color="progress.sealed ? undefined : 'secondary'"
+        :prepend-icon="progress.sealed ? 'mdi-lock-open-variant-outline' : 'mdi-lock-check-outline'"
+        :disabled="busy || progress.locked"
+        @click.stop="emit('seal', progress)"
+      >
+        {{ progress.sealed ? 'Unlock total' : 'Lock in total' }}
+      </v-btn>
     </template>
 
     <div v-if="progress.locked" class="status-banner mt-3 muted">
@@ -167,6 +182,10 @@ function toggleFromCard() {
 
 .task-card--done {
   opacity: .72;
+}
+
+.task-card--sealed {
+  cursor: default;
 }
 
 .task-card--clickable {

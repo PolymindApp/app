@@ -44,7 +44,6 @@ const draft = reactive<TaskDraft>({
   name: '',
   description: '',
   type: (route.query.type as TaskType) || 'check',
-  area: undefined,
   color: '#C7F464',
   mandatory: true,
   reviewWhenMissed: false,
@@ -205,18 +204,6 @@ async function removeTask() {
         <div class="field-stack mb-4">
           <v-text-field v-model="draft.name" label="Task name" placeholder="e.g. Hit protein target" :rules="[v => Boolean(v) || 'Name is required']" />
           <v-textarea v-model="draft.description" label="Why does this matter? (optional)" rows="2" auto-grow variant="outlined" />
-          <v-select
-            v-model="draft.area"
-            label="Area"
-            :items="store.areas"
-            item-title="name"
-            item-value="id"
-            clearable
-          >
-            <template #item="{ props, item }">
-              <v-list-item v-bind="props"><template #prepend><span class="area-swatch mr-3" :style="{ background: item.raw.color }" /></template></v-list-item>
-            </template>
-          </v-select>
         </div>
         <label class="field-label">Routine color</label>
         <div class="routine-colors mt-2 mb-4">
@@ -259,7 +246,7 @@ async function removeTask() {
           ]"
         />
         <div v-if="draft.recurrenceType !== 'daily'">
-          <label class="field-label">Training days</label>
+          <label class="field-label">Scheduled days</label>
           <div class="weekday-scroll mt-2">
             <v-btn-toggle
               v-model="draft.weekdays"
@@ -441,8 +428,8 @@ async function removeTask() {
 </template>
 
 <style scoped>
-.type-selector { display: grid; grid-template-columns: repeat(2, 1fr); gap: .6rem; }
-.editor-type { position: relative; display: grid; min-height: 128px; grid-template-columns: 44px 1fr; grid-template-rows: auto auto; align-content: center; column-gap: .65rem; padding: .9rem; border: 0; border-radius: 20px; background: rgb(var(--v-theme-surface-variant) / .72); color: rgb(var(--v-theme-on-surface)); text-align: left; cursor: pointer; }
+.type-selector { display: grid; grid-template-columns: 1fr; gap: .6rem; }
+.editor-type { position: relative; display: grid; grid-template-columns: 44px 1fr; grid-template-rows: auto auto; align-content: center; column-gap: .65rem; padding: .9rem; border: 0; border-radius: 20px; background: rgb(var(--v-theme-surface-variant) / .72); color: rgb(var(--v-theme-on-surface)); text-align: left; cursor: pointer; }
 .editor-type::after { position: absolute; inset: 0; border: 2px solid #626a61; border-radius: inherit; content: ""; pointer-events: none; }
 .editor-type > span { display: grid; width: 42px; height: 42px; grid-row: 1 / 3; place-items: center; border-radius: 13px; color: #17200f; }
 .editor-type strong { align-self: end; font-size: .85rem; }
@@ -471,7 +458,6 @@ async function removeTask() {
 .field-stack { display: grid; gap: 1rem; }
 .date-grid, .target-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
 .date-range-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); }
-.area-swatch { display: block; width: 12px; height: 12px; border-radius: 50%; }
 .routine-colors { display: flex; flex-wrap: wrap; align-items: center; gap: .55rem; }
 .color-swatch, .custom-color { display: grid; width: 38px; height: 38px; place-items: center; border: 2px solid transparent; border-radius: 12px; color: #17200f; cursor: pointer; }
 .color-swatch--selected { border-color: rgb(var(--v-theme-on-surface)); box-shadow: 0 0 0 2px rgb(var(--v-theme-background)); }
@@ -493,6 +479,7 @@ async function removeTask() {
 .save-bar__cancel { order: 2; margin-left: auto; }
 .save-bar__save { order: 3; }
 @media (min-width: 960px) {
+  .editor-type { padding: 2rem; }
   .save-bar { left: 224px; bottom: 0; }
   .editor-page,
   .editor-page--editing { max-width: 760px; padding-bottom: 6rem; }
@@ -501,6 +488,7 @@ async function removeTask() {
   .save-bar__cancel { max-width: 160px; }
 }
 @media (min-width: 600px) {
+  .type-selector { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .weekday-picker { display: flex; width: 100%; }
   .weekday-picker :deep(.v-btn) { width: auto; min-width: 0; flex: 1 1 0; }
 }

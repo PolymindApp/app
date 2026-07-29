@@ -1,4 +1,4 @@
-package com.yolarx.rep;
+package com.coulombe.mom;
 
 import android.Manifest;
 import android.content.Intent;
@@ -28,7 +28,6 @@ public class BackgroundIntervalPlugin extends Plugin {
         Double remainingMs = call.getDouble("remainingMs", 1d);
         Boolean soundEnabled = call.getBoolean("soundEnabled", true);
         Boolean vibrationEnabled = call.getBoolean("vibrationEnabled", true);
-        String sound = call.getString("sound", "beep");
 
         if (steps == null || steps.length() == 0) {
             call.reject("An interval sequence is required.");
@@ -55,7 +54,6 @@ public class BackgroundIntervalPlugin extends Plugin {
         intent.putExtra(BackgroundIntervalService.EXTRA_REMAINING_MS, remainingMs == null ? 1L : Math.max(1L, remainingMs.longValue()));
         intent.putExtra(BackgroundIntervalService.EXTRA_SOUND_ENABLED, soundEnabled == null || soundEnabled);
         intent.putExtra(BackgroundIntervalService.EXTRA_VIBRATION_ENABLED, vibrationEnabled == null || vibrationEnabled);
-        intent.putExtra(BackgroundIntervalService.EXTRA_SOUND, sound);
 
         ContextCompat.startForegroundService(getContext(), intent);
         call.resolve();

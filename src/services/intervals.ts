@@ -17,13 +17,13 @@ export function createIntervalId() {
 
 export function createIntervalStep(
   name = '',
-  kind: IntervalStepNode['kind'] = 'work',
+  kind: IntervalStepNode['kind'] = '',
   durationSeconds = 30,
 ): IntervalStepNode {
   return { id: createIntervalId(), type: 'step', name, kind, durationSeconds }
 }
 
-export function createIntervalGroup(name = '', repeatCount = 2): IntervalGroupNode {
+export function createIntervalGroup(name = '', repeatCount = 1): IntervalGroupNode {
   return { id: createIntervalId(), type: 'group', name, repeatCount, children: [] }
 }
 
@@ -92,13 +92,14 @@ export function validateIntervalDefinition(definition: IntervalDefinition): stri
       if (node.type === 'step') {
         timedSteps += 1
         if (!node.name.trim()) errors.push(`${path} needs a name.`)
+        if (!node.kind) errors.push(`${path} needs a type.`)
         if (!Number.isFinite(node.durationSeconds) || node.durationSeconds <= 0) {
           errors.push(`${path} needs a positive duration.`)
         }
         return
       }
-      if (!Number.isInteger(node.repeatCount) || node.repeatCount <= 0) {
-        errors.push(`${path} needs a positive whole-number repeat count.`)
+      if (!Number.isInteger(node.repeatCount) || node.repeatCount < 1 || node.repeatCount > 15) {
+        errors.push(`${path} needs a repeat count from 1 to 15.`)
       }
       if (!node.children.length) errors.push(`${path} cannot be empty.`)
       visit(node.children, `${path}, item`)

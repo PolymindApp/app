@@ -12,8 +12,8 @@ import type {
   IntervalTemplateDraft,
 } from '@/types/domain'
 
-const RECOVERY_KEY = 'rep-active-interval'
-const QUICK_CUES_KEY = 'rep-quick-interval-cues'
+const RECOVERY_KEY = 'mom-active-interval'
+const QUICK_CUES_KEY = 'mom-quick-interval-cues'
 
 function mapTemplate(record: Record<string, any>): IntervalTemplate {
   return {
@@ -25,7 +25,6 @@ function mapTemplate(record: Record<string, any>): IntervalTemplate {
     cues: {
       soundEnabled: record.sound_enabled !== false,
       vibrationEnabled: record.vibration_enabled !== false,
-      sound: record.sound || 'beep',
     },
     sortOrder: Number(record.sort_order || 0),
   }
@@ -39,7 +38,10 @@ function mapSession(record: Record<string, any>): IntervalSession {
     status: record.status,
     name: record.snapshot_name,
     definition: record.definition_snapshot,
-    cues: record.cue_snapshot,
+    cues: {
+      soundEnabled: record.cue_snapshot?.soundEnabled !== false,
+      vibrationEnabled: record.cue_snapshot?.vibrationEnabled !== false,
+    },
     startedAt: record.started_at,
     endedAt: record.ended_at || undefined,
     plannedSeconds: Number(record.planned_seconds || 0),
@@ -115,7 +117,7 @@ export const useIntervalStore = defineStore('intervals', () => {
       definition: draft.definition,
       sound_enabled: draft.cues.soundEnabled,
       vibration_enabled: draft.cues.vibrationEnabled,
-      sound: draft.cues.sound,
+      sound: 'beep',
       sort_order: draft.sortOrder,
     }
     const record = draft.id
@@ -254,11 +256,16 @@ export const useIntervalStore = defineStore('intervals', () => {
   function getQuickCues(): IntervalCueSettings {
     try {
       const saved = JSON.parse(localStorage.getItem(QUICK_CUES_KEY) || '')
-      if (saved) return saved
+      if (saved) {
+        return {
+          soundEnabled: saved.soundEnabled !== false,
+          vibrationEnabled: saved.vibrationEnabled !== false,
+        }
+      }
     } catch {
       // Use defaults below.
     }
-    return { soundEnabled: true, vibrationEnabled: true, sound: 'beep' }
+    return { soundEnabled: true, vibrationEnabled: true }
   }
 
   function rememberQuickCues(cues: IntervalCueSettings) {

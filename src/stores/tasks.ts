@@ -3,7 +3,7 @@ import { defineStore } from 'pinia'
 import { addDays, endOfWeek, format, parseISO, startOfWeek, subDays } from 'date-fns'
 import { pb } from '@/lib/pocketbase'
 import { isTaskScheduled, meetsTarget, programCycleDay, progressPercent, stepsForDate, toDateKey } from '@/services/schedule'
-import type { Area, Entry, Occurrence, ProgramStep, Task, TaskDraft, TaskProgress } from '@/types/domain'
+import type { Entry, Occurrence, ProgramStep, Task, TaskDraft, TaskProgress } from '@/types/domain'
 
 const asNumberArray = (value: unknown, fallback: number[] = []) =>
   Array.isArray(value) ? value.map(Number) : fallback
@@ -14,9 +14,6 @@ function mapTask(record: Record<string, any>): Task {
     name: record.name,
     description: record.description || '',
     type: record.type,
-    area: record.area || undefined,
-    areaName: record.expand?.area?.name,
-    areaColor: record.expand?.area?.color,
     color: record.color || undefined,
     mandatory: record.mandatory,
     reviewWhenMissed: record.review_when_missed,
@@ -64,6 +61,7 @@ function mapOccurrence(record: Record<string, any>): Occurrence {
     programStep: record.program_step || undefined,
     scheduledDate: record.scheduled_date,
     status: record.status,
+    sealed: record.sealed === true,
     completedAt: record.completed_at || undefined,
     snapshotName: record.snapshot_name,
     snapshotTarget: record.snapshot_target || undefined,
@@ -87,7 +85,6 @@ function mapEntry(record: Record<string, any>): Entry {
 
 export const useTaskStore = defineStore('tasks', () => {
   const tasks = ref<Task[]>([])
-  const areas = ref<Area[]>([])
   const steps = ref<ProgramStep[]>([])
   const occurrences = ref<Occurrence[]>([])
   const entries = ref<Entry[]>([])
@@ -128,12 +125,19 @@ export const useTaskStore = defineStore('tasks', () => {
     const targetReached = meetsTarget(value, target, operator)
     const checkComplete = occurrence?.status === 'completed'
     const isCheck = (step && step.completionType === 'check') || (!step && task.type === 'check')
+    const isDailyTotal = !step && task.type === 'daily_total'
+    const sealed = isDailyTotal && Boolean(occurrence?.sealed)
     return {
       task,
       occurrence,
       value,
       percent: isCheck ? (checkComplete ? 100 : 0) : progressPercent(value, target, operator),
-      complete: isCheck ? checkComplete : checkComplete || (operator !== 'lte' && targetReached),
+      complete: isCheck
+        ? checkComplete
+        : isDailyTotal
+          ? sealed
+          : checkComplete || (operator !== 'lte' && targetReached),
+      sealed,
       status: occurrence?.status || 'pending',
       programStep: step,
       locked: step ? isStepLocked(task, step, date) : false,
@@ -182,39 +186,14 @@ export const useTaskStore = defineStore('tasks', () => {
     return Math.round((selectedProgress.value.filter((item) => item.complete).length / selectedProgress.value.length) * 100)
   })
 
-  async function ensureDefaultAreas() {
-    if (areas.value.length || !pb.authStore.record) return
-    const defaults = [
-      { name: 'Training', color: '#C7F464', icon: 'mdi-dumbbell' },
-      { name: 'Nutrition', color: '#FFB86B', icon: 'mdi-food-apple' },
-      { name: 'Focus', color: '#8FB8FF', icon: 'mdi-lightning-bolt' },
-    ]
-    await Promise.all(
-      defaults.map((area) => pb.collection('areas').create({ ...area, owner: pb.authStore.record!.id })),
-    )
-    await fetchAreas()
-  }
-
-  async function fetchAreas() {
-    const records = await pb.collection('areas').getFullList({ sort: 'name' })
-    areas.value = records.map((record) => ({
-      id: record.id,
-      name: record.name,
-      color: record.color,
-      icon: record.icon,
-    }))
-  }
-
   async function load() {
     if (!pb.authStore.record) return
     loading.value = true
     error.value = ''
     try {
-      await fetchAreas()
-      await ensureDefaultAreas()
       const since = toDateKey(subDays(new Date(), 120))
       const [taskRecords, stepRecords, occurrenceRecords, entryRecords] = await Promise.all([
-        pb.collection('tasks').getFullList({ sort: 'sort_order', expand: 'area' }),
+        pb.collection('tasks').getFullList({ sort: 'sort_order' }),
         pb.collection('program_steps').getFullList({ sort: 'sort_order' }),
         pb.collection('occurrences').getFullList({ filter: `scheduled_date >= "${since}"`, sort: '-scheduled_date' }),
         pb.collection('entries').getFullList({ filter: `entry_date >= "${since}"`, sort: '-entry_date' }),
@@ -240,6 +219,7 @@ export const useTaskStore = defineStore('tasks', () => {
       program_step: step?.id || '',
       scheduled_date: toDateKey(date),
       status: 'pending',
+      sealed: false,
       snapshot_name: step?.name || task.name,
       snapshot_target: step?.targetValue || task.targetValue || 0,
       snapshot_unit: step?.customUnit || step?.unit || task.customUnit || task.unit || '',
@@ -259,7 +239,20 @@ export const useTaskStore = defineStore('tasks', () => {
     Object.assign(occurrence, mapOccurrence(record))
   }
 
+  async function setDailyTotalSealed(progress: TaskProgress) {
+    if (progress.task.type !== 'daily_total' || progress.programStep) return
+    const occurrence = await ensureOccurrence(progress.task, selectedDate.value, progress.programStep)
+    const sealed = !occurrence.sealed
+    const record = await pb.collection('occurrences').update(occurrence.id, {
+      sealed,
+      status: sealed ? 'completed' : 'pending',
+      completed_at: sealed ? new Date().toISOString() : '',
+    })
+    Object.assign(occurrence, mapOccurrence(record))
+  }
+
   async function addEntry(progress: TaskProgress, amount: number, kind?: Entry['kind'], note = '') {
+    if (progress.sealed) return
     const occurrence = await ensureOccurrence(progress.task, selectedDate.value, progress.programStep)
     const unit = progress.programStep?.customUnit || progress.programStep?.unit || progress.task.customUnit || progress.task.unit || (progress.task.type === 'duration' ? 'hours' : '')
     const record = await pb.collection('entries').create({
@@ -275,7 +268,7 @@ export const useTaskStore = defineStore('tasks', () => {
     })
     entries.value.unshift(mapEntry(record))
     const updated = makeProgress(progress.task, selectedDate.value, progress.programStep)
-    if (progress.task.targetOperator !== 'lte' && updated.complete && occurrence.status !== 'completed') {
+    if (progress.task.type !== 'daily_total' && progress.task.targetOperator !== 'lte' && updated.complete && occurrence.status !== 'completed') {
       const completed = await pb.collection('occurrences').update(occurrence.id, {
         status: 'completed',
         completed_at: new Date().toISOString(),
@@ -286,7 +279,11 @@ export const useTaskStore = defineStore('tasks', () => {
 
   async function setStatus(progress: TaskProgress, status: Occurrence['status']) {
     const occurrence = await ensureOccurrence(progress.task, selectedDate.value, progress.programStep)
-    const record = await pb.collection('occurrences').update(occurrence.id, { status })
+    const record = await pb.collection('occurrences').update(occurrence.id, {
+      status,
+      sealed: status === 'completed',
+      completed_at: status === 'completed' ? new Date().toISOString() : '',
+    })
     Object.assign(occurrence, mapOccurrence(record))
     if (status === 'carried') {
       await ensureOccurrence(progress.task, addDays(selectedDate.value, 1), progress.programStep)
@@ -299,7 +296,6 @@ export const useTaskStore = defineStore('tasks', () => {
       name: draft.name,
       description: draft.description,
       type: draft.type,
-      area: draft.area || '',
       color: draft.color || '#C7F464',
       mandatory: draft.mandatory,
       review_when_missed: draft.reviewWhenMissed,
@@ -360,7 +356,7 @@ export const useTaskStore = defineStore('tasks', () => {
 
   async function toggleTaskActive(task: Task) {
     const record = await pb.collection('tasks').update(task.id, { active: !task.active })
-    Object.assign(task, mapTask({ ...record, expand: { area: areas.value.find((area) => area.id === record.area) } }))
+    Object.assign(task, mapTask(record))
   }
 
   async function deleteTask(taskId: string) {
@@ -380,7 +376,6 @@ export const useTaskStore = defineStore('tasks', () => {
 
   return {
     tasks,
-    areas,
     steps,
     occurrences,
     entries,
@@ -394,6 +389,7 @@ export const useTaskStore = defineStore('tasks', () => {
     makeProgress,
     entriesFor,
     toggleComplete,
+    setDailyTotalSealed,
     addEntry,
     setStatus,
     shiftProgram,

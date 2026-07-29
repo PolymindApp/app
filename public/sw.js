@@ -1,5 +1,12 @@
-const CACHE_NAME = 'rep-shell-v1'
-const APP_SHELL = ['/', '/manifest.webmanifest', '/brand/rep-mark.png']
+const CACHE_NAME = 'mom-shell-v3'
+const APP_SHELL = [
+  '/',
+  '/manifest.webmanifest',
+  '/brand/mom-mark.png',
+  '/brand/mom-app-icon.png',
+  '/sounds/count.mp3',
+  '/sounds/go.mp3',
+]
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)))

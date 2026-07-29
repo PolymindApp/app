@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">REP</string>
-    <string name="title_activity_main">REP</string>
-    <string name="package_name">com.yolarx.rep</string>
-    <string name="custom_url_scheme">com.yolarx.rep</string>
+    <string name="app_name">Mom</string>
+    <string name="title_activity_main">Mom</string>
+    <string name="package_name">com.coulombe.mom</string>
+    <string name="custom_url_scheme">com.coulombe.mom</string>
 </resources>

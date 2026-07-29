@@ -31,6 +31,24 @@ function nestedDefinition(): IntervalDefinition {
 }
 
 describe('interval definitions', () => {
+  it('creates new intervals without a selected type and requires one before saving', () => {
+    const step = createIntervalStep()
+
+    expect(step.kind).toBe('')
+    expect(validateIntervalDefinition({ version: 1, children: [step] }))
+      .toContain('Item 1 needs a type.')
+  })
+
+  it('defaults groups to one repeat and limits repeats to fifteen', () => {
+    expect(createIntervalGroup().repeatCount).toBe(1)
+
+    const group = createIntervalGroup('Too many', 16)
+    group.children = [createIntervalStep('Work', 'work', 30)]
+    const errors = validateIntervalDefinition({ version: 1, children: [group] })
+
+    expect(errors.some((error) => error.includes('repeat count from 1 to 15'))).toBe(true)
+  })
+
   it('calculates nested repeated duration and step count without expanding a timeline', () => {
     const definition = nestedDefinition()
     expect(intervalStepCount(definition)).toBe(16)
@@ -78,7 +96,7 @@ describe('quick intervals', () => {
     rounds: 3,
     cooldownSeconds: 20,
     restAfterLastRound: false,
-    cues: { soundEnabled: true, vibrationEnabled: true, sound: 'beep' },
+    cues: { soundEnabled: true, vibrationEnabled: true },
     ...overrides,
   })
 

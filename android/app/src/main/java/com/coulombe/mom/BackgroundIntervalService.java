@@ -1,4 +1,4 @@
-package com.yolarx.rep;
+package com.coulombe.mom;
 
 import android.app.Notification;
 import android.app.NotificationChannel;
@@ -8,9 +8,7 @@ import android.app.Service;
 import android.content.Intent;
 import android.content.pm.ServiceInfo;
 import android.media.AudioAttributes;
-import android.media.AudioFormat;
-import android.media.AudioManager;
-import android.media.AudioTrack;
+import android.media.MediaPlayer;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
@@ -34,8 +32,8 @@ import java.util.Locale;
 
 public class BackgroundIntervalService extends Service {
 
-    public static final String ACTION_START = "com.yolarx.rep.interval.START";
-    public static final String ACTION_STOP = "com.yolarx.rep.interval.STOP";
+    public static final String ACTION_START = "com.coulombe.mom.interval.START";
+    public static final String ACTION_STOP = "com.coulombe.mom.interval.STOP";
     public static final String EXTRA_SESSION_ID = "sessionId";
     public static final String EXTRA_SESSION_NAME = "sessionName";
     public static final String EXTRA_STEPS = "steps";
@@ -43,29 +41,30 @@ public class BackgroundIntervalService extends Service {
     public static final String EXTRA_REMAINING_MS = "remainingMs";
     public static final String EXTRA_SOUND_ENABLED = "soundEnabled";
     public static final String EXTRA_VIBRATION_ENABLED = "vibrationEnabled";
-    public static final String EXTRA_SOUND = "sound";
 
-    private static final String CHANNEL_ID = "rep_interval_timer";
+    private static final String CHANNEL_ID = "mom_interval_timer";
     private static final int NOTIFICATION_ID = 4107;
     private static final long TICK_MS = 250L;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final List<IntervalStep> steps = new ArrayList<>();
     private PowerManager.WakeLock wakeLock;
-    private AudioTrack activeAudio;
+    private MediaPlayer activeAudio;
     private String sessionName = "Interval";
     private int stepIndex;
+    private int lastCountdownSecond = -1;
     private long deadlineElapsedMs;
     private boolean soundEnabled;
     private boolean vibrationEnabled;
-    private String sound = "beep";
     private boolean running;
 
     private final Runnable ticker = new Runnable() {
         @Override
         public void run() {
             if (!running) return;
-            advance(SystemClock.elapsedRealtime());
+            long now = SystemClock.elapsedRealtime();
+            playCountdown(now);
+            advance(now);
             if (!running) return;
             updateNotification(false);
             handler.postDelayed(this, TICK_MS);
@@ -127,10 +126,9 @@ public class BackgroundIntervalService extends Service {
         stepIndex = Math.max(0, Math.min(intent.getIntExtra(EXTRA_STEP_INDEX, 0), steps.size() - 1));
         long remainingMs = Math.max(1L, intent.getLongExtra(EXTRA_REMAINING_MS, steps.get(stepIndex).durationMs));
         deadlineElapsedMs = SystemClock.elapsedRealtime() + remainingMs;
+        lastCountdownSecond = -1;
         soundEnabled = intent.getBooleanExtra(EXTRA_SOUND_ENABLED, true);
         vibrationEnabled = intent.getBooleanExtra(EXTRA_VIBRATION_ENABLED, true);
-        sound = intent.getStringExtra(EXTRA_SOUND);
-        if (sound == null) sound = "beep";
     }
 
     private void startAsForeground() {
@@ -150,12 +148,13 @@ public class BackgroundIntervalService extends Service {
                 return;
             }
             deadlineElapsedMs += steps.get(stepIndex).durationMs;
-            if (!MainActivity.isAppVisible()) playCue();
+            lastCountdownSecond = -1;
+            if (!MainActivity.isAppVisible()) playGoCue();
         }
     }
 
     private void finishTimer() {
-        if (!MainActivity.isAppVisible()) playCue();
+        if (!MainActivity.isAppVisible()) playGoCue();
         running = false;
         handler.removeCallbacks(ticker);
         releaseWakeLock();
@@ -174,36 +173,38 @@ public class BackgroundIntervalService extends Service {
         stopSelf();
     }
 
-    private void playCue() {
-        if (soundEnabled) playTone();
+    private void playCountdown(long now) {
+        if (!soundEnabled || MainActivity.isAppVisible()) return;
+        long remainingMs = Math.max(0L, deadlineElapsedMs - now);
+        int remainingSeconds = (int) Math.ceil(remainingMs / 1000d);
+        if (remainingSeconds >= 1 && remainingSeconds <= 3 && remainingSeconds != lastCountdownSecond) {
+            lastCountdownSecond = remainingSeconds;
+            playSound(R.raw.count);
+        } else if (remainingSeconds > 3) {
+            lastCountdownSecond = -1;
+        }
+    }
+
+    private void playGoCue() {
+        if (soundEnabled) playSound(R.raw.go);
         if (vibrationEnabled) vibrate();
     }
 
-    private void playTone() {
+    private void playSound(int soundResource) {
         releaseAudio();
-        final int sampleRate = 16_000;
-        final double frequency = "bell".equals(sound) ? 660d : "soft".equals(sound) ? 440d : 880d;
-        final int durationMs = "bell".equals(sound) ? 800 : "soft".equals(sound) ? 450 : 320;
-        final int sampleCount = sampleRate * durationMs / 1000;
-        short[] samples = new short[sampleCount];
-        for (int index = 0; index < sampleCount; index += 1) {
-            double fade = 1d - ((double) index / sampleCount);
-            samples[index] = (short) (Math.sin(2d * Math.PI * index * frequency / sampleRate) * 9000d * fade);
-        }
-
-        AudioAttributes attributes = new AudioAttributes.Builder()
-            .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
-            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-            .build();
-        AudioFormat format = new AudioFormat.Builder()
-            .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-            .setSampleRate(sampleRate)
-            .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
-            .build();
-        activeAudio = new AudioTrack(attributes, format, samples.length * 2, AudioTrack.MODE_STATIC, AudioManager.AUDIO_SESSION_ID_GENERATE);
-        activeAudio.write(samples, 0, samples.length);
-        activeAudio.play();
-        handler.postDelayed(this::releaseAudio, durationMs + 100L);
+        MediaPlayer player = MediaPlayer.create(this, soundResource);
+        if (player == null) return;
+        activeAudio = player;
+        player.setOnCompletionListener(completed -> {
+            if (activeAudio == completed) activeAudio = null;
+            completed.release();
+        });
+        player.setOnErrorListener((failed, what, extra) -> {
+            if (activeAudio == failed) activeAudio = null;
+            failed.release();
+            return true;
+        });
+        player.start();
     }
 
     private void vibrate() {
@@ -274,7 +275,7 @@ public class BackgroundIntervalService extends Service {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
         NotificationChannel channel = new NotificationChannel(
             CHANNEL_ID,
-            "Active interval",
+            "Mom intervals",
             NotificationManager.IMPORTANCE_LOW
         );
         channel.setDescription("Keeps interval sessions and cue sounds running in the background.");
@@ -285,7 +286,7 @@ public class BackgroundIntervalService extends Service {
     private void acquireWakeLock() {
         releaseWakeLock();
         PowerManager manager = (PowerManager) getSystemService(POWER_SERVICE);
-        wakeLock = manager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "rep:interval-timer");
+        wakeLock = manager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "mom:interval-timer");
         wakeLock.acquire();
     }
 
@@ -296,13 +297,14 @@ public class BackgroundIntervalService extends Service {
 
     private void releaseAudio() {
         if (activeAudio == null) return;
+        MediaPlayer audio = activeAudio;
+        activeAudio = null;
         try {
-            activeAudio.stop();
+            audio.stop();
         } catch (IllegalStateException ignored) {
             // The short cue may already have completed.
         }
-        activeAudio.release();
-        activeAudio = null;
+        audio.release();
     }
 
     @Override

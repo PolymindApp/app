@@ -1,8 +1,8 @@
 import type { CapacitorConfig } from '@capacitor/cli'
 
 const config: CapacitorConfig = {
-  appId: 'com.yolarx.rep',
-  appName: 'REP',
+  appId: 'com.coulombe.mom',
+  appName: 'Mom',
   webDir: 'dist',
   plugins: {
     SystemBars: {
