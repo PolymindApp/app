@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
+import { Capacitor } from '@capacitor/core'
 import { useDisplay } from 'vuetify'
 import { useRouter } from 'vue-router'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
@@ -11,6 +12,7 @@ const auth = useAuthStore()
 const logoutDialog = ref(false)
 const appScroll = ref<HTMLElement | { $el?: HTMLElement }>()
 const pageTransition = ref('page-level-forward')
+const isIos = Capacitor.getPlatform() === 'ios'
 
 const items = [
   { title: 'Today', icon: 'mdi-lightning-bolt', to: '/today' },
@@ -19,6 +21,19 @@ const items = [
 ]
 
 const immersive = computed(() => Boolean(router.currentRoute.value.meta.immersive))
+const pageTitle = computed(() => String(router.currentRoute.value.meta.title || 'REP'))
+const canGoBack = computed(() => Number(router.currentRoute.value.meta.pageDepth ?? 0) > 0)
+const accountName = computed(() => auth.user?.name || auth.firstName || 'Athlete')
+const accountEmail = computed(() => auth.user?.email || '')
+const accountInitials = computed(() => {
+  const source = auth.user?.name || auth.user?.email || 'A'
+  return source
+    .split(/[\s@._-]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join('') || 'A'
+})
 const current = computed({
   get: () => {
     const path = router.currentRoute.value.path
@@ -89,11 +104,71 @@ function beginPageScrollReset() {
       </template>
     </v-navigation-drawer>
 
+    <header
+      v-if="!immersive"
+      class="app-bar"
+      :class="{ 'app-bar--ios': isIos, 'app-bar--back': canGoBack }"
+    >
+      <div class="app-bar__inner">
+        <div class="app-bar__leading">
+          <v-btn
+            v-if="canGoBack"
+            icon="mdi-chevron-left"
+            variant="text"
+            aria-label="Go back"
+            @click="router.back()"
+          />
+        </div>
+
+        <h1 class="app-bar__title">{{ pageTitle }}</h1>
+
+        <v-menu location="bottom end" :offset="8">
+          <template #activator="{ props }">
+            <v-btn
+              v-bind="props"
+              icon
+              variant="text"
+              class="app-bar__account"
+              :aria-label="`Open account menu for ${accountName}`"
+            >
+              <v-avatar color="secondary" size="36">
+                <span>{{ accountInitials }}</span>
+              </v-avatar>
+            </v-btn>
+          </template>
+
+          <v-card class="account-menu" min-width="240">
+            <div class="account-menu__identity pa-4">
+              <v-avatar color="secondary" size="40">
+                <span>{{ accountInitials }}</span>
+              </v-avatar>
+              <div class="min-width-0">
+                <strong class="d-block text-truncate">{{ accountName }}</strong>
+                <span v-if="accountEmail" class="d-block text-caption muted text-truncate">{{ accountEmail }}</span>
+              </div>
+            </div>
+            <v-divider />
+            <v-list density="compact" class="pa-2">
+              <v-list-item
+                title="Sign out"
+                prepend-icon="mdi-logout"
+                rounded="lg"
+                @click="logoutDialog = true"
+              />
+            </v-list>
+          </v-card>
+        </v-menu>
+      </div>
+    </header>
+
     <v-main
       ref="appScroll"
       tag="div"
       class="app-scroll"
-      :class="{ 'app-scroll--with-nav': !mdAndUp && !immersive }"
+      :class="{
+        'app-scroll--with-nav': !mdAndUp && !immersive,
+        'app-scroll--with-bar': !immersive,
+      }"
     >
       <div class="page-transition-stage">
         <router-view v-slot="{ Component, route: viewRoute }">
@@ -134,6 +209,102 @@ function beginPageScrollReset() {
 </template>
 
 <style scoped>
+.app-bar {
+  position: fixed;
+  z-index: 1002;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: calc(60px + max(env(safe-area-inset-top, 0px), var(--safe-area-inset-top, 0px)));
+  padding-top: max(env(safe-area-inset-top, 0px), var(--safe-area-inset-top, 0px));
+  border-bottom: 1px solid rgb(var(--v-theme-on-surface) / .08);
+  background: rgb(var(--v-theme-background) / .9);
+  backdrop-filter: blur(16px);
+}
+
+.app-bar__inner {
+  display: grid;
+  width: 100%;
+  max-width: 900px;
+  height: 60px;
+  margin: 0 auto;
+  padding: 0 1rem;
+  grid-template-columns: 0 minmax(0, 1fr) 44px;
+  align-items: center;
+  gap: 0;
+}
+
+.app-bar__leading {
+  display: grid;
+  width: 0;
+  place-items: center;
+}
+
+.app-bar__title {
+  overflow: hidden;
+  margin: 0;
+  font-size: .95rem;
+  font-weight: 850;
+  letter-spacing: -.01em;
+  line-height: 1.2;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-bar__account {
+  width: 44px;
+  height: 44px;
+}
+
+.app-bar__account :deep(.v-avatar) {
+  border: 1px solid rgb(var(--v-theme-on-secondary) / .18);
+  color: rgb(var(--v-theme-on-secondary));
+  font-size: .75rem;
+  font-weight: 900;
+}
+
+.app-bar--back .app-bar__inner {
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
+  gap: .35rem;
+}
+
+.app-bar--back .app-bar__leading {
+  width: 44px;
+}
+
+.app-bar--ios .app-bar__inner {
+  padding: 0 .5rem;
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
+  gap: .5rem;
+}
+
+.app-bar--ios .app-bar__leading {
+  width: 44px;
+}
+
+.app-bar--ios .app-bar__title {
+  text-align: center;
+}
+
+.account-menu {
+  overflow: hidden;
+  border: 1px solid rgb(var(--v-theme-on-surface) / .1);
+}
+
+.account-menu__identity {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+}
+
+.account-menu__identity > .v-avatar {
+  flex: 0 0 auto;
+  color: rgb(var(--v-theme-on-secondary));
+  font-size: .75rem;
+  font-weight: 900;
+}
+
 .brand-mark {
   width: 104px;
   height: 36px;
@@ -189,6 +360,10 @@ function beginPageScrollReset() {
   padding-bottom: calc(72px + env(safe-area-inset-bottom)) !important;
 }
 
+.app-scroll--with-bar {
+  padding-top: calc(60px + max(env(safe-area-inset-top, 0px), var(--safe-area-inset-top, 0px))) !important;
+}
+
 .page-transition-stage {
   display: grid;
   min-width: 0;
@@ -197,6 +372,12 @@ function beginPageScrollReset() {
 .page-transition-stage > * {
   min-width: 0;
   grid-area: 1 / 1;
+}
+
+@media (min-width: 960px) {
+  .app-bar {
+    left: 224px;
+  }
 }
 
 </style>

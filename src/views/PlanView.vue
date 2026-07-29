@@ -84,24 +84,18 @@ async function confirmStatusChange() {
 
 <template>
   <main class="app-page plan-page">
-    <header class="plan-header d-flex align-center justify-space-between mb-6">
-      <div>
-        <h1 class="display-title text-h3 mt-2">THE PLAN<span class="text-secondary">.</span></h1>
-        <p class="text-body-2 muted mt-2">Design routines and timed sequences that fit the way you train.</p>
-      </div>
+    <div class="plan-controls mb-6">
+      <v-btn-toggle v-model="planTab" mandatory color="primary" class="plan-tabs">
+        <v-btn value="tasks" prepend-icon="mdi-calendar-check-outline">Tasks</v-btn>
+        <v-btn value="intervals" prepend-icon="mdi-timer-outline">Intervals</v-btn>
+      </v-btn-toggle>
       <v-btn
         icon="mdi-plus"
-        size="large"
         color="secondary"
         :aria-label="planTab === 'tasks' ? 'Create duration routine' : 'Create interval template'"
         @click="planTab === 'tasks' ? router.push({ path: '/tasks/new', query: { type: 'duration' } }) : router.push('/plan/intervals/new')"
       />
-    </header>
-
-    <v-btn-toggle v-model="planTab" mandatory color="primary" class="plan-tabs mb-6">
-      <v-btn value="tasks" prepend-icon="mdi-calendar-check-outline">Tasks</v-btn>
-      <v-btn value="intervals" prepend-icon="mdi-timer-outline">Intervals</v-btn>
-    </v-btn-toggle>
+    </div>
 
     <div class="plan-tab-viewport">
       <transition :name="`plan-slide-${tabDirection}`">
@@ -221,9 +215,9 @@ async function confirmStatusChange() {
 </template>
 
 <style scoped>
-.plan-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; width: 100%; }
-.plan-header { gap: 1rem; }
-.plan-header > .v-btn { flex: 0 0 auto; }
+.plan-controls { display: flex; align-items: center; gap: 1rem; }
+.plan-controls > .v-btn { flex: 0 0 auto; }
+.plan-tabs { display: grid; min-width: 0; flex: 1 1 auto; grid-template-columns: 1fr 1fr; gap: 1rem; }
 .plan-tabs :deep(.v-btn) { width: 100%; }
 .plan-tab-viewport,
 .plan-status-stage { display: grid; width: 100%; min-width: 0; overflow-x: clip; }

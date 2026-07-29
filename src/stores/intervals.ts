@@ -65,6 +65,7 @@ export const useIntervalStore = defineStore('intervals', () => {
   const templates = ref<IntervalTemplate[]>([])
   const sessions = ref<IntervalSession[]>([])
   const loading = ref(false)
+  const loaded = ref(false)
   const error = ref('')
 
   const activeSession = computed(() =>
@@ -96,6 +97,7 @@ export const useIntervalStore = defineStore('intervals', () => {
       } else {
         localStorage.removeItem(RECOVERY_KEY)
       }
+      loaded.value = true
     } catch (cause) {
       error.value = cause instanceof Error ? cause.message : 'Could not load intervals.'
       throw cause
@@ -267,6 +269,7 @@ export const useIntervalStore = defineStore('intervals', () => {
     templates,
     sessions,
     loading,
+    loaded,
     error,
     activeSession,
     recentSessions,

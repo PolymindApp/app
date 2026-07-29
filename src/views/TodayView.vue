@@ -4,19 +4,17 @@ import { addDays, addWeeks, endOfWeek, format, isSameDay, isSameWeek, startOfWee
 import { storeToRefs } from 'pinia'
 import { useDisplay } from 'vuetify'
 import TaskCard from '@/components/TaskCard.vue'
-import { useAuthStore } from '@/stores/auth'
 import { useTaskStore } from '@/stores/tasks'
 import type { TaskProgress } from '@/types/domain'
 
 const store = useTaskStore()
-const auth = useAuthStore()
 const { smAndUp } = useDisplay()
 const { selectedDate, selectedProgress, completionRate, loading, error } = storeToRefs(store)
 const busy = ref(false)
 const exactDialog = ref(false)
 const exactProgress = ref<TaskProgress>()
 const exactAmountInput = ref('')
-const exactAction = ref<'add' | 'set'>()
+const exactAction = ref<'add' | 'subtract' | 'set'>()
 const reviewSheet = ref(false)
 const weekDirection = ref<'previous' | 'next'>('next')
 const visibleWeekStart = ref(startOfWeek(selectedDate.value, { weekStartsOn: 1 }))
@@ -90,12 +88,16 @@ function pressKeypad(key: typeof keypadKeys[number]) {
   exactAmountInput.value = exactAmountInput.value === '0' ? key : `${exactAmountInput.value}${key}`
 }
 
-async function submitExact(mode: 'add' | 'set') {
+async function submitExact(mode: 'add' | 'subtract' | 'set') {
   if (!exactProgress.value || exactAmount.value === null) return
   exactAction.value = mode
-  const amount = mode === 'set' ? exactAmount.value - exactProgress.value.value : exactAmount.value
+  const amount = mode === 'set'
+    ? exactAmount.value - exactProgress.value.value
+    : mode === 'subtract'
+      ? -exactAmount.value
+      : exactAmount.value
   try {
-    await run(() => store.addEntry(exactProgress.value!, amount, mode === 'set' ? 'adjustment' : undefined))
+    await run(() => store.addEntry(exactProgress.value!, amount, mode === 'add' ? undefined : 'adjustment'))
     exactDialog.value = false
   } finally {
     exactAction.value = undefined
@@ -105,13 +107,6 @@ async function submitExact(mode: 'add' | 'set') {
 
 <template>
   <main class="app-page today-page">
-    <header class="mb-6">
-      <div>
-        <h1 class="display-title text-h3 mt-2">LET'S WORK<span class="text-secondary">.</span></h1>
-        <p class="text-body-2 muted mt-2">Good {{ new Date().getHours() < 12 ? 'morning' : 'work' }}, {{ auth.firstName }}.</p>
-      </div>
-    </header>
-
     <div class="week-nav mb-3">
       <v-btn
         icon="mdi-chevron-left"
@@ -268,22 +263,39 @@ async function submitExact(mode: 'add' | 'set') {
           <v-btn
             block
             size="large"
+            class="exact-action exact-action--add"
             color="secondary"
+            aria-label="Add"
             :loading="busy && exactAction === 'add'"
             :disabled="exactAmount === null || (busy && exactAction !== 'add')"
             @click="submitExact('add')"
           >
-            Add amount
+            Add
           </v-btn>
           <v-btn
             block
             size="large"
-            variant="outlined"
+            class="exact-action exact-action--subtract"
+            variant="tonal"
+            color="error"
+            aria-label="Subtract"
+            :loading="busy && exactAction === 'subtract'"
+            :disabled="exactAmount === null || (busy && exactAction !== 'subtract')"
+            @click="submitExact('subtract')"
+          >
+              Subtract
+            <!-- <v-icon icon="mdi-minus" /> -->
+          </v-btn>
+          <v-btn
+            block
+            size="large"
+            class="exact-action exact-action--set"
+            variant="tonal"
             :loading="busy && exactAction === 'set'"
             :disabled="exactAmount === null || (busy && exactAction !== 'set')"
             @click="submitExact('set')"
           >
-            Set total
+            Set
           </v-btn>
         </div>
       </v-card>
@@ -430,7 +442,18 @@ async function submitExact(mode: 'add' | 'set') {
 .amount-keypad__display { display: flex; min-height: 72px; align-items: center; justify-content: flex-end; padding: .75rem 1rem; border: 1px solid rgb(var(--v-theme-on-surface) / .16); border-radius: 16px; background: rgb(var(--v-theme-surface-variant)); font-size: 2rem; font-weight: 900; line-height: 1; }
 .amount-keypad__keys { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .65rem; }
 .amount-keypad__keys .v-btn { min-width: 0; height: 54px; font-size: 1.05rem; font-weight: 850; }
-.exact-actions { display: grid; gap: 1rem; }
+.exact-actions {
+  display: grid;
+  grid-template:
+    "set add" 44px
+    "subtract add" 44px
+    / minmax(0, 1fr) minmax(0, 1fr);
+  gap: .5rem;
+}
+.exact-action { height: 100% !important; }
+.exact-action--subtract { grid-area: subtract; }
+.exact-action--add { grid-area: add; }
+.exact-action--set { grid-area: set; }
 .review-row { display: flex; flex-direction: column; align-items: stretch; gap: 1rem; border-top: 1px solid rgba(255,255,255,.08); }
 .review-actions { display: grid; gap: .5rem; }
 .review-actions .v-btn { width: 100%; }

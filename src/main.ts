@@ -6,8 +6,12 @@ import router from './router'
 import { vuetify } from './plugins/vuetify'
 import './styles/main.scss'
 
-if (Capacitor.getPlatform() === 'android') {
+const nativePlatform = Capacitor.getPlatform()
+
+if (nativePlatform === 'android') {
   document.documentElement.classList.add('platform-android')
+} else if (nativePlatform === 'ios') {
+  document.documentElement.classList.add('platform-ios')
 }
 
 createApp(App).use(createPinia()).use(router).use(vuetify).mount('#app')

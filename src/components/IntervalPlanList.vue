@@ -73,7 +73,7 @@ async function move(template: IntervalTemplate, direction: -1 | 1) {
     </v-card>
   </div>
 
-  <v-card v-else-if="!store.loading" class="surface-card pa-8 text-center">
+  <v-card v-else-if="store.loaded" class="surface-card pa-8 text-center">
     <v-icon icon="mdi-timer-plus-outline" size="42" class="mb-3" />
     <h2 class="text-h6 font-weight-black">Build your first interval</h2>
     <p class="text-body-2 muted mt-2 mb-5">Combine timed steps and repeat groups for any kind of session.</p>

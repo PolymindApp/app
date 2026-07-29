@@ -170,12 +170,6 @@ async function removeTemplate() {
 
 <template>
   <main class="app-page interval-editor">
-    <header class="editor-header mb-6">
-      <v-btn icon="mdi-arrow-left" variant="tonal" aria-label="Go back" @click="router.back()" />
-      <h1 class="display-title text-h5 text-center">{{ isEditing ? 'EDIT INTERVAL' : 'NEW INTERVAL' }}<span class="text-secondary">.</span></h1>
-      <div />
-    </header>
-
     <v-alert v-if="error" type="error" variant="tonal" class="mb-4">{{ error }}</v-alert>
 
     <v-form ref="form" validate-on="lazy" @submit.prevent="save">
@@ -304,7 +298,6 @@ async function removeTemplate() {
 
 <style scoped>
 .interval-editor { max-width: 760px; padding-bottom: 6rem; }
-.editor-header { display: grid; grid-template-columns: 44px 1fr 44px; align-items: center; }
 .field-stack, .sequence-tree { display: grid; gap: 1rem; }
 .field-label { color: rgb(var(--v-theme-on-surface) / .68); font-size: .75rem; font-weight: 750; }
 .color-row { display: flex; flex-wrap: wrap; gap: .55rem; }

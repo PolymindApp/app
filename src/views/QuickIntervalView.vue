@@ -55,12 +55,6 @@ async function start() {
 
 <template>
   <main class="app-page quick-page">
-    <header class="editor-header mb-6">
-      <v-btn icon="mdi-arrow-left" variant="tonal" aria-label="Go back" @click="router.back()" />
-      <h1 class="display-title text-h5 text-center">QUICK INTERVAL<span class="text-secondary">.</span></h1>
-      <div />
-    </header>
-
     <v-alert v-if="error" type="error" variant="tonal" class="mb-4">{{ error }}</v-alert>
 
     <v-card class="surface-card pa-5 mb-4">
@@ -129,7 +123,6 @@ async function start() {
 </template>
 
 <style scoped>
-.editor-header { display: grid; grid-template-columns: 44px 1fr 44px; align-items: center; }
 .quick-fields { display: grid; gap: 1rem; }
 .setting-row { display: flex; min-height: 64px; align-items: center; justify-content: space-between; gap: 1rem; }
 .setting-row p { margin-top: .15rem; color: rgb(var(--v-theme-on-surface) / .5); font-size: .7rem; }

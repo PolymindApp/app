@@ -67,7 +67,6 @@ const draft = reactive<TaskDraft>({
   steps: [],
 })
 
-const title = computed(() => isEditing.value ? 'EDIT ROUTINE' : `NEW ${typeOptions.find(item => item.type === draft.type)?.title.toUpperCase()}`)
 const cycleDays = computed(() => Array.from({ length: Math.max(1, draft.cycleLength || 1) }, (_, index) => index + 1))
 const showTarget = computed(() => draft.type === 'duration' || draft.type === 'daily_total')
 
@@ -181,14 +180,6 @@ async function removeTask() {
 
 <template>
   <main class="app-page app-page--editor editor-page" :class="{ 'editor-page--editing': isEditing }">
-    <header class="editor-header mb-6">
-      <v-btn icon="mdi-arrow-left" variant="tonal" aria-label="Go back" @click="router.back()" />
-      <div class="text-center">
-        <h1 class="display-title text-h5">{{ title }}<span class="text-secondary">.</span></h1>
-      </div>
-      <div style="width: 44px" />
-    </header>
-
     <v-alert v-if="error" type="error" variant="tonal" class="mb-4">{{ error }}</v-alert>
 
     <v-form ref="form" validate-on="lazy" @submit.prevent="save">
@@ -450,7 +441,6 @@ async function removeTask() {
 </template>
 
 <style scoped>
-.editor-header { display: grid; grid-template-columns: 44px 1fr 44px; align-items: center; }
 .type-selector { display: grid; grid-template-columns: repeat(2, 1fr); gap: .6rem; }
 .editor-type { position: relative; display: grid; min-height: 128px; grid-template-columns: 44px 1fr; grid-template-rows: auto auto; align-content: center; column-gap: .65rem; padding: .9rem; border: 0; border-radius: 20px; background: rgb(var(--v-theme-surface-variant) / .72); color: rgb(var(--v-theme-on-surface)); text-align: left; cursor: pointer; }
 .editor-type::after { position: absolute; inset: 0; border: 2px solid #626a61; border-radius: inherit; content: ""; pointer-events: none; }

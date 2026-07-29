@@ -39,11 +39,6 @@ async function start(template: IntervalTemplate) {
 
 <template>
   <main class="app-page intervals-page">
-    <header class="mb-6">
-      <h1 class="display-title text-h3 mt-2">INTERVALS<span class="text-secondary">.</span></h1>
-      <p class="text-body-2 muted mt-2">Start a sequence and stay inside the moment.</p>
-    </header>
-
     <v-alert v-if="store.error" type="error" variant="tonal" class="mb-4">{{ store.error }}</v-alert>
 
     <v-card v-if="store.activeSession" class="active-session pa-5 mb-4" color="secondary">
@@ -67,42 +62,46 @@ async function start(template: IntervalTemplate) {
     </v-card>
 
     <div class="section-heading"><h2>Your templates</h2><v-btn size="small" variant="text" :to="{ path: '/plan', query: { tab: 'intervals' } }">Manage</v-btn></div>
-    <div v-if="store.templates.length" class="template-launcher">
-      <v-card v-for="template in store.templates" :key="template.id" class="surface-card pa-4">
-        <div class="d-flex align-start ga-3">
-          <div class="template-icon" :style="{ background: template.color }"><v-icon icon="mdi-timer-outline" /></div>
-          <div class="flex-grow-1 min-width-0">
-            <h3 class="text-body-1 font-weight-black text-truncate">{{ template.name }}</h3>
-            <p class="text-caption muted mt-1">{{ formatIntervalDuration(intervalDuration(template.definition)) }} · {{ intervalStepCount(template.definition) }} intervals</p>
+    <transition name="interval-content">
+      <div v-if="store.templates.length" class="template-launcher">
+        <v-card v-for="template in store.templates" :key="template.id" class="surface-card pa-4">
+          <div class="d-flex align-start ga-3">
+            <div class="template-icon" :style="{ background: template.color }"><v-icon icon="mdi-timer-outline" /></div>
+            <div class="flex-grow-1 min-width-0">
+              <h3 class="text-body-1 font-weight-black text-truncate">{{ template.name }}</h3>
+              <p class="text-caption muted mt-1">{{ formatIntervalDuration(intervalDuration(template.definition)) }} · {{ intervalStepCount(template.definition) }} intervals</p>
+            </div>
+            <v-btn icon="mdi-play" color="secondary" size="small" :aria-label="`Start ${template.name}`" @click="start(template)" />
           </div>
-          <v-btn icon="mdi-play" color="secondary" size="small" :aria-label="`Start ${template.name}`" @click="start(template)" />
-        </div>
+        </v-card>
+      </div>
+      <v-card v-else-if="store.loaded" class="surface-card pa-7 text-center">
+        <p class="text-body-2 muted mb-4">No reusable intervals yet.</p>
+        <v-btn color="secondary" to="/plan/intervals/new">Create in Plan</v-btn>
       </v-card>
-    </div>
-    <v-card v-else-if="!store.loading" class="surface-card pa-7 text-center">
-      <p class="text-body-2 muted mb-4">No reusable intervals yet.</p>
-      <v-btn color="secondary" to="/plan/intervals/new">Create in Plan</v-btn>
-    </v-card>
+    </transition>
 
     <div class="section-heading"><h2>Recent runs</h2><span class="text-caption muted">{{ store.recentSessions.length }}</span></div>
-    <v-card v-if="store.recentSessions.length" class="surface-card pa-2">
-      <v-list bg-color="transparent">
-        <v-list-item
-          v-for="session in store.recentSessions"
-          :key="session.id"
-          :title="session.name"
-          :subtitle="`${format(new Date(session.startedAt), 'MMM d · h:mm a')} · ${session.source === 'quick' ? 'Quick' : 'Template'}`"
-        >
-          <template #prepend>
-            <v-icon :icon="session.status === 'completed' ? 'mdi-check-circle-outline' : 'mdi-stop-circle-outline'" :color="session.status === 'completed' ? 'success' : 'warning'" />
-          </template>
-          <template #append><strong class="text-caption">{{ formatIntervalDuration(session.elapsedSeconds) }}</strong></template>
-        </v-list-item>
-      </v-list>
-    </v-card>
-    <v-card v-else-if="!store.loading" class="surface-card pa-7 text-center">
-      <p class="text-body-2 muted">Finished sessions will appear here.</p>
-    </v-card>
+    <transition name="interval-content">
+      <v-card v-if="store.recentSessions.length" class="surface-card pa-2">
+        <v-list bg-color="transparent">
+          <v-list-item
+            v-for="session in store.recentSessions"
+            :key="session.id"
+            :title="session.name"
+            :subtitle="`${format(new Date(session.startedAt), 'MMM d · h:mm a')} · ${session.source === 'quick' ? 'Quick' : 'Template'}`"
+          >
+            <template #prepend>
+              <v-icon :icon="session.status === 'completed' ? 'mdi-check-circle-outline' : 'mdi-stop-circle-outline'" :color="session.status === 'completed' ? 'success' : 'warning'" />
+            </template>
+            <template #append><strong class="text-caption">{{ formatIntervalDuration(session.elapsedSeconds) }}</strong></template>
+          </v-list-item>
+        </v-list>
+      </v-card>
+      <v-card v-else-if="store.loaded" class="surface-card pa-7 text-center">
+        <p class="text-body-2 muted">Finished sessions will appear here.</p>
+      </v-card>
+    </transition>
   </main>
 </template>
 
@@ -115,5 +114,7 @@ async function start(template: IntervalTemplate) {
 .quick-icon, .template-icon { display: grid; width: 44px; height: 44px; flex: 0 0 auto; place-items: center; border-radius: 14px; background: rgb(var(--v-theme-surface-variant)); color: rgb(var(--v-theme-secondary)); }
 .template-icon { color: #17200f; }
 .template-launcher { display: grid; gap: .75rem; }
+.interval-content-enter-active { transition: opacity 180ms ease, transform 220ms cubic-bezier(.22, 1, .36, 1); }
+.interval-content-enter-from { opacity: 0; transform: translateY(.75rem); }
 @media (min-width: 700px) { .template-launcher { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 </style>
