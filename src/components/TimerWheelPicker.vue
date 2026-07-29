@@ -1,5 +1,10 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from 'vue'
+import {
+  changeSelectionFeedback,
+  endSelectionFeedback,
+  startSelectionFeedback,
+} from '@/services/haptics'
 
 const props = withDefaults(defineProps<{
   modelValue: number
@@ -20,6 +25,33 @@ const seconds = ref(0)
 const minutePosition = ref(0)
 const secondPosition = ref(0)
 const scrollFrames: Partial<Record<'minutes' | 'seconds', number>> = {}
+let selectionActive = false
+let selectionEndTimer: number | undefined
+
+function beginSelection() {
+  if (selectionActive) return
+  selectionActive = true
+  startSelectionFeedback()
+}
+
+function finishSelection() {
+  if (selectionEndTimer) window.clearTimeout(selectionEndTimer)
+  selectionEndTimer = undefined
+  if (!selectionActive) return
+  selectionActive = false
+  endSelectionFeedback()
+}
+
+function scheduleSelectionEnd() {
+  if (selectionEndTimer) window.clearTimeout(selectionEndTimer)
+  selectionEndTimer = window.setTimeout(finishSelection, 140)
+}
+
+function tickSelection() {
+  beginSelection()
+  changeSelectionFeedback()
+  scheduleSelectionEnd()
+}
 
 function normalizedParts(value: number) {
   const total = Math.max(0, Math.round(Number(value) || 0))
@@ -49,6 +81,7 @@ function syncScrollers() {
 }
 
 function updateValue(part: 'minutes' | 'seconds', value: number, behavior: ScrollBehavior = 'smooth') {
+  const changed = part === 'minutes' ? minutes.value !== value : seconds.value !== value
   if (part === 'minutes') {
     minutes.value = value
     scrollToValue(minuteScroller.value, value, behavior)
@@ -57,6 +90,7 @@ function updateValue(part: 'minutes' | 'seconds', value: number, behavior: Scrol
     scrollToValue(secondScroller.value, value, behavior)
   }
   emit('update:modelValue', minutes.value * 60 + seconds.value)
+  if (changed) tickSelection()
 }
 
 function updateInput(part: 'minutes' | 'seconds', value: string | number | null) {
@@ -78,6 +112,7 @@ function activateCenteredValue(part: 'minutes' | 'seconds') {
     seconds.value = value
   }
   emit('update:modelValue', minutes.value * 60 + seconds.value)
+  tickSelection()
 }
 
 function handleScroll(part: 'minutes' | 'seconds') {
@@ -129,6 +164,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   Object.values(scrollFrames).forEach((frame) => frame && cancelAnimationFrame(frame))
+  finishSelection()
 })
 </script>
 

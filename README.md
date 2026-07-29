@@ -31,7 +31,7 @@ PocketBase data and the downloaded binary live under `.pocketbase/` and are inte
 - `pnpm build` — type-check and create a production build
 - `pnpm android:sync` — build the web app and sync it into Android
 - `pnpm android:assets` — regenerate launcher and splash assets from `assets/`
-- `pnpm android:dev` — launch a connected USB device with live reload and PocketBase
+- `pnpm android:dev` — launch a connected USB or wireless ADB device with live reload and PocketBase
 - `pnpm android:open` — open the native project in Android Studio
 - `pnpm android:run` — sync and run on a selected emulator or device
 - `pnpm android:build` — create a debug APK
@@ -60,18 +60,51 @@ VITE_POCKETBASE_URL=https://your-pocketbase.example.com pnpm android:bundle
 
 The unsigned AAB is written to `android/app/build/outputs/bundle/release/app-release.aab`. A phone or emulator cannot reach the computer through `127.0.0.1`; use a reachable PocketBase URL. Android production builds should use HTTPS.
 
-### Develop on a connected Android phone
+### Develop on an Android phone
 
-Connect one phone with USB debugging enabled, then run:
+Connect one phone with USB debugging or wireless debugging enabled, then run:
 
 ```bash
 pnpm android:dev
 ```
 
-The command waits for USB authorization, starts PocketBase and Vite when needed, forwards ports `5173` and `8090` over USB, installs Mom, and stays attached for hot updates. Press `Ctrl+C` to stop it and clean up processes and port forwarding.
+The command waits for an authorized USB device or automatically discovers a
+previously paired wireless device over mDNS. It starts PocketBase and Vite when
+needed, forwards ports `5173` and `8090` through ADB, installs Mom, and stays
+attached for hot updates. Press `Ctrl+C` to stop it and clean up processes and
+port forwarding.
 
 If more than one device is connected, select one explicitly:
 
 ```bash
 ANDROID_SERIAL=<device-id> pnpm android:dev
 ```
+
+Once a phone is paired, enable Wireless debugging and simply run:
+
+```bash
+pnpm android:dev
+```
+
+For first-time pairing, open **Wireless debugging → Pair device with pairing
+code** on the phone, then run the same command. The script discovers the phone
+and asks only for the displayed six-digit code.
+
+Use `--wireless` only to bypass discovery or select one of multiple phones:
+
+```bash
+pnpm android:dev -- --wireless 192.168.1.50:37841
+```
+
+For first-time wireless pairing, use the pairing address, connection address,
+and code shown under Android's **Wireless debugging** screen:
+
+```bash
+pnpm android:dev -- \
+  --pair 192.168.1.50:41237 \
+  --pair-code 123456 \
+  --wireless 192.168.1.50:37841
+```
+
+The same values can be supplied through `ANDROID_PAIR_ADDRESS`,
+`ANDROID_PAIR_CODE`, and `ANDROID_WIRELESS_ADDRESS`.

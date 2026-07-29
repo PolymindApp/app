@@ -444,7 +444,7 @@ async function runAgain() {
             size="x-large"
             :loading="starting"
             :aria-label="session.status === 'paused' ? playActionLabel : 'Pause'"
-            @click="isTemplatePreview ? startTemplate() : session.status === 'paused' ? resume() : pause()"
+            @click.stop="isTemplatePreview ? startTemplate() : session.status === 'paused' ? resume() : pause()"
           />
           <v-btn icon="mdi-skip-next" variant="tonal" size="large" aria-label="Skip interval" :disabled="isTemplatePreview" @click="skip" />
           <v-btn prepend-icon="mdi-restart" variant="text" class="restart-button" :disabled="isTemplatePreview" @click="restart">Restart</v-btn>
@@ -464,7 +464,7 @@ async function runAgain() {
             class="runner-pause-button"
             :loading="starting"
             :aria-label="session.status === 'paused' ? playActionLabel : 'Pause'"
-            @click="isTemplatePreview ? startTemplate() : session.status === 'paused' ? resume() : pause()"
+            @click.stop="isTemplatePreview ? startTemplate() : session.status === 'paused' ? resume() : pause()"
           />
           <v-btn icon="mdi-skip-next" variant="tonal" aria-label="Next interval" :disabled="isTemplatePreview" @click="skip" />
           <v-btn

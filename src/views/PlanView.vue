@@ -96,10 +96,10 @@ async function confirmStatusChange() {
         <div :key="planTab" class="plan-tab-content">
     <template v-if="planTab === 'tasks'">
     <div class="d-flex align-center justify-space-between mb-4">
-      <v-btn-toggle v-model="filter" mandatory color="primary" divided density="comfortable" class="plan-status-toggle">
-        <v-btn value="active">Active</v-btn>
-        <v-btn value="paused">Paused</v-btn>
-      </v-btn-toggle>
+      <v-tabs v-model="filter" color="secondary" density="comfortable" class="plan-status-tabs">
+        <v-tab value="active">Active</v-tab>
+        <v-tab value="paused">Paused</v-tab>
+      </v-tabs>
       <span class="text-caption muted">{{ visibleTasks.length }} total</span>
     </div>
 
@@ -225,7 +225,7 @@ async function confirmStatusChange() {
   opacity: 0;
   transform: translateX(1rem);
 }
-.plan-status-toggle { gap: 1rem; }
+.plan-status-tabs { width: auto; }
 .type-icon { display: grid; width: 39px; height: 39px; flex: 0 0 auto; place-items: center; border-radius: 13px; color: #191c19; }
 .plan-list { display: grid; gap: .75rem; }
 .plan-card { cursor: pointer; transition: transform .18s ease, box-shadow .18s ease; }

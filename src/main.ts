@@ -1,5 +1,6 @@
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
+import { App as NativeApp } from '@capacitor/app'
 import { Capacitor } from '@capacitor/core'
 import App from './App.vue'
 import router from './router'
@@ -15,6 +16,24 @@ if (nativePlatform === 'android') {
 }
 
 createApp(App).use(createPinia()).use(router).use(vuetify).mount('#app')
+
+if (nativePlatform === 'android') {
+  void router.isReady().then(() => NativeApp.addListener('backButton', () => {
+    const historyState = window.history.state as { back?: unknown } | null
+    if (typeof historyState?.back === 'string') {
+      router.back()
+      return
+    }
+
+    const backTo = router.currentRoute.value.meta.backTo
+    if (typeof backTo === 'string') {
+      void router.replace(backTo)
+      return
+    }
+
+    void NativeApp.minimizeApp()
+  }))
+}
 
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
   window.addEventListener('load', () => {

@@ -1,11 +1,21 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
+import { containCardButtonClicks } from '@/services/cardButtonPropagation'
 
 const route = useRoute()
 const transitioning = ref(false)
 const enteringApp = computed(() => route.name !== 'auth')
 const transitionName = computed(() => enteringApp.value ? 'session-forward' : 'session-back')
+let removeCardButtonContainment: (() => void) | undefined
+
+onMounted(() => {
+  removeCardButtonContainment = containCardButtonClicks()
+})
+
+onBeforeUnmount(() => {
+  removeCardButtonContainment?.()
+})
 </script>
 
 <template>

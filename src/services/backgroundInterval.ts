@@ -22,6 +22,7 @@ interface BackgroundIntervalPlugin {
 
 const BackgroundInterval = registerPlugin<BackgroundIntervalPlugin>('BackgroundInterval')
 const MAX_NATIVE_STEPS = 10_000
+let nativeBackgroundIntervalActive = false
 
 function nativeSteps(session: IntervalSession) {
   const count = intervalStepCount(session.definition)
@@ -43,18 +44,34 @@ function nativeSteps(session: IntervalSession) {
 
 export async function syncBackgroundInterval(session: IntervalSession) {
   if (Capacitor.getPlatform() !== 'android' || session.status !== 'running') return
-  await BackgroundInterval.start({
-    sessionId: session.id,
-    sessionName: session.name,
-    steps: nativeSteps(session),
-    stepIndex: session.runtime.stepIndex,
-    remainingMs: Math.max(1, Math.round(session.runtime.remainingMs)),
-    soundEnabled: session.cues.soundEnabled,
-    vibrationEnabled: session.cues.vibrationEnabled,
-  })
+  try {
+    await BackgroundInterval.start({
+      sessionId: session.id,
+      sessionName: session.name,
+      steps: nativeSteps(session),
+      stepIndex: session.runtime.stepIndex,
+      remainingMs: Math.max(1, Math.round(session.runtime.remainingMs)),
+      soundEnabled: session.cues.soundEnabled,
+      vibrationEnabled: session.cues.vibrationEnabled,
+    })
+    nativeBackgroundIntervalActive = true
+  } catch (error) {
+    nativeBackgroundIntervalActive = false
+    throw error
+  }
 }
 
 export async function stopBackgroundInterval() {
   if (Capacitor.getPlatform() !== 'android') return
-  await BackgroundInterval.stop()
+  try {
+    await BackgroundInterval.stop()
+  } finally {
+    nativeBackgroundIntervalActive = false
+  }
+}
+
+export function nativeBackgroundIntervalOwnsCues() {
+  return nativeBackgroundIntervalActive
+    && typeof document !== 'undefined'
+    && document.visibilityState !== 'visible'
 }

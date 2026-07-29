@@ -1,4 +1,5 @@
 import type { IntervalCueSettings } from '@/types/domain'
+import { nativeBackgroundIntervalOwnsCues } from '@/services/backgroundInterval'
 
 let audioContext: AudioContext | undefined
 const cueUrls = {
@@ -38,7 +39,7 @@ export async function prepareIntervalCues(cues: IntervalCueSettings) {
 }
 
 function playCue(name: keyof typeof cueUrls, cues: IntervalCueSettings) {
-  if (!cues.soundEnabled) return
+  if (!cues.soundEnabled || nativeBackgroundIntervalOwnsCues()) return
   void loadCue(name)
     .then((buffer) => {
       if (!audioContext) return
@@ -57,6 +58,7 @@ export function playIntervalCountCue(cues: IntervalCueSettings) {
 }
 
 export function playIntervalGoCue(cues: IntervalCueSettings) {
+  if (nativeBackgroundIntervalOwnsCues()) return
   playCue('go', cues)
   if (cues.vibrationEnabled && 'vibrate' in navigator) navigator.vibrate([120, 60, 120])
 }

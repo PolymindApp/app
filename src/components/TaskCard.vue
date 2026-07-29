@@ -67,7 +67,11 @@ function toggleFromCard() {
       <button
         v-if="isCheck"
         class="check-control"
-        :class="{ 'check-control--done': progress.complete }"
+        :class="{
+          'check-control--done': progress.complete,
+          'check-control--warning': currentGoalState === 'exceeded',
+          'check-control--error': currentGoalState === 'not_enough',
+        }"
         :style="{ '--task-color': taskColor }"
         :aria-label="progress.complete ? `Mark ${title} incomplete` : `Complete ${title}`"
         :disabled="busy || progress.locked"
@@ -78,7 +82,11 @@ function toggleFromCard() {
       <div
         v-else
         class="check-control check-control--status"
-        :class="{ 'check-control--done': progress.complete }"
+        :class="{
+          'check-control--done': progress.complete,
+          'check-control--warning': currentGoalState === 'exceeded',
+          'check-control--error': currentGoalState === 'not_enough',
+        }"
         :style="{ '--task-color': taskColor }"
         aria-hidden="true"
       >
@@ -209,6 +217,16 @@ function toggleFromCard() {
   border: 1px solid var(--task-color);
   background: color-mix(in srgb, var(--task-color) 18%, transparent);
   color: var(--task-color);
+}
+
+.check-control--warning {
+  border: 1px solid rgb(var(--v-theme-warning));
+  background: rgb(var(--v-theme-warning) / .16);
+}
+
+.check-control--error {
+  border: 1px solid rgb(var(--v-theme-error));
+  background: rgb(var(--v-theme-error) / .16);
 }
 
 .check-control--status {

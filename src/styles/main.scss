@@ -8,8 +8,9 @@
 html,
 body,
 #app {
-  min-height: 100%;
-  overflow-x: hidden;
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
 }
 
 html {
@@ -45,29 +46,30 @@ html.platform-android body::after {
 }
 
 /*
- * Let the main content keep its native overscroll effect while preventing the
- * root WebView—and therefore fixed navigation/action bars—from stretching.
+ * The page content owns scrolling, so viewport-level chrome never participates
+ * in the overscroll effect.
  */
-html.platform-android,
-html.platform-android body,
-html.platform-android #app {
-  height: 100%;
-  overflow: hidden;
-  overscroll-behavior: none;
-}
-
-html.platform-android .v-application {
+.v-application {
   height: 100dvh;
   overflow: hidden;
 }
 
-html.platform-android .app-scroll {
+.app-scroll {
   height: 100dvh;
   max-height: 100dvh;
   overflow-x: hidden;
   overflow-y: auto !important;
   overscroll-behavior-y: contain;
   -webkit-overflow-scrolling: touch;
+}
+
+/*
+ * Android WebView does not consistently render nested rubber-band overscroll.
+ * AppShell supplies a content-only pull effect there, so disable the native
+ * effect to avoid doubling it on WebView versions that do render one.
+ */
+html.platform-android .app-scroll {
+  overscroll-behavior-y: none;
 }
 
 .display-title {
@@ -80,10 +82,18 @@ html.platform-android .app-scroll {
 }
 
 .app-page {
+  --page-safe-area-bottom: env(safe-area-inset-bottom);
+
   width: 100%;
   max-width: 760px;
   margin: 0 auto;
-  padding: max(1.25rem, env(safe-area-inset-top)) 1rem calc(16px + env(safe-area-inset-bottom));
+  padding: max(1.25rem, env(safe-area-inset-top)) 1rem calc(16px + var(--page-safe-area-bottom));
+}
+
+html.platform-android .app-page {
+  --page-safe-area-bottom: 0px;
+
+  padding-top: 1.25rem;
 }
 
 .app-page--editor {

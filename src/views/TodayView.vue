@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { addDays, addWeeks, endOfWeek, format, isSameDay, isSameWeek, startOfWeek } from 'date-fns'
 import { storeToRefs } from 'pinia'
 import { useDisplay } from 'vuetify'
@@ -18,6 +18,9 @@ const exactAction = ref<'add' | 'subtract' | 'set'>()
 const reviewSheet = ref(false)
 const weekDirection = ref<'previous' | 'next'>('next')
 const visibleWeekStart = ref(startOfWeek(selectedDate.value, { weekStartsOn: 1 }))
+let weekTouchStart: { x: number; y: number } | undefined
+let suppressDateClick = false
+let suppressDateClickTimer: number | undefined
 const exactAmount = computed(() => {
   if (!exactAmountInput.value || exactAmountInput.value === '.') return null
   const value = Number(exactAmountInput.value)
@@ -47,6 +50,9 @@ const doneCount = computed(() => selectedProgress.value.filter((item) => item.co
 onMounted(async () => {
   try { await store.load() } catch { /* Error state is displayed in the view. */ }
 })
+onBeforeUnmount(() => {
+  if (suppressDateClickTimer) window.clearTimeout(suppressDateClickTimer)
+})
 
 async function run(action: () => Promise<void>) {
   busy.value = true
@@ -66,6 +72,32 @@ function moveWeek(amount: number) {
 function goToCurrentWeek() {
   weekDirection.value = visibleWeekStart.value > new Date() ? 'previous' : 'next'
   visibleWeekStart.value = startOfWeek(new Date(), { weekStartsOn: 1 })
+}
+
+function beginWeekSwipe(event: TouchEvent) {
+  const touch = event.changedTouches[0]
+  if (touch) weekTouchStart = { x: touch.clientX, y: touch.clientY }
+}
+
+function endWeekSwipe(event: TouchEvent) {
+  const touch = event.changedTouches[0]
+  if (!weekTouchStart || !touch) return
+  const horizontalDistance = touch.clientX - weekTouchStart.x
+  const verticalDistance = touch.clientY - weekTouchStart.y
+  weekTouchStart = undefined
+  if (Math.abs(horizontalDistance) < 50 || Math.abs(horizontalDistance) <= Math.abs(verticalDistance) * 1.2) return
+
+  suppressDateClick = true
+  if (suppressDateClickTimer) window.clearTimeout(suppressDateClickTimer)
+  suppressDateClickTimer = window.setTimeout(() => {
+    suppressDateClick = false
+    suppressDateClickTimer = undefined
+  }, 350)
+  moveWeek(horizontalDistance < 0 ? 1 : -1)
+}
+
+function selectDate(date: Date) {
+  if (!suppressDateClick) selectedDate.value = date
 }
 
 function openExact(progress: TaskProgress) {
@@ -128,7 +160,12 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
       />
     </div>
 
-    <div class="date-strip-window mb-5">
+    <div
+      class="date-strip-window mb-5"
+      @touchstart.passive="beginWeekSwipe"
+      @touchend.passive="endWeekSwipe"
+      @touchcancel="weekTouchStart = undefined"
+    >
       <transition :name="`week-${weekDirection}`">
         <div :key="visibleWeekStart.toISOString()" class="date-strip" role="list" aria-label="Choose a date">
           <button
@@ -136,7 +173,7 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
             :key="day.date.toISOString()"
             class="date-chip"
             :class="{ 'date-chip--active': isSameDay(selectedDate, day.date) }"
-            @click="selectedDate = day.date"
+            @click="selectDate(day.date)"
           >
             <span>{{ day.day }}</span>
             <strong>{{ day.number }}</strong>
@@ -389,6 +426,7 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
   position: relative;
   min-height: 62px;
   overflow-x: hidden;
+  touch-action: pan-y;
 }
 
 .week-next-enter-active,

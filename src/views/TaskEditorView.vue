@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { format } from 'date-fns'
 import { useRoute, useRouter } from 'vue-router'
+import ColorSwatchPicker from '@/components/ColorSwatchPicker.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import QuickAmountsEditor from '@/components/QuickAmountsEditor.vue'
 import { useTaskStore } from '@/stores/tasks'
@@ -38,8 +39,6 @@ const units = [
   { title: 'Count', value: 'count' },
   { title: 'Custom unit', value: 'custom' },
 ]
-const routineColors = ['#C7F464', '#8FB8FF', '#FFB86B', '#D4A5FF', '#79C174', '#FF776B']
-
 const draft = reactive<TaskDraft>({
   name: '',
   description: '',
@@ -182,48 +181,35 @@ async function removeTask() {
     <v-alert v-if="error" type="error" variant="tonal" class="mb-4">{{ error }}</v-alert>
 
     <v-form ref="form" validate-on="lazy" @submit.prevent="save">
-      <section v-if="!typeLocked" class="mb-6">
-        <div class="type-selector">
-          <button
-            v-for="option in typeOptions"
-            :key="option.type"
-            type="button"
-            class="editor-type"
-            :class="{ 'editor-type--selected': draft.type === option.type }"
-            :aria-pressed="draft.type === option.type"
-            @click="draft.type = option.type"
-          >
-            <span :style="{ background: option.color }"><v-icon :icon="option.icon" /></span>
-            <strong>{{ option.title }}</strong>
-            <small>{{ option.subtitle }}</small>
-          </button>
-        </div>
-      </section>
-
       <v-card class="surface-card pa-5 mb-4">
         <div class="field-stack mb-4">
           <v-text-field v-model="draft.name" label="Task name" placeholder="e.g. Hit protein target" :rules="[v => Boolean(v) || 'Name is required']" />
           <v-textarea v-model="draft.description" label="Why does this matter? (optional)" rows="2" auto-grow variant="outlined" />
         </div>
-        <label class="field-label">Routine color</label>
-        <div class="routine-colors mt-2 mb-4">
-          <button
-            v-for="color in routineColors"
-            :key="color"
-            type="button"
-            class="color-swatch"
-            :class="{ 'color-swatch--selected': draft.color === color }"
-            :style="{ background: color }"
-            :aria-label="`Use color ${color}`"
-            @click="draft.color = color"
-          >
-            <v-icon v-if="draft.color === color" icon="mdi-check-bold" size="16" />
-          </button>
-          <label class="custom-color" aria-label="Choose a custom routine color">
-            <input v-model="draft.color" type="color" />
-            <v-icon icon="mdi-eyedropper-variant" size="18" />
-          </label>
+        <div v-if="!typeLocked" class="mb-4">
+          <label class="field-label">Task type</label>
+          <div class="type-selector mt-2">
+            <button
+              v-for="option in typeOptions"
+              :key="option.type"
+              type="button"
+              class="editor-type"
+              :class="{ 'editor-type--selected': draft.type === option.type }"
+              :aria-pressed="draft.type === option.type"
+              @click="draft.type = option.type"
+            >
+              <span :style="{ background: option.color }"><v-icon :icon="option.icon" /></span>
+              <strong>{{ option.title }}</strong>
+              <small>{{ option.subtitle }}</small>
+            </button>
+          </div>
         </div>
+        <ColorSwatchPicker
+          v-model="draft.color"
+          label="Routine color"
+          custom-label="Choose a custom routine color"
+          class="mb-4"
+        />
         <div class="setting-row">
           <div><strong>Required</strong><p>Counts toward your daily score</p></div>
           <v-switch v-model="draft.mandatory" color="secondary" hide-details inset />
@@ -245,7 +231,7 @@ async function removeTask() {
             { title: 'Every N weeks', value: 'interval_weeks' },
           ]"
         />
-        <div v-if="draft.recurrenceType !== 'daily'">
+        <div v-if="draft.recurrenceType !== 'daily'" class="scheduled-days">
           <label class="field-label">Scheduled days</label>
           <div class="weekday-scroll mt-2">
             <v-btn-toggle
@@ -441,9 +427,10 @@ async function removeTask() {
 .setting-row strong { font-size: .83rem; }
 .setting-row p { margin-top: .15rem; color: rgb(var(--v-theme-on-surface) / .5); font-size: .7rem; }
 .field-label { color: rgb(var(--v-theme-on-surface) / .68); font-size: .75rem; font-weight: 750; }
-.weekday-scroll { width: 100%; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; }
+.scheduled-days { min-width: 0; max-width: 100%; overflow: hidden; }
+.weekday-scroll { width: 100%; min-width: 0; max-width: 100%; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scrollbar-width: none; touch-action: pan-x; }
 .weekday-scroll::-webkit-scrollbar { display: none; }
-.weekday-picker { display: inline-flex; width: max-content; min-width: 100%; max-width: none; justify-content: flex-start; gap: 1rem; }
+.weekday-picker { display: inline-flex; width: max-content; min-width: 100%; max-width: none; flex-wrap: nowrap; justify-content: flex-start; gap: 1rem; }
 .weekday-picker :deep(.v-btn) { width: 44px; min-width: 44px; flex: 0 0 44px; }
 .weekday-picker :deep(.day-picker--selected) {
   background: rgb(var(--v-theme-secondary)) !important;
@@ -458,12 +445,6 @@ async function removeTask() {
 .field-stack { display: grid; gap: 1rem; }
 .date-grid, .target-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
 .date-range-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); }
-.routine-colors { display: flex; flex-wrap: wrap; align-items: center; gap: .55rem; }
-.color-swatch, .custom-color { display: grid; width: 38px; height: 38px; place-items: center; border: 2px solid transparent; border-radius: 12px; color: #17200f; cursor: pointer; }
-.color-swatch--selected { border-color: rgb(var(--v-theme-on-surface)); box-shadow: 0 0 0 2px rgb(var(--v-theme-background)); }
-.custom-color { position: relative; overflow: hidden; border-color: rgb(var(--v-theme-on-surface) / .18); background: rgb(var(--v-theme-surface-variant)); color: rgb(var(--v-theme-on-surface)); }
-.custom-color input { position: absolute; inset: -8px; width: 56px; height: 56px; opacity: 0; cursor: pointer; }
-.custom-color .v-icon { pointer-events: none; }
 .step-panels :deep(.v-expansion-panel) { border: 1px solid rgb(var(--v-theme-on-surface) / .08); }
 .step-number { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 11px; background: rgb(var(--v-theme-secondary)); color: rgb(var(--v-theme-on-secondary)); font-size: .75rem; font-weight: 900; }
 .cycle-day-picker { max-height: 145px; overflow-y: auto; }

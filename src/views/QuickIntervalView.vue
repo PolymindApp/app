@@ -2,6 +2,11 @@
 import { computed, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import TimerWheelPicker from '@/components/TimerWheelPicker.vue'
+import {
+  changeSelectionFeedback,
+  endSelectionFeedback,
+  startSelectionFeedback,
+} from '@/services/haptics'
 import { prepareIntervalCues } from '@/services/intervalCues'
 import { formatIntervalDuration, intervalDuration, quickIntervalDefinition } from '@/services/intervals'
 import { useIntervalStore } from '@/stores/intervals'
@@ -104,6 +109,9 @@ async function start() {
             color="secondary"
             hide-details
             aria-label="Rounds"
+            @start="startSelectionFeedback"
+            @update:model-value="changeSelectionFeedback"
+            @end="endSelectionFeedback"
           />
           <div class="rounds-control__range" aria-hidden="true">
             <span>1</span>
@@ -155,7 +163,7 @@ async function start() {
 
 @media (max-width: 959px) {
   .quick-page {
-    padding-bottom: calc(7rem + env(safe-area-inset-bottom));
+    padding-bottom: calc(7rem + var(--page-safe-area-bottom));
   }
 
   .quick-summary {

@@ -52,14 +52,6 @@ function openTemplate(template: IntervalTemplate) {
           </div>
         </div>
 
-        <div class="quick-sequence" aria-label="Work, rest, and repeat">
-          <span><v-icon icon="mdi-play" size="14" />Work</span>
-          <v-icon icon="mdi-chevron-right" size="16" />
-          <span><v-icon icon="mdi-pause" size="14" />Rest</span>
-          <v-icon icon="mdi-chevron-right" size="16" />
-          <span><v-icon icon="mdi-repeat" size="14" />Repeat</span>
-        </div>
-
         <v-btn
           class="quick-card__action"
           color="secondary"
@@ -129,15 +121,13 @@ function openTemplate(template: IntervalTemplate) {
 .active-session { display: flex; align-items: center; justify-content: space-between; gap: 1rem; color: rgb(var(--v-theme-on-secondary)); }
 .active-label { font-size: .65rem; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
 .active-copy { color: rgb(var(--v-theme-on-secondary) / .7); font-size: .75rem; }
-.quick-card { position: relative; overflow: hidden; border-color: rgb(var(--v-theme-secondary) / .2); outline: 1px solid rgb(var(--v-theme-secondary) / .34); outline-offset: -1px; background: linear-gradient(145deg, rgb(var(--v-theme-surface)), rgb(var(--v-theme-secondary) / .07)); }
+.quick-card { position: relative; overflow: hidden; border: 2px solid rgba(var(--v-theme-secondary), .68) !important; background: linear-gradient(145deg, rgb(var(--v-theme-surface)), rgba(var(--v-theme-secondary), .07)); box-shadow: inset 0 0 0 1px rgba(var(--v-theme-secondary), .18), 0 12px 30px rgba(0, 0, 0, .2) !important; }
 .quick-card__glow { position: absolute; top: -70px; right: -55px; width: 180px; height: 180px; border: 32px solid rgb(var(--v-theme-secondary) / .07); border-radius: 50%; pointer-events: none; }
 .quick-card__content { position: relative; display: grid; gap: 1.25rem; }
 .quick-card__intro { display: flex; min-width: 0; align-items: center; gap: 1rem; }
 .quick-card__copy { max-width: 34rem; color: rgb(var(--v-theme-on-surface) / .62); font-size: .82rem; line-height: 1.5; }
 .quick-icon, .template-icon { display: grid; width: 48px; height: 48px; flex: 0 0 auto; place-items: center; border-radius: 16px; background: rgb(var(--v-theme-secondary)); color: rgb(var(--v-theme-on-secondary)); box-shadow: 0 10px 24px rgb(var(--v-theme-secondary) / .12); }
 .template-icon { color: #17200f; }
-.quick-sequence { display: flex; min-width: 0; align-items: center; gap: .4rem; color: rgb(var(--v-theme-on-surface) / .42); }
-.quick-sequence span { display: inline-flex; min-width: 0; flex: 1 1 0; align-items: center; justify-content: center; gap: .35rem; padding: .55rem .45rem; border: 1px solid rgb(var(--v-theme-on-surface) / .09); border-radius: 12px; background: rgb(var(--v-theme-background) / .52); color: rgb(var(--v-theme-on-surface) / .76); font-size: .68rem; font-weight: 800; }
 .quick-card__action { width: 100%; }
 .template-launcher { display: grid; gap: .75rem; }
 .template-card { cursor: pointer; }
@@ -147,8 +137,7 @@ function openTemplate(template: IntervalTemplate) {
 @media (min-width: 700px) {
   .quick-card__content { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
   .quick-card__intro { grid-column: 1; }
-  .quick-sequence { grid-column: 1; }
-  .quick-card__action { width: auto; min-width: 160px; grid-column: 2; grid-row: 1 / 3; }
+  .quick-card__action { width: auto; min-width: 160px; grid-column: 2; grid-row: 1; }
 }
 @media (min-width: 700px) { .template-launcher { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 </style>

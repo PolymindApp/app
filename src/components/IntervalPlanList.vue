@@ -58,17 +58,25 @@ async function move(template: IntervalTemplate, direction: -1 | 1) {
           </p>
           <p v-if="template.description" class="text-caption muted mt-3 text-truncate">{{ template.description }}</p>
         </div>
-        <v-btn icon="mdi-dots-horizontal" variant="text" size="small" @click.stop>
-          <v-menu activator="parent" location="bottom end">
-            <v-list density="compact">
-              <v-list-item prepend-icon="mdi-pencil-outline" title="Edit" @click="router.push(`/plan/intervals/${template.id}`)" />
-              <v-list-item prepend-icon="mdi-content-copy" title="Duplicate" @click="store.duplicateTemplate(template)" />
-              <v-list-item prepend-icon="mdi-arrow-up" title="Move up" :disabled="index === 0" @click="move(template, -1)" />
-              <v-list-item prepend-icon="mdi-arrow-down" title="Move down" :disabled="index === store.templates.length - 1" @click="move(template, 1)" />
-              <v-list-item prepend-icon="mdi-delete-outline" title="Delete" base-color="error" @click="pendingDelete = template" />
-            </v-list>
-          </v-menu>
-        </v-btn>
+        <v-menu location="bottom end">
+          <template #activator="{ props: menuProps }">
+            <v-btn
+              v-bind="menuProps"
+              icon="mdi-dots-horizontal"
+              variant="text"
+              size="small"
+              aria-label="Interval template actions"
+              @click.stop
+            />
+          </template>
+          <v-list density="compact">
+            <v-list-item prepend-icon="mdi-pencil-outline" title="Edit" @click="router.push(`/plan/intervals/${template.id}`)" />
+            <v-list-item prepend-icon="mdi-content-copy" title="Duplicate" @click="store.duplicateTemplate(template)" />
+            <v-list-item prepend-icon="mdi-arrow-up" title="Move up" :disabled="index === 0" @click="move(template, -1)" />
+            <v-list-item prepend-icon="mdi-arrow-down" title="Move down" :disabled="index === store.templates.length - 1" @click="move(template, 1)" />
+            <v-list-item prepend-icon="mdi-delete-outline" title="Delete" base-color="error" @click="pendingDelete = template" />
+          </v-list>
+        </v-menu>
       </div>
     </v-card>
   </div>

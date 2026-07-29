@@ -1,6 +1,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import TimerWheelPicker from '@/components/TimerWheelPicker.vue'
+import {
+  changeSelectionFeedback,
+  endSelectionFeedback,
+  startSelectionFeedback,
+} from '@/services/haptics'
 import type { IntervalGroupNode, IntervalNode, IntervalStepKind } from '@/types/domain'
 
 const props = defineProps<{
@@ -159,6 +164,9 @@ function selectKind(kind: IntervalStepKind) {
             color="secondary"
             hide-details
             aria-label="Repeat count"
+            @start="startSelectionFeedback"
+            @update:model-value="changeSelectionFeedback"
+            @end="endSelectionFeedback"
           />
           <div class="repeat-control__range" aria-hidden="true">
             <span>1</span>
