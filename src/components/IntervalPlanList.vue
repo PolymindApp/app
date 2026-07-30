@@ -62,6 +62,7 @@ async function move(template: IntervalTemplate, direction: -1 | 1) {
           class="interval-plan-actions"
           @pointerdown.stop
           @pointerup.stop
+          @touchstart.stop
           @click.stop
         >
           <v-menu location="bottom end">

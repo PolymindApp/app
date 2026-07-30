@@ -26,6 +26,29 @@ describe('card button propagation', () => {
     remove()
   })
 
+  it.each(['mousedown', 'touchstart'])(
+    'contains the %s event that starts a parent card ripple',
+    (eventName) => {
+      const card = document.createElement('div')
+      card.className = 'v-card'
+      const button = document.createElement('button')
+      card.append(button)
+      document.body.append(card)
+
+      const cardAction = vi.fn()
+      const buttonAction = vi.fn()
+      card.addEventListener(eventName, cardAction)
+      button.addEventListener(eventName, buttonAction)
+      const remove = containCardButtonClicks()
+
+      button.dispatchEvent(new Event(eventName, { bubbles: true }))
+
+      expect(buttonAction).toHaveBeenCalledOnce()
+      expect(cardAction).not.toHaveBeenCalled()
+      remove()
+    },
+  )
+
   it('registers buttons added to cards after installation', async () => {
     const card = document.createElement('div')
     card.className = 'v-card'

@@ -75,6 +75,7 @@ function toggleFromCard() {
         :style="{ '--task-color': taskColor }"
         :aria-label="progress.complete ? `Mark ${title} incomplete` : `Complete ${title}`"
         :disabled="busy || progress.locked"
+        @touchstart.stop
         @click.stop="emit('toggle', progress)"
       >
         <v-icon :icon="stateIcon" :color="stateIconColor" size="20" />
@@ -159,6 +160,7 @@ function toggleFromCard() {
         :color="progress.sealed ? undefined : 'secondary'"
         :prepend-icon="progress.sealed ? 'mdi-lock-open-variant-outline' : 'mdi-lock-check-outline'"
         :disabled="busy || progress.locked"
+        @touchstart.stop
         @click.stop="emit('seal', progress)"
       >
         {{ progress.sealed ? 'Unlock total' : 'Lock in total' }}

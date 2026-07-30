@@ -1,16 +1,19 @@
 const CARD_BUTTON_SELECTOR = '.v-card button, .v-card .v-btn'
+const CONTAINED_EVENTS = ['click', 'mousedown', 'touchstart'] as const
 
 export function containCardButtonClicks(root: ParentNode = document) {
   const registered = new Set<HTMLElement>()
 
-  const stopClickPropagation = (event: Event) => {
+  const stopPropagation = (event: Event) => {
     event.stopPropagation()
   }
 
   const register = (element: HTMLElement) => {
     if (registered.has(element)) return
     registered.add(element)
-    element.addEventListener('click', stopClickPropagation)
+    CONTAINED_EVENTS.forEach((eventName) => {
+      element.addEventListener(eventName, stopPropagation)
+    })
   }
 
   const scan = (node: ParentNode) => {
@@ -36,7 +39,9 @@ export function containCardButtonClicks(root: ParentNode = document) {
   return () => {
     observer.disconnect()
     registered.forEach((element) => {
-      element.removeEventListener('click', stopClickPropagation)
+      CONTAINED_EVENTS.forEach((eventName) => {
+        element.removeEventListener(eventName, stopPropagation)
+      })
     })
     registered.clear()
   }

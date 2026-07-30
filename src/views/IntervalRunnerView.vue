@@ -444,6 +444,7 @@ async function runAgain() {
             size="x-large"
             :loading="starting"
             :aria-label="session.status === 'paused' ? playActionLabel : 'Pause'"
+            @touchstart.stop
             @click.stop="isTemplatePreview ? startTemplate() : session.status === 'paused' ? resume() : pause()"
           />
           <v-btn icon="mdi-skip-next" variant="tonal" size="large" aria-label="Skip interval" :disabled="isTemplatePreview" @click="skip" />
@@ -464,6 +465,7 @@ async function runAgain() {
             class="runner-pause-button"
             :loading="starting"
             :aria-label="session.status === 'paused' ? playActionLabel : 'Pause'"
+            @touchstart.stop
             @click.stop="isTemplatePreview ? startTemplate() : session.status === 'paused' ? resume() : pause()"
           />
           <v-btn icon="mdi-skip-next" variant="tonal" aria-label="Next interval" :disabled="isTemplatePreview" @click="skip" />

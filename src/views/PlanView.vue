@@ -139,6 +139,7 @@ async function confirmStatusChange() {
             variant="tonal"
             size="small"
             :aria-label="task.active ? `Pause ${task.name}` : `Activate ${task.name}`"
+            @touchstart.stop
             @click.stop="requestStatusChange(task)"
           />
         </div>
