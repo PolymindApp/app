@@ -80,6 +80,24 @@ describe('Mom API client adapter', () => {
     expect(localStorage.getItem('mom-api-auth')).toContain(token)
   })
 
+  it('gets the authenticated user passkey registration status', async () => {
+    const token = futureToken()
+    localStorage.setItem('mom-api-auth', JSON.stringify({
+      token,
+      record: { id: 'user-1', email: 'person@example.com' },
+    }))
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ registered: true }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { api } = await import('./api')
+    await expect(api.getPasskeyStatus()).resolves.toEqual({ registered: true })
+    expect(fetchMock).toHaveBeenCalledWith('/api/auth/passkeys/status', expect.objectContaining({
+      headers: expect.any(Headers),
+    }))
+    const [, options] = fetchMock.mock.calls[0]
+    expect((options.headers as Headers).get('Authorization')).toBe(`Bearer ${token}`)
+  })
+
   it('paginates getFullList calls and sends the bearer token', async () => {
     const token = futureToken()
     localStorage.setItem('mom-api-auth', JSON.stringify({

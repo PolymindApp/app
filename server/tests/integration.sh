@@ -106,6 +106,15 @@ alice_login="$(login "$alice_email")"
 alice_token="$(json_field token <<<"$alice_login")"
 alice_id="$(php -r '$data=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); echo $data["record"]["id"];' <<<"$alice_login")"
 
+passkey_status="$(curl --silent --show-error --fail \
+  -H "Authorization: Bearer $alice_token" \
+  "$api_url/auth/passkeys/status")"
+passkey_registered="$(json_field registered <<<"$passkey_status")"
+[[ "$passkey_registered" == "" ]] || {
+  echo "A new account was incorrectly reported as having a passkey." >&2
+  exit 1
+}
+
 passkey_options="$(curl --silent --show-error --fail \
   -X POST -H "Content-Type: application/json" \
   -H "Authorization: Bearer $alice_token" \
@@ -157,6 +166,24 @@ consumed_challenge_count="$(sqlite3 "$test_db" \
   "SELECT COUNT(*) FROM mom_passkey_challenges WHERE id = '$passkey_ceremony';")"
 [[ "$consumed_challenge_count" == 0 ]] || {
   echo "A used passkey challenge was not consumed." >&2
+  exit 1
+}
+
+sqlite3 "$test_db" "
+  INSERT INTO mom_passkeys (
+    credential_id, user_id, user_handle, public_key, signature_counter,
+    transports, backup_eligible, backed_up, created, last_used
+  ) VALUES (
+    'test-credential', '$alice_id', 'test-user-handle', 'test-public-key', 0,
+    '[]', 0, 0, '2026-07-29T00:00:00Z', ''
+  );
+"
+passkey_status="$(curl --silent --show-error --fail \
+  -H "Authorization: Bearer $alice_token" \
+  "$api_url/auth/passkeys/status")"
+passkey_registered="$(json_field registered <<<"$passkey_status")"
+[[ "$passkey_registered" == "1" ]] || {
+  echo "An existing passkey was not reported for its account." >&2
   exit 1
 }
 

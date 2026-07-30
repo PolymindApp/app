@@ -50,6 +50,9 @@ final class Api
             if ($method === 'POST' && $path === '/auth/passkeys/register/verify') {
                 $this->verifyPasskeyRegistration();
             }
+            if ($method === 'GET' && $path === '/auth/passkeys/status') {
+                $this->passkeyStatus();
+            }
             if ($method === 'POST' && $path === '/auth/passkeys/login/options') {
                 $this->passkeyLoginOptions();
             }
@@ -88,10 +91,14 @@ final class Api
 
             throw new ApiException(404, 'Endpoint not found.');
         } catch (ApiException $exception) {
-            $this->respond([
+            $body = [
                 'message' => $exception->getMessage(),
                 'details' => (object) $exception->details,
-            ], $exception->status);
+            ];
+            if ($this->config->debug && $exception->status >= 500) {
+                $body['error'] = ApiException::debugPayload($exception);
+            }
+            $this->respond($body, $exception->status);
         } catch (Throwable $exception) {
             error_log(sprintf(
                 '[mom-api] %s in %s:%d',
@@ -99,7 +106,11 @@ final class Api
                 $exception->getFile(),
                 $exception->getLine(),
             ));
-            $this->respond(['message' => 'An unexpected server error occurred.'], 500);
+            $body = ['message' => 'An unexpected server error occurred.'];
+            if ($this->config->debug) {
+                $body['error'] = ApiException::debugPayload($exception);
+            }
+            $this->respond($body, 500);
         }
     }
 
@@ -398,6 +409,21 @@ final class Api
             'registered' => true,
             'credentialId' => $credentialId,
         ], 201);
+    }
+
+    private function passkeyStatus(): never
+    {
+        $user = $this->authenticate();
+        $this->passkeyWebAuthn();
+
+        $statement = $this->database->pdo->prepare(
+            'SELECT 1 FROM mom_passkeys WHERE user_id = :user_id LIMIT 1',
+        );
+        $statement->execute(['user_id' => $user['id']]);
+
+        $this->respond([
+            'registered' => $statement->fetchColumn() !== false,
+        ]);
     }
 
     private function passkeyLoginOptions(): never

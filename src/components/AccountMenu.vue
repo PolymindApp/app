@@ -7,7 +7,7 @@ defineProps<{
   accountName: string
   accountEmail?: string
   accountInitials: string
-  passkeyAvailable?: boolean
+  canCreatePasskey?: boolean
   passkeyLoading?: boolean
 }>()
 
@@ -160,7 +160,7 @@ onBeforeUnmount(unbindListeners)
           <v-divider />
           <v-list :id="menuId" role="menu" density="compact" class="pa-2">
             <v-list-item
-              v-if="passkeyAvailable"
+              v-if="canCreatePasskey"
               role="menuitem"
               title="Create passkey"
               subtitle="Use your screen lock to sign in"
@@ -169,7 +169,7 @@ onBeforeUnmount(unbindListeners)
               :disabled="passkeyLoading"
               @click="requestCreatePasskey"
             />
-            <v-divider v-if="passkeyAvailable" class="my-2" />
+            <v-divider v-if="canCreatePasskey" class="my-2" />
             <v-list-item
               role="menuitem"
               title="Sign out"

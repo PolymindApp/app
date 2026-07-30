@@ -7,30 +7,43 @@ use Mom\Api\ApiException;
 use Mom\Api\Config;
 use Mom\Api\Database;
 
-require dirname(__DIR__, 2) . '/vendor/autoload.php';
 require dirname(__DIR__) . '/src/ApiException.php';
-require dirname(__DIR__) . '/src/Config.php';
-require dirname(__DIR__) . '/src/MigrationRunner.php';
-require dirname(__DIR__) . '/src/Database.php';
-require dirname(__DIR__) . '/src/Schema.php';
-require dirname(__DIR__) . '/src/Api.php';
+
+$serverRoot = dirname(__DIR__);
+$debug = false;
 
 try {
-    $config = Config::load(dirname(__DIR__));
+    require $serverRoot . '/src/Config.php';
+    $debug = Config::debugEnabled($serverRoot);
+    require dirname($serverRoot) . '/vendor/autoload.php';
+    require $serverRoot . '/src/MigrationRunner.php';
+    require $serverRoot . '/src/Database.php';
+    require $serverRoot . '/src/Schema.php';
+    require $serverRoot . '/src/Api.php';
+
+    $config = Config::load($serverRoot);
     $database = new Database($config->databasePath);
     (new Api($config, $database))->run();
 } catch (ApiException $exception) {
     header('Content-Type: application/json; charset=utf-8');
     header('Cache-Control: no-store');
     http_response_code($exception->status);
-    echo json_encode([
+    $body = [
         'message' => $exception->getMessage(),
         'details' => (object) $exception->details,
-    ], JSON_UNESCAPED_SLASHES);
+    ];
+    if ($debug && $exception->status >= 500) {
+        $body['error'] = ApiException::debugPayload($exception);
+    }
+    echo json_encode($body, JSON_UNESCAPED_SLASHES);
 } catch (Throwable $exception) {
     error_log('[mom-api/bootstrap] ' . $exception->getMessage());
     header('Content-Type: application/json; charset=utf-8');
     header('Cache-Control: no-store');
     http_response_code(500);
-    echo json_encode(['message' => 'The API could not start.']);
+    $body = ['message' => 'The API could not start.'];
+    if ($debug) {
+        $body['error'] = ApiException::debugPayload($exception);
+    }
+    echo json_encode($body, JSON_UNESCAPED_SLASHES);
 }

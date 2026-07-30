@@ -16,6 +16,7 @@ const appScroll = ref<HTMLElement | { $el?: HTMLElement }>()
 const pageTransition = ref('page-level-forward')
 const isIos = Capacitor.getPlatform() === 'ios'
 const passkeyAvailable = ref(false)
+const passkeyRegistered = ref<boolean | null>(null)
 const passkeyNotice = ref(false)
 const passkeyNoticeText = ref('')
 const passkeyNoticeColor = ref<'success' | 'error'>('success')
@@ -31,6 +32,9 @@ const pageTitle = computed(() => String(router.currentRoute.value.meta.title || 
 const canGoBack = computed(() => Number(router.currentRoute.value.meta.pageDepth ?? 0) > 0)
 const accountName = computed(() => auth.user?.name || auth.firstName || 'You')
 const accountEmail = computed(() => auth.user?.email || '')
+const canCreatePasskey = computed(
+  () => passkeyAvailable.value && passkeyRegistered.value === false,
+)
 const accountInitials = computed(() => {
   const source = auth.user?.name || auth.user?.email || 'A'
   return source
@@ -71,6 +75,13 @@ onBeforeUnmount(() => {
 
 onMounted(async () => {
   passkeyAvailable.value = await isAndroidPasskeyAvailable()
+  if (!passkeyAvailable.value) return
+
+  try {
+    passkeyRegistered.value = await auth.hasRegisteredPasskey()
+  } catch {
+    passkeyRegistered.value = null
+  }
 })
 
 function logout() {
@@ -92,6 +103,7 @@ function getScrollElement() {
 async function createPasskey() {
   try {
     if (!await auth.registerPasskey()) return
+    passkeyRegistered.value = true
     passkeyNoticeColor.value = 'success'
     passkeyNoticeText.value = 'Passkey created. You can now use it from the sign-in screen.'
     passkeyNotice.value = true
@@ -160,7 +172,7 @@ async function createPasskey() {
             :account-name="accountName"
             :account-email="accountEmail"
             :account-initials="accountInitials"
-            :passkey-available="passkeyAvailable"
+            :can-create-passkey="canCreatePasskey"
             :passkey-loading="auth.passkeyLoading"
             @create-passkey="createPasskey"
             @sign-out="logoutDialog = true"

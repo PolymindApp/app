@@ -214,6 +214,14 @@ class ApiClient {
     )
   }
 
+  getPasskeyStatus() {
+    return request<{ registered: boolean }>(
+      '/auth/passkeys/status',
+      {},
+      this.authStore,
+    )
+  }
+
   beginPasskeyLogin() {
     return request<PasskeyOptionsResponse>(
       '/auth/passkeys/login/options',

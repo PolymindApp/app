@@ -70,6 +70,11 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  async function hasRegisteredPasskey() {
+    const status = await api.getPasskeyStatus()
+    return status.registered
+  }
+
   async function registerPasskey() {
     passkeyLoading.value = true
     error.value = ''
@@ -98,6 +103,7 @@ export const useAuthStore = defineStore('auth', () => {
     error,
     isAuthenticated,
     firstName,
+    hasRegisteredPasskey,
     login,
     loginWithPasskey,
     register,

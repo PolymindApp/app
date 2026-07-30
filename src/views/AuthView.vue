@@ -64,7 +64,7 @@ async function signInWithPasskey() {
   <v-app>
     <v-main class="auth-page app-scroll">
       <div class="auth-glow" />
-      <v-container class="auth-wrap px-5 py-8">
+      <v-container class="auth-wrap px-5">
         <section class="auth-intro">
           <div class="logo-box">
             <img src="/brand/mom-wordmark.png" alt="Mom" />
@@ -210,6 +210,7 @@ async function signInWithPasskey() {
   position: relative;
   z-index: 1;
   min-height: 100dvh;
+  padding-block: 5rem;
   display: grid;
   align-content: center;
   gap: 2.5rem;

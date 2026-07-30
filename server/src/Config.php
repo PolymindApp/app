@@ -15,6 +15,7 @@ final class Config
         public readonly string $passkeyRpId,
         public readonly string $passkeyAndroidPackage,
         public readonly array $passkeyAndroidKeyHashes,
+        public readonly bool $debug,
     ) {
     }
 
@@ -65,6 +66,7 @@ final class Config
             'trim',
             explode(',', (string) $value('MOM_PASSKEY_ANDROID_KEY_HASHES', '')),
         ))));
+        $debug = strtolower(trim((string) $value('DEBUG', ''))) === 'dev';
 
         if ($secret === '' || strlen($secret) < 32) {
             throw new ApiException(500, 'MOM_API_SECRET must contain at least 32 characters.');
@@ -126,7 +128,21 @@ final class Config
             $passkeyRpId,
             $passkeyAndroidPackage,
             $passkeyAndroidKeyHashes,
+            $debug,
         );
+    }
+
+    public static function debugEnabled(string $serverRoot): bool
+    {
+        $environment = getenv('DEBUG');
+        if ($environment !== false && $environment !== '') {
+            return strtolower(trim($environment)) === 'dev';
+        }
+
+        $projectRoot = dirname($serverRoot);
+        $dotenv = self::readDotenv($projectRoot . '/.env');
+
+        return strtolower(trim((string) ($dotenv['DEBUG'] ?? ''))) === 'dev';
     }
 
     private static function readDotenv(string $path): array
