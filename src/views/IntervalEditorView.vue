@@ -7,8 +7,8 @@ import IntervalNodeEditor from '@/components/IntervalNodeEditor.vue'
 import {
   cloneIntervalTemplateDraft,
   createIntervalGroup,
-  createIntervalId,
   createIntervalStep,
+  duplicateIntervalNode,
   formatIntervalDuration,
   intervalDuration,
   intervalStepCount,
@@ -59,15 +59,6 @@ function findNode(nodes: IntervalNode[], id: string, parent?: IntervalGroupNode,
     }
   }
   return undefined
-}
-
-function cloneNode(node: IntervalNode): IntervalNode {
-  if (node.type === 'step') return { ...structuredClone(node), id: createIntervalId() }
-  return {
-    ...structuredClone(node),
-    id: createIntervalId(),
-    children: node.children.map(cloneNode),
-  }
 }
 
 function createNode(type: 'step' | 'group') {
@@ -123,7 +114,10 @@ const actions = {
   duplicate(id: string) {
     const location = findNode(draft.definition.children, id)
     const node = location?.nodes[location.index]
-    if (location && node) location.nodes.splice(location.index + 1, 0, cloneNode(node))
+    if (!location || !node) return
+    const duplicate = duplicateIntervalNode(node)
+    location.nodes.splice(location.index + 1, 0, duplicate)
+    void scrollToNode(duplicate.id)
   },
   remove(id: string) {
     const location = findNode(draft.definition.children, id)
@@ -263,6 +257,7 @@ async function removeTemplate() {
             :depth="0"
             :can-indent="index > 0 && draft.definition.children[index - 1]?.type === 'group'"
             :can-outdent="false"
+            :can-skip-on-last-round="false"
             :actions="actions"
           />
         </template>

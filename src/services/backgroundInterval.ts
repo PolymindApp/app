@@ -1,10 +1,15 @@
 import { Capacitor, registerPlugin } from '@capacitor/core'
-import { intervalStepCount, resolveIntervalStep } from '@/services/intervals'
+import {
+  intervalStepCount,
+  intervalStepDurationSeconds,
+  resolveIntervalStep,
+} from '@/services/intervals'
 import type { IntervalSession } from '@/types/domain'
 
 interface BackgroundIntervalStep {
   name: string
   durationMs: number
+  requiresConfirmation: boolean
 }
 
 interface BackgroundIntervalPlugin {
@@ -36,7 +41,8 @@ function nativeSteps(session: IntervalSession) {
     if (!resolved) break
     steps.push({
       name: resolved.step.name || `Interval ${index + 1}`,
-      durationMs: Math.max(1, Math.round(resolved.step.durationSeconds * 1000)),
+      durationMs: Math.max(1, Math.round(intervalStepDurationSeconds(resolved.step) * 1000)),
+      requiresConfirmation: resolved.step.kind === 'confirmation',
     })
   }
   return steps

@@ -16,6 +16,7 @@ import {
   intervalDuration,
   reconcileIntervalRuntime,
   resolveIntervalStep,
+  intervalStepDurationSeconds,
 } from '@/services/intervals'
 import { useIntervalStore } from '@/stores/intervals'
 import type { IntervalRuntimeState, IntervalSession } from '@/types/domain'
@@ -29,7 +30,7 @@ const starting = ref(false)
 const endDialog = ref(false)
 const error = ref('')
 const backgroundError = ref('')
-const timerEffect = ref<'count' | 'complete' | ''>('')
+const timerEffect = ref<'count' | ''>('')
 const timerEffectKey = ref(0)
 let ticker: number | undefined
 let wakeLock: { release: () => Promise<void> } | undefined
@@ -44,7 +45,8 @@ const session = computed(() => persistedSession.value || previewSession.value)
 const current = computed(() => session.value ? resolveIntervalStep(session.value.definition, session.value.runtime.stepIndex) : undefined)
 const next = computed(() => session.value ? resolveIntervalStep(session.value.definition, session.value.runtime.stepIndex + 1) : undefined)
 const finished = computed(() => session.value?.status === 'completed' || session.value?.status === 'ended')
-const currentDurationMs = computed(() => (current.value?.step.durationSeconds || 0) * 1000)
+const currentConfirmation = computed(() => current.value?.step.kind === 'confirmation')
+const currentDurationMs = computed(() => current.value ? intervalStepDurationSeconds(current.value.step) * 1000 : 0)
 const remainingLabel = computed(() => {
   const totalSeconds = Math.max(0, Math.ceil(displayRemainingMs.value / 1000))
   const minutes = Math.floor(totalSeconds / 60)
@@ -64,10 +66,11 @@ const elapsedSeconds = computed(() => {
 const hasStarted = computed(() => {
   const item = session.value
   if (!item) return false
-  const initialDurationMs = resolveIntervalStep(item.definition, 0)?.step.durationSeconds
+  const initialStep = resolveIntervalStep(item.definition, 0)
+  const initialDurationMs = initialStep ? intervalStepDurationSeconds(initialStep.step) * 1000 : 0
   return item.runtime.stepIndex > 0
     || item.runtime.accumulatedMs > 0
-    || item.runtime.remainingMs < (initialDurationMs || 0) * 1000
+    || item.runtime.remainingMs < initialDurationMs
 })
 const playActionLabel = computed(() => hasStarted.value ? 'Resume' : 'Start')
 
@@ -135,7 +138,7 @@ onBeforeUnmount(() => {
   void wakeLock?.release()
 })
 
-function pulseTimer(effect: 'count' | 'complete') {
+function pulseTimer(effect: 'count') {
   if (timerEffectTimeout) window.clearTimeout(timerEffectTimeout)
   timerEffect.value = effect
   timerEffectKey.value += 1
@@ -197,7 +200,6 @@ async function tick() {
   if (!result.transitions) return
 
   syncing.value = true
-  pulseTimer('complete')
   store.mirrorRuntime(item.id, result.runtime)
   try {
     if (result.completed) {
@@ -253,7 +255,12 @@ async function resume() {
   const item = session.value
   if (!item || item.status !== 'paused') return
   const now = new Date().toISOString()
-  const runtime = { ...item.runtime, stepStartedAt: now, updatedAt: now }
+  const step = resolveIntervalStep(item.definition, item.runtime.stepIndex)
+  const runtime = {
+    ...item.runtime,
+    stepStartedAt: step?.step.kind === 'confirmation' ? undefined : now,
+    updatedAt: now,
+  }
   await prepareIntervalCues(item.cues)
   const updated = await store.updateSession(item.id, { status: 'running', runtime })
   await syncNativeTimer(updated)
@@ -288,26 +295,60 @@ async function startTemplate() {
   }
 }
 
-async function skip() {
-  const item = session.value
-  if (!item || finished.value) return
+async function advanceCurrent(item: IntervalSession) {
+  if (syncing.value) return
+  syncing.value = true
   const result = reconciled(item)
   const nextIndex = result.runtime.stepIndex + 1
   const nextStep = resolveIntervalStep(item.definition, nextIndex)
-  if (!nextStep) return completeSession(item, { ...result.runtime, stepIndex: nextIndex, remainingMs: 0, stepStartedAt: undefined })
-  const now = new Date().toISOString()
-  const runtime = {
-    ...result.runtime,
-    stepIndex: nextIndex,
-    remainingMs: nextStep.step.durationSeconds * 1000,
-    stepStartedAt: item.status === 'running' ? now : undefined,
-    updatedAt: now,
+  try {
+    if (!nextStep) {
+      await completeSession(item, {
+        ...result.runtime,
+        stepIndex: nextIndex,
+        remainingMs: 0,
+        stepStartedAt: undefined,
+      })
+      return
+    }
+    const now = new Date().toISOString()
+    const runtime = {
+      ...result.runtime,
+      stepIndex: nextIndex,
+      remainingMs: intervalStepDurationSeconds(nextStep.step) * 1000,
+      stepStartedAt: item.status === 'running' && nextStep.step.kind !== 'confirmation'
+        ? now
+        : undefined,
+      updatedAt: now,
+    }
+    const updated = await store.updateSession(item.id, {
+      runtime,
+      elapsedSeconds: Math.round(runtime.accumulatedMs / 1000),
+    })
+    displayRemainingMs.value = runtime.remainingMs
+    lastCountCue = ''
+    if (updated.status === 'running') await syncNativeTimer(updated)
+    playIntervalGoCue(item.cues)
+  } finally {
+    syncing.value = false
   }
-  const updated = await store.updateSession(item.id, { runtime, elapsedSeconds: Math.round(runtime.accumulatedMs / 1000) })
-  displayRemainingMs.value = runtime.remainingMs
-  lastCountCue = ''
-  if (updated.status === 'running') await syncNativeTimer(updated)
-  playIntervalGoCue(item.cues)
+}
+
+async function confirmCurrent() {
+  const item = session.value
+  if (
+    !item
+    || item.status !== 'running'
+    || current.value?.step.kind !== 'confirmation'
+    || finished.value
+  ) return
+  await advanceCurrent(item)
+}
+
+async function skip() {
+  const item = session.value
+  if (!item || currentConfirmation.value || finished.value) return
+  await advanceCurrent(item)
 }
 
 async function previous() {
@@ -321,8 +362,10 @@ async function previous() {
   const runtime = {
     ...result.runtime,
     stepIndex: previousIndex,
-    remainingMs: previousStep.step.durationSeconds * 1000,
-    stepStartedAt: item.status === 'running' ? now : undefined,
+    remainingMs: intervalStepDurationSeconds(previousStep.step) * 1000,
+    stepStartedAt: item.status === 'running' && previousStep.step.kind !== 'confirmation'
+      ? now
+      : undefined,
     updatedAt: now,
   }
   const updated = await store.updateSession(item.id, { runtime, elapsedSeconds: Math.round(runtime.accumulatedMs / 1000) })
@@ -419,14 +462,26 @@ async function runAgain() {
             </div>
             <h1 class="runner-step">{{ current.step.name }}</h1>
           </div>
-          <div class="timer-ring">
+          <div v-if="currentConfirmation" class="confirmation-action">
+            <v-btn
+              color="secondary"
+              size="x-large"
+              prepend-icon="mdi-check-bold"
+              :loading="starting || syncing"
+              :disabled="!isTemplatePreview && session.status !== 'running'"
+              @touchstart.stop
+              @click.stop="isTemplatePreview ? startTemplate() : confirmCurrent()"
+            >
+              {{ isTemplatePreview ? playActionLabel : 'Confirm and continue' }}
+            </v-btn>
+          </div>
+          <div v-else class="timer-ring">
             <v-progress-circular :model-value="progress" :size="260" :width="12" color="secondary" bg-color="surface-variant">
               <span
                 :key="timerEffectKey"
                 class="timer-value"
                 :class="{
                   'timer-value--count': timerEffect === 'count',
-                  'timer-value--complete': timerEffect === 'complete',
                 }"
               >
                 {{ remainingLabel }}
@@ -447,7 +502,7 @@ async function runAgain() {
             @touchstart.stop
             @click.stop="isTemplatePreview ? startTemplate() : session.status === 'paused' ? resume() : pause()"
           />
-          <v-btn icon="mdi-skip-next" variant="tonal" size="large" aria-label="Skip interval" :disabled="isTemplatePreview" @click="skip" />
+          <v-btn icon="mdi-skip-next" variant="tonal" size="large" aria-label="Skip interval" :disabled="isTemplatePreview || currentConfirmation" @click="skip" />
           <v-btn prepend-icon="mdi-restart" variant="text" class="restart-button" :disabled="isTemplatePreview" @click="restart">Restart</v-btn>
         </footer>
 
@@ -468,7 +523,7 @@ async function runAgain() {
             @touchstart.stop
             @click.stop="isTemplatePreview ? startTemplate() : session.status === 'paused' ? resume() : pause()"
           />
-          <v-btn icon="mdi-skip-next" variant="tonal" aria-label="Next interval" :disabled="isTemplatePreview" @click="skip" />
+          <v-btn icon="mdi-skip-next" variant="tonal" aria-label="Next interval" :disabled="isTemplatePreview || currentConfirmation" @click="skip" />
           <v-btn
             icon="mdi-chevron-left"
             variant="text"
@@ -547,9 +602,10 @@ async function runAgain() {
 .group-breadcrumb span { padding: 4px 8px; border-radius: 999px; background: rgb(var(--v-theme-surface-variant)); color: rgb(var(--v-theme-on-surface) / .7); font-size: .65rem; }
 .runner-step { max-width: 640px; margin-top: .5rem; font-size: clamp(2rem, 10vw, 4.5rem); font-weight: 900; line-height: 1; }
 .timer-ring { margin: 2.25rem 0 1.5rem; }
+.confirmation-action { display: grid; width: min(100%, 22rem); min-height: 260px; margin: 2.25rem 0 1.5rem; place-items: center; }
+.confirmation-action :deep(.v-btn) { width: 100%; min-height: 64px; }
 .timer-value { display: inline-block; font-family: "Arial Narrow", Impact, sans-serif; font-size: 4rem; font-weight: 900; letter-spacing: -.04em; transform-origin: center; }
 .timer-value--count { color: rgb(var(--v-theme-warning)); animation: timer-value-pulse 560ms cubic-bezier(.22, 1, .36, 1); }
-.timer-value--complete { color: rgb(var(--v-theme-error)); animation: timer-value-pulse 560ms cubic-bezier(.22, 1, .36, 1); }
 @keyframes timer-value-pulse {
   0% { transform: scale(1); }
   38% { transform: scale(1.16); }
@@ -690,6 +746,22 @@ async function runAgain() {
     overflow: visible;
     border-radius: 0;
     background: transparent;
+  }
+
+  .confirmation-action {
+    display: grid;
+    width: 100%;
+    min-height: 0;
+    margin: 0;
+    padding: clamp(1rem, 6dvh, 3rem);
+    grid-column: 1;
+    grid-row: 1 / 4;
+    place-items: center;
+  }
+
+  .confirmation-action :deep(.v-btn) {
+    width: min(100%, 22rem);
+    min-height: clamp(3.5rem, 18dvh, 5rem);
   }
 
   .timer-ring :deep(.v-progress-circular) {

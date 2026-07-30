@@ -5,6 +5,7 @@ import {
   cloneIntervalTemplateDraft,
   createRuntimeState,
   intervalDuration,
+  normalizeQuickIntervalSettings,
   reconcileIntervalRuntime,
 } from '@/services/intervals'
 import type {
@@ -15,10 +16,10 @@ import type {
   IntervalSessionStatus,
   IntervalTemplate,
   IntervalTemplateDraft,
+  QuickIntervalSettings,
 } from '@/types/domain'
 
 const RECOVERY_KEY = 'mom-active-interval'
-const QUICK_CUES_KEY = 'mom-quick-interval-cues'
 
 function mapTemplate(record: Record<string, any>): IntervalTemplate {
   return {
@@ -71,6 +72,7 @@ function saveRecovery(sessionId: string, runtime: IntervalRuntimeState) {
 export const useIntervalStore = defineStore('intervals', () => {
   const templates = ref<IntervalTemplate[]>([])
   const sessions = ref<IntervalSession[]>([])
+  const quickIntervalSettings = ref<QuickIntervalSettings>()
   const loading = ref(false)
   const loaded = ref(false)
   const error = ref('')
@@ -257,28 +259,25 @@ export const useIntervalStore = defineStore('intervals', () => {
     saveRecovery(sessionId, runtime)
   }
 
-  function getQuickCues(): IntervalCueSettings {
-    try {
-      const saved = JSON.parse(localStorage.getItem(QUICK_CUES_KEY) || '')
-      if (saved) {
-        return {
-          soundEnabled: saved.soundEnabled !== false,
-          vibrationEnabled: saved.vibrationEnabled !== false,
-        }
-      }
-    } catch {
-      // Use defaults below.
-    }
-    return { soundEnabled: true, vibrationEnabled: true }
+  async function loadQuickIntervalSettings() {
+    const settings = await api.getUserSettings()
+    quickIntervalSettings.value = normalizeQuickIntervalSettings(settings.quickInterval)
+    return quickIntervalSettings.value
   }
 
-  function rememberQuickCues(cues: IntervalCueSettings) {
-    localStorage.setItem(QUICK_CUES_KEY, JSON.stringify(cues))
+  async function rememberQuickIntervalSettings(settings: QuickIntervalSettings) {
+    const saved = await api.updateUserSettings({ quickInterval: settings })
+    quickIntervalSettings.value = normalizeQuickIntervalSettings(saved.quickInterval)
+    if (!quickIntervalSettings.value) {
+      throw new Error('The saved quick interval settings are invalid.')
+    }
+    return quickIntervalSettings.value
   }
 
   return {
     templates,
     sessions,
+    quickIntervalSettings,
     loading,
     loaded,
     error,
@@ -293,7 +292,7 @@ export const useIntervalStore = defineStore('intervals', () => {
     updateSession,
     reconcileActiveSession,
     mirrorRuntime,
-    getQuickCues,
-    rememberQuickCues,
+    loadQuickIntervalSettings,
+    rememberQuickIntervalSettings,
   }
 })

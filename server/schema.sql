@@ -13,6 +13,7 @@ CREATE TABLE users (
     password TEXT NOT NULL,
     token_key TEXT NOT NULL,
     timezone TEXT NOT NULL DEFAULT 'UTC',
+    settings JSON NOT NULL DEFAULT '{}',
     created TEXT NOT NULL,
     updated TEXT NOT NULL
 );

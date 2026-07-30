@@ -37,7 +37,7 @@ final class Database
         $required = [
             'users' => [
                 'id', 'email', 'email_visibility', 'verified', 'name', 'avatar',
-                'password', 'token_key', 'timezone', 'created', 'updated',
+                'password', 'token_key', 'timezone', 'settings', 'created', 'updated',
             ],
             'tags' => ['id', 'owner', 'name'],
             'tasks' => [

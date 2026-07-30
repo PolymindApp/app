@@ -1,10 +1,12 @@
 package dev.coulombe.mom;
 
+import android.content.res.Configuration;
 import android.graphics.Color;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.View;
 import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 import com.getcapacitor.BridgeActivity;
 
@@ -32,6 +34,7 @@ public class MainActivity extends BridgeActivity {
         WindowInsetsControllerCompat controller = WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView());
         controller.setAppearanceLightStatusBars(false);
         controller.setAppearanceLightNavigationBars(false);
+        updateSystemBarVisibility();
 
         if (getBridge() != null && getBridge().getWebView() != null) {
             getBridge().getWebView().setBackgroundColor(APP_BACKGROUND);
@@ -43,12 +46,43 @@ public class MainActivity extends BridgeActivity {
     public void onResume() {
         super.onResume();
         appVisible = true;
+        updateSystemBarVisibility();
     }
 
     @Override
     public void onPause() {
         appVisible = false;
         super.onPause();
+    }
+
+    @Override
+    public void onConfigurationChanged(Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        updateSystemBarVisibility();
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus) updateSystemBarVisibility();
+    }
+
+    private void updateSystemBarVisibility() {
+        View decorView = getWindow().getDecorView();
+        WindowInsetsControllerCompat controller = WindowCompat.getInsetsController(getWindow(), decorView);
+        boolean isLandscape = getResources().getConfiguration().orientation
+            == Configuration.ORIENTATION_LANDSCAPE;
+
+        if (isLandscape) {
+            controller.hide(WindowInsetsCompat.Type.systemBars());
+            controller.setSystemBarsBehavior(
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            );
+            return;
+        }
+
+        controller.show(WindowInsetsCompat.Type.systemBars());
+        controller.setSystemBarsBehavior(WindowInsetsControllerCompat.BEHAVIOR_DEFAULT);
     }
 
     public static boolean isAppVisible() {

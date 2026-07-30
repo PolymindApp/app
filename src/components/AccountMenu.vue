@@ -7,12 +7,10 @@ defineProps<{
   accountName: string
   accountEmail?: string
   accountInitials: string
-  canCreatePasskey?: boolean
-  passkeyLoading?: boolean
 }>()
 
 const emit = defineEmits<{
-  createPasskey: []
+  openAccount: []
   signOut: []
 }>()
 
@@ -58,9 +56,9 @@ function requestSignOut() {
   emit('signOut')
 }
 
-function requestCreatePasskey() {
+function requestOpenAccount() {
   closeMenu()
-  emit('createPasskey')
+  emit('openAccount')
 }
 
 function positionMenu() {
@@ -147,8 +145,18 @@ onBeforeUnmount(unbindListeners)
         class="account-menu-popover"
         :style="menuStyle"
       >
-        <v-card class="account-menu" min-width="240">
-          <div class="account-menu__identity pa-4">
+        <v-card
+          :id="menuId"
+          class="account-menu"
+          min-width="240"
+          role="menu"
+        >
+          <button
+            type="button"
+            class="account-menu__identity pa-4"
+            role="menuitem"
+            @click="requestOpenAccount"
+          >
             <v-avatar color="secondary" size="40">
               <span>{{ accountInitials }}</span>
             </v-avatar>
@@ -156,20 +164,10 @@ onBeforeUnmount(unbindListeners)
               <strong class="d-block text-truncate">{{ accountName }}</strong>
               <span v-if="accountEmail" class="d-block text-caption muted text-truncate">{{ accountEmail }}</span>
             </div>
-          </div>
+            <v-icon icon="mdi-chevron-right" size="20" />
+          </button>
           <v-divider />
-          <v-list :id="menuId" role="menu" density="compact" class="pa-2">
-            <v-list-item
-              v-if="canCreatePasskey"
-              role="menuitem"
-              title="Create passkey"
-              subtitle="Use your screen lock to sign in"
-              prepend-icon="mdi-fingerprint"
-              rounded="lg"
-              :disabled="passkeyLoading"
-              @click="requestCreatePasskey"
-            />
-            <v-divider v-if="canCreatePasskey" class="my-2" />
+          <v-list role="presentation" density="compact" class="pa-2">
             <v-list-item
               role="menuitem"
               title="Sign out"
@@ -212,8 +210,26 @@ onBeforeUnmount(unbindListeners)
 
 .account-menu__identity {
   display: flex;
+  width: 100%;
+  border: 0;
   align-items: center;
   gap: .75rem;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  transition: background-color 160ms ease;
+}
+
+.account-menu__identity:hover,
+.account-menu__identity:focus-visible {
+  background: rgb(var(--v-theme-on-surface) / .06);
+  outline: none;
+}
+
+.account-menu__identity > div {
+  flex: 1 1 auto;
 }
 
 .account-menu__identity > .v-avatar {

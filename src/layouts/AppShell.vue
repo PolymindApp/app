@@ -1,11 +1,10 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import { Capacitor } from '@capacitor/core'
 import { useDisplay } from 'vuetify'
 import { useRouter } from 'vue-router'
 import AccountMenu from '@/components/AccountMenu.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
-import { isAndroidPasskeyAvailable } from '@/services/passkeys'
 import { useAuthStore } from '@/stores/auth'
 
 const { mdAndUp } = useDisplay()
@@ -15,11 +14,6 @@ const logoutDialog = ref(false)
 const appScroll = ref<HTMLElement | { $el?: HTMLElement }>()
 const pageTransition = ref('page-level-forward')
 const isIos = Capacitor.getPlatform() === 'ios'
-const passkeyAvailable = ref(false)
-const passkeyRegistered = ref<boolean | null>(null)
-const passkeyNotice = ref(false)
-const passkeyNoticeText = ref('')
-const passkeyNoticeColor = ref<'success' | 'error'>('success')
 
 const items = [
   { title: 'Today', icon: 'mdi-lightning-bolt', to: '/today' },
@@ -32,9 +26,6 @@ const pageTitle = computed(() => String(router.currentRoute.value.meta.title || 
 const canGoBack = computed(() => Number(router.currentRoute.value.meta.pageDepth ?? 0) > 0)
 const accountName = computed(() => auth.user?.name || auth.firstName || 'You')
 const accountEmail = computed(() => auth.user?.email || '')
-const canCreatePasskey = computed(
-  () => passkeyAvailable.value && passkeyRegistered.value === false,
-)
 const accountInitials = computed(() => {
   const source = auth.user?.name || auth.user?.email || 'A'
   return source
@@ -73,17 +64,6 @@ onBeforeUnmount(() => {
   removeTransitionGuard()
 })
 
-onMounted(async () => {
-  passkeyAvailable.value = await isAndroidPasskeyAvailable()
-  if (!passkeyAvailable.value) return
-
-  try {
-    passkeyRegistered.value = await auth.hasRegisteredPasskey()
-  } catch {
-    passkeyRegistered.value = null
-  }
-})
-
 function logout() {
   logoutDialog.value = false
   auth.logout()
@@ -98,20 +78,6 @@ function beginPageScrollReset() {
 
 function getScrollElement() {
   return appScroll.value instanceof HTMLElement ? appScroll.value : appScroll.value?.$el
-}
-
-async function createPasskey() {
-  try {
-    if (!await auth.registerPasskey()) return
-    passkeyRegistered.value = true
-    passkeyNoticeColor.value = 'success'
-    passkeyNoticeText.value = 'Passkey created. You can now use it from the sign-in screen.'
-    passkeyNotice.value = true
-  } catch {
-    passkeyNoticeColor.value = 'error'
-    passkeyNoticeText.value = auth.error || 'The passkey could not be created.'
-    passkeyNotice.value = true
-  }
 }
 </script>
 
@@ -172,9 +138,7 @@ async function createPasskey() {
             :account-name="accountName"
             :account-email="accountEmail"
             :account-initials="accountInitials"
-            :can-create-passkey="canCreatePasskey"
-            :passkey-loading="auth.passkeyLoading"
-            @create-passkey="createPasskey"
+            @open-account="router.push('/account')"
             @sign-out="logoutDialog = true"
           />
         </div>
@@ -227,15 +191,6 @@ async function createPasskey() {
       icon="mdi-logout"
       @confirm="logout"
     />
-
-    <v-snackbar
-      v-model="passkeyNotice"
-      :color="passkeyNoticeColor"
-      location="bottom"
-      :timeout="5000"
-    >
-      {{ passkeyNoticeText }}
-    </v-snackbar>
   </v-app>
 </template>
 

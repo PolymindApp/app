@@ -25,6 +25,11 @@ interface PasskeyOptionsResponse {
   requestJson: string
 }
 
+interface UserSettingsResponse {
+  settings: Record<string, unknown>
+  updated?: string
+}
+
 const AUTH_STORAGE_KEY = 'mom-api-auth'
 const baseUrl = (import.meta.env.VITE_API_URL || '/api').replace(/\/+$/, '')
 
@@ -238,6 +243,46 @@ class ApiClient {
     )
     this.authStore.save(response.token, response.record)
     return response
+  }
+
+  async updateAccount(name: string) {
+    const record = await request<AuthRecord>(
+      '/auth/account',
+      { method: 'PATCH', body: { name } },
+      this.authStore,
+    )
+    this.authStore.save(this.authStore.token, record)
+    return record
+  }
+
+  async getUserSettings() {
+    const response = await request<UserSettingsResponse>(
+      '/auth/settings',
+      {},
+      this.authStore,
+    )
+    this.saveUserSettings(response)
+    return response.settings
+  }
+
+  async updateUserSettings(settings: Record<string, unknown>) {
+    const response = await request<UserSettingsResponse>(
+      '/auth/settings',
+      { method: 'PATCH', body: settings },
+      this.authStore,
+    )
+    this.saveUserSettings(response)
+    return response.settings
+  }
+
+  private saveUserSettings(response: UserSettingsResponse) {
+    const record = this.authStore.record
+    if (!record) return
+    this.authStore.save(this.authStore.token, {
+      ...record,
+      settings: response.settings,
+      updated: response.updated || record.updated,
+    })
   }
 }
 

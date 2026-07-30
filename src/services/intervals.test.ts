@@ -5,8 +5,10 @@ import {
   createIntervalGroup,
   createIntervalStep,
   createRuntimeState,
+  duplicateIntervalNode,
   intervalDuration,
   intervalStepCount,
+  normalizeQuickIntervalSettings,
   quickIntervalDefinition,
   reconcileIntervalRuntime,
   resolveIntervalStep,
@@ -59,12 +61,63 @@ describe('interval definitions', () => {
     expect(draft.definition.children[1]).not.toBe(template.definition.children[1])
   })
 
+  it('duplicates a reactive interval group with fresh IDs for every nested node', () => {
+    const group = reactive(createIntervalGroup('Rounds', 3))
+    const nested = createIntervalGroup('Pair', 2)
+    nested.children = [
+      createIntervalStep('Work', 'work', 30),
+      createIntervalStep('Rest', 'rest', 10),
+    ]
+    group.children = [nested]
+
+    const duplicate = duplicateIntervalNode(group)
+
+    expect(duplicate.type).toBe('group')
+    if (duplicate.type !== 'group') throw new Error('Expected a duplicated interval group.')
+    expect(duplicate).toMatchObject({
+      type: 'group',
+      name: 'Rounds',
+      repeatCount: 3,
+      children: [{
+        type: 'group',
+        name: 'Pair',
+        repeatCount: 2,
+        children: [
+          { type: 'step', name: 'Work', kind: 'work', durationSeconds: 30 },
+          { type: 'step', name: 'Rest', kind: 'rest', durationSeconds: 10 },
+        ],
+      }],
+    })
+
+    const originalNested = group.children[0]
+    const duplicateNested = duplicate.children[0]
+    expect(duplicate.id).not.toBe(group.id)
+    expect(duplicateNested?.id).not.toBe(originalNested?.id)
+    if (originalNested?.type !== 'group' || duplicateNested?.type !== 'group') {
+      throw new Error('Expected nested interval groups.')
+    }
+    expect(duplicateNested.children[0]?.id).not.toBe(originalNested.children[0]?.id)
+    expect(duplicateNested.children[1]?.id).not.toBe(originalNested.children[1]?.id)
+
+    duplicateNested.children[0]!.name = 'Changed copy'
+    expect(originalNested.children[0]?.name).toBe('Work')
+  })
+
   it('creates new intervals without a selected type and requires one before saving', () => {
     const step = createIntervalStep()
 
     expect(step.kind).toBe('')
     expect(validateIntervalDefinition({ version: 1, children: [step] }))
       .toContain('Item 1 needs a type.')
+  })
+
+  it('allows confirmation intervals without a duration', () => {
+    const confirmation = createIntervalStep('Drink water', 'confirmation', 0)
+    const definition: IntervalDefinition = { version: 1, children: [confirmation] }
+
+    expect(validateIntervalDefinition(definition)).toEqual([])
+    expect(intervalStepCount(definition)).toBe(1)
+    expect(intervalDuration(definition)).toBe(0)
   })
 
   it('defaults groups to one repeat and limits repeats to fifteen', () => {
@@ -88,6 +141,34 @@ describe('interval definitions', () => {
     expect(step?.step.name).toBe('Set rest')
     expect(step?.groups).toEqual([{ name: 'Sets', iteration: 1, total: 2 }])
     expect(resolveIntervalStep(nestedDefinition(), 15)?.step.name).toBe('Cool down')
+  })
+
+  it('skips only the last step of the final round when selected', () => {
+    const rounds = createIntervalGroup('Rounds', 3)
+    const work = createIntervalStep('Work', 'work', 30)
+    const rest = createIntervalStep('Rest', 'rest', 10)
+    rest.skipOnLastRound = true
+    rounds.children = [work, rest]
+    const definition: IntervalDefinition = { version: 1, children: [rounds] }
+
+    expect(intervalStepCount(definition)).toBe(5)
+    expect(intervalDuration(definition)).toBe(110)
+    expect(Array.from({ length: 5 }, (_, index) => resolveIntervalStep(definition, index)?.step.name))
+      .toEqual(['Work', 'Rest', 'Work', 'Rest', 'Work'])
+    expect(resolveIntervalStep(definition, 4)?.groups)
+      .toEqual([{ name: 'Rounds', iteration: 3, total: 3 }])
+    expect(resolveIntervalStep(definition, 5)).toBeUndefined()
+  })
+
+  it('ignores the final-round flag unless it is on the last step', () => {
+    const rounds = createIntervalGroup('Rounds', 3)
+    const work = createIntervalStep('Work', 'work', 30)
+    work.skipOnLastRound = true
+    rounds.children = [work, createIntervalStep('Rest', 'rest', 10)]
+    const definition: IntervalDefinition = { version: 1, children: [rounds] }
+
+    expect(intervalStepCount(definition)).toBe(6)
+    expect(intervalDuration(definition)).toBe(120)
   })
 
   it('validates empty groups, names, durations, and repeat counts', () => {
@@ -139,6 +220,30 @@ describe('quick intervals', () => {
     const definition = quickIntervalDefinition(quick({ restAfterLastRound: true }))
     expect(intervalDuration(definition)).toBe(165)
   })
+
+  it('normalizes persisted quick interval settings', () => {
+    expect(normalizeQuickIntervalSettings({
+      warmupSeconds: 0,
+      workSeconds: 30,
+      restSeconds: 15,
+      rounds: 4,
+      cooldownSeconds: 0,
+      restAfterLastRound: true,
+      includeRest: true,
+      cues: { soundEnabled: true, vibrationEnabled: false },
+    })).toEqual({
+      warmupSeconds: 0,
+      workSeconds: 30,
+      restSeconds: 15,
+      rounds: 4,
+      cooldownSeconds: 0,
+      restAfterLastRound: true,
+      includeRest: true,
+      cues: { soundEnabled: true, vibrationEnabled: false },
+    })
+    expect(normalizeQuickIntervalSettings({ workSeconds: 30, rounds: 99 }))
+      .toBeUndefined()
+  })
 })
 
 describe('interval runtime recovery', () => {
@@ -170,5 +275,50 @@ describe('interval runtime recovery', () => {
     const result = reconcileIntervalRuntime(definition, runtime, new Date('2026-07-28T12:00:20.000Z'))
     expect(result.completed).toBe(true)
     expect(result.runtime.accumulatedMs).toBe(5000)
+  })
+
+  it('waits at a confirmation without counting the time spent waiting', () => {
+    const definition: IntervalDefinition = {
+      version: 1,
+      children: [
+        createIntervalStep('Work', 'work', 5),
+        createIntervalStep('Confirm', 'confirmation', 0),
+        createIntervalStep('Rest', 'rest', 5),
+      ],
+    }
+    const runtime = createRuntimeState(definition, new Date('2026-07-28T12:00:00.000Z'))
+    const arrived = reconcileIntervalRuntime(
+      definition,
+      runtime,
+      new Date('2026-07-28T12:00:20.000Z'),
+    )
+
+    expect(arrived.completed).toBe(false)
+    expect(arrived.transitions).toBe(1)
+    expect(arrived.runtime).toMatchObject({
+      stepIndex: 1,
+      remainingMs: 0,
+      accumulatedMs: 5000,
+      stepStartedAt: undefined,
+    })
+
+    const stillWaiting = reconcileIntervalRuntime(
+      definition,
+      arrived.runtime,
+      new Date('2026-07-28T12:10:00.000Z'),
+    )
+    expect(stillWaiting.transitions).toBe(0)
+    expect(stillWaiting.runtime.accumulatedMs).toBe(5000)
+  })
+
+  it('starts on a confirmation without starting the clock', () => {
+    const definition: IntervalDefinition = {
+      version: 1,
+      children: [createIntervalStep('Ready?', 'confirmation', 0)],
+    }
+    const runtime = createRuntimeState(definition, new Date('2026-07-28T12:00:00.000Z'))
+
+    expect(runtime.remainingMs).toBe(0)
+    expect(runtime.stepStartedAt).toBeUndefined()
   })
 })

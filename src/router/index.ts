@@ -14,6 +14,7 @@ const router = createRouter({
         { path: 'today', name: 'today', component: () => import('@/views/TodayView.vue'), meta: { title: 'Today', pageDepth: 0, pageOrder: 0 } },
         { path: 'intervals', name: 'intervals', component: () => import('@/views/IntervalsView.vue'), meta: { title: 'Intervals', pageDepth: 0, pageOrder: 1 } },
         { path: 'plan', name: 'plan', component: () => import('@/views/PlanView.vue'), meta: { title: 'Plan', pageDepth: 0, pageOrder: 2 } },
+        { path: 'account', name: 'account', component: () => import('@/views/AccountView.vue'), meta: { title: 'Account', pageDepth: 1, pageOrder: 3, backTo: '/today' } },
         { path: 'intervals/quick', name: 'interval-quick', component: () => import('@/views/QuickIntervalView.vue'), meta: { title: 'Quick interval', pageDepth: 1, pageOrder: 1, backTo: '/intervals' } },
         { path: 'plan/intervals/new', name: 'interval-new', component: () => import('@/views/IntervalEditorView.vue'), meta: { title: 'New interval', pageDepth: 1, pageOrder: 2, backTo: '/plan' } },
         { path: 'plan/intervals/:id', name: 'interval-edit', component: () => import('@/views/IntervalEditorView.vue'), meta: { title: 'Edit interval', pageDepth: 1, pageOrder: 2, backTo: '/plan' } },

@@ -56,7 +56,7 @@ suffix="$(php -r 'echo bin2hex(random_bytes(5));')"
 password="correct-horse-battery"
 
 migration_count="$(sqlite3 "$test_db" 'SELECT COUNT(*) FROM mom_schema_migrations;')"
-[[ "$migration_count" == 3 ]] || {
+[[ "$migration_count" == 4 ]] || {
   echo "The API did not apply the complete database migration sequence." >&2
   exit 1
 }
@@ -105,6 +105,63 @@ register "Alice API" "$alice_email" >/dev/null
 alice_login="$(login "$alice_email")"
 alice_token="$(json_field token <<<"$alice_login")"
 alice_id="$(php -r '$data=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); echo $data["record"]["id"];' <<<"$alice_login")"
+
+account_response="$(curl --silent --show-error --fail \
+  -X PATCH -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"name":"Alice Updated"}' \
+  "$api_url/auth/account")"
+account_name="$(json_field name <<<"$account_response")"
+account_email="$(json_field email <<<"$account_response")"
+[[ "$account_name" == "Alice Updated" && "$account_email" == "$alice_email" ]] || {
+  echo "The account profile was not updated correctly." >&2
+  exit 1
+}
+
+invalid_account_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  -X PATCH -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"name":"   "}' \
+  "$api_url/auth/account")"
+[[ "$invalid_account_status" == 422 ]] || {
+  echo "An empty account name was accepted." >&2
+  exit 1
+}
+
+quick_settings_response="$(curl --silent --show-error --fail \
+  -X PATCH -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"quickInterval":{"warmupSeconds":0,"workSeconds":30,"restSeconds":15,"rounds":4,"cooldownSeconds":0,"restAfterLastRound":true,"includeRest":true,"cues":{"soundEnabled":true,"vibrationEnabled":false}}}' \
+  "$api_url/auth/settings")"
+php -r '
+  $data = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+  $quick = $data["settings"]["quickInterval"] ?? null;
+  if (($quick["rounds"] ?? null) !== 4
+      || ($quick["workSeconds"] ?? null) !== 30
+      || ($quick["cues"]["vibrationEnabled"] ?? null) !== false) {
+      fwrite(STDERR, "Quick interval settings were not returned after saving.\n");
+      exit(1);
+  }
+' <<<"$quick_settings_response"
+saved_settings_response="$(curl --silent --show-error --fail \
+  -H "Authorization: Bearer $alice_token" \
+  "$api_url/auth/settings")"
+php -r '
+  $data = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+  if (($data["settings"]["quickInterval"]["rounds"] ?? null) !== 4) {
+      fwrite(STDERR, "Quick interval settings were not persisted.\n");
+      exit(1);
+  }
+' <<<"$saved_settings_response"
+invalid_settings_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  -X PATCH -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"quickInterval":{"rounds":99}}' \
+  "$api_url/auth/settings")"
+[[ "$invalid_settings_status" == 422 ]] || {
+  echo "Invalid quick interval settings were not rejected." >&2
+  exit 1
+}
 
 passkey_status="$(curl --silent --show-error --fail \
   -H "Authorization: Bearer $alice_token" \

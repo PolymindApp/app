@@ -10,6 +10,7 @@ import {
 export const useAuthStore = defineStore('auth', () => {
   const user = ref(api.authStore.record)
   const loading = ref(false)
+  const accountLoading = ref(false)
   const passkeyLoading = ref(false)
   const error = ref('')
 
@@ -63,7 +64,7 @@ export const useAuthStore = defineStore('auth', () => {
       return true
     } catch (cause) {
       if (cause instanceof PasskeyCancelledError) return false
-      error.value = cause instanceof Error ? cause.message : 'Unable to sign in with a passkey.'
+      error.value = cause instanceof Error ? cause.message : 'Unable to sign in with biometrics.'
       throw cause
     } finally {
       passkeyLoading.value = false
@@ -85,10 +86,23 @@ export const useAuthStore = defineStore('auth', () => {
       return true
     } catch (cause) {
       if (cause instanceof PasskeyCancelledError) return false
-      error.value = cause instanceof Error ? cause.message : 'Unable to create a passkey.'
+      error.value = cause instanceof Error ? cause.message : 'Unable to connect biometric sign-in.'
       throw cause
     } finally {
       passkeyLoading.value = false
+    }
+  }
+
+  async function updateName(name: string) {
+    accountLoading.value = true
+    error.value = ''
+    try {
+      await api.updateAccount(name)
+    } catch (cause) {
+      error.value = cause instanceof Error ? cause.message : 'Unable to update your name.'
+      throw cause
+    } finally {
+      accountLoading.value = false
     }
   }
 
@@ -99,6 +113,7 @@ export const useAuthStore = defineStore('auth', () => {
   return {
     user,
     loading,
+    accountLoading,
     passkeyLoading,
     error,
     isAuthenticated,
@@ -108,6 +123,7 @@ export const useAuthStore = defineStore('auth', () => {
     loginWithPasskey,
     register,
     registerPasskey,
+    updateName,
     logout,
   }
 })

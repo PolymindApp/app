@@ -12,7 +12,7 @@ const nativePasskey = registerPlugin<PasskeyPlugin>('Passkey')
 
 export class PasskeyCancelledError extends Error {
   constructor() {
-    super('The passkey request was cancelled.')
+    super('The biometric request was cancelled.')
     this.name = 'PasskeyCancelledError'
   }
 }
@@ -41,7 +41,7 @@ async function invokePasskey(
     const result = await operation()
     const credential = JSON.parse(result.responseJson)
     if (!credential || typeof credential !== 'object' || Array.isArray(credential)) {
-      throw new Error('The Android credential provider returned an invalid passkey response.')
+      throw new Error('Android returned an invalid biometric sign-in response.')
     }
     return credential as PasskeyCredential
   } catch (cause) {

@@ -183,7 +183,11 @@ export const useTaskStore = defineStore('tasks', () => {
 
   const completionRate = computed(() => {
     if (!selectedProgress.value.length) return 0
-    return Math.round((selectedProgress.value.filter((item) => item.complete).length / selectedProgress.value.length) * 100)
+    const earnedProgress = selectedProgress.value.reduce(
+      (total, item) => total + Math.max(0, Math.min(item.percent, 100)),
+      0,
+    )
+    return Math.round(earnedProgress / selectedProgress.value.length)
   })
 
   async function load() {

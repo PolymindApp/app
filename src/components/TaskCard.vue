@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { goalState } from '@/services/schedule'
 import type { TaskProgress } from '@/types/domain'
 
@@ -14,6 +14,8 @@ const emit = defineEmits<{
 
 const task = computed(() => props.progress.task)
 const step = computed(() => props.progress.programStep)
+const optimisticComplete = ref<boolean>()
+const displayedComplete = computed(() => optimisticComplete.value ?? props.progress.complete)
 const isCheck = computed(() => (step.value ? step.value.completionType === 'check' : task.value.type === 'check'))
 const isDailyTotal = computed(() => !step.value && task.value.type === 'daily_total')
 const canToggleFromCard = computed(() => isCheck.value && !props.busy && !props.progress.locked)
@@ -36,7 +38,7 @@ const stateIcon = computed(() => {
   if (currentGoalState.value === 'exceeded') return 'mdi-alert-outline'
   if (currentGoalState.value === 'not_enough') return 'mdi-trending-down'
   if (props.progress.sealed) return 'mdi-lock-check'
-  if (props.progress.complete) return 'mdi-check-bold'
+  if (displayedComplete.value) return 'mdi-check-bold'
   return isCheck.value ? 'mdi-circle-outline' : 'mdi-lightning-bolt'
 })
 const stateIconColor = computed(() => {
@@ -52,14 +54,19 @@ function formatValue(value: number) {
 
 function toggleFromCard() {
   if (!canToggleFromCard.value) return
+  optimisticComplete.value = !displayedComplete.value
   emit('toggle', props.progress)
 }
+
+watch(() => props.busy, (busy) => {
+  if (!busy) optimisticComplete.value = undefined
+})
 </script>
 
 <template>
   <v-card
     class="task-card surface-card pa-4"
-    :class="{ 'task-card--done': progress.complete, 'task-card--clickable': canToggleFromCard, 'task-card--sealed': progress.sealed }"
+    :class="{ 'task-card--done': displayedComplete, 'task-card--clickable': canToggleFromCard, 'task-card--sealed': progress.sealed }"
     :ripple="canToggleFromCard"
     v-on="canToggleFromCard ? { click: toggleFromCard } : {}"
   >
@@ -68,15 +75,15 @@ function toggleFromCard() {
         v-if="isCheck"
         class="check-control"
         :class="{
-          'check-control--done': progress.complete,
+          'check-control--done': displayedComplete,
           'check-control--warning': currentGoalState === 'exceeded',
           'check-control--error': currentGoalState === 'not_enough',
         }"
         :style="{ '--task-color': taskColor }"
-        :aria-label="progress.complete ? `Mark ${title} incomplete` : `Complete ${title}`"
+        :aria-label="displayedComplete ? `Mark ${title} incomplete` : `Complete ${title}`"
         :disabled="busy || progress.locked"
         @touchstart.stop
-        @click.stop="emit('toggle', progress)"
+        @click.stop="toggleFromCard"
       >
         <v-icon :icon="stateIcon" :color="stateIconColor" size="20" />
       </button>

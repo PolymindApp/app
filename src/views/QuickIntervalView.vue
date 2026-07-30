@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import TimerWheelPicker from '@/components/TimerWheelPicker.vue'
 import {
@@ -10,13 +10,20 @@ import {
 import { prepareIntervalCues } from '@/services/intervalCues'
 import { formatIntervalDuration, intervalDuration, quickIntervalDefinition } from '@/services/intervals'
 import { useIntervalStore } from '@/stores/intervals'
-import type { QuickIntervalDraft } from '@/types/domain'
+import type { QuickIntervalDraft, QuickIntervalSettings } from '@/types/domain'
 
 const router = useRouter()
 const store = useIntervalStore()
 const starting = ref(false)
+const restoring = ref(true)
 const error = ref('')
 const includeRest = ref(false)
+const previousSettingsDetected = ref(false)
+const saveAsDialog = ref(false)
+const savingTemplate = ref(false)
+const saveAsError = ref('')
+const templateName = ref('Quick interval')
+const savedTemplateName = ref('')
 const draft = reactive<QuickIntervalDraft>({
   warmupSeconds: 0,
   workSeconds: 30,
@@ -24,14 +31,41 @@ const draft = reactive<QuickIntervalDraft>({
   rounds: 1,
   cooldownSeconds: 0,
   restAfterLastRound: false,
-  cues: store.getQuickCues(),
+  cues: { soundEnabled: true, vibrationEnabled: true },
 })
-const definition = computed(() => quickIntervalDefinition({
+const quickSettings = computed<QuickIntervalSettings>(() => ({
   ...draft,
-  restSeconds: includeRest.value ? draft.restSeconds : 0,
   restAfterLastRound: includeRest.value,
+  includeRest: includeRest.value,
+  cues: { ...draft.cues },
+}))
+const definition = computed(() => quickIntervalDefinition({
+  ...quickSettings.value,
+  restSeconds: quickSettings.value.includeRest ? quickSettings.value.restSeconds : 0,
 }))
 const totalDuration = computed(() => intervalDuration(definition.value))
+
+onMounted(async () => {
+  try {
+    const saved = await store.loadQuickIntervalSettings()
+    if (!saved) return
+    Object.assign(draft, {
+      warmupSeconds: saved.warmupSeconds,
+      workSeconds: saved.workSeconds,
+      restSeconds: saved.restSeconds,
+      rounds: saved.rounds,
+      cooldownSeconds: saved.cooldownSeconds,
+      restAfterLastRound: saved.restAfterLastRound,
+      cues: { ...saved.cues },
+    })
+    includeRest.value = saved.includeRest
+    previousSettingsDetected.value = true
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : 'Could not restore your quick interval settings.'
+  } finally {
+    restoring.value = false
+  }
+})
 
 async function start() {
   if (draft.workSeconds <= 0 || !Number.isInteger(draft.rounds) || draft.rounds <= 0) {
@@ -45,7 +79,7 @@ async function start() {
   starting.value = true
   error.value = ''
   try {
-    store.rememberQuickCues(draft.cues)
+    await store.rememberQuickIntervalSettings(quickSettings.value)
     await prepareIntervalCues(draft.cues)
     if (!store.sessions.length) await store.load()
     const session = await store.startSession({
@@ -61,11 +95,58 @@ async function start() {
     starting.value = false
   }
 }
+
+function openSaveAs() {
+  templateName.value = 'Quick interval'
+  saveAsError.value = ''
+  saveAsDialog.value = true
+}
+
+async function saveAsTemplate() {
+  const name = templateName.value.trim()
+  if (!name) {
+    saveAsError.value = 'Enter a template name.'
+    return
+  }
+  savingTemplate.value = true
+  saveAsError.value = ''
+  try {
+    if (!store.loaded) await store.load()
+    await store.saveTemplate({
+      name,
+      description: '',
+      color: '#C7F464',
+      definition: definition.value,
+      cues: { ...draft.cues },
+      sortOrder: store.templates.length,
+    })
+    savedTemplateName.value = name
+    saveAsDialog.value = false
+  } catch (cause) {
+    saveAsError.value = cause instanceof Error ? cause.message : 'Could not save the interval template.'
+  } finally {
+    savingTemplate.value = false
+  }
+}
 </script>
 
 <template>
   <main class="app-page quick-page">
     <v-alert v-if="error" type="error" variant="tonal">{{ error }}</v-alert>
+    <v-alert
+      v-if="previousSettingsDetected"
+      type="info"
+      variant="tonal"
+      class="saved-quick-alert"
+    >
+      <div>
+        <strong>{{ savedTemplateName ? `${savedTemplateName} saved` : 'Last quick interval restored' }}</strong>
+        <p>{{ savedTemplateName ? 'Your reusable template is ready.' : 'These settings were loaded from your account.' }}</p>
+      </div>
+      <template #append>
+        <v-btn size="small" variant="tonal" @click="openSaveAs">Save as</v-btn>
+      </template>
+    </v-alert>
 
     <v-card class="surface-card pa-5">
       <div class="quick-fields">
@@ -135,13 +216,29 @@ async function start() {
 
     <v-card class="quick-summary page-action-area pa-5" color="secondary">
       <div><span>Total time</span><strong>{{ formatIntervalDuration(totalDuration) }}</strong></div>
-      <v-btn color="primary" size="large" append-icon="mdi-play" :loading="starting" @click="start">Start</v-btn>
+      <v-btn color="primary" size="large" append-icon="mdi-play" :loading="starting || restoring" @click="start">Start</v-btn>
     </v-card>
+
+    <v-dialog v-model="saveAsDialog" max-width="440">
+      <v-form @submit.prevent="saveAsTemplate">
+        <v-card class="pa-5">
+          <h2 class="text-h6 font-weight-black mb-2">Save quick interval</h2>
+          <p class="text-body-2 muted mb-5">Create a reusable template from the current settings.</p>
+          <v-alert v-if="saveAsError" type="error" variant="tonal" class="mb-4">{{ saveAsError }}</v-alert>
+          <v-text-field v-model="templateName" label="Template name" />
+          <div class="save-as-actions mt-4">
+            <v-btn variant="text" @click="saveAsDialog = false">Cancel</v-btn>
+            <v-btn type="submit" color="secondary" :loading="savingTemplate">Save template</v-btn>
+          </div>
+        </v-card>
+      </v-form>
+    </v-dialog>
   </main>
 </template>
 
 <style scoped>
 .quick-page { display: grid; gap: 1rem; }
+.saved-quick-alert p { margin-top: .15rem; font-size: .75rem; opacity: .72; }
 .quick-intro { display: grid; gap: .35rem; }
 .quick-intro h1 { font-size: 1.4rem; font-weight: 900; letter-spacing: -.025em; line-height: 1.2; }
 .quick-intro p { max-width: 38rem; color: rgb(var(--v-theme-on-background) / .58); font-size: .82rem; line-height: 1.5; }
@@ -160,6 +257,7 @@ async function start() {
 .quick-summary div { display: flex; flex-direction: column; }
 .quick-summary span { font-size: .65rem; font-weight: 850; text-transform: uppercase; }
 .quick-summary strong { font-size: 1.5rem; }
+.save-as-actions { display: flex; justify-content: flex-end; gap: .5rem; }
 
 @media (max-width: 959px) {
   .quick-page {

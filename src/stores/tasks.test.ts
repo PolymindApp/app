@@ -85,6 +85,20 @@ describe('quantitative task completion', () => {
     expect(store.completionRate).toBe(0)
   })
 
+  it('includes partial duration progress in the daily completion rate', () => {
+    const store = useTaskStore()
+    store.selectedDate = selectedDate
+    store.tasks = [task]
+    store.entries = [entry('entry-1', 2)]
+
+    expect(store.makeProgress(task, selectedDate)).toMatchObject({
+      value: 2,
+      percent: 50,
+      complete: false,
+    })
+    expect(store.completionRate).toBe(50)
+  })
+
   it('returns a completed occurrence to pending when an entry drops below its target', async () => {
     const store = useTaskStore()
     store.selectedDate = selectedDate

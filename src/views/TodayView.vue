@@ -13,6 +13,7 @@ const store = useTaskStore()
 const { smAndUp } = useDisplay()
 const { selectedDate, selectedProgress, completionRate, loading, error } = storeToRefs(store)
 const busy = ref(false)
+const busyProgressKeys = ref(new Set<string>())
 const exactDialog = ref(false)
 const exactProgress = ref<TaskProgress>()
 const exactAmountInput = ref('')
@@ -61,6 +62,25 @@ async function run(action: () => Promise<void>) {
   try { await action() } finally { busy.value = false }
 }
 
+function progressKey(progress: TaskProgress) {
+  return `${progress.task.id}:${progress.programStep?.id || ''}`
+}
+
+function progressIsBusy(progress: TaskProgress) {
+  return busy.value || busyProgressKeys.value.has(progressKey(progress))
+}
+
+async function runForProgress(progress: TaskProgress, action: () => Promise<void>) {
+  const key = progressKey(progress)
+  if (busyProgressKeys.value.has(key)) return
+  busyProgressKeys.value.add(key)
+  try {
+    await action()
+  } finally {
+    busyProgressKeys.value.delete(key)
+  }
+}
+
 async function resolveReview(item: TaskProgress, status: 'missed' | 'carried') {
   await run(() => store.setStatus(item, status))
   reviewSheet.value = false
@@ -68,12 +88,15 @@ async function resolveReview(item: TaskProgress, status: 'missed' | 'carried') {
 
 function moveWeek(amount: number) {
   weekDirection.value = amount < 0 ? 'previous' : 'next'
-  visibleWeekStart.value = addWeeks(visibleWeekStart.value, amount)
+  selectedDate.value = addWeeks(selectedDate.value, amount)
+  visibleWeekStart.value = startOfWeek(selectedDate.value, { weekStartsOn: 1 })
 }
 
 function goToCurrentWeek() {
-  weekDirection.value = visibleWeekStart.value > new Date() ? 'previous' : 'next'
-  visibleWeekStart.value = startOfWeek(new Date(), { weekStartsOn: 1 })
+  const today = new Date()
+  weekDirection.value = visibleWeekStart.value > today ? 'previous' : 'next'
+  selectedDate.value = today
+  visibleWeekStart.value = startOfWeek(today, { weekStartsOn: 1 })
 }
 
 function beginWeekSwipe(event: TouchEvent) {
@@ -232,10 +255,10 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
             v-for="item in required"
             :key="`${item.task.id}-${item.programStep?.id || ''}`"
             :progress="item"
-            :busy="busy"
-            @toggle="run(() => store.toggleComplete($event))"
-            @seal="run(() => store.setDailyTotalSealed($event))"
-            @add="(progress, amount) => run(() => store.addEntry(progress, amount))"
+            :busy="progressIsBusy(item)"
+            @toggle="progress => runForProgress(progress, () => store.toggleComplete(progress))"
+            @seal="progress => runForProgress(progress, () => store.setDailyTotalSealed(progress))"
+            @add="(progress, amount) => runForProgress(progress, () => store.addEntry(progress, amount))"
             @exact="openExact"
           />
         </div>
@@ -248,10 +271,10 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
             v-for="item in optional"
             :key="`${item.task.id}-${item.programStep?.id || ''}`"
             :progress="item"
-            :busy="busy"
-            @toggle="run(() => store.toggleComplete($event))"
-            @seal="run(() => store.setDailyTotalSealed($event))"
-            @add="(progress, amount) => run(() => store.addEntry(progress, amount))"
+            :busy="progressIsBusy(item)"
+            @toggle="progress => runForProgress(progress, () => store.toggleComplete(progress))"
+            @seal="progress => runForProgress(progress, () => store.setDailyTotalSealed(progress))"
+            @add="(progress, amount) => runForProgress(progress, () => store.addEntry(progress, amount))"
             @exact="openExact"
           />
         </div>
@@ -264,6 +287,18 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
       <p class="text-body-2 muted mt-2 mb-5">Build your first routine and it will show up here.</p>
       <v-btn color="secondary" append-icon="mdi-plus" to="/tasks/new">Create a task</v-btn>
     </v-card>
+
+    <v-btn
+      class="manage-tasks-button mt-8"
+      block
+      size="large"
+      variant="tonal"
+      color="secondary"
+      prepend-icon="mdi-format-list-checks"
+      to="/plan"
+    >
+      Manage tasks
+    </v-btn>
 
     <v-dialog v-model="exactDialog" max-width="440">
       <v-card class="pa-5">
@@ -479,6 +514,7 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
 .score-number { font-family: Impact, "Arial Narrow", sans-serif; font-size: 3.2rem; line-height: .9; letter-spacing: -.03em; }
 .score-percent { color: #c7f464; font-size: 1.2rem; font-weight: 900; }
 .task-stack { display: grid; gap: .7rem; }
+.manage-tasks-button { min-height: 52px; }
 .empty-icon { display: grid; width: 64px; height: 64px; place-items: center; border-radius: 20px; background: #c7f464; color: #17200f; }
 .amount-keypad { display: grid; gap: 1rem; }
 .amount-keypad__display { display: flex; min-height: 72px; align-items: center; justify-content: flex-end; padding: .75rem 1rem; border: 1px solid rgb(var(--v-theme-on-surface) / .16); border-radius: 16px; background: rgb(var(--v-theme-surface-variant)); font-size: 2rem; font-weight: 900; line-height: 1; }

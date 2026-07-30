@@ -15,6 +15,7 @@ const props = defineProps<{
   depth: number
   canIndent: boolean
   canOutdent: boolean
+  canSkipOnLastRound: boolean
   actions: {
     add: (parentId: string, type: 'step' | 'group') => void
     move: (id: string, direction: -1 | 1) => void
@@ -30,6 +31,7 @@ const kinds: Array<{ title: string; value: IntervalStepKind }> = [
   { title: 'Rest', value: 'rest' },
   { title: 'Prepare', value: 'prepare' },
   { title: 'Meditation', value: 'meditation' },
+  { title: 'Confirmation', value: 'confirmation' },
   { title: 'Custom', value: 'custom' },
 ]
 
@@ -38,6 +40,7 @@ const kindPresentation: Record<IntervalStepKind, { icon: string; color: string }
   rest: { icon: 'mdi-coffee-outline', color: '#8FB8FF' },
   prepare: { icon: 'mdi-timer-sand', color: '#C7F464' },
   meditation: { icon: 'mdi-meditation', color: '#D4A5FF' },
+  confirmation: { icon: 'mdi-check-circle-outline', color: '#69D7C5' },
   custom: { icon: 'mdi-tune-variant', color: '#79C174' },
 }
 const emptyKindPresentation = { icon: 'mdi-timer-outline', color: '#A9B0A7' }
@@ -142,10 +145,18 @@ function selectKind(kind: IntervalStepKind) {
           </div>
         </div>
       </fieldset>
-      <fieldset class="duration-wheel">
+      <fieldset v-if="node.kind !== 'confirmation'" class="duration-wheel">
         <legend>Duration</legend>
         <TimerWheelPicker v-model="durationSeconds" />
       </fieldset>
+      <v-checkbox
+        v-if="canSkipOnLastRound"
+        v-model="node.skipOnLastRound"
+        label="Skip this step on the final round"
+        color="secondary"
+        density="comfortable"
+        hide-details
+      />
     </div>
 
     <template v-else>
@@ -188,6 +199,7 @@ function selectKind(kind: IntervalStepKind) {
           :depth="depth + 1"
           :can-indent="childIndex > 0 && node.children[childIndex - 1]?.type === 'group'"
           :can-outdent="true"
+          :can-skip-on-last-round="node.repeatCount > 1 && childIndex === node.children.length - 1 && child.type === 'step'"
           :actions="actions"
         />
       </div>
@@ -231,7 +243,7 @@ function selectKind(kind: IntervalStepKind) {
 .kind-field > legend { margin-bottom: .5rem; color: rgb(var(--v-theme-on-surface) / .68); font-size: .75rem; font-weight: 800; }
 .kind-selector-scroll { width: 100%; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; }
 .kind-selector-scroll::-webkit-scrollbar { display: none; }
-.kind-selector { display: grid; width: max-content; min-width: 100%; grid-template-columns: repeat(5, minmax(5.5rem, 1fr)); border: 1px solid rgb(var(--v-theme-on-surface) / .2); border-radius: 14px; overflow: hidden; }
+.kind-selector { display: grid; width: max-content; min-width: 100%; grid-template-columns: repeat(6, minmax(5.5rem, 1fr)); border: 1px solid rgb(var(--v-theme-on-surface) / .2); border-radius: 14px; overflow: hidden; }
 .kind-selector__button { display: flex; min-height: 48px; align-items: center; justify-content: center; gap: .35rem; padding: .5rem .7rem; border: 0; border-right: 1px solid rgb(var(--v-theme-on-surface) / .14); background: rgb(var(--v-theme-surface-variant) / .46); color: rgb(var(--v-theme-on-surface) / .72); font: inherit; font-size: .72rem; font-weight: 750; cursor: pointer; }
 .kind-selector__button:last-child { border-right: 0; }
 .kind-selector__button .v-icon { color: var(--kind-color); }

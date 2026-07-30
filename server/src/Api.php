@@ -44,6 +44,12 @@ final class Api
             if ($method === 'POST' && $path === '/auth/register') {
                 $this->register();
             }
+            if (($method === 'GET' || $method === 'PATCH') && $path === '/auth/account') {
+                $this->account($method);
+            }
+            if (($method === 'GET' || $method === 'PATCH') && $path === '/auth/settings') {
+                $this->userSettings($method);
+            }
             if ($method === 'POST' && $path === '/auth/passkeys/register/options') {
                 $this->passkeyRegistrationOptions();
             }
@@ -270,6 +276,149 @@ final class Api
         $this->respond($this->publicUser($user), 201);
     }
 
+    private function account(string $method): never
+    {
+        $user = $this->authenticate();
+        if ($method === 'GET') {
+            $this->respond($this->publicUser($user));
+        }
+
+        $this->rateLimit('account-update:' . $user['id'], 30, 900);
+        $body = $this->jsonBody();
+        if (!array_key_exists('name', $body)) {
+            throw new ApiException(422, 'A name is required.', [
+                'name' => 'required',
+            ]);
+        }
+
+        $name = $this->validateText($body['name'], 'name', 160, true);
+        $updated = $this->now();
+        $statement = $this->database->pdo->prepare(
+            'UPDATE users SET name = :name, updated = :updated WHERE id = :id',
+        );
+        $statement->execute([
+            'name' => $name,
+            'updated' => $updated,
+            'id' => $user['id'],
+        ]);
+
+        $user['name'] = $name;
+        $user['updated'] = $updated;
+        $this->respond($this->publicUser($user));
+    }
+
+    private function userSettings(string $method): never
+    {
+        $user = $this->authenticate();
+        $settings = $this->decodeUserSettings($user['settings'] ?? '{}');
+        if ($method === 'GET') {
+            $this->respond(['settings' => (object) $settings]);
+        }
+
+        $body = $this->jsonBody();
+        if (!array_key_exists('quickInterval', $body)) {
+            throw new ApiException(422, 'At least one supported setting is required.', [
+                'quickInterval' => 'required',
+            ]);
+        }
+        $settings['quickInterval'] = $this->validateQuickIntervalSettings(
+            $body['quickInterval'],
+        );
+        $encoded = json_encode(
+            $settings,
+            JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
+        );
+        $updated = $this->now();
+        $statement = $this->database->pdo->prepare(
+            'UPDATE users SET settings = :settings, updated = :updated WHERE id = :id',
+        );
+        $statement->execute([
+            'settings' => $encoded,
+            'updated' => $updated,
+            'id' => $user['id'],
+        ]);
+        $this->respond(['settings' => $settings, 'updated' => $updated]);
+    }
+
+    private function validateQuickIntervalSettings(mixed $value): array
+    {
+        if (!is_array($value) || array_is_list($value)) {
+            throw new ApiException(422, 'Quick interval settings must be an object.', [
+                'quickInterval' => 'object',
+            ]);
+        }
+
+        $integer = static function (
+            string $field,
+            int $minimum,
+            int $maximum,
+        ) use ($value): int {
+            $candidate = $value[$field] ?? null;
+            if (
+                !is_int($candidate)
+                || $candidate < $minimum
+                || $candidate > $maximum
+            ) {
+                throw new ApiException(422, "The {$field} setting is invalid.", [
+                    "quickInterval.{$field}" => "{$minimum}..{$maximum}",
+                ]);
+            }
+            return $candidate;
+        };
+        $boolean = static function (string $field) use ($value): bool {
+            $candidate = $value[$field] ?? null;
+            if (!is_bool($candidate)) {
+                throw new ApiException(422, "The {$field} setting is invalid.", [
+                    "quickInterval.{$field}" => 'boolean',
+                ]);
+            }
+            return $candidate;
+        };
+        $cues = $value['cues'] ?? null;
+        if (!is_array($cues) || array_is_list($cues)) {
+            throw new ApiException(422, 'Quick interval cue settings are invalid.', [
+                'quickInterval.cues' => 'object',
+            ]);
+        }
+        foreach (['soundEnabled', 'vibrationEnabled'] as $cue) {
+            if (!is_bool($cues[$cue] ?? null)) {
+                throw new ApiException(422, "The {$cue} cue setting is invalid.", [
+                    "quickInterval.cues.{$cue}" => 'boolean',
+                ]);
+            }
+        }
+
+        return [
+            'warmupSeconds' => $integer('warmupSeconds', 0, 3599),
+            'workSeconds' => $integer('workSeconds', 1, 3599),
+            'restSeconds' => $integer('restSeconds', 0, 3599),
+            'rounds' => $integer('rounds', 1, 15),
+            'cooldownSeconds' => $integer('cooldownSeconds', 0, 3599),
+            'restAfterLastRound' => $boolean('restAfterLastRound'),
+            'includeRest' => $boolean('includeRest'),
+            'cues' => [
+                'soundEnabled' => $cues['soundEnabled'],
+                'vibrationEnabled' => $cues['vibrationEnabled'],
+            ],
+        ];
+    }
+
+    private function decodeUserSettings(mixed $value): array
+    {
+        if (!is_string($value) || trim($value) === '') {
+            return [];
+        }
+        try {
+            $settings = json_decode($value, true, flags: JSON_THROW_ON_ERROR);
+        } catch (JsonException $exception) {
+            throw new ApiException(500, 'The account contains invalid settings.', [], $exception);
+        }
+        if (!is_array($settings) || ($settings !== [] && array_is_list($settings))) {
+            throw new ApiException(500, 'The account contains invalid settings.');
+        }
+        return $settings;
+    }
+
     private function passkeyRegistrationOptions(): never
     {
         $user = $this->authenticate();
@@ -338,7 +487,7 @@ final class Api
             'register',
         );
         if (!is_string($ceremony['user_id']) || !hash_equals((string) $user['id'], $ceremony['user_id'])) {
-            throw new ApiException(401, 'This passkey registration request is not valid.');
+            throw new ApiException(401, 'This biometric setup request is not valid.');
         }
 
         $clientDataJson = $this->decodePasskeyBinary(
@@ -364,11 +513,11 @@ final class Api
                 false,
             );
         } catch (WebAuthnException) {
-            throw new ApiException(422, 'The passkey registration could not be verified.');
+            throw new ApiException(422, 'The biometric setup could not be verified.');
         }
 
         if (!hash_equals($rawCredentialId, (string) $registration->credentialId)) {
-            throw new ApiException(422, 'The passkey credential ID is inconsistent.');
+            throw new ApiException(422, 'The biometric credential is inconsistent.');
         }
 
         $transports = $this->passkeyTransports($credential['response']['transports'] ?? []);
@@ -400,7 +549,7 @@ final class Api
             ]);
         } catch (PDOException $exception) {
             if ($this->isConstraintViolation($exception)) {
-                throw new ApiException(409, 'This passkey is already registered.');
+                throw new ApiException(409, 'Biometric sign-in is already connected.');
             }
             throw $exception;
         }
@@ -492,7 +641,7 @@ final class Api
         $statement->execute(['credential_id' => $credentialId]);
         $user = $statement->fetch();
         if (!is_array($user)) {
-            throw new ApiException(401, 'The passkey could not be verified.');
+            throw new ApiException(401, 'Biometric sign-in could not be verified.');
         }
 
         $providedUserHandle = $credential['response']['userHandle'] ?? null;
@@ -500,7 +649,7 @@ final class Api
             !is_string($providedUserHandle)
             || !hash_equals((string) $user['passkey_user_handle'], $providedUserHandle)
         ) {
-            throw new ApiException(401, 'The passkey could not be verified.');
+            throw new ApiException(401, 'Biometric sign-in could not be verified.');
         }
 
         $previousCounter = $user['passkey_signature_counter'] === null
@@ -519,7 +668,7 @@ final class Api
                 true,
             );
         } catch (WebAuthnException) {
-            throw new ApiException(401, 'The passkey could not be verified.');
+            throw new ApiException(401, 'Biometric sign-in could not be verified.');
         }
 
         $statement = $this->database->pdo->prepare(
@@ -549,7 +698,7 @@ final class Api
             || $this->config->passkeyAndroidPackage === ''
             || $this->config->passkeyAndroidKeyHashes === []
         ) {
-            throw new ApiException(503, 'Passkey authentication is not configured.');
+            throw new ApiException(503, 'Biometric sign-in is not configured.');
         }
 
         $webAuthn = new WebAuthn('Mom', $this->config->passkeyRpId, ['none'], true);
@@ -594,7 +743,7 @@ final class Api
     private function consumePasskeyChallenge(mixed $id, string $purpose): array
     {
         if (!is_string($id) || preg_match('/^[A-Za-z0-9_-]{32}$/', $id) !== 1) {
-            throw new ApiException(422, 'The passkey request is invalid or expired.');
+            throw new ApiException(422, 'The biometric request is invalid or expired.');
         }
 
         $pdo = $this->database->pdo;
@@ -610,7 +759,7 @@ final class Api
             $ceremony = $statement->fetch();
             if (!is_array($ceremony)) {
                 $pdo->rollBack();
-                throw new ApiException(422, 'The passkey request is invalid or expired.');
+                throw new ApiException(422, 'The biometric request is invalid or expired.');
             }
 
             $delete = $pdo->prepare(
@@ -619,7 +768,7 @@ final class Api
             $delete->execute(['id' => $id, 'purpose' => $purpose]);
             if ($delete->rowCount() !== 1) {
                 $pdo->rollBack();
-                throw new ApiException(422, 'The passkey request is invalid or expired.');
+                throw new ApiException(422, 'The biometric request is invalid or expired.');
             }
             $pdo->commit();
         } catch (Throwable $exception) {
@@ -630,10 +779,10 @@ final class Api
         }
 
         if ((int) $ceremony['expires_at'] < time()) {
-            throw new ApiException(422, 'The passkey request is invalid or expired.');
+            throw new ApiException(422, 'The biometric request is invalid or expired.');
         }
         if (!is_string($ceremony['challenge']) || $ceremony['challenge'] === '') {
-            throw new ApiException(422, 'The passkey request is invalid or expired.');
+            throw new ApiException(422, 'The biometric request is invalid or expired.');
         }
         return $ceremony;
     }
@@ -641,10 +790,10 @@ final class Api
     private function passkeyCredential(mixed $value, bool $registration): array
     {
         if (!is_array($value) || array_is_list($value) || ($value['type'] ?? null) !== 'public-key') {
-            throw new ApiException(422, 'A valid passkey credential is required.');
+            throw new ApiException(422, 'A valid biometric credential is required.');
         }
         if (!is_array($value['response'] ?? null) || array_is_list($value['response'])) {
-            throw new ApiException(422, 'A valid passkey response is required.');
+            throw new ApiException(422, 'A valid biometric response is required.');
         }
 
         $required = $registration
@@ -652,7 +801,7 @@ final class Api
             : ['clientDataJSON', 'authenticatorData', 'signature', 'userHandle'];
         foreach ($required as $field) {
             if (!is_string($value['response'][$field] ?? null)) {
-                throw new ApiException(422, 'The passkey response is incomplete.');
+                throw new ApiException(422, 'The biometric response is incomplete.');
             }
         }
         return $value;
@@ -663,7 +812,7 @@ final class Api
         $rawId = $this->decodePasskeyBinary($credential['rawId'] ?? null, 'rawId');
         $id = $this->decodePasskeyBinary($credential['id'] ?? null, 'id');
         if (!hash_equals($rawId, $id)) {
-            throw new ApiException(422, 'The passkey credential ID is inconsistent.');
+            throw new ApiException(422, 'The biometric credential is inconsistent.');
         }
         return $rawId;
     }
@@ -676,18 +825,18 @@ final class Api
             || strlen($value) > 1500000
             || preg_match('/^[A-Za-z0-9_-]+$/', $value) !== 1
         ) {
-            throw new ApiException(422, "The passkey {$field} field is invalid.");
+            throw new ApiException(422, "The biometric {$field} field is invalid.");
         }
         $padding = strlen($value) % 4;
         if ($padding === 1) {
-            throw new ApiException(422, "The passkey {$field} field is invalid.");
+            throw new ApiException(422, "The biometric {$field} field is invalid.");
         }
         if ($padding !== 0) {
             $value .= str_repeat('=', 4 - $padding);
         }
         $decoded = base64_decode(strtr($value, '-_', '+/'), true);
         if ($decoded === false || $decoded === '') {
-            throw new ApiException(422, "The passkey {$field} field is invalid.");
+            throw new ApiException(422, "The biometric {$field} field is invalid.");
         }
         return $decoded;
     }
@@ -697,7 +846,7 @@ final class Api
         try {
             $clientData = json_decode($clientDataJson, true, flags: JSON_THROW_ON_ERROR);
         } catch (JsonException) {
-            throw new ApiException(422, 'The passkey client data is invalid.');
+            throw new ApiException(422, 'The biometric client data is invalid.');
         }
 
         $allowedOrigins = array_map(
@@ -712,7 +861,7 @@ final class Api
             || ($clientData['androidPackageName'] ?? null) !== $this->config->passkeyAndroidPackage
             || ($clientData['crossOrigin'] ?? false) === true
         ) {
-            throw new ApiException(422, 'The passkey request did not come from the trusted Android app.');
+            throw new ApiException(422, 'The biometric request did not come from the trusted Android app.');
         }
     }
 
@@ -1498,6 +1647,7 @@ final class Api
             'name' => $user['name'],
             'avatar' => $user['avatar'],
             'timezone' => $user['timezone'],
+            'settings' => (object) $this->decodeUserSettings($user['settings'] ?? '{}'),
             'created' => $user['created'],
             'updated' => $user['updated'],
         ];

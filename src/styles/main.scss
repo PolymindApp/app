@@ -106,7 +106,12 @@ html.platform-android .app-page {
 }
 
 .safe-bottom {
-  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  padding-bottom: calc(
+    1.25rem + max(
+      env(safe-area-inset-bottom, 0px),
+      var(--safe-area-inset-bottom, 0px)
+    )
+  ) !important;
 }
 
 .section-heading {

@@ -97,7 +97,7 @@ export interface TaskDraft extends Omit<Task, 'id'> {
   steps: ProgramStepDraft[]
 }
 
-export type IntervalStepKind = 'work' | 'rest' | 'prepare' | 'meditation' | 'custom'
+export type IntervalStepKind = 'work' | 'rest' | 'prepare' | 'meditation' | 'confirmation' | 'custom'
 export type IntervalSessionStatus = 'running' | 'paused' | 'completed' | 'ended'
 
 export interface IntervalStepNode {
@@ -107,6 +107,7 @@ export interface IntervalStepNode {
   kind: IntervalStepKind | ''
   durationSeconds: number
   color?: string
+  skipOnLastRound?: boolean
 }
 
 export interface IntervalGroupNode {
@@ -182,4 +183,8 @@ export interface QuickIntervalDraft {
   cooldownSeconds: number
   restAfterLastRound: boolean
   cues: IntervalCueSettings
+}
+
+export interface QuickIntervalSettings extends QuickIntervalDraft {
+  includeRest: boolean
 }

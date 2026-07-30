@@ -7,11 +7,61 @@ import type {
   IntervalTemplate,
   IntervalTemplateDraft,
   QuickIntervalDraft,
+  QuickIntervalSettings,
   ResolvedIntervalStep,
 } from '@/types/domain'
 
 const safeAdd = (left: number, right: number) => Math.min(Number.MAX_SAFE_INTEGER, left + right)
 const safeMultiply = (left: number, right: number) => Math.min(Number.MAX_SAFE_INTEGER, left * right)
+
+export function intervalStepDurationSeconds(step: IntervalStepNode) {
+  if (step.kind === 'confirmation') return 0
+  return Number.isFinite(step.durationSeconds) ? Math.max(0, step.durationSeconds) : 0
+}
+
+export function normalizeQuickIntervalSettings(value: unknown): QuickIntervalSettings | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const settings = value as Record<string, unknown>
+  const cues = settings.cues
+  if (!cues || typeof cues !== 'object' || Array.isArray(cues)) return undefined
+  const cueSettings = cues as Record<string, unknown>
+  const integer = (field: string, minimum: number, maximum: number) => {
+    const candidate = settings[field]
+    return Number.isInteger(candidate) && Number(candidate) >= minimum && Number(candidate) <= maximum
+      ? Number(candidate)
+      : undefined
+  }
+  const warmupSeconds = integer('warmupSeconds', 0, 3599)
+  const workSeconds = integer('workSeconds', 1, 3599)
+  const restSeconds = integer('restSeconds', 0, 3599)
+  const rounds = integer('rounds', 1, 15)
+  const cooldownSeconds = integer('cooldownSeconds', 0, 3599)
+  if (
+    warmupSeconds === undefined
+    || workSeconds === undefined
+    || restSeconds === undefined
+    || rounds === undefined
+    || cooldownSeconds === undefined
+    || typeof settings.restAfterLastRound !== 'boolean'
+    || typeof settings.includeRest !== 'boolean'
+    || typeof cueSettings.soundEnabled !== 'boolean'
+    || typeof cueSettings.vibrationEnabled !== 'boolean'
+  ) return undefined
+
+  return {
+    warmupSeconds,
+    workSeconds,
+    restSeconds,
+    rounds,
+    cooldownSeconds,
+    restAfterLastRound: settings.restAfterLastRound,
+    includeRest: settings.includeRest,
+    cues: {
+      soundEnabled: cueSettings.soundEnabled,
+      vibrationEnabled: cueSettings.vibrationEnabled,
+    },
+  }
+}
 
 export function createIntervalId() {
   return globalThis.crypto?.randomUUID?.() || `interval-${Date.now()}-${Math.random().toString(36).slice(2)}`
@@ -27,6 +77,21 @@ export function createIntervalStep(
 
 export function createIntervalGroup(name = '', repeatCount = 1): IntervalGroupNode {
   return { id: createIntervalId(), type: 'group', name, repeatCount, children: [] }
+}
+
+export function duplicateIntervalNode(node: IntervalNode): IntervalNode {
+  if (node.type === 'step') {
+    return {
+      ...node,
+      id: createIntervalId(),
+    }
+  }
+
+  return {
+    ...node,
+    id: createIntervalId(),
+    children: node.children.map(duplicateIntervalNode),
+  }
 }
 
 function cloneIntervalNode(node: IntervalNode): IntervalNode {
@@ -52,10 +117,19 @@ export function cloneIntervalTemplateDraft(template: IntervalTemplate): Interval
   }
 }
 
+function skippedLastRoundStep(node: IntervalGroupNode): IntervalStepNode | undefined {
+  if (Math.floor(node.repeatCount) <= 1) return undefined
+  const lastChild = node.children.at(-1)
+  return lastChild?.type === 'step' && lastChild.skipOnLastRound
+    ? lastChild
+    : undefined
+}
+
 export function intervalNodeStepCount(node: IntervalNode): number {
   if (node.type === 'step') return 1
   const childCount = node.children.reduce((sum, child) => safeAdd(sum, intervalNodeStepCount(child)), 0)
-  return safeMultiply(childCount, Math.max(0, Math.floor(node.repeatCount)))
+  const total = safeMultiply(childCount, Math.max(0, Math.floor(node.repeatCount)))
+  return skippedLastRoundStep(node) ? Math.max(0, total - 1) : total
 }
 
 export function intervalStepCount(definition: IntervalDefinition): number {
@@ -63,9 +137,11 @@ export function intervalStepCount(definition: IntervalDefinition): number {
 }
 
 export function intervalNodeDuration(node: IntervalNode): number {
-  if (node.type === 'step') return Math.max(0, node.durationSeconds)
+  if (node.type === 'step') return intervalStepDurationSeconds(node)
   const childDuration = node.children.reduce((sum, child) => safeAdd(sum, intervalNodeDuration(child)), 0)
-  return safeMultiply(childDuration, Math.max(0, Math.floor(node.repeatCount)))
+  const total = safeMultiply(childDuration, Math.max(0, Math.floor(node.repeatCount)))
+  const skippedStep = skippedLastRoundStep(node)
+  return skippedStep ? Math.max(0, total - intervalStepDurationSeconds(skippedStep)) : total
 }
 
 export function intervalDuration(definition: IntervalDefinition): number {
@@ -87,11 +163,21 @@ function resolveInNodes(
     if (node.type === 'step') return { step: node, groups }
     const childCount = node.children.reduce((sum, child) => safeAdd(sum, intervalNodeStepCount(child)), 0)
     if (!childCount) return undefined
-    const iteration = Math.floor(index / childCount)
+    const repeatCount = Math.max(0, Math.floor(node.repeatCount))
+    const skippedStep = skippedLastRoundStep(node)
+    const fullIterationsCount = skippedStep
+      ? safeMultiply(childCount, Math.max(0, repeatCount - 1))
+      : 0
+    const iteration = skippedStep && index >= fullIterationsCount
+      ? repeatCount - 1
+      : Math.floor(index / childCount)
+    const childIndex = skippedStep && index >= fullIterationsCount
+      ? index - fullIterationsCount
+      : index % childCount
     return resolveInNodes(
       node.children,
-      index % childCount,
-      [...groups, { name: node.name || 'Group', iteration: iteration + 1, total: node.repeatCount }],
+      childIndex,
+      [...groups, { name: node.name || 'Group', iteration: iteration + 1, total: repeatCount }],
     )
   }
   return undefined
@@ -109,16 +195,19 @@ export function resolveIntervalStep(
 
 export function validateIntervalDefinition(definition: IntervalDefinition): string[] {
   const errors: string[] = []
-  let timedSteps = 0
+  let steps = 0
 
   function visit(nodes: IntervalNode[], location: string) {
     nodes.forEach((node, index) => {
       const path = `${location} ${index + 1}`
       if (node.type === 'step') {
-        timedSteps += 1
+        steps += 1
         if (!node.name.trim()) errors.push(`${path} needs a name.`)
         if (!node.kind) errors.push(`${path} needs a type.`)
-        if (!Number.isFinite(node.durationSeconds) || node.durationSeconds <= 0) {
+        if (
+          node.kind !== 'confirmation'
+          && (!Number.isFinite(node.durationSeconds) || node.durationSeconds <= 0)
+        ) {
           errors.push(`${path} needs a positive duration.`)
         }
         return
@@ -132,16 +221,17 @@ export function validateIntervalDefinition(definition: IntervalDefinition): stri
   }
 
   visit(definition.children, 'Item')
-  if (!timedSteps) errors.unshift('Add at least one timed interval.')
+  if (!steps) errors.unshift('Add at least one interval.')
   return errors
 }
 
 export function createRuntimeState(definition: IntervalDefinition, now = new Date()): IntervalRuntimeState {
   const first = resolveIntervalStep(definition, 0)
+  const waitsForConfirmation = first?.step.kind === 'confirmation'
   return {
     stepIndex: 0,
-    remainingMs: (first?.step.durationSeconds || 0) * 1000,
-    stepStartedAt: now.toISOString(),
+    remainingMs: first ? intervalStepDurationSeconds(first.step) * 1000 : 0,
+    stepStartedAt: first && !waitsForConfirmation ? now.toISOString() : undefined,
     accumulatedMs: 0,
     updatedAt: now.toISOString(),
   }
@@ -153,6 +243,19 @@ export function reconcileIntervalRuntime(
   now = new Date(),
 ): { runtime: IntervalRuntimeState; completed: boolean; transitions: number } {
   if (!runtime.stepStartedAt) return { runtime: { ...runtime }, completed: false, transitions: 0 }
+  const current = resolveIntervalStep(definition, runtime.stepIndex)
+  if (current?.step.kind === 'confirmation') {
+    return {
+      runtime: {
+        ...runtime,
+        remainingMs: 0,
+        stepStartedAt: undefined,
+        updatedAt: now.toISOString(),
+      },
+      completed: false,
+      transitions: 0,
+    }
+  }
   let elapsedMs = Math.max(0, now.getTime() - new Date(runtime.stepStartedAt).getTime())
   const activeElapsed = elapsedMs
   let remainingMs = runtime.remainingMs
@@ -176,7 +279,20 @@ export function reconcileIntervalRuntime(
         transitions,
       }
     }
-    remainingMs = next.step.durationSeconds * 1000
+    if (next.step.kind === 'confirmation') {
+      return {
+        runtime: {
+          stepIndex,
+          remainingMs: 0,
+          stepStartedAt: undefined,
+          accumulatedMs: runtime.accumulatedMs + (activeElapsed - elapsedMs),
+          updatedAt: now.toISOString(),
+        },
+        completed: false,
+        transitions,
+      }
+    }
+    remainingMs = intervalStepDurationSeconds(next.step) * 1000
   }
 
   return {

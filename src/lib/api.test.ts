@@ -98,6 +98,66 @@ describe('Mom API client adapter', () => {
     expect((options.headers as Headers).get('Authorization')).toBe(`Bearer ${token}`)
   })
 
+  it('updates the account name and refreshes the persisted auth record', async () => {
+    const token = futureToken()
+    localStorage.setItem('mom-api-auth', JSON.stringify({
+      token,
+      record: { id: 'user-1', email: 'person@example.com', name: 'Person' },
+    }))
+    const updatedRecord = {
+      id: 'user-1',
+      email: 'person@example.com',
+      name: 'Updated Person',
+      updated: '2026-07-30T12:00:00.000Z',
+    }
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(updatedRecord))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { api } = await import('./api')
+    await expect(api.updateAccount('Updated Person')).resolves.toEqual(updatedRecord)
+    expect(fetchMock).toHaveBeenCalledWith('/api/auth/account', expect.objectContaining({
+      method: 'PATCH',
+      body: JSON.stringify({ name: 'Updated Person' }),
+    }))
+    expect(api.authStore.record?.name).toBe('Updated Person')
+    expect(JSON.parse(localStorage.getItem('mom-api-auth') || '{}').record.name)
+      .toBe('Updated Person')
+  })
+
+  it('updates user settings and refreshes the persisted auth record', async () => {
+    const token = futureToken()
+    localStorage.setItem('mom-api-auth', JSON.stringify({
+      token,
+      record: { id: 'user-1', email: 'person@example.com', settings: {} },
+    }))
+    const quickInterval = {
+      warmupSeconds: 0,
+      workSeconds: 30,
+      restSeconds: 15,
+      rounds: 4,
+      cooldownSeconds: 0,
+      restAfterLastRound: true,
+      includeRest: true,
+      cues: { soundEnabled: true, vibrationEnabled: false },
+    }
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
+      settings: { quickInterval },
+      updated: '2026-07-30T12:00:00.000Z',
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { api } = await import('./api')
+    await expect(api.updateUserSettings({ quickInterval }))
+      .resolves.toEqual({ quickInterval })
+    expect(fetchMock).toHaveBeenCalledWith('/api/auth/settings', expect.objectContaining({
+      method: 'PATCH',
+      body: JSON.stringify({ quickInterval }),
+    }))
+    expect(api.authStore.record?.settings).toEqual({ quickInterval })
+    expect(JSON.parse(localStorage.getItem('mom-api-auth') || '{}').record.settings)
+      .toEqual({ quickInterval })
+  })
+
   it('paginates getFullList calls and sends the bearer token', async () => {
     const token = futureToken()
     localStorage.setItem('mom-api-auth', JSON.stringify({

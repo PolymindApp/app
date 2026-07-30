@@ -67,6 +67,10 @@ public class BackgroundIntervalService extends Service {
             advance(now);
             if (!running) return;
             updateNotification(false);
+            if (steps.get(stepIndex).requiresConfirmation) {
+                releaseWakeLock();
+                return;
+            }
             handler.postDelayed(this, TICK_MS);
         }
     };
@@ -74,10 +78,12 @@ public class BackgroundIntervalService extends Service {
     public static final class IntervalStep {
         final String name;
         final long durationMs;
+        final boolean requiresConfirmation;
 
-        IntervalStep(String name, long durationMs) {
+        IntervalStep(String name, long durationMs, boolean requiresConfirmation) {
             this.name = name;
             this.durationMs = durationMs;
+            this.requiresConfirmation = requiresConfirmation;
         }
     }
 
@@ -99,7 +105,11 @@ public class BackgroundIntervalService extends Service {
         try {
             configure(intent);
             startAsForeground();
-            acquireWakeLock();
+            if (steps.get(stepIndex).requiresConfirmation) {
+                releaseWakeLock();
+            } else {
+                acquireWakeLock();
+            }
             running = true;
             handler.removeCallbacks(ticker);
             handler.post(ticker);
@@ -116,7 +126,8 @@ public class BackgroundIntervalService extends Service {
             JSONObject encoded = encodedSteps.getJSONObject(index);
             steps.add(new IntervalStep(
                 encoded.optString("name", "Interval " + (index + 1)),
-                Math.max(1L, encoded.optLong("durationMs", 1L))
+                Math.max(1L, encoded.optLong("durationMs", 1L)),
+                encoded.optBoolean("requiresConfirmation", false)
             ));
         }
         if (steps.isEmpty()) throw new IllegalArgumentException("Interval sequence is empty.");
@@ -141,15 +152,20 @@ public class BackgroundIntervalService extends Service {
     }
 
     private void advance(long now) {
+        if (steps.get(stepIndex).requiresConfirmation) return;
         while (running && now >= deadlineElapsedMs) {
             stepIndex += 1;
             if (stepIndex >= steps.size()) {
                 finishTimer();
                 return;
             }
-            deadlineElapsedMs += steps.get(stepIndex).durationMs;
             lastCountdownSecond = -1;
             if (!MainActivity.isAppVisible()) playGoCue();
+            if (steps.get(stepIndex).requiresConfirmation) {
+                deadlineElapsedMs = now;
+                return;
+            }
+            deadlineElapsedMs += steps.get(stepIndex).durationMs;
         }
     }
 
@@ -174,7 +190,11 @@ public class BackgroundIntervalService extends Service {
     }
 
     private void playCountdown(long now) {
-        if (!soundEnabled || MainActivity.isAppVisible()) return;
+        if (
+            !soundEnabled
+            || MainActivity.isAppVisible()
+            || steps.get(stepIndex).requiresConfirmation
+        ) return;
         long remainingMs = Math.max(0L, deadlineElapsedMs - now);
         int remainingSeconds = (int) Math.ceil(remainingMs / 1000d);
         if (remainingSeconds >= 1 && remainingSeconds <= 3 && remainingSeconds != lastCountdownSecond) {
@@ -247,6 +267,8 @@ public class BackgroundIntervalService extends Service {
         String text;
         if (complete || stepIndex >= steps.size()) {
             text = "Interval session complete";
+        } else if (steps.get(stepIndex).requiresConfirmation) {
+            text = steps.get(stepIndex).name + " · Confirmation required";
         } else {
             long remainingMs = Math.max(0L, deadlineElapsedMs - SystemClock.elapsedRealtime());
             long totalSeconds = (long) Math.ceil(remainingMs / 1000d);

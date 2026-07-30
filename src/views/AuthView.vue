@@ -169,7 +169,7 @@ async function signInWithPasskey() {
               :disabled="auth.loading"
               @click="signInWithPasskey"
             >
-              Sign in with passkey
+              Sign in with biometrics
             </v-btn>
           </template>
         </v-card>
