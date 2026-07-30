@@ -47,6 +47,15 @@ final class Api
             if (($method === 'GET' || $method === 'PATCH') && $path === '/auth/account') {
                 $this->account($method);
             }
+            if (($method === 'POST' || $method === 'DELETE') && $path === '/auth/avatar') {
+                $this->avatar($method);
+            }
+            if (
+                $method === 'GET'
+                && preg_match('#^/avatars/([a-f0-9]{48}\.jpg)$#', $path, $avatarMatches) === 1
+            ) {
+                $this->serveAvatar($avatarMatches[1]);
+            }
             if (($method === 'GET' || $method === 'PATCH') && $path === '/auth/settings') {
                 $this->userSettings($method);
             }
@@ -58,6 +67,9 @@ final class Api
             }
             if ($method === 'GET' && $path === '/auth/passkeys/status') {
                 $this->passkeyStatus();
+            }
+            if ($method === 'DELETE' && $path === '/auth/passkeys') {
+                $this->deletePasskeys();
             }
             if ($method === 'POST' && $path === '/auth/passkeys/login/options') {
                 $this->passkeyLoginOptions();
@@ -305,6 +317,164 @@ final class Api
         $user['name'] = $name;
         $user['updated'] = $updated;
         $this->respond($this->publicUser($user));
+    }
+
+    private function avatar(string $method): never
+    {
+        $user = $this->authenticate();
+        $this->rateLimit('avatar-update:' . $user['id'], 20, 900);
+        $oldFilename = $this->validAvatarFilename($user['avatar'] ?? null);
+        $updated = $this->now();
+
+        if ($method === 'DELETE') {
+            $statement = $this->database->pdo->prepare(
+                "UPDATE users SET avatar = '', updated = :updated WHERE id = :id",
+            );
+            $statement->execute([
+                'updated' => $updated,
+                'id' => $user['id'],
+            ]);
+            if ($oldFilename !== null) {
+                $this->removeAvatarFile($oldFilename);
+            }
+            $user['avatar'] = '';
+            $user['updated'] = $updated;
+            $this->respond($this->publicUser($user));
+        }
+
+        $body = $this->jsonBody();
+        $encoded = $body['image'] ?? null;
+        if (
+            !is_string($encoded)
+            || !str_starts_with($encoded, 'data:image/jpeg;base64,')
+        ) {
+            throw new ApiException(422, 'Upload a valid compressed JPEG avatar.', [
+                'image' => 'jpeg',
+            ]);
+        }
+        $bytes = base64_decode(substr($encoded, 23), true);
+        if ($bytes === false || strlen($bytes) < 100 || strlen($bytes) > 500000) {
+            throw new ApiException(422, 'The compressed avatar is invalid or too large.', [
+                'image' => 'max:500000',
+            ]);
+        }
+
+        $details = @getimagesizefromstring($bytes);
+        if (
+            !is_array($details)
+            || ($details['mime'] ?? null) !== 'image/jpeg'
+            || ($details[0] ?? 0) < 1
+            || ($details[0] ?? 0) > 256
+            || ($details[1] ?? 0) !== ($details[0] ?? 0)
+        ) {
+            throw new ApiException(422, 'The avatar must be a square JPEG no larger than 256×256.', [
+                'image' => 'square:max:256',
+            ]);
+        }
+
+        $directory = $this->avatarDirectory();
+        if (
+            !is_dir($directory)
+            && !mkdir($directory, 0700, true)
+            && !is_dir($directory)
+        ) {
+            throw new ApiException(500, 'The private avatar directory could not be created.');
+        }
+        if (!is_writable($directory)) {
+            throw new ApiException(500, 'The private avatar directory is not writable.');
+        }
+
+        $filename = bin2hex(random_bytes(24)) . '.jpg';
+        $temporary = tempnam($directory, '.avatar-');
+        if ($temporary === false) {
+            throw new ApiException(500, 'A temporary avatar file could not be created.');
+        }
+
+        try {
+            $written = file_put_contents($temporary, $bytes, LOCK_EX);
+            if ($written !== strlen($bytes)) {
+                throw new ApiException(500, 'The avatar could not be stored.');
+            }
+            @chmod($temporary, 0600);
+            $destination = $directory . DIRECTORY_SEPARATOR . $filename;
+            if (!rename($temporary, $destination)) {
+                throw new ApiException(500, 'The avatar could not be finalized.');
+            }
+            $temporary = '';
+
+            try {
+                $statement = $this->database->pdo->prepare(
+                    'UPDATE users SET avatar = :avatar, updated = :updated WHERE id = :id',
+                );
+                $statement->execute([
+                    'avatar' => $filename,
+                    'updated' => $updated,
+                    'id' => $user['id'],
+                ]);
+            } catch (Throwable $exception) {
+                @unlink($destination);
+                throw $exception;
+            }
+        } finally {
+            if ($temporary !== '' && is_file($temporary)) {
+                @unlink($temporary);
+            }
+        }
+
+        if ($oldFilename !== null && !hash_equals($oldFilename, $filename)) {
+            $this->removeAvatarFile($oldFilename);
+        }
+        $user['avatar'] = $filename;
+        $user['updated'] = $updated;
+        $this->respond($this->publicUser($user));
+    }
+
+    private function serveAvatar(string $filename): never
+    {
+        $validated = $this->validAvatarFilename($filename);
+        if ($validated === null) {
+            throw new ApiException(404, 'Avatar not found.');
+        }
+        $path = $this->avatarDirectory() . DIRECTORY_SEPARATOR . $validated;
+        if (!is_file($path) || !is_readable($path)) {
+            throw new ApiException(404, 'Avatar not found.');
+        }
+        $contents = file_get_contents($path);
+        if ($contents === false) {
+            throw new ApiException(404, 'Avatar not found.');
+        }
+
+        header('Content-Type: image/jpeg');
+        header('Cache-Control: public, max-age=31536000, immutable');
+        header('Content-Length: ' . strlen($contents));
+        header('Content-Disposition: inline; filename="avatar.jpg"');
+        header('ETag: "' . substr($validated, 0, 48) . '"');
+        echo $contents;
+        exit;
+    }
+
+    private function avatarDirectory(): string
+    {
+        return dirname($this->config->databasePath) . DIRECTORY_SEPARATOR . 'avatars';
+    }
+
+    private function validAvatarFilename(mixed $value): ?string
+    {
+        return is_string($value) && preg_match('/^[a-f0-9]{48}\.jpg$/', $value) === 1
+            ? $value
+            : null;
+    }
+
+    private function removeAvatarFile(string $filename): void
+    {
+        $validated = $this->validAvatarFilename($filename);
+        if ($validated === null) {
+            return;
+        }
+        $path = $this->avatarDirectory() . DIRECTORY_SEPARATOR . $validated;
+        if (is_file($path)) {
+            @unlink($path);
+        }
     }
 
     private function userSettings(string $method): never
@@ -572,6 +742,39 @@ final class Api
 
         $this->respond([
             'registered' => $statement->fetchColumn() !== false,
+        ]);
+    }
+
+    private function deletePasskeys(): never
+    {
+        $user = $this->authenticate();
+        $this->passkeyWebAuthn();
+        $pdo = $this->database->pdo;
+        $pdo->beginTransaction();
+
+        try {
+            $statement = $pdo->prepare(
+                'DELETE FROM mom_passkeys WHERE user_id = :user_id',
+            );
+            $statement->execute(['user_id' => $user['id']]);
+            $removed = $statement->rowCount();
+
+            $statement = $pdo->prepare(
+                'DELETE FROM mom_passkey_challenges
+                 WHERE user_id = :user_id AND purpose = \'register\'',
+            );
+            $statement->execute(['user_id' => $user['id']]);
+            $pdo->commit();
+        } catch (\Throwable $exception) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $exception;
+        }
+
+        $this->respond([
+            'registered' => false,
+            'removed' => $removed,
         ]);
     }
 
@@ -1640,12 +1843,13 @@ final class Api
 
     private function publicUser(array $user): array
     {
+        $avatar = $this->validAvatarFilename($user['avatar'] ?? null);
         return [
             'id' => $user['id'],
             'email' => $user['email'],
             'verified' => (bool) $user['verified'],
             'name' => $user['name'],
-            'avatar' => $user['avatar'],
+            'avatar' => $avatar === null ? '' : '/avatars/' . $avatar,
             'timezone' => $user['timezone'],
             'settings' => (object) $this->decodeUserSettings($user['settings'] ?? '{}'),
             'created' => $user['created'],

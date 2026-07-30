@@ -1,15 +1,19 @@
 <script setup lang="ts">
 import { Capacitor } from '@capacitor/core'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { addDays, addWeeks, endOfWeek, format, isSameDay, isSameWeek, startOfWeek } from 'date-fns'
+import { addDays, addWeeks, format, isSameDay, startOfWeek } from 'date-fns'
 import { storeToRefs } from 'pinia'
 import { useDisplay } from 'vuetify'
+import { useRouter } from 'vue-router'
 import TaskCard from '@/components/TaskCard.vue'
+import WeekNavigator from '@/components/WeekNavigator.vue'
+import { toDateKey } from '@/services/schedule'
 import { useTaskStore } from '@/stores/tasks'
 import type { TaskProgress } from '@/types/domain'
 
 const allowAutomaticFocus = Capacitor.getPlatform() !== 'android'
 const store = useTaskStore()
+const router = useRouter()
 const { smAndUp } = useDisplay()
 const { selectedDate, selectedProgress, completionRate, loading, error } = storeToRefs(store)
 const busy = ref(false)
@@ -35,14 +39,6 @@ const days = computed(() => Array.from({ length: 7 }, (_, index) => {
   const date = addDays(visibleWeekStart.value, index)
   return { date, day: format(date, 'EEE').slice(0, 2), number: format(date, 'd') }
 }))
-const weekLabel = computed(() => {
-  const start = visibleWeekStart.value
-  const end = endOfWeek(start, { weekStartsOn: 1 })
-  return start.getMonth() === end.getMonth()
-    ? `${format(start, 'MMM d')} – ${format(end, 'd')}`
-    : `${format(start, 'MMM d')} – ${format(end, 'MMM d')}`
-})
-const isCurrentWeek = computed(() => isSameWeek(visibleWeekStart.value, new Date(), { weekStartsOn: 1 }))
 
 const required = computed(() => selectedProgress.value.filter((item) => item.task.mandatory))
 const optional = computed(() => selectedProgress.value.filter((item) => !item.task.mandatory))
@@ -88,15 +84,7 @@ async function resolveReview(item: TaskProgress, status: 'missed' | 'carried') {
 
 function moveWeek(amount: number) {
   weekDirection.value = amount < 0 ? 'previous' : 'next'
-  selectedDate.value = addWeeks(selectedDate.value, amount)
-  visibleWeekStart.value = startOfWeek(selectedDate.value, { weekStartsOn: 1 })
-}
-
-function goToCurrentWeek() {
-  const today = new Date()
-  weekDirection.value = visibleWeekStart.value > today ? 'previous' : 'next'
-  selectedDate.value = today
-  visibleWeekStart.value = startOfWeek(today, { weekStartsOn: 1 })
+  visibleWeekStart.value = addWeeks(visibleWeekStart.value, amount)
 }
 
 function beginWeekSwipe(event: TouchEvent) {
@@ -132,6 +120,14 @@ function openExact(progress: TaskProgress) {
   exactDialog.value = true
 }
 
+function openTimeLogger(progress: TaskProgress) {
+  void router.push({
+    name: 'task-timer',
+    params: { id: progress.task.id },
+    query: { date: toDateKey(selectedDate.value) },
+  })
+}
+
 function pressKeypad(key: typeof keypadKeys[number]) {
   if (key === 'backspace') {
     exactAmountInput.value = exactAmountInput.value.slice(0, -1)
@@ -164,26 +160,11 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
 
 <template>
   <main class="app-page today-page">
-    <div class="week-nav mb-3">
-      <v-btn
-        icon="mdi-chevron-left"
-        variant="text"
-        size="small"
-        aria-label="Previous week"
-        @click="moveWeek(-1)"
-      />
-      <button class="week-nav__label" :disabled="isCurrentWeek" @click="goToCurrentWeek">
-        <strong>{{ weekLabel }}</strong>
-        <span>{{ isCurrentWeek ? 'Current week' : 'Back to current week' }}</span>
-      </button>
-      <v-btn
-        icon="mdi-chevron-right"
-        variant="text"
-        size="small"
-        aria-label="Next week"
-        @click="moveWeek(1)"
-      />
-    </div>
+    <WeekNavigator
+      v-model="visibleWeekStart"
+      class="mb-3"
+      @navigate="weekDirection = $event"
+    />
 
     <div
       class="date-strip-window mb-5"
@@ -249,7 +230,7 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
 
     <template v-if="selectedProgress.length">
       <section v-if="required.length">
-        <div class="section-heading"><h2>Required work</h2><span class="text-caption muted">{{ required.filter(i => i.complete).length }}/{{ required.length }}</span></div>
+        <div class="section-heading"><h2>Required tasks</h2><span class="text-caption muted">{{ required.filter(i => i.complete).length }}/{{ required.length }}</span></div>
         <div class="task-stack">
           <TaskCard
             v-for="item in required"
@@ -260,6 +241,7 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
             @seal="progress => runForProgress(progress, () => store.setDailyTotalSealed(progress))"
             @add="(progress, amount) => runForProgress(progress, () => store.addEntry(progress, amount))"
             @exact="openExact"
+            @log-time="openTimeLogger"
           />
         </div>
       </section>
@@ -276,6 +258,7 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
             @seal="progress => runForProgress(progress, () => store.setDailyTotalSealed(progress))"
             @add="(progress, amount) => runForProgress(progress, () => store.addEntry(progress, amount))"
             @exact="openExact"
+            @log-time="openTimeLogger"
           />
         </div>
       </section>
@@ -292,10 +275,10 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
       class="manage-tasks-button mt-8"
       block
       size="large"
-      variant="tonal"
+      variant="outlined"
       color="secondary"
       prepend-icon="mdi-format-list-checks"
-      to="/plan"
+      to="/tasks/manage"
     >
       Manage tasks
     </v-btn>
@@ -420,39 +403,6 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
 </template>
 
 <style scoped>
-.week-nav {
-  display: grid;
-  grid-template-columns: 40px 1fr 40px;
-  align-items: center;
-  gap: .5rem;
-}
-
-.week-nav__label {
-  display: flex;
-  min-height: 44px;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  border: 0;
-  background: transparent;
-  color: rgb(var(--v-theme-on-background));
-  cursor: pointer;
-}
-
-.week-nav__label:disabled {
-  cursor: default;
-}
-
-.week-nav__label strong {
-  font-size: .82rem;
-}
-
-.week-nav__label span {
-  margin-top: 1px;
-  color: rgb(var(--v-theme-on-background) / .48);
-  font-size: .62rem;
-}
-
 .date-strip {
   display: grid;
   grid-template-columns: repeat(7, minmax(42px, 1fr));

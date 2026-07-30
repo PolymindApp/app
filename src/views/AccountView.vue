@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { Capacitor } from '@capacitor/core'
 import { computed, onMounted, ref } from 'vue'
+import AccountAvatarEditor from '@/components/AccountAvatarEditor.vue'
+import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import { isAndroidPasskeyAvailable } from '@/services/passkeys'
 import { useAuthStore } from '@/stores/auth'
 
@@ -10,6 +12,7 @@ const auth = useAuthStore()
 const form = ref()
 const name = ref(auth.user?.name || '')
 const biometricState = ref<BiometricState>('checking')
+const disconnectBiometricsDialog = ref(false)
 const notice = ref(false)
 const noticeColor = ref<'success' | 'error'>('success')
 const noticeText = ref('')
@@ -46,6 +49,24 @@ async function saveProfile() {
   }
 }
 
+async function uploadAvatar(image: Blob) {
+  try {
+    await auth.updateAvatar(image)
+    showNotice('success', 'Your avatar has been updated.')
+  } catch {
+    showNotice('error', auth.error || 'Your avatar could not be updated.')
+  }
+}
+
+async function removeAvatar() {
+  try {
+    await auth.removeAvatar()
+    showNotice('success', 'Your avatar has been removed.')
+  } catch {
+    showNotice('error', auth.error || 'Your avatar could not be removed.')
+  }
+}
+
 async function checkBiometricStatus() {
   biometricState.value = 'checking'
   if (!isAndroidApp || !await isAndroidPasskeyAvailable()) {
@@ -72,6 +93,17 @@ async function connectBiometrics() {
   }
 }
 
+async function disconnectBiometrics() {
+  try {
+    await auth.disconnectPasskeys()
+    disconnectBiometricsDialog.value = false
+    biometricState.value = 'available'
+    showNotice('success', 'Biometric sign-in has been disconnected.')
+  } catch {
+    showNotice('error', auth.error || 'Biometric sign-in could not be disconnected.')
+  }
+}
+
 function showNotice(color: 'success' | 'error', text: string) {
   noticeColor.value = color
   noticeText.value = text
@@ -82,9 +114,14 @@ function showNotice(color: 'success' | 'error', text: string) {
 <template>
   <main class="app-page account-page">
     <header class="account-intro">
-      <v-avatar color="secondary" size="64">
-        <span>{{ accountInitials }}</span>
-      </v-avatar>
+      <AccountAvatarEditor
+        :avatar-url="auth.user?.avatar"
+        :initials="accountInitials"
+        :loading="auth.avatarLoading"
+        @upload="uploadAvatar"
+        @remove="removeAvatar"
+        @error="message => showNotice('error', message)"
+      />
       <div>
         <h1 class="text-h5 font-weight-black">Your account</h1>
         <p>Manage your profile and how you securely sign in.</p>
@@ -151,16 +188,25 @@ function showNotice(color: 'success' | 'error', text: string) {
         class="mt-5"
       />
 
-      <v-alert
-        v-else-if="biometricState === 'connected'"
-        type="success"
-        variant="tonal"
-        icon="mdi-shield-check-outline"
-        class="mt-5"
-      >
-        <strong>Biometrics connected</strong>
-        <p class="mt-1">You can use your fingerprint, face, or screen lock from the sign-in page.</p>
-      </v-alert>
+      <div v-else-if="biometricState === 'connected'" class="biometric-connected">
+        <v-alert
+          type="success"
+          variant="tonal"
+          icon="mdi-shield-check-outline"
+        >
+          <strong>Biometrics connected</strong>
+          <p class="mt-1">You can use your fingerprint, face, or screen lock from the sign-in page.</p>
+        </v-alert>
+        <v-btn
+          color="error"
+          variant="outlined"
+          prepend-icon="mdi-fingerprint-off"
+          :loading="auth.passkeyLoading"
+          @click="disconnectBiometricsDialog = true"
+        >
+          Disconnect biometrics
+        </v-btn>
+      </div>
 
       <div v-else-if="biometricState === 'available'" class="biometric-action">
         <div class="biometric-privacy">
@@ -204,6 +250,16 @@ function showNotice(color: 'success' | 'error', text: string) {
       </v-alert>
     </v-card>
 
+    <ConfirmDialog
+      v-model="disconnectBiometricsDialog"
+      title="Disconnect biometrics?"
+      message="You will no longer be able to use your fingerprint, face, or screen lock to sign in. You can connect biometrics again later."
+      confirm-text="Disconnect"
+      icon="mdi-fingerprint-off"
+      :loading="auth.passkeyLoading"
+      @confirm="disconnectBiometrics"
+    />
+
     <v-snackbar
       v-model="notice"
       :color="noticeColor"
@@ -227,13 +283,6 @@ function showNotice(color: 'success' | 'error', text: string) {
   align-items: center;
   gap: 1rem;
   padding: .5rem .25rem .75rem;
-}
-
-.account-intro .v-avatar {
-  flex: 0 0 auto;
-  color: rgb(var(--v-theme-on-secondary));
-  font-size: 1rem;
-  font-weight: 900;
 }
 
 .account-intro p,
@@ -281,6 +330,13 @@ function showNotice(color: 'success' | 'error', text: string) {
   margin-top: 1.5rem;
 }
 
+.biometric-connected {
+  display: grid;
+  justify-items: end;
+  gap: .75rem;
+  margin-top: 1.25rem;
+}
+
 .biometric-privacy {
   display: flex;
   min-width: 0;
@@ -312,6 +368,10 @@ function showNotice(color: 'success' | 'error', text: string) {
   }
 
   .biometric-action .v-btn {
+    width: 100%;
+  }
+
+  .biometric-connected .v-btn {
     width: 100%;
   }
 

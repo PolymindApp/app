@@ -44,7 +44,7 @@ async function submit() {
   try {
     if (mode.value === 'login') await auth.login(email.value, password.value)
     else await auth.register(name.value, email.value, password.value)
-    await router.replace('/today')
+    await router.replace('/tasks')
   } catch (error) {
     backendOffline.value = error instanceof TypeError || (error instanceof Error && /fetch|network/i.test(error.message))
   }
@@ -53,7 +53,7 @@ async function submit() {
 async function signInWithPasskey() {
   backendOffline.value = false
   try {
-    if (await auth.loginWithPasskey()) await router.replace('/today')
+    if (await auth.loginWithPasskey()) await router.replace('/tasks')
   } catch (error) {
     backendOffline.value = error instanceof TypeError || (error instanceof Error && /fetch|network/i.test(error.message))
   }

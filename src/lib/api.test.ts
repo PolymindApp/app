@@ -98,6 +98,31 @@ describe('Mom API client adapter', () => {
     expect((options.headers as Headers).get('Authorization')).toBe(`Bearer ${token}`)
   })
 
+  it('disconnects the authenticated user biometric credentials', async () => {
+    const token = futureToken()
+    localStorage.setItem('mom-api-auth', JSON.stringify({
+      token,
+      record: { id: 'user-1', email: 'person@example.com' },
+    }))
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
+      registered: false,
+      removed: 1,
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { api } = await import('./api')
+    await expect(api.removePasskeys()).resolves.toEqual({
+      registered: false,
+      removed: 1,
+    })
+    expect(fetchMock).toHaveBeenCalledWith('/api/auth/passkeys', expect.objectContaining({
+      method: 'DELETE',
+      headers: expect.any(Headers),
+    }))
+    const [, options] = fetchMock.mock.calls[0]
+    expect((options.headers as Headers).get('Authorization')).toBe(`Bearer ${token}`)
+  })
+
   it('updates the account name and refreshes the persisted auth record', async () => {
     const token = futureToken()
     localStorage.setItem('mom-api-auth', JSON.stringify({

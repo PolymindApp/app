@@ -118,6 +118,90 @@ account_email="$(json_field email <<<"$account_response")"
   exit 1
 }
 
+avatar_base64="$(php -r '
+  if (!function_exists("imagecreatetruecolor")) {
+      fwrite(STDERR, "The GD extension is required for avatar integration tests.\n");
+      exit(1);
+  }
+  $image = imagecreatetruecolor(256, 256);
+  $color = imagecolorallocate($image, 120, 80, 200);
+  imagefill($image, 0, 0, $color);
+  ob_start();
+  imagejpeg($image, null, 86);
+  $bytes = ob_get_clean();
+  imagedestroy($image);
+  echo base64_encode($bytes);
+')"
+avatar_response="$(curl --silent --show-error --fail \
+  -X POST -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "{\"image\":\"data:image/jpeg;base64,$avatar_base64\"}" \
+  "$api_url/auth/avatar")"
+avatar_path="$(json_field avatar <<<"$avatar_response")"
+[[ "$avatar_path" =~ ^/avatars/[a-f0-9]{48}\.jpg$ ]] || {
+  echo "The avatar endpoint did not return a unique media URL." >&2
+  exit 1
+}
+avatar_headers="$test_dir/avatar-headers.txt"
+curl --silent --show-error --fail \
+  --dump-header "$avatar_headers" \
+  --output "$test_dir/avatar.jpg" \
+  "$api_url$avatar_path"
+grep -qi '^Content-Type: image/jpeg' "$avatar_headers" || {
+  echo "The avatar was not served as a JPEG." >&2
+  exit 1
+}
+php -r '
+  $size = getimagesize($argv[1]);
+  if (!is_array($size) || $size[0] !== 256 || $size[1] !== 256) {
+      fwrite(STDERR, "The stored avatar dimensions are invalid.\n");
+      exit(1);
+  }
+' "$test_dir/avatar.jpg"
+
+replacement_response="$(curl --silent --show-error --fail \
+  -X POST -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "{\"image\":\"data:image/jpeg;base64,$avatar_base64\"}" \
+  "$api_url/auth/avatar")"
+replacement_path="$(json_field avatar <<<"$replacement_response")"
+[[ "$replacement_path" =~ ^/avatars/[a-f0-9]{48}\.jpg$ && "$replacement_path" != "$avatar_path" ]] || {
+  echo "Replacing an avatar did not generate a new media URL." >&2
+  exit 1
+}
+replaced_avatar_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  "$api_url$avatar_path")"
+[[ "$replaced_avatar_status" == 404 ]] || {
+  echo "The replaced avatar URL is still available." >&2
+  exit 1
+}
+avatar_path="$replacement_path"
+
+invalid_avatar_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  -X POST -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"image":"data:image/jpeg;base64,bm90LWEtanBlZw=="}' \
+  "$api_url/auth/avatar")"
+[[ "$invalid_avatar_status" == 422 ]] || {
+  echo "The avatar endpoint accepted invalid image bytes." >&2
+  exit 1
+}
+
+removed_avatar_response="$(curl --silent --show-error --fail \
+  -X DELETE -H "Authorization: Bearer $alice_token" \
+  "$api_url/auth/avatar")"
+removed_avatar="$(json_field avatar <<<"$removed_avatar_response")"
+[[ -z "$removed_avatar" ]] || {
+  echo "The avatar was not removed from the account." >&2
+  exit 1
+}
+removed_avatar_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  "$api_url$avatar_path")"
+[[ "$removed_avatar_status" == 404 ]] || {
+  echo "A removed avatar URL is still available." >&2
+  exit 1
+}
+
 invalid_account_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
   -X PATCH -H "Content-Type: application/json" \
   -H "Authorization: Bearer $alice_token" \
@@ -241,6 +325,31 @@ passkey_status="$(curl --silent --show-error --fail \
 passkey_registered="$(json_field registered <<<"$passkey_status")"
 [[ "$passkey_registered" == "1" ]] || {
   echo "An existing passkey was not reported for its account." >&2
+  exit 1
+}
+
+pending_passkey_options="$(curl --silent --show-error --fail \
+  -X POST -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{}' \
+  "$api_url/auth/passkeys/register/options")"
+pending_passkey_ceremony="$(json_field ceremonyId <<<"$pending_passkey_options")"
+disconnect_response="$(curl --silent --show-error --fail \
+  -X DELETE \
+  -H "Authorization: Bearer $alice_token" \
+  "$api_url/auth/passkeys")"
+disconnected_registered="$(json_field registered <<<"$disconnect_response")"
+disconnected_removed="$(json_field removed <<<"$disconnect_response")"
+[[ "$disconnected_registered" == "" && "$disconnected_removed" == "1" ]] || {
+  echo "Disconnecting biometrics returned an invalid response." >&2
+  exit 1
+}
+remaining_passkeys="$(sqlite3 "$test_db" \
+  "SELECT COUNT(*) FROM mom_passkeys WHERE user_id = '$alice_id';")"
+remaining_registration_challenges="$(sqlite3 "$test_db" \
+  "SELECT COUNT(*) FROM mom_passkey_challenges WHERE id = '$pending_passkey_ceremony';")"
+[[ "$remaining_passkeys" == 0 && "$remaining_registration_challenges" == 0 ]] || {
+  echo "Disconnecting biometrics did not revoke all account credentials and pending setup requests." >&2
   exit 1
 }
 

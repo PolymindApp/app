@@ -16,6 +16,7 @@ php -r 'var_export([
 ```
 
 PDO_SQLITE and OpenSSL must be enabled. If the host has no Composer executable, run Composer locally and upload the generated root `vendor` directory with `server`.
+GD is required for validating avatar dimensions and file contents.
 
 ## Configuration
 
@@ -146,9 +147,11 @@ Use the PHP-FPM socket configured by the host.
 - All values are bound parameters.
 - Unknown fields and invalid JSON, enums, dates, relations, and oversized bodies are rejected.
 - Cross-user records return `404`, preventing both access and record-ID disclosure.
+- Avatars are cropped and compressed in the client, validated again by PHP, stored under the private data directory with random filenames, and served through immutable unguessable URLs.
 - Cascade behavior needed by task, occurrence, program-step, tag, and interval-template deletion is implemented transactionally.
 - Android passkey challenges are random, expire after five minutes, and are consumed once.
 - Passkey registration and login require the configured Android package and signing-certificate origin, RP-ID hash, user-presence/user-verification flags, and a valid authenticator signature.
+- Disconnecting biometric sign-in deletes every registered credential for the authenticated account and invalidates its pending registration challenges.
 
 ## Android passkey deployment
 

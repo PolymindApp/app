@@ -153,7 +153,7 @@ async function save() {
   error.value = ''
   try {
     await store.saveTask(draft)
-    await router.replace('/plan')
+    await router.replace('/tasks/manage')
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Could not save the task.'
   } finally {
@@ -168,7 +168,7 @@ async function removeTask() {
   try {
     await store.deleteTask(draft.id)
     deleteDialog.value = false
-    await router.replace('/plan')
+    await router.replace('/tasks/manage')
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Could not delete the task.'
     deleteDialog.value = false

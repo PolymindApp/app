@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { Capacitor } from '@capacitor/core'
-import { nextTick, onBeforeUnmount, ref, useId } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, useId, watch } from 'vue'
 import { getAccountMenuPosition } from '@/services/accountMenuPosition'
 
-defineProps<{
+const props = defineProps<{
   accountName: string
   accountEmail?: string
   accountInitials: string
+  accountAvatar?: string
 }>()
 
 const emit = defineEmits<{
@@ -20,7 +21,13 @@ const activator = ref<HTMLElement | null>(null)
 const menu = ref<HTMLElement | null>(null)
 const menuOpen = ref(false)
 const menuStyle = ref<Record<string, string>>({ visibility: 'hidden' })
+const avatarFailed = ref(false)
+const showAvatar = computed(() => Boolean(props.accountAvatar) && !avatarFailed.value)
 let listenersBound = false
+
+watch(() => props.accountAvatar, () => {
+  avatarFailed.value = false
+})
 
 async function openMenu() {
   if (menuOpen.value) return
@@ -132,7 +139,8 @@ onBeforeUnmount(unbindListeners)
       @keydown.down.prevent="openMenu"
     >
       <v-avatar color="secondary" size="36">
-        <span>{{ accountInitials }}</span>
+        <v-img v-if="showAvatar" :src="accountAvatar" alt="" cover @error="avatarFailed = true" />
+        <span v-else>{{ accountInitials }}</span>
       </v-avatar>
     </v-btn>
   </div>
@@ -158,7 +166,8 @@ onBeforeUnmount(unbindListeners)
             @click="requestOpenAccount"
           >
             <v-avatar color="secondary" size="40">
-              <span>{{ accountInitials }}</span>
+              <v-img v-if="showAvatar" :src="accountAvatar" alt="" cover @error="avatarFailed = true" />
+              <span v-else>{{ accountInitials }}</span>
             </v-avatar>
             <div class="min-width-0">
               <strong class="d-block text-truncate">{{ accountName }}</strong>

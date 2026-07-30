@@ -68,6 +68,7 @@ jobs:
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_SIGNING_PROPERTIES_BASE64: ${{ secrets.ANDROID_SIGNING_PROPERTIES_BASE64 }}
+          EXPECTED_ANDROID_KEYSTORE_SHA256: ${{ vars.ANDROID_KEYSTORE_SHA256 }}
         run: |
           if [[ -z "$ANDROID_KEYSTORE_BASE64" || -z "$ANDROID_SIGNING_PROPERTIES_BASE64" ]]; then
             echo "Android signing secrets are not configured." >&2
@@ -80,6 +81,47 @@ jobs:
           printf '%s' "$ANDROID_SIGNING_PROPERTIES_BASE64" \
             | base64 --decode > private/android-signing.properties
           chmod 600 private/mom-release.jks private/android-signing.properties
+
+          keystore_sha256="$(
+            sha256sum private/mom-release.jks \
+              | cut -d ' ' -f 1
+          )"
+          echo "Decoded keystore SHA-256: $keystore_sha256"
+          if [[
+            -n "$EXPECTED_ANDROID_KEYSTORE_SHA256"
+            && "$keystore_sha256" != "$EXPECTED_ANDROID_KEYSTORE_SHA256"
+          ]]; then
+            echo "The decoded keystore does not match ANDROID_KEYSTORE_SHA256." >&2
+            exit 1
+          fi
+
+          signing_store_file="$(
+            sed -n 's/^storeFile=//p' private/android-signing.properties \
+              | tr -d '\r'
+          )"
+          signing_store_password="$(
+            sed -n 's/^storePassword=//p' private/android-signing.properties \
+              | tr -d '\r'
+          )"
+          signing_key_alias="$(
+            sed -n 's/^keyAlias=//p' private/android-signing.properties \
+              | tr -d '\r'
+          )"
+          if [[
+            "$signing_store_file" != "mom-release.jks"
+            || -z "$signing_store_password"
+            || -z "$signing_key_alias"
+          ]]; then
+            echo "The decoded Android signing properties are invalid." >&2
+            exit 1
+          fi
+          if ! keytool -list \
+            -keystore private/mom-release.jks \
+            -storepass "$signing_store_password" \
+            -alias "$signing_key_alias" >/dev/null 2>&1; then
+            echo "The decoded keystore is invalid or does not match the signing properties." >&2
+            exit 1
+          fi
 
       - name: Build signed release APK
         run: pnpm android:build:release

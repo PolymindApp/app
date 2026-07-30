@@ -11,6 +11,7 @@ export const useAuthStore = defineStore('auth', () => {
   const user = ref(api.authStore.record)
   const loading = ref(false)
   const accountLoading = ref(false)
+  const avatarLoading = ref(false)
   const passkeyLoading = ref(false)
   const error = ref('')
 
@@ -93,6 +94,21 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  async function disconnectPasskeys() {
+    passkeyLoading.value = true
+    error.value = ''
+    try {
+      await api.removePasskeys()
+    } catch (cause) {
+      error.value = cause instanceof Error
+        ? cause.message
+        : 'Unable to disconnect biometric sign-in.'
+      throw cause
+    } finally {
+      passkeyLoading.value = false
+    }
+  }
+
   async function updateName(name: string) {
     accountLoading.value = true
     error.value = ''
@@ -106,6 +122,32 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  async function updateAvatar(image: Blob) {
+    avatarLoading.value = true
+    error.value = ''
+    try {
+      await api.updateAvatar(image)
+    } catch (cause) {
+      error.value = cause instanceof Error ? cause.message : 'Unable to update your avatar.'
+      throw cause
+    } finally {
+      avatarLoading.value = false
+    }
+  }
+
+  async function removeAvatar() {
+    avatarLoading.value = true
+    error.value = ''
+    try {
+      await api.removeAvatar()
+    } catch (cause) {
+      error.value = cause instanceof Error ? cause.message : 'Unable to remove your avatar.'
+      throw cause
+    } finally {
+      avatarLoading.value = false
+    }
+  }
+
   function logout() {
     api.authStore.clear()
   }
@@ -114,6 +156,7 @@ export const useAuthStore = defineStore('auth', () => {
     user,
     loading,
     accountLoading,
+    avatarLoading,
     passkeyLoading,
     error,
     isAuthenticated,
@@ -123,7 +166,10 @@ export const useAuthStore = defineStore('auth', () => {
     loginWithPasskey,
     register,
     registerPasskey,
+    disconnectPasskeys,
     updateName,
+    updateAvatar,
+    removeAvatar,
     logout,
   }
 })

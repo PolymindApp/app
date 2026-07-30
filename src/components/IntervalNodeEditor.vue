@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useDisplay } from 'vuetify'
 import TimerWheelPicker from '@/components/TimerWheelPicker.vue'
 import {
   changeSelectionFeedback,
@@ -23,8 +24,11 @@ const props = defineProps<{
     outdent: (id: string) => void
     duplicate: (id: string) => void
     remove: (id: string) => void
+    open: (id: string) => void
   }
 }>()
+
+const { smAndDown } = useDisplay()
 
 const kinds: Array<{ title: string; value: IntervalStepKind }> = [
   { title: 'Work', value: 'work' },
@@ -106,7 +110,15 @@ function selectKind(kind: IntervalStepKind) {
           </p>
         </div>
       </div>
-      <v-menu>
+      <v-btn
+        v-if="smAndDown"
+        icon="mdi-dots-horizontal"
+        variant="text"
+        size="small"
+        aria-label="Interval item actions"
+        @click="actions.open(node.id)"
+      />
+      <v-menu v-else>
         <template #activator="{ props: menuProps }">
           <v-btn v-bind="menuProps" icon="mdi-dots-horizontal" variant="text" size="small" aria-label="Interval item actions" />
         </template>

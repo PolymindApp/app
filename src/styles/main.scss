@@ -8,20 +8,63 @@
 html,
 body,
 #app {
-  height: 100%;
-  overflow: hidden;
+  min-height: 100%;
   overscroll-behavior: none;
 }
 
 html {
+  overflow-x: hidden;
+  overflow-x: clip;
+  overflow-y: auto;
   background: #101310;
   -webkit-tap-highlight-color: transparent;
+}
+
+html:not(.platform-android):not(.platform-ios) {
+  overflow-y: scroll;
+  scrollbar-color: rgba(241, 244, 236, .32) #101310;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+
+html:not(.platform-android):not(.platform-ios)::-webkit-scrollbar {
+  width: 12px;
+}
+
+html:not(.platform-android):not(.platform-ios)::-webkit-scrollbar-track {
+  background: #101310;
+}
+
+html:not(.platform-android):not(.platform-ios)::-webkit-scrollbar-thumb {
+  border: 3px solid #101310;
+  border-radius: 999px;
+  background: rgba(241, 244, 236, .32);
+}
+
+html.platform-android,
+html.platform-android * {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+html.platform-android::-webkit-scrollbar,
+html.platform-android *::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 body {
   margin: 0;
   min-width: 320px;
   min-height: 100dvh;
+  overflow-x: clip;
+  overflow-y: visible;
+}
+
+#app {
+  min-height: 100dvh;
+  overflow-x: clip;
 }
 
 html.platform-android body::before,
@@ -45,26 +88,21 @@ html.platform-android body::after {
   height: max(env(safe-area-inset-bottom, 0px), var(--safe-area-inset-bottom, 0px));
 }
 
-/*
- * The page content owns scrolling, so viewport-level chrome never participates
- * in the overscroll effect.
- */
 .v-application {
-  height: 100dvh;
-  overflow: hidden;
+  min-height: 100dvh;
+  overflow-x: clip;
+  overflow-y: visible;
 }
 
 .app-scroll {
-  height: 100dvh;
-  max-height: 100dvh;
-  overflow-x: hidden;
-  overflow-y: auto !important;
-  overscroll-behavior-y: contain;
-  -webkit-overflow-scrolling: touch;
+  min-height: 100dvh;
+  overflow-x: clip !important;
+  overflow-y: visible !important;
 }
 
-/* Android scrolling stops cleanly at the content boundaries. */
-html.platform-android .app-scroll {
+/* Android document scrolling stops cleanly at the viewport boundaries. */
+html.platform-android,
+html.platform-android body {
   overscroll-behavior-y: none;
 }
 

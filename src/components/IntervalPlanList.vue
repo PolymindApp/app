@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { useDisplay } from 'vuetify'
+import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import { formatIntervalDuration, intervalDuration, intervalStepCount } from '@/services/intervals'
 import { useIntervalStore } from '@/stores/intervals'
@@ -8,7 +10,10 @@ import type { IntervalTemplate } from '@/types/domain'
 
 const store = useIntervalStore()
 const router = useRouter()
+const { smAndDown } = useDisplay()
 const pendingDelete = ref<IntervalTemplate>()
+const selectedTemplate = ref<IntervalTemplate>()
+const actionsDrawer = ref(false)
 const deleting = ref(false)
 
 onMounted(() => {
@@ -36,6 +41,36 @@ async function move(template: IntervalTemplate, direction: -1 | 1) {
   ordered.splice(target, 0, item)
   await store.reorderTemplates(ordered)
 }
+
+function startTemplate(template: IntervalTemplate) {
+  actionsDrawer.value = false
+  return router.push(`/intervals/run/template/${template.id}`)
+}
+
+function editTemplate(template: IntervalTemplate) {
+  actionsDrawer.value = false
+  return router.push(`/intervals/${template.id}/edit`)
+}
+
+function openActions(template: IntervalTemplate) {
+  selectedTemplate.value = template
+  actionsDrawer.value = true
+}
+
+async function duplicateTemplate(template: IntervalTemplate) {
+  actionsDrawer.value = false
+  await store.duplicateTemplate(template)
+}
+
+async function moveTemplate(template: IntervalTemplate, direction: -1 | 1) {
+  actionsDrawer.value = false
+  await move(template, direction)
+}
+
+function requestDelete(template: IntervalTemplate) {
+  actionsDrawer.value = false
+  pendingDelete.value = template
+}
 </script>
 
 <template>
@@ -44,7 +79,12 @@ async function move(template: IntervalTemplate, direction: -1 | 1) {
       v-for="(template, index) in store.templates"
       :key="template.id"
       class="surface-card pa-4 interval-plan-card"
-      @click="router.push(`/plan/intervals/${template.id}`)"
+      role="button"
+      tabindex="0"
+      :aria-label="`Start ${template.name}`"
+      @click="startTemplate(template)"
+      @keydown.enter="startTemplate(template)"
+      @keydown.space.prevent="startTemplate(template)"
     >
       <div class="d-flex align-start ga-3">
         <div class="interval-template-icon" :style="{ background: template.color }">
@@ -65,7 +105,15 @@ async function move(template: IntervalTemplate, direction: -1 | 1) {
           @touchstart.stop
           @click.stop
         >
-          <v-menu location="bottom end">
+          <v-btn
+            v-if="smAndDown"
+            icon="mdi-dots-horizontal"
+            variant="text"
+            size="small"
+            :aria-label="`${template.name} actions`"
+            @click="openActions(template)"
+          />
+          <v-menu v-else location="bottom end">
             <template #activator="{ props: menuProps }">
               <v-btn
                 v-bind="menuProps"
@@ -76,11 +124,12 @@ async function move(template: IntervalTemplate, direction: -1 | 1) {
               />
             </template>
             <v-list density="compact">
-              <v-list-item prepend-icon="mdi-pencil-outline" title="Edit" @click="router.push(`/plan/intervals/${template.id}`)" />
-              <v-list-item prepend-icon="mdi-content-copy" title="Duplicate" @click="store.duplicateTemplate(template)" />
-              <v-list-item prepend-icon="mdi-arrow-up" title="Move up" :disabled="index === 0" @click="move(template, -1)" />
-              <v-list-item prepend-icon="mdi-arrow-down" title="Move down" :disabled="index === store.templates.length - 1" @click="move(template, 1)" />
-              <v-list-item prepend-icon="mdi-delete-outline" title="Delete" base-color="error" @click="pendingDelete = template" />
+              <v-list-item prepend-icon="mdi-play" title="Start" @click="startTemplate(template)" />
+              <v-list-item prepend-icon="mdi-pencil-outline" title="Edit" @click="editTemplate(template)" />
+              <v-list-item prepend-icon="mdi-content-copy" title="Duplicate" @click="duplicateTemplate(template)" />
+              <v-list-item prepend-icon="mdi-arrow-up" title="Move up" :disabled="index === 0" @click="moveTemplate(template, -1)" />
+              <v-list-item prepend-icon="mdi-arrow-down" title="Move down" :disabled="index === store.templates.length - 1" @click="moveTemplate(template, 1)" />
+              <v-list-item prepend-icon="mdi-delete-outline" title="Delete" base-color="error" @click="requestDelete(template)" />
             </v-list>
           </v-menu>
         </div>
@@ -92,8 +141,36 @@ async function move(template: IntervalTemplate, direction: -1 | 1) {
     <v-icon icon="mdi-timer-plus-outline" size="42" class="mb-3" />
     <h2 class="text-h6 font-weight-black">Build your first interval</h2>
     <p class="text-body-2 muted mt-2 mb-5">Combine timed steps and repeat groups for any kind of session.</p>
-    <v-btn color="secondary" to="/plan/intervals/new">Create interval</v-btn>
+    <v-btn color="secondary" to="/intervals/new">Create interval</v-btn>
   </v-card>
+
+  <ActionBottomSheet
+    v-if="smAndDown"
+    v-model="actionsDrawer"
+    :title="selectedTemplate?.name || 'Interval actions'"
+    :aria-label="selectedTemplate ? `${selectedTemplate.name} actions` : 'Interval actions'"
+  >
+    <template v-if="selectedTemplate">
+      <v-list-item prepend-icon="mdi-play" title="Start" rounded="lg" @click="startTemplate(selectedTemplate)" />
+      <v-list-item prepend-icon="mdi-pencil-outline" title="Edit" rounded="lg" @click="editTemplate(selectedTemplate)" />
+      <v-list-item prepend-icon="mdi-content-copy" title="Duplicate" rounded="lg" @click="duplicateTemplate(selectedTemplate)" />
+      <v-list-item
+        prepend-icon="mdi-arrow-up"
+        title="Move up"
+        rounded="lg"
+        :disabled="store.templates.findIndex(item => item.id === selectedTemplate?.id) === 0"
+        @click="moveTemplate(selectedTemplate, -1)"
+      />
+      <v-list-item
+        prepend-icon="mdi-arrow-down"
+        title="Move down"
+        rounded="lg"
+        :disabled="store.templates.findIndex(item => item.id === selectedTemplate?.id) === store.templates.length - 1"
+        @click="moveTemplate(selectedTemplate, 1)"
+      />
+      <v-list-item prepend-icon="mdi-delete-outline" title="Delete" rounded="lg" base-color="error" @click="requestDelete(selectedTemplate)" />
+    </template>
+  </ActionBottomSheet>
 
   <ConfirmDialog
     :model-value="Boolean(pendingDelete)"
@@ -110,6 +187,7 @@ async function move(template: IntervalTemplate, direction: -1 | 1) {
 <style scoped>
 .interval-plan-list { display: grid; gap: .75rem; }
 .interval-plan-card { cursor: pointer; }
+.interval-plan-card:focus-visible { outline: 3px solid rgb(var(--v-theme-primary) / .55); outline-offset: 3px; }
 .interval-plan-actions { flex: 0 0 auto; }
 .interval-template-icon { display: grid; width: 42px; height: 42px; flex: 0 0 auto; place-items: center; border-radius: 14px; color: #17200f; }
 @media (min-width: 700px) { .interval-plan-list { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

@@ -9,6 +9,7 @@ const emit = defineEmits<{
   seal: [progress: TaskProgress]
   add: [progress: TaskProgress, amount: number]
   exact: [progress: TaskProgress]
+  logTime: [progress: TaskProgress]
   review: [progress: TaskProgress]
 }>()
 
@@ -18,6 +19,7 @@ const optimisticComplete = ref<boolean>()
 const displayedComplete = computed(() => optimisticComplete.value ?? props.progress.complete)
 const isCheck = computed(() => (step.value ? step.value.completionType === 'check' : task.value.type === 'check'))
 const isDailyTotal = computed(() => !step.value && task.value.type === 'daily_total')
+const canLogTime = computed(() => !step.value && task.value.type === 'duration')
 const canToggleFromCard = computed(() => isCheck.value && !props.busy && !props.progress.locked)
 const target = computed(() => step.value?.targetValue || task.value.targetValue || 0)
 const unit = computed(() => step.value?.customUnit || step.value?.unit || task.value.customUnit || task.value.unit || '')
@@ -157,6 +159,17 @@ watch(() => props.busy, (busy) => {
           @click="emit('exact', progress)"
         >
           Custom
+        </v-btn>
+        <v-btn
+          v-if="canLogTime"
+          size="small"
+          variant="tonal"
+          color="secondary"
+          prepend-icon="mdi-timer-outline"
+          :disabled="busy || progress.locked || progress.sealed"
+          @click="emit('logTime', progress)"
+        >
+          Log time
         </v-btn>
       </div>
       <v-btn

@@ -11,14 +11,12 @@ const { mdAndUp } = useDisplay()
 const router = useRouter()
 const auth = useAuthStore()
 const logoutDialog = ref(false)
-const appScroll = ref<HTMLElement | { $el?: HTMLElement }>()
 const pageTransition = ref('page-level-forward')
 const isIos = Capacitor.getPlatform() === 'ios'
 
 const items = [
-  { title: 'Today', icon: 'mdi-lightning-bolt', to: '/today' },
+  { title: 'Tasks', icon: 'mdi-lightning-bolt', to: '/tasks' },
   { title: 'Intervals', icon: 'mdi-timer-outline', to: '/intervals' },
-  { title: 'Plan', icon: 'mdi-calendar-edit', to: '/plan' },
 ]
 
 const immersive = computed(() => Boolean(router.currentRoute.value.meta.immersive))
@@ -26,6 +24,7 @@ const pageTitle = computed(() => String(router.currentRoute.value.meta.title || 
 const canGoBack = computed(() => Number(router.currentRoute.value.meta.pageDepth ?? 0) > 0)
 const accountName = computed(() => auth.user?.name || auth.firstName || 'You')
 const accountEmail = computed(() => auth.user?.email || '')
+const accountAvatar = computed(() => auth.user?.avatar || '')
 const accountInitials = computed(() => {
   const source = auth.user?.name || auth.user?.email || 'A'
   return source
@@ -39,7 +38,7 @@ const current = computed({
   get: () => {
     const path = router.currentRoute.value.path
     if (path.startsWith('/intervals')) return '/intervals'
-    if (path.startsWith('/plan') || path.startsWith('/tasks')) return '/plan'
+    if (path.startsWith('/tasks')) return '/tasks'
     return path
   },
   set: (path: string) => router.push(path),
@@ -70,15 +69,6 @@ function logout() {
   router.replace('/auth')
 }
 
-function beginPageScrollReset() {
-  const target = getScrollElement()
-  target?.scrollTo({ top: 0, left: 0, behavior: 'smooth' })
-  window.scrollTo({ top: 0, left: 0, behavior: 'smooth' })
-}
-
-function getScrollElement() {
-  return appScroll.value instanceof HTMLElement ? appScroll.value : appScroll.value?.$el
-}
 </script>
 
 <template>
@@ -98,6 +88,7 @@ function getScrollElement() {
           :to="item.to"
           :prepend-icon="item.icon"
           :title="item.title"
+          :active="current === item.to"
           rounded="xl"
           class="mb-2"
           color="secondary"
@@ -138,6 +129,7 @@ function getScrollElement() {
             :account-name="accountName"
             :account-email="accountEmail"
             :account-initials="accountInitials"
+            :account-avatar="accountAvatar"
             @open-account="router.push('/account')"
             @sign-out="logoutDialog = true"
           />
@@ -146,7 +138,6 @@ function getScrollElement() {
     </transition>
 
     <v-main
-      ref="appScroll"
       tag="div"
       class="app-scroll"
       :class="{
@@ -156,7 +147,7 @@ function getScrollElement() {
     >
       <div class="page-transition-stage">
         <router-view v-slot="{ Component, route: viewRoute }">
-          <transition :name="pageTransition" @before-leave="beginPageScrollReset">
+          <transition :name="pageTransition">
             <component :is="Component" :key="viewRoute.path" />
           </transition>
         </router-view>
@@ -352,7 +343,6 @@ function getScrollElement() {
 }
 
 .app-scroll {
-  overflow-x: hidden;
   transition:
     padding-top 240ms ease,
     padding-bottom 240ms ease;
@@ -369,6 +359,7 @@ function getScrollElement() {
 .page-transition-stage {
   display: grid;
   min-width: 0;
+  overflow-x: clip;
 }
 
 .page-transition-stage > * {

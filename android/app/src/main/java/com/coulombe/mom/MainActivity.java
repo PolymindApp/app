@@ -24,7 +24,7 @@ public class MainActivity extends BridgeActivity {
         WindowCompat.enableEdgeToEdge(getWindow());
         getWindow().getDecorView().setBackgroundColor(APP_BACKGROUND);
         getWindow().setStatusBarColor(Color.TRANSPARENT);
-        getWindow().setNavigationBarColor(Color.TRANSPARENT);
+        getWindow().setNavigationBarColor(APP_BACKGROUND);
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             getWindow().setStatusBarContrastEnforced(false);
@@ -37,8 +37,11 @@ public class MainActivity extends BridgeActivity {
         updateSystemBarVisibility();
 
         if (getBridge() != null && getBridge().getWebView() != null) {
-            getBridge().getWebView().setBackgroundColor(APP_BACKGROUND);
-            getBridge().getWebView().setOverScrollMode(View.OVER_SCROLL_NEVER);
+            View webView = getBridge().getWebView();
+            webView.setBackgroundColor(APP_BACKGROUND);
+            webView.setOverScrollMode(View.OVER_SCROLL_NEVER);
+            webView.setVerticalScrollBarEnabled(false);
+            webView.setHorizontalScrollBarEnabled(false);
         }
     }
 

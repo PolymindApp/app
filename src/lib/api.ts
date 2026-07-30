@@ -1,5 +1,5 @@
 type RecordModel = Record<string, any> & { id: string }
-type AuthRecord = RecordModel & { email: string; name?: string }
+type AuthRecord = RecordModel & { email: string; name?: string; avatar?: string }
 type AuthListener = (token: string, record: AuthRecord | null) => void
 
 interface ListOptions {
@@ -33,6 +33,23 @@ interface UserSettingsResponse {
 const AUTH_STORAGE_KEY = 'mom-api-auth'
 const baseUrl = (import.meta.env.VITE_API_URL || '/api').replace(/\/+$/, '')
 
+function normalizeAuthRecord(record: AuthRecord): AuthRecord {
+  const avatar = typeof record.avatar === 'string' ? record.avatar : ''
+  if (
+    !avatar
+    || /^https?:\/\//i.test(avatar)
+    || avatar.startsWith(`${baseUrl}/`)
+  ) {
+    return { ...record, avatar }
+  }
+  return {
+    ...record,
+    avatar: avatar.startsWith('/avatars/')
+      ? `${baseUrl}${avatar}`
+      : avatar,
+  }
+}
+
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
@@ -60,10 +77,11 @@ class AuthStore {
   }
 
   save(token: string, record: AuthRecord) {
+    const normalized = normalizeAuthRecord(record)
     this.token = token
-    this.record = record
+    this.record = normalized
     try {
-      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ token, record }))
+      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ token, record: normalized }))
     } catch {
       // Authentication remains available for the current page session.
     }
@@ -92,7 +110,7 @@ class AuthStore {
       const saved = JSON.parse(localStorage.getItem(AUTH_STORAGE_KEY) || '')
       if (saved?.token && saved?.record) {
         this.token = saved.token
-        this.record = saved.record
+        this.record = normalizeAuthRecord(saved.record)
       }
       if (!this.isValid) {
         this.token = ''
@@ -227,6 +245,14 @@ class ApiClient {
     )
   }
 
+  removePasskeys() {
+    return request<{ registered: false; removed: number }>(
+      '/auth/passkeys',
+      { method: 'DELETE' },
+      this.authStore,
+    )
+  }
+
   beginPasskeyLogin() {
     return request<PasskeyOptionsResponse>(
       '/auth/passkeys/login/options',
@@ -249,6 +275,29 @@ class ApiClient {
     const record = await request<AuthRecord>(
       '/auth/account',
       { method: 'PATCH', body: { name } },
+      this.authStore,
+    )
+    this.authStore.save(this.authStore.token, record)
+    return record
+  }
+
+  async updateAvatar(image: Blob) {
+    if (image.type !== 'image/jpeg') {
+      throw new ApiError(422, 'The avatar must be compressed as a JPEG.')
+    }
+    const record = await request<AuthRecord>(
+      '/auth/avatar',
+      { method: 'POST', body: { image: await blobDataUrl(image) } },
+      this.authStore,
+    )
+    this.authStore.save(this.authStore.token, record)
+    return record
+  }
+
+  async removeAvatar() {
+    const record = await request<AuthRecord>(
+      '/auth/avatar',
+      { method: 'DELETE' },
       this.authStore,
     )
     this.authStore.save(this.authStore.token, record)
@@ -284,6 +333,17 @@ class ApiClient {
       updated: response.updated || record.updated,
     })
   }
+}
+
+function blobDataUrl(blob: Blob) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => typeof reader.result === 'string'
+      ? resolve(reader.result)
+      : reject(new Error('The compressed avatar could not be read.'))
+    reader.onerror = () => reject(new Error('The compressed avatar could not be read.'))
+    reader.readAsDataURL(blob)
+  })
 }
 
 async function request<T>(

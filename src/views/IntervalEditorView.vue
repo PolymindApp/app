@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import ColorSwatchPicker from '@/components/ColorSwatchPicker.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import IntervalNodeEditor from '@/components/IntervalNodeEditor.vue'
@@ -25,6 +26,8 @@ const saving = ref(false)
 const deleting = ref(false)
 const deleteDialog = ref(false)
 const pendingNodeDelete = ref<{ id: string; name: string; type: IntervalNode['type'] }>()
+const selectedNodeId = ref<string>()
+const nodeActionsDrawer = ref(false)
 const error = ref('')
 const isEditing = computed(() => Boolean(route.params.id))
 
@@ -60,6 +63,22 @@ function findNode(nodes: IntervalNode[], id: string, parent?: IntervalGroupNode,
   }
   return undefined
 }
+
+const selectedNodeLocation = computed(() =>
+  selectedNodeId.value
+    ? findNode(draft.definition.children, selectedNodeId.value)
+    : undefined,
+)
+const selectedNode = computed(() => {
+  const location = selectedNodeLocation.value
+  return location?.nodes[location.index]
+})
+const selectedNodeCanIndent = computed(() => {
+  const location = selectedNodeLocation.value
+  if (!location || location.index === 0) return false
+  return location.nodes[location.index - 1]?.type === 'group'
+})
+const selectedNodeCanOutdent = computed(() => Boolean(selectedNodeLocation.value?.parent))
 
 function createNode(type: 'step' | 'group') {
   return type === 'step'
@@ -129,6 +148,26 @@ const actions = {
       type: node.type,
     }
   },
+  open(id: string) {
+    selectedNodeId.value = id
+    nodeActionsDrawer.value = true
+  },
+}
+
+function closeNodeActions() {
+  nodeActionsDrawer.value = false
+}
+
+function moveSelectedNode(direction: -1 | 1) {
+  if (!selectedNodeId.value) return
+  closeNodeActions()
+  actions.move(selectedNodeId.value, direction)
+}
+
+function runSelectedNodeAction(action: 'indent' | 'outdent' | 'duplicate' | 'remove') {
+  if (!selectedNodeId.value) return
+  closeNodeActions()
+  actions[action](selectedNodeId.value)
 }
 
 function confirmNodeDelete() {
@@ -164,7 +203,7 @@ async function save() {
   error.value = ''
   try {
     await store.saveTemplate(draft)
-    await router.replace({ path: '/plan', query: { tab: 'intervals' } })
+    await router.replace('/intervals')
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Could not save the interval.'
   } finally {
@@ -177,7 +216,7 @@ async function removeTemplate() {
   deleting.value = true
   try {
     await store.deleteTemplate(draft.id)
-    await router.replace({ path: '/plan', query: { tab: 'intervals' } })
+    await router.replace('/intervals')
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Could not delete the interval.'
     deleteDialog.value = false
@@ -263,6 +302,57 @@ async function removeTemplate() {
         </template>
       </div>
     </v-form>
+
+    <ActionBottomSheet
+      v-model="nodeActionsDrawer"
+      :title="selectedNode?.name || (selectedNode?.type === 'group' ? 'Untitled group' : 'Untitled interval')"
+      aria-label="Sequence item actions"
+    >
+      <template v-if="selectedNode && selectedNodeLocation">
+        <v-list-item
+          prepend-icon="mdi-arrow-up"
+          title="Move up"
+          rounded="lg"
+          :disabled="selectedNodeLocation.index === 0"
+          @click="moveSelectedNode(-1)"
+        />
+        <v-list-item
+          prepend-icon="mdi-arrow-down"
+          title="Move down"
+          rounded="lg"
+          :disabled="selectedNodeLocation.index === selectedNodeLocation.nodes.length - 1"
+          @click="moveSelectedNode(1)"
+        />
+        <v-list-item
+          prepend-icon="mdi-arrow-right"
+          title="Indent into previous group"
+          rounded="lg"
+          :disabled="!selectedNodeCanIndent"
+          @click="runSelectedNodeAction('indent')"
+        />
+        <v-list-item
+          prepend-icon="mdi-arrow-left"
+          title="Move out of group"
+          rounded="lg"
+          :disabled="!selectedNodeCanOutdent"
+          @click="runSelectedNodeAction('outdent')"
+        />
+        <v-divider class="my-1" />
+        <v-list-item
+          prepend-icon="mdi-content-copy"
+          title="Duplicate"
+          rounded="lg"
+          @click="runSelectedNodeAction('duplicate')"
+        />
+        <v-list-item
+          prepend-icon="mdi-delete-outline"
+          title="Delete"
+          rounded="lg"
+          base-color="error"
+          @click="runSelectedNodeAction('remove')"
+        />
+      </template>
+    </ActionBottomSheet>
 
     <div class="editor-save-bar page-action-area">
       <div class="editor-save-bar__inner">
