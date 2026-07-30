@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { pb } from '@/lib/pocketbase'
+import { api } from '@/lib/api'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -27,7 +27,7 @@ const router = createRouter({
 })
 
 router.beforeEach((to) => {
-  const authenticated = pb.authStore.isValid
+  const authenticated = api.authStore.isValid
   if (to.meta.auth && !authenticated) return { name: 'auth', query: { redirect: to.fullPath } }
   if (to.meta.guest && authenticated) return { name: 'today' }
 })

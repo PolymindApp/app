@@ -1,7 +1,12 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
-import { pb } from '@/lib/pocketbase'
-import { createRuntimeState, intervalDuration, reconcileIntervalRuntime } from '@/services/intervals'
+import { api } from '@/lib/api'
+import {
+  cloneIntervalTemplateDraft,
+  createRuntimeState,
+  intervalDuration,
+  reconcileIntervalRuntime,
+} from '@/services/intervals'
 import type {
   IntervalCueSettings,
   IntervalDefinition,
@@ -78,13 +83,13 @@ export const useIntervalStore = defineStore('intervals', () => {
   )
 
   async function load() {
-    if (!pb.authStore.record) return
+    if (!api.authStore.record) return
     loading.value = true
     error.value = ''
     try {
       const [templateRecords, sessionRecords] = await Promise.all([
-        pb.collection('interval_templates').getFullList({ sort: 'sort_order,name' }),
-        pb.collection('interval_sessions').getList(1, 100, { sort: '-started_at' }),
+        api.collection('interval_templates').getFullList({ sort: 'sort_order,name' }),
+        api.collection('interval_sessions').getList(1, 100, { sort: '-started_at' }),
       ])
       templates.value = templateRecords.map(mapTemplate)
       sessions.value = sessionRecords.items.map(mapSession)
@@ -110,7 +115,7 @@ export const useIntervalStore = defineStore('intervals', () => {
 
   async function saveTemplate(draft: IntervalTemplateDraft) {
     const payload = {
-      owner: pb.authStore.record!.id,
+      owner: api.authStore.record!.id,
       name: draft.name,
       description: draft.description,
       color: draft.color,
@@ -121,8 +126,8 @@ export const useIntervalStore = defineStore('intervals', () => {
       sort_order: draft.sortOrder,
     }
     const record = draft.id
-      ? await pb.collection('interval_templates').update(draft.id, payload)
-      : await pb.collection('interval_templates').create(payload)
+      ? await api.collection('interval_templates').update(draft.id, payload)
+      : await api.collection('interval_templates').create(payload)
     const template = mapTemplate(record)
     const existing = templates.value.findIndex((item) => item.id === template.id)
     if (existing >= 0) templates.value.splice(existing, 1, template)
@@ -132,7 +137,7 @@ export const useIntervalStore = defineStore('intervals', () => {
   }
 
   async function deleteTemplate(templateId: string) {
-    await pb.collection('interval_templates').delete(templateId)
+    await api.collection('interval_templates').delete(templateId)
     templates.value = templates.value.filter((template) => template.id !== templateId)
     sessions.value.forEach((session) => {
       if (session.template === templateId) session.template = undefined
@@ -140,12 +145,11 @@ export const useIntervalStore = defineStore('intervals', () => {
   }
 
   async function duplicateTemplate(template: IntervalTemplate) {
+    const draft = cloneIntervalTemplateDraft(template)
     return saveTemplate({
-      name: `${template.name} copy`,
-      description: template.description,
-      color: template.color,
-      definition: structuredClone(template.definition),
-      cues: { ...template.cues },
+      ...draft,
+      id: undefined,
+      name: `${draft.name} copy`,
       sortOrder: templates.value.length,
     })
   }
@@ -157,7 +161,7 @@ export const useIntervalStore = defineStore('intervals', () => {
     })
     await Promise.all(
       templates.value.map((template) =>
-        pb.collection('interval_templates').update(template.id, { sort_order: template.sortOrder }),
+        api.collection('interval_templates').update(template.id, { sort_order: template.sortOrder }),
       ),
     )
   }
@@ -170,7 +174,7 @@ export const useIntervalStore = defineStore('intervals', () => {
     template?: string
   }) {
     if (activeSession.value) return activeSession.value
-    const activeRecords = await pb.collection('interval_sessions').getList(1, 1, {
+    const activeRecords = await api.collection('interval_sessions').getList(1, 1, {
       filter: 'status = "running" || status = "paused"',
       sort: '-started_at',
     })
@@ -181,8 +185,8 @@ export const useIntervalStore = defineStore('intervals', () => {
     }
     const startedAt = new Date()
     const runtime = createRuntimeState(input.definition, startedAt)
-    const record = await pb.collection('interval_sessions').create({
-      owner: pb.authStore.record!.id,
+    const record = await api.collection('interval_sessions').create({
+      owner: api.authStore.record!.id,
       template: input.template || '',
       source: input.source,
       status: 'running',
@@ -214,7 +218,7 @@ export const useIntervalStore = defineStore('intervals', () => {
     if (changes.runtime) payload.runtime_state = changes.runtime
     if (changes.elapsedSeconds !== undefined) payload.elapsed_seconds = changes.elapsedSeconds
     if (changes.endedAt !== undefined) payload.ended_at = changes.endedAt
-    const record = await pb.collection('interval_sessions').update(sessionId, payload)
+    const record = await api.collection('interval_sessions').update(sessionId, payload)
     const mapped = mapSession(record)
     const index = sessions.value.findIndex((session) => session.id === sessionId)
     if (index >= 0) sessions.value.splice(index, 1, mapped)

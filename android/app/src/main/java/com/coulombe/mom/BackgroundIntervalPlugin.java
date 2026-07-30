@@ -1,4 +1,4 @@
-package com.coulombe.mom;
+package dev.coulombe.mom;
 
 import android.Manifest;
 import android.content.Intent;

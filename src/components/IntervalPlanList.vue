@@ -58,25 +58,31 @@ async function move(template: IntervalTemplate, direction: -1 | 1) {
           </p>
           <p v-if="template.description" class="text-caption muted mt-3 text-truncate">{{ template.description }}</p>
         </div>
-        <v-menu location="bottom end">
-          <template #activator="{ props: menuProps }">
-            <v-btn
-              v-bind="menuProps"
-              icon="mdi-dots-horizontal"
-              variant="text"
-              size="small"
-              aria-label="Interval template actions"
-              @click.stop
-            />
-          </template>
-          <v-list density="compact">
-            <v-list-item prepend-icon="mdi-pencil-outline" title="Edit" @click="router.push(`/plan/intervals/${template.id}`)" />
-            <v-list-item prepend-icon="mdi-content-copy" title="Duplicate" @click="store.duplicateTemplate(template)" />
-            <v-list-item prepend-icon="mdi-arrow-up" title="Move up" :disabled="index === 0" @click="move(template, -1)" />
-            <v-list-item prepend-icon="mdi-arrow-down" title="Move down" :disabled="index === store.templates.length - 1" @click="move(template, 1)" />
-            <v-list-item prepend-icon="mdi-delete-outline" title="Delete" base-color="error" @click="pendingDelete = template" />
-          </v-list>
-        </v-menu>
+        <div
+          class="interval-plan-actions"
+          @pointerdown.stop
+          @pointerup.stop
+          @click.stop
+        >
+          <v-menu location="bottom end">
+            <template #activator="{ props: menuProps }">
+              <v-btn
+                v-bind="menuProps"
+                icon="mdi-dots-horizontal"
+                variant="text"
+                size="small"
+                aria-label="Interval template actions"
+              />
+            </template>
+            <v-list density="compact">
+              <v-list-item prepend-icon="mdi-pencil-outline" title="Edit" @click="router.push(`/plan/intervals/${template.id}`)" />
+              <v-list-item prepend-icon="mdi-content-copy" title="Duplicate" @click="store.duplicateTemplate(template)" />
+              <v-list-item prepend-icon="mdi-arrow-up" title="Move up" :disabled="index === 0" @click="move(template, -1)" />
+              <v-list-item prepend-icon="mdi-arrow-down" title="Move down" :disabled="index === store.templates.length - 1" @click="move(template, 1)" />
+              <v-list-item prepend-icon="mdi-delete-outline" title="Delete" base-color="error" @click="pendingDelete = template" />
+            </v-list>
+          </v-menu>
+        </div>
       </div>
     </v-card>
   </div>
@@ -103,6 +109,7 @@ async function move(template: IntervalTemplate, direction: -1 | 1) {
 <style scoped>
 .interval-plan-list { display: grid; gap: .75rem; }
 .interval-plan-card { cursor: pointer; }
+.interval-plan-actions { flex: 0 0 auto; }
 .interval-template-icon { display: grid; width: 42px; height: 42px; flex: 0 0 auto; place-items: center; border-radius: 14px; color: #17200f; }
 @media (min-width: 700px) { .interval-plan-list { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 </style>

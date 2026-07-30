@@ -5,6 +5,7 @@ import { Capacitor } from '@capacitor/core'
 import App from './App.vue'
 import router from './router'
 import { vuetify } from './plugins/vuetify'
+import { installAndroidFocusAutoScroll } from './services/androidFocusAutoScroll'
 import './styles/main.scss'
 
 const nativePlatform = Capacitor.getPlatform()
@@ -18,6 +19,7 @@ if (nativePlatform === 'android') {
 createApp(App).use(createPinia()).use(router).use(vuetify).mount('#app')
 
 if (nativePlatform === 'android') {
+  installAndroidFocusAutoScroll()
   void router.isReady().then(() => NativeApp.addListener('backButton', () => {
     const historyState = window.history.state as { back?: unknown } | null
     if (typeof historyState?.back === 'string') {

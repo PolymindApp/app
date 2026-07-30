@@ -1,5 +1,7 @@
+import { reactive } from 'vue'
 import { describe, expect, it } from 'vitest'
 import {
+  cloneIntervalTemplateDraft,
   createIntervalGroup,
   createIntervalStep,
   createRuntimeState,
@@ -10,7 +12,7 @@ import {
   resolveIntervalStep,
   validateIntervalDefinition,
 } from './intervals'
-import type { IntervalDefinition, QuickIntervalDraft } from '@/types/domain'
+import type { IntervalDefinition, IntervalTemplate, QuickIntervalDraft } from '@/types/domain'
 
 function nestedDefinition(): IntervalDefinition {
   const rounds = createIntervalGroup('Rounds', 3)
@@ -31,6 +33,32 @@ function nestedDefinition(): IntervalDefinition {
 }
 
 describe('interval definitions', () => {
+  it('copies a reactive interval template into an editable plain draft', () => {
+    const template = reactive<IntervalTemplate>({
+      id: 'template-1',
+      name: 'Morning rounds',
+      description: 'Start the day',
+      color: '#C7F464',
+      definition: nestedDefinition(),
+      cues: { soundEnabled: true, vibrationEnabled: false },
+      sortOrder: 2,
+    })
+
+    const draft = cloneIntervalTemplateDraft(template)
+
+    expect(draft).toMatchObject({
+      id: 'template-1',
+      name: 'Morning rounds',
+      description: 'Start the day',
+      color: '#C7F464',
+      cues: { soundEnabled: true, vibrationEnabled: false },
+      sortOrder: 2,
+    })
+    expect(draft.definition).toEqual(template.definition)
+    expect(draft.definition).not.toBe(template.definition)
+    expect(draft.definition.children[1]).not.toBe(template.definition.children[1])
+  })
+
   it('creates new intervals without a selected type and requires one before saving', () => {
     const step = createIntervalStep()
 

@@ -1,10 +1,22 @@
 apply plugin: 'com.android.application'
 
+def releaseSigningFile = rootProject.file('../private/android-signing.properties')
+def releaseSigning = new Properties()
+if (releaseSigningFile.isFile()) {
+    releaseSigningFile.withInputStream { releaseSigning.load(it) }
+}
+def hasReleaseSigning = [
+    'storeFile',
+    'storePassword',
+    'keyAlias',
+    'keyPassword',
+].every { releaseSigning.getProperty(it) }
+
 android {
-    namespace = "com.coulombe.mom"
+    namespace = "dev.coulombe.mom"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "com.coulombe.mom"
+        applicationId "dev.coulombe.mom"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
@@ -16,8 +28,24 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            if (hasReleaseSigning) {
+                storeFile = new File(
+                    releaseSigningFile.parentFile,
+                    releaseSigning.getProperty('storeFile'),
+                )
+                storePassword = releaseSigning.getProperty('storePassword')
+                keyAlias = releaseSigning.getProperty('keyAlias')
+                keyPassword = releaseSigning.getProperty('keyPassword')
+            }
+        }
+    }
     buildTypes {
         release {
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.release
+            }
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
@@ -35,6 +63,8 @@ dependencies {
     implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation "androidx.credentials:credentials:1.6.0"
+    implementation "androidx.credentials:credentials-play-services-auth:1.6.0"
     implementation project(':capacitor-android')
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"

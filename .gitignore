@@ -1,7 +1,13 @@
 node_modules
+vendor
 dist
 .vite
 *.local
 .env
-.pocketbase
+.env.*
+!.env.example
 coverage
+server/config.local.php
+private/*
+!private/.gitkeep
+!private/.htaccess

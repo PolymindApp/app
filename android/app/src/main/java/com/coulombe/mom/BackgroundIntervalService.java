@@ -1,4 +1,4 @@
-package com.coulombe.mom;
+package dev.coulombe.mom;
 
 import android.app.Notification;
 import android.app.NotificationChannel;
@@ -32,8 +32,8 @@ import java.util.Locale;
 
 public class BackgroundIntervalService extends Service {
 
-    public static final String ACTION_START = "com.coulombe.mom.interval.START";
-    public static final String ACTION_STOP = "com.coulombe.mom.interval.STOP";
+    public static final String ACTION_START = "dev.coulombe.mom.interval.START";
+    public static final String ACTION_STOP = "dev.coulombe.mom.interval.STOP";
     public static final String EXTRA_SESSION_ID = "sessionId";
     public static final String EXTRA_SESSION_NAME = "sessionName";
     public static final String EXTRA_STEPS = "steps";

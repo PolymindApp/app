@@ -1,8 +1,9 @@
-package com.coulombe.mom;
+package dev.coulombe.mom;
 
 import android.graphics.Color;
 import android.os.Build;
 import android.os.Bundle;
+import android.view.View;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 import com.getcapacitor.BridgeActivity;
@@ -15,6 +16,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         registerPlugin(BackgroundIntervalPlugin.class);
+        registerPlugin(PasskeyPlugin.class);
         super.onCreate(savedInstanceState);
 
         WindowCompat.enableEdgeToEdge(getWindow());
@@ -33,6 +35,7 @@ public class MainActivity extends BridgeActivity {
 
         if (getBridge() != null && getBridge().getWebView() != null) {
             getBridge().getWebView().setBackgroundColor(APP_BACKGROUND);
+            getBridge().getWebView().setOverScrollMode(View.OVER_SCROLL_NEVER);
         }
     }
 

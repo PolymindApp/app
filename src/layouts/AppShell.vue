@@ -3,7 +3,9 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { Capacitor } from '@capacitor/core'
 import { useDisplay } from 'vuetify'
 import { useRouter } from 'vue-router'
+import AccountMenu from '@/components/AccountMenu.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import { isAndroidPasskeyAvailable } from '@/services/passkeys'
 import { useAuthStore } from '@/stores/auth'
 
 const { mdAndUp } = useDisplay()
@@ -13,12 +15,10 @@ const logoutDialog = ref(false)
 const appScroll = ref<HTMLElement | { $el?: HTMLElement }>()
 const pageTransition = ref('page-level-forward')
 const isIos = Capacitor.getPlatform() === 'ios'
-const isAndroid = Capacitor.getPlatform() === 'android'
-
-const BOUNCE_LIMIT = 44
-const BOUNCE_RESISTANCE = 0.32
-let removeBounceListeners: (() => void) | undefined
-let bounceResetTimer: ReturnType<typeof setTimeout> | undefined
+const passkeyAvailable = ref(false)
+const passkeyNotice = ref(false)
+const passkeyNoticeText = ref('')
+const passkeyNoticeColor = ref<'success' | 'error'>('success')
 
 const items = [
   { title: 'Today', icon: 'mdi-lightning-bolt', to: '/today' },
@@ -65,135 +65,12 @@ const removeTransitionGuard = router.beforeEach((to, from) => {
   }
 })
 
-onMounted(() => {
-  if (!isAndroid) return
-
-  const target = getScrollElement()
-  if (!target) return
-
-  let previousTouchY: number | undefined
-  let bounceOffset = 0
-  let activePage: HTMLElement | undefined
-  let settlingPage: HTMLElement | undefined
-  let ignoreGesture = false
-
-  const getActivePage = () =>
-    target.querySelector<HTMLElement>('.page-transition-stage > *') ?? undefined
-
-  const gestureStartsInNestedScroller = (eventTarget: EventTarget | null) => {
-    let element = eventTarget instanceof HTMLElement ? eventTarget : null
-
-    while (element && element !== target) {
-      if (element.classList.contains('page-action-area')) return true
-
-      const styles = window.getComputedStyle(element)
-      const scrollsVertically =
-        /(auto|scroll)/.test(styles.overflowY) &&
-        element.scrollHeight > element.clientHeight + 1
-
-      if (scrollsVertically) return true
-      element = element.parentElement
-    }
-
-    return false
-  }
-
-  const setBounce = (offset: number) => {
-    const page = activePage ?? getActivePage()
-    if (!page) return
-
-    activePage = page
-    bounceOffset = Math.max(-BOUNCE_LIMIT, Math.min(BOUNCE_LIMIT, offset))
-    page.classList.add('page-bounce-active')
-    page.style.setProperty('--page-bounce-y', `${bounceOffset}px`)
-  }
-
-  const resetBounce = () => {
-    if (!activePage) return
-
-    const page = activePage
-    page.classList.remove('page-bounce-active')
-    page.classList.add('page-bounce-settling')
-    settlingPage = page
-
-    requestAnimationFrame(() => {
-      page.style.setProperty('--page-bounce-y', '0px')
-    })
-
-    if (bounceResetTimer) clearTimeout(bounceResetTimer)
-    bounceResetTimer = setTimeout(() => {
-      page.classList.remove('page-bounce-settling')
-      page.style.removeProperty('--page-bounce-y')
-      if (settlingPage === page) settlingPage = undefined
-    }, 240)
-
-    activePage = undefined
-    bounceOffset = 0
-  }
-
-  const onTouchStart = (event: TouchEvent) => {
-    if (event.touches.length !== 1) return
-
-    if (bounceResetTimer) clearTimeout(bounceResetTimer)
-    settlingPage?.classList.remove('page-bounce-settling')
-    settlingPage?.style.removeProperty('--page-bounce-y')
-    settlingPage = undefined
-    activePage = undefined
-    bounceOffset = 0
-    previousTouchY = event.touches[0].clientY
-    ignoreGesture = gestureStartsInNestedScroller(event.target)
-  }
-
-  const onTouchMove = (event: TouchEvent) => {
-    if (ignoreGesture || previousTouchY === undefined || event.touches.length !== 1) return
-
-    const touchY = event.touches[0].clientY
-    const movement = touchY - previousTouchY
-    previousTouchY = touchY
-
-    const maxScrollTop = Math.max(0, target.scrollHeight - target.clientHeight)
-    const atTop = target.scrollTop <= 0.5
-    const atBottom = target.scrollTop >= maxScrollTop - 0.5
-    const pullingPastTop = atTop && movement > 0
-    const pullingPastBottom = atBottom && movement < 0
-    const returningTowardEdge =
-      (bounceOffset > 0 && movement < 0) ||
-      (bounceOffset < 0 && movement > 0)
-
-    if (pullingPastTop || pullingPastBottom || returningTowardEdge) {
-      setBounce(bounceOffset + movement * BOUNCE_RESISTANCE)
-    } else if (!atTop && !atBottom && bounceOffset !== 0) {
-      resetBounce()
-    }
-  }
-
-  const onTouchEnd = () => {
-    previousTouchY = undefined
-    ignoreGesture = false
-    resetBounce()
-  }
-
-  target.addEventListener('touchstart', onTouchStart, { passive: true })
-  target.addEventListener('touchmove', onTouchMove, { passive: true })
-  target.addEventListener('touchend', onTouchEnd, { passive: true })
-  target.addEventListener('touchcancel', onTouchEnd, { passive: true })
-
-  removeBounceListeners = () => {
-    target.removeEventListener('touchstart', onTouchStart)
-    target.removeEventListener('touchmove', onTouchMove)
-    target.removeEventListener('touchend', onTouchEnd)
-    target.removeEventListener('touchcancel', onTouchEnd)
-    activePage?.classList.remove('page-bounce-active')
-    activePage?.style.removeProperty('--page-bounce-y')
-    settlingPage?.classList.remove('page-bounce-settling')
-    settlingPage?.style.removeProperty('--page-bounce-y')
-  }
-})
-
 onBeforeUnmount(() => {
   removeTransitionGuard()
-  removeBounceListeners?.()
-  if (bounceResetTimer) clearTimeout(bounceResetTimer)
+})
+
+onMounted(async () => {
+  passkeyAvailable.value = await isAndroidPasskeyAvailable()
 })
 
 function logout() {
@@ -210,6 +87,19 @@ function beginPageScrollReset() {
 
 function getScrollElement() {
   return appScroll.value instanceof HTMLElement ? appScroll.value : appScroll.value?.$el
+}
+
+async function createPasskey() {
+  try {
+    if (!await auth.registerPasskey()) return
+    passkeyNoticeColor.value = 'success'
+    passkeyNoticeText.value = 'Passkey created. You can now use it from the sign-in screen.'
+    passkeyNotice.value = true
+  } catch {
+    passkeyNoticeColor.value = 'error'
+    passkeyNoticeText.value = auth.error || 'The passkey could not be created.'
+    passkeyNotice.value = true
+  }
 }
 </script>
 
@@ -266,42 +156,15 @@ function getScrollElement() {
 
           <h1 class="app-bar__title">{{ pageTitle }}</h1>
 
-          <v-menu location="bottom end" :offset="8" transition="slide-y-transition">
-            <template #activator="{ props }">
-              <v-btn
-                v-bind="props"
-                icon
-                variant="text"
-                class="app-bar__account"
-                :aria-label="`Open account menu for ${accountName}`"
-              >
-                <v-avatar color="secondary" size="36">
-                  <span>{{ accountInitials }}</span>
-                </v-avatar>
-              </v-btn>
-            </template>
-
-            <v-card class="account-menu" min-width="240">
-              <div class="account-menu__identity pa-4">
-                <v-avatar color="secondary" size="40">
-                  <span>{{ accountInitials }}</span>
-                </v-avatar>
-                <div class="min-width-0">
-                  <strong class="d-block text-truncate">{{ accountName }}</strong>
-                  <span v-if="accountEmail" class="d-block text-caption muted text-truncate">{{ accountEmail }}</span>
-                </div>
-              </div>
-              <v-divider />
-              <v-list density="compact" class="pa-2">
-                <v-list-item
-                  title="Sign out"
-                  prepend-icon="mdi-logout"
-                  rounded="lg"
-                  @click="logoutDialog = true"
-                />
-              </v-list>
-            </v-card>
-          </v-menu>
+          <AccountMenu
+            :account-name="accountName"
+            :account-email="accountEmail"
+            :account-initials="accountInitials"
+            :passkey-available="passkeyAvailable"
+            :passkey-loading="auth.passkeyLoading"
+            @create-passkey="createPasskey"
+            @sign-out="logoutDialog = true"
+          />
         </div>
       </header>
     </transition>
@@ -352,6 +215,15 @@ function getScrollElement() {
       icon="mdi-logout"
       @confirm="logout"
     />
+
+    <v-snackbar
+      v-model="passkeyNotice"
+      :color="passkeyNoticeColor"
+      location="bottom"
+      :timeout="5000"
+    >
+      {{ passkeyNoticeText }}
+    </v-snackbar>
   </v-app>
 </template>
 
@@ -438,18 +310,6 @@ function getScrollElement() {
   white-space: nowrap;
 }
 
-.app-bar__account {
-  width: 44px;
-  height: 44px;
-}
-
-.app-bar__account :deep(.v-avatar) {
-  border: 1px solid rgb(var(--v-theme-on-secondary) / .18);
-  color: rgb(var(--v-theme-on-secondary));
-  font-size: .75rem;
-  font-weight: 900;
-}
-
 .app-bar--back .app-bar__inner {
   grid-template-columns: 44px minmax(0, 1fr) 44px;
   gap: 1rem;
@@ -475,24 +335,6 @@ function getScrollElement() {
 
 .app-bar--ios.app-bar--back .app-bar__inner {
   gap: 1rem;
-}
-
-.account-menu {
-  overflow: hidden;
-  border: 1px solid rgb(var(--v-theme-on-surface) / .1);
-}
-
-.account-menu__identity {
-  display: flex;
-  align-items: center;
-  gap: .75rem;
-}
-
-.account-menu__identity > .v-avatar {
-  flex: 0 0 auto;
-  color: rgb(var(--v-theme-on-secondary));
-  font-size: .75rem;
-  font-weight: 900;
 }
 
 .brand-mark {
@@ -648,18 +490,4 @@ function getScrollElement() {
   }
 }
 
-.page-bounce-active > :not(.page-action-area),
-.page-bounce-settling > :not(.page-action-area) {
-  translate: 0 var(--page-bounce-y, 0);
-}
-
-.page-bounce-active > :not(.page-action-area) {
-  will-change: translate;
-}
-
-.page-bounce-settling > :not(.page-action-area) {
-  transition:
-    translate 220ms cubic-bezier(.22, 1, .36, 1),
-    transform 240ms cubic-bezier(.22, 1, .36, 1);
-}
 </style>

@@ -4,6 +4,8 @@ import type {
   IntervalNode,
   IntervalRuntimeState,
   IntervalStepNode,
+  IntervalTemplate,
+  IntervalTemplateDraft,
   QuickIntervalDraft,
   ResolvedIntervalStep,
 } from '@/types/domain'
@@ -25,6 +27,29 @@ export function createIntervalStep(
 
 export function createIntervalGroup(name = '', repeatCount = 1): IntervalGroupNode {
   return { id: createIntervalId(), type: 'group', name, repeatCount, children: [] }
+}
+
+function cloneIntervalNode(node: IntervalNode): IntervalNode {
+  if (node.type === 'step') return { ...node }
+  return {
+    ...node,
+    children: node.children.map(cloneIntervalNode),
+  }
+}
+
+export function cloneIntervalTemplateDraft(template: IntervalTemplate): IntervalTemplateDraft {
+  return {
+    id: template.id,
+    name: template.name,
+    description: template.description,
+    color: template.color,
+    definition: {
+      version: template.definition.version,
+      children: template.definition.children.map(cloneIntervalNode),
+    },
+    cues: { ...template.cues },
+    sortOrder: template.sortOrder,
+  }
 }
 
 export function intervalNodeStepCount(node: IntervalNode): number {

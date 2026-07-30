@@ -1,8 +1,11 @@
 <script setup lang="ts">
+import { Capacitor } from '@capacitor/core'
 import { nextTick, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { isAndroidPasskeyAvailable } from '@/services/passkeys'
 import { useAuthStore } from '@/stores/auth'
 
+const allowAutomaticFocus = Capacitor.getPlatform() !== 'android'
 const auth = useAuthStore()
 const router = useRouter()
 const mode = ref<'login' | 'register'>('login')
@@ -14,17 +17,21 @@ const form = ref()
 const backendOffline = ref(false)
 const emailField = ref<{ focus: () => void }>()
 const nameField = ref<{ focus: () => void }>()
+const passkeyAvailable = ref(false)
 
 const required = (value: string) => Boolean(value) || 'Required'
 const validEmail = (value: string) => /.+@.+\..+/.test(value) || 'Enter a valid email'
 const strongPassword = (value: string) => value.length >= 8 || 'Use at least 8 characters'
 
 onMounted(async () => {
+  passkeyAvailable.value = await isAndroidPasskeyAvailable()
+  if (!allowAutomaticFocus) return
   await nextTick()
   emailField.value?.focus()
 })
 
 watch(mode, async (nextMode) => {
+  if (!allowAutomaticFocus) return
   await nextTick()
   if (nextMode === 'register') nameField.value?.focus()
   else emailField.value?.focus()
@@ -38,6 +45,15 @@ async function submit() {
     if (mode.value === 'login') await auth.login(email.value, password.value)
     else await auth.register(name.value, email.value, password.value)
     await router.replace('/today')
+  } catch (error) {
+    backendOffline.value = error instanceof TypeError || (error instanceof Error && /fetch|network/i.test(error.message))
+  }
+}
+
+async function signInWithPasskey() {
+  backendOffline.value = false
+  try {
+    if (await auth.loginWithPasskey()) await router.replace('/today')
   } catch (error) {
     backendOffline.value = error instanceof TypeError || (error instanceof Error && /fetch|network/i.test(error.message))
   }
@@ -87,7 +103,7 @@ async function submit() {
           </p>
 
           <v-alert v-if="backendOffline" type="warning" variant="tonal" class="mb-4" density="compact">
-            PocketBase is offline. Run <code>pnpm pb:serve</code> and try again.
+            The API is offline. Run <code>pnpm api:serve</code> and try again.
           </v-alert>
           <v-alert v-else-if="auth.error" type="error" variant="tonal" class="mb-4" density="compact">
             {{ auth.error }}
@@ -136,6 +152,26 @@ async function submit() {
               {{ mode === 'login' ? 'Open your day' : 'Create account' }}
             </v-btn>
           </v-form>
+
+          <template v-if="mode === 'login' && passkeyAvailable">
+            <div class="auth-separator my-5" aria-hidden="true">
+              <v-divider />
+              <span>or</span>
+              <v-divider />
+            </div>
+            <v-btn
+              type="button"
+              block
+              size="large"
+              variant="outlined"
+              prepend-icon="mdi-fingerprint"
+              :loading="auth.passkeyLoading"
+              :disabled="auth.loading"
+              @click="signInWithPasskey"
+            >
+              Sign in with passkey
+            </v-btn>
+          </template>
         </v-card>
       </v-container>
     </v-main>
@@ -159,7 +195,7 @@ async function submit() {
 }
 
 .auth-glow {
-  position: absolute;
+  position: fixed;
   top: -20%;
   right: -35%;
   width: 80vw;
@@ -167,6 +203,7 @@ async function submit() {
   border-radius: 50%;
   background: rgba(199, 244, 100, 0.16);
   filter: blur(80px);
+  pointer-events: none;
 }
 
 .auth-wrap {
@@ -216,10 +253,22 @@ async function submit() {
   gap: 1rem;
 }
 
+.auth-separator {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: .75rem;
+  color: rgb(var(--v-theme-on-surface) / .55);
+  font-size: .75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
 @media (min-width: 800px) {
   .auth-wrap {
     grid-template-columns: 1.15fr .85fr;
     align-items: center;
   }
 }
+
 </style>

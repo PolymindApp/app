@@ -29,9 +29,6 @@ importers:
       pinia:
         specifier: ^4.0.2
         version: 4.0.2(@vue/devtools-api@8.2.1)(typescript@5.6.3)(vue@3.5.40(typescript@5.6.3))
-      pocketbase:
-        specifier: ^0.27.0
-        version: 0.27.0
       vue:
         specifier: ^3.5.13
         version: 3.5.40(typescript@5.6.3)
@@ -2037,9 +2034,6 @@ packages:
   plist@3.1.1:
     resolution: {integrity: sha512-ZIfcLJC+7E7FBFnDxm9MPmt7D+DidyQ26lewieO75AdhA2ayMtsJSES0iWzqJQbcVRSrTufQoy0DR94xHue0oA==}
     engines: {node: '>=10.4.0'}
-
-  pocketbase@0.27.0:
-    resolution: {integrity: sha512-K5N6d93UP/BNMbMnlZ6BUfy9VPCIvLyqhJFOsNI8OsZwzvKWEAfyD36boi5K4ECIOl5HMlo0TzuaeGdKpMwizQ==}
 
   postcss@8.5.23:
     resolution: {integrity: sha512-g50586zr4bZmwFiTlflMu8E0bDTb5I5gertgwAKmsdUlTQIhZtunzUlD1WSzwcVWPoAVpsrA6vlfCD7oXvRwgg==}
@@ -4798,8 +4792,6 @@ snapshots:
       '@xmldom/xmldom': 0.9.10
       base64-js: 1.5.1
       xmlbuilder: 15.1.1
-
-  pocketbase@0.27.0: {}
 
   postcss@8.5.23:
     dependencies:

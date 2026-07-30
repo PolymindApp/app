@@ -73,6 +73,7 @@ describe('quantitative targets', () => {
   it('caps progress at one hundred percent', () => {
     expect(progressPercent(175, 150, 'gte')).toBe(100)
     expect(progressPercent(75, 150, 'gte')).toBe(50)
+    expect(progressPercent(-25, 150, 'gte')).toBe(0)
   })
 
   it('identifies exceeded maximums and insufficient minimums', () => {

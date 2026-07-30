@@ -1,0 +1,28 @@
+Options -Indexes
+
+<IfModule mod_mime.c>
+    AddType application/json .json
+</IfModule>
+
+<FilesMatch "^\.env(?:\..*)?$">
+    Require all denied
+</FilesMatch>
+
+RewriteEngine On
+
+# Preserve bearer tokens when PHP runs through Apache/FastCGI.
+RewriteCond %{HTTP:Authorization} .
+RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+# Never expose the SQLite directory when it lives beside the deployed app.
+RewriteRule ^private(?:/|$) - [F,L,NC]
+
+# Expose the PHP API at /server without putting /public in its URL.
+RewriteRule ^server/index\.php$ - [L,NC]
+RewriteRule ^server(?:/.*)?$ server/index.php [QSA,L,NC]
+
+# Serve generated assets directly, then fall back to the Vue application.
+RewriteCond %{REQUEST_FILENAME} -f [OR]
+RewriteCond %{REQUEST_FILENAME} -d
+RewriteRule ^ - [L]
+RewriteRule ^ index.html [L]

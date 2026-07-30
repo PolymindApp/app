@@ -1,13 +1,16 @@
 <script setup lang="ts">
+import { Capacitor } from '@capacitor/core'
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { format } from 'date-fns'
 import { useRoute, useRouter } from 'vue-router'
 import ColorSwatchPicker from '@/components/ColorSwatchPicker.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import DatePickerField from '@/components/DatePickerField.vue'
 import QuickAmountsEditor from '@/components/QuickAmountsEditor.vue'
 import { useTaskStore } from '@/stores/tasks'
 import type { TaskDraft, TaskType } from '@/types/domain'
 
+const allowAutomaticFocus = Capacitor.getPlatform() !== 'android'
 const route = useRoute()
 const router = useRouter()
 const store = useTaskStore()
@@ -110,7 +113,7 @@ async function addStep(focusName = true) {
     active: true,
   })
   openStep.value = draft.steps.length - 1
-  if (focusName) {
+  if (focusName && allowAutomaticFocus) {
     await nextTick()
     document.querySelector<HTMLInputElement>(`[data-step-index="${openStep.value}"] input`)?.focus()
   }
@@ -247,8 +250,8 @@ async function removeTask() {
         </div>
         <v-text-field v-if="draft.recurrenceType === 'interval_weeks'" v-model.number="draft.intervalWeeks" label="Repeat every" type="number" min="1" max="52" suffix="weeks" />
         <div class="date-grid date-range-grid">
-          <v-text-field v-model="draft.startDate" label="Starts" type="date" />
-          <v-text-field v-model="draft.endDate" label="Ends (optional)" type="date" clearable />
+          <DatePickerField v-model="draft.startDate" label="Starts" />
+          <DatePickerField v-model="draft.endDate" label="Ends (optional)" clearable />
         </div>
       </v-card>
 
@@ -280,7 +283,7 @@ async function removeTask() {
         <v-card class="surface-card pa-5 mb-4">
           <div class="date-grid mb-4">
             <v-text-field v-model.number="draft.cycleLength" label="Cycle length" type="number" min="1" max="365" suffix="days" />
-            <v-text-field v-model="draft.startDate" label="Starts" type="date" />
+            <DatePickerField v-model="draft.startDate" label="Starts" />
           </div>
           <div class="setting-row">
             <div><strong>Repeat program</strong><p>Restart after the final cycle day</p></div>

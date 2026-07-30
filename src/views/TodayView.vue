@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Capacitor } from '@capacitor/core'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { addDays, addWeeks, endOfWeek, format, isSameDay, isSameWeek, startOfWeek } from 'date-fns'
 import { storeToRefs } from 'pinia'
@@ -7,6 +8,7 @@ import TaskCard from '@/components/TaskCard.vue'
 import { useTaskStore } from '@/stores/tasks'
 import type { TaskProgress } from '@/types/domain'
 
+const allowAutomaticFocus = Capacitor.getPlatform() !== 'android'
 const store = useTaskStore()
 const { smAndUp } = useDisplay()
 const { selectedDate, selectedProgress, completionRate, loading, error } = storeToRefs(store)
@@ -191,7 +193,7 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
             <span class="score-number">{{ completionRate }}</span><span class="score-percent">%</span>
           </div>
           <p class="text-caption text-medium-emphasis mt-1">
-            {{ doneCount }} of {{ selectedProgress.length }} scheduled reps complete
+            {{ doneCount }} of {{ selectedProgress.length }} scheduled tasks complete
           </p>
         </div>
         <v-progress-circular
@@ -258,7 +260,7 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
 
     <v-card v-else-if="!loading" class="surface-card empty-card pa-8 mt-6 text-center">
       <div class="empty-icon mx-auto mb-4"><v-icon icon="mdi-arm-flex-outline" size="32" /></div>
-      <h2 class="text-h6 font-weight-black">No reps scheduled</h2>
+      <h2 class="text-h6 font-weight-black">No tasks scheduled</h2>
       <p class="text-body-2 muted mt-2 mb-5">Build your first routine and it will show up here.</p>
       <v-btn color="secondary" append-icon="mdi-plus" to="/tasks/new">Create a task</v-btn>
     </v-card>
@@ -276,7 +278,7 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
             label="Amount"
             type="number"
             inputmode="decimal"
-            autofocus
+            :autofocus="allowAutomaticFocus"
           />
           <div v-else class="amount-keypad">
             <output class="amount-keypad__display" aria-live="polite">

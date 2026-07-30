@@ -1,7 +1,7 @@
 import type { CapacitorConfig } from '@capacitor/cli'
 
 const config: CapacitorConfig = {
-  appId: 'com.coulombe.mom',
+  appId: 'dev.coulombe.mom',
   appName: 'Mom',
   webDir: 'dist',
   plugins: {

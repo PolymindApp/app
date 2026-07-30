@@ -3,6 +3,8 @@
 set -euo pipefail
 
 build_variant="${1:-debug}"
+signing_properties="private/android-signing.properties"
+release_keystore="private/mom-release.jks"
 
 if [[ -z "${JAVA_HOME:-}" || ! -x "$JAVA_HOME/bin/java" ]]; then
   java_command="$(command -v java || true)"
@@ -20,10 +22,18 @@ case "$build_variant" in
     artifact_path="android/app/build/outputs/apk/debug/app-debug.apk"
     ;;
   release)
+    if [[ ! -r "$signing_properties" || ! -r "$release_keystore" ]]; then
+      echo "Release signing files are missing from private/. Restore them from backup." >&2
+      exit 1
+    fi
     gradle_task="assembleRelease"
-    artifact_path="android/app/build/outputs/apk/release/app-release-unsigned.apk"
+    artifact_path="android/app/build/outputs/apk/release/app-release.apk"
     ;;
   bundle)
+    if [[ ! -r "$signing_properties" || ! -r "$release_keystore" ]]; then
+      echo "Release signing files are missing from private/. Restore them from backup." >&2
+      exit 1
+    fi
     gradle_task="bundleRelease"
     artifact_path="android/app/build/outputs/bundle/release/app-release.aab"
     ;;
@@ -33,7 +43,7 @@ case "$build_variant" in
     ;;
 esac
 
-pnpm build
+pnpm build:prod
 pnpm exec cap sync android
 
 (

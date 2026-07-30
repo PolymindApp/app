@@ -1,7 +1,7 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { addDays, endOfWeek, format, parseISO, startOfWeek, subDays } from 'date-fns'
-import { pb } from '@/lib/pocketbase'
+import { api } from '@/lib/api'
 import { isTaskScheduled, meetsTarget, programCycleDay, progressPercent, stepsForDate, toDateKey } from '@/services/schedule'
 import type { Entry, Occurrence, ProgramStep, Task, TaskDraft, TaskProgress } from '@/types/domain'
 
@@ -123,7 +123,7 @@ export const useTaskStore = defineStore('tasks', () => {
     const target = step?.targetValue || task.targetValue || 1
     const operator = step?.targetOperator || task.targetOperator || 'gte'
     const targetReached = meetsTarget(value, target, operator)
-    const checkComplete = occurrence?.status === 'completed'
+    const occurrenceComplete = occurrence?.status === 'completed'
     const isCheck = (step && step.completionType === 'check') || (!step && task.type === 'check')
     const isDailyTotal = !step && task.type === 'daily_total'
     const sealed = isDailyTotal && Boolean(occurrence?.sealed)
@@ -131,12 +131,12 @@ export const useTaskStore = defineStore('tasks', () => {
       task,
       occurrence,
       value,
-      percent: isCheck ? (checkComplete ? 100 : 0) : progressPercent(value, target, operator),
+      percent: isCheck ? (occurrenceComplete ? 100 : 0) : progressPercent(value, target, operator),
       complete: isCheck
-        ? checkComplete
+        ? occurrenceComplete
         : isDailyTotal
           ? sealed
-          : checkComplete || (operator !== 'lte' && targetReached),
+          : operator !== 'lte' && targetReached,
       sealed,
       status: occurrence?.status || 'pending',
       programStep: step,
@@ -187,16 +187,16 @@ export const useTaskStore = defineStore('tasks', () => {
   })
 
   async function load() {
-    if (!pb.authStore.record) return
+    if (!api.authStore.record) return
     loading.value = true
     error.value = ''
     try {
       const since = toDateKey(subDays(new Date(), 120))
       const [taskRecords, stepRecords, occurrenceRecords, entryRecords] = await Promise.all([
-        pb.collection('tasks').getFullList({ sort: 'sort_order' }),
-        pb.collection('program_steps').getFullList({ sort: 'sort_order' }),
-        pb.collection('occurrences').getFullList({ filter: `scheduled_date >= "${since}"`, sort: '-scheduled_date' }),
-        pb.collection('entries').getFullList({ filter: `entry_date >= "${since}"`, sort: '-entry_date' }),
+        api.collection('tasks').getFullList({ sort: 'sort_order' }),
+        api.collection('program_steps').getFullList({ sort: 'sort_order' }),
+        api.collection('occurrences').getFullList({ filter: `scheduled_date >= "${since}"`, sort: '-scheduled_date' }),
+        api.collection('entries').getFullList({ filter: `entry_date >= "${since}"`, sort: '-entry_date' }),
       ])
       tasks.value = taskRecords.map(mapTask)
       steps.value = stepRecords.map(mapStep)
@@ -213,8 +213,8 @@ export const useTaskStore = defineStore('tasks', () => {
   async function ensureOccurrence(task: Task, date: Date, step?: ProgramStep) {
     const existing = occurrenceFor(task, date, step)
     if (existing) return existing
-    const record = await pb.collection('occurrences').create({
-      owner: pb.authStore.record!.id,
+    const record = await api.collection('occurrences').create({
+      owner: api.authStore.record!.id,
       task: task.id,
       program_step: step?.id || '',
       scheduled_date: toDateKey(date),
@@ -232,7 +232,7 @@ export const useTaskStore = defineStore('tasks', () => {
   async function toggleComplete(progress: TaskProgress) {
     const occurrence = await ensureOccurrence(progress.task, selectedDate.value, progress.programStep)
     const completing = occurrence.status !== 'completed'
-    const record = await pb.collection('occurrences').update(occurrence.id, {
+    const record = await api.collection('occurrences').update(occurrence.id, {
       status: completing ? 'completed' : 'pending',
       completed_at: completing ? new Date().toISOString() : '',
     })
@@ -243,7 +243,7 @@ export const useTaskStore = defineStore('tasks', () => {
     if (progress.task.type !== 'daily_total' || progress.programStep) return
     const occurrence = await ensureOccurrence(progress.task, selectedDate.value, progress.programStep)
     const sealed = !occurrence.sealed
-    const record = await pb.collection('occurrences').update(occurrence.id, {
+    const record = await api.collection('occurrences').update(occurrence.id, {
       sealed,
       status: sealed ? 'completed' : 'pending',
       completed_at: sealed ? new Date().toISOString() : '',
@@ -255,8 +255,8 @@ export const useTaskStore = defineStore('tasks', () => {
     if (progress.sealed) return
     const occurrence = await ensureOccurrence(progress.task, selectedDate.value, progress.programStep)
     const unit = progress.programStep?.customUnit || progress.programStep?.unit || progress.task.customUnit || progress.task.unit || (progress.task.type === 'duration' ? 'hours' : '')
-    const record = await pb.collection('entries').create({
-      owner: pb.authStore.record!.id,
+    const record = await api.collection('entries').create({
+      owner: api.authStore.record!.id,
       task: progress.task.id,
       occurrence: occurrence.id,
       program_step: progress.programStep?.id || '',
@@ -268,18 +268,24 @@ export const useTaskStore = defineStore('tasks', () => {
     })
     entries.value.unshift(mapEntry(record))
     const updated = makeProgress(progress.task, selectedDate.value, progress.programStep)
-    if (progress.task.type !== 'daily_total' && progress.task.targetOperator !== 'lte' && updated.complete && occurrence.status !== 'completed') {
-      const completed = await pb.collection('occurrences').update(occurrence.id, {
-        status: 'completed',
-        completed_at: new Date().toISOString(),
-      })
-      Object.assign(occurrence, mapOccurrence(completed))
+    const isCheck = progress.programStep
+      ? progress.programStep.completionType === 'check'
+      : progress.task.type === 'check'
+    if (progress.task.type !== 'daily_total' && !isCheck) {
+      const shouldComplete = updated.complete
+      if (shouldComplete !== (occurrence.status === 'completed')) {
+        const updatedOccurrence = await api.collection('occurrences').update(occurrence.id, {
+          status: shouldComplete ? 'completed' : 'pending',
+          completed_at: shouldComplete ? new Date().toISOString() : '',
+        })
+        Object.assign(occurrence, mapOccurrence(updatedOccurrence))
+      }
     }
   }
 
   async function setStatus(progress: TaskProgress, status: Occurrence['status']) {
     const occurrence = await ensureOccurrence(progress.task, selectedDate.value, progress.programStep)
-    const record = await pb.collection('occurrences').update(occurrence.id, {
+    const record = await api.collection('occurrences').update(occurrence.id, {
       status,
       sealed: status === 'completed',
       completed_at: status === 'completed' ? new Date().toISOString() : '',
@@ -292,7 +298,7 @@ export const useTaskStore = defineStore('tasks', () => {
 
   async function saveTask(draft: TaskDraft) {
     const payload = {
-      owner: pb.authStore.record!.id,
+      owner: api.authStore.record!.id,
       name: draft.name,
       description: draft.description,
       type: draft.type,
@@ -317,20 +323,20 @@ export const useTaskStore = defineStore('tasks', () => {
       sort_order: draft.sortOrder,
     }
     const record = draft.id
-      ? await pb.collection('tasks').update(draft.id, payload)
-      : await pb.collection('tasks').create(payload)
+      ? await api.collection('tasks').update(draft.id, payload)
+      : await api.collection('tasks').create(payload)
     const taskId = record.id
 
     if (draft.type === 'program') {
       const existing = steps.value.filter((step) => step.task === taskId)
       const retainedIds = new Set(draft.steps.map((step) => step.id).filter(Boolean))
       await Promise.all(existing.filter((step) => !retainedIds.has(step.id)).map((step) =>
-        pb.collection('program_steps').update(step.id, { active: false }),
+        api.collection('program_steps').update(step.id, { active: false }),
       ))
       await Promise.all(
         draft.steps.map((step, index) => {
           const stepPayload = {
-            owner: pb.authStore.record!.id,
+            owner: api.authStore.record!.id,
             task: taskId,
             name: step.name,
             description: step.description,
@@ -345,8 +351,8 @@ export const useTaskStore = defineStore('tasks', () => {
             active: true,
           }
           return step.id
-            ? pb.collection('program_steps').update(step.id, stepPayload)
-            : pb.collection('program_steps').create(stepPayload)
+            ? api.collection('program_steps').update(step.id, stepPayload)
+            : api.collection('program_steps').create(stepPayload)
         }),
       )
     }
@@ -355,12 +361,12 @@ export const useTaskStore = defineStore('tasks', () => {
   }
 
   async function toggleTaskActive(task: Task) {
-    const record = await pb.collection('tasks').update(task.id, { active: !task.active })
+    const record = await api.collection('tasks').update(task.id, { active: !task.active })
     Object.assign(task, mapTask(record))
   }
 
   async function deleteTask(taskId: string) {
-    await pb.collection('tasks').delete(taskId)
+    await api.collection('tasks').delete(taskId)
     tasks.value = tasks.value.filter((task) => task.id !== taskId)
     steps.value = steps.value.filter((step) => step.task !== taskId)
     occurrences.value = occurrences.value.filter((occurrence) => occurrence.task !== taskId)
@@ -370,7 +376,7 @@ export const useTaskStore = defineStore('tasks', () => {
   async function shiftProgram(progress: TaskProgress) {
     await setStatus(progress, 'rescheduled')
     const shiftedStart = toDateKey(addDays(parseISO(progress.task.startDate), 1))
-    await pb.collection('tasks').update(progress.task.id, { start_date: shiftedStart })
+    await api.collection('tasks').update(progress.task.id, { start_date: shiftedStart })
     progress.task.startDate = shiftedStart
   }
 

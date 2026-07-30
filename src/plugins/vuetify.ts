@@ -36,9 +36,6 @@ export const vuetify = createVuetify({
     VDialog: {
       transition: 'fade-transition',
     },
-    VMenu: {
-      transition: 'fade-transition',
-    },
   },
   theme: {
     defaultTheme: 'forgeLight',

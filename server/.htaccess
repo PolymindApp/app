@@ -1,0 +1,12 @@
+Options -Indexes
+DirectoryIndex index.php
+
+RewriteEngine On
+
+# Preserve bearer tokens when this directory is used as /server directly.
+RewriteCond %{HTTP:Authorization} .
+RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+# Only the front controller is web-accessible. Every API route is internal.
+RewriteRule ^index\.php$ - [L,NC]
+RewriteRule ^ index.php [QSA,L]

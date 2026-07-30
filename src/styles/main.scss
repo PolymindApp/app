@@ -63,11 +63,7 @@ html.platform-android body::after {
   -webkit-overflow-scrolling: touch;
 }
 
-/*
- * Android WebView does not consistently render nested rubber-band overscroll.
- * AppShell supplies a content-only pull effect there, so disable the native
- * effect to avoid doubling it on WebView versions that do render one.
- */
+/* Android scrolling stops cleanly at the content boundaries. */
 html.platform-android .app-scroll {
   overscroll-behavior-y: none;
 }

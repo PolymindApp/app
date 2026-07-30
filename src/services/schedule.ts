@@ -52,8 +52,8 @@ export function meetsTarget(value: number, target: number, operator: TargetOpera
 
 export function progressPercent(value: number, target = 1, operator: TargetOperator = 'gte'): number {
   if (target <= 0) return 0
-  if (operator === 'lte') return value <= target ? Math.min((value / target) * 100, 100) : 100
-  return Math.min((value / target) * 100, 100)
+  if (operator === 'lte') return value <= target ? Math.max(0, Math.min((value / target) * 100, 100)) : 100
+  return Math.max(0, Math.min((value / target) * 100, 100))
 }
 
 export function goalState(value: number, target: number, operator: TargetOperator = 'gte'): GoalState {

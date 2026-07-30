@@ -567,6 +567,12 @@ async function runAgain() {
 .finish-actions { display: grid; gap: .75rem; }
 @media (min-width: 700px) { .finish-actions { grid-template-columns: 1fr 1fr; } }
 
+@media (orientation: portrait) {
+  .runner-page {
+    padding-bottom: max(2rem, calc(env(safe-area-inset-bottom, 0px) + 1rem));
+  }
+}
+
 @media (orientation: landscape) and (max-height: 700px) {
   .runner-page {
     display: flex;

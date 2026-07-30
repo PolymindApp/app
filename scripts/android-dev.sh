@@ -3,9 +3,9 @@
 set -euo pipefail
 
 vite_port=5173
-pocketbase_port=8090
+api_port=8090
 vite_pid=""
-pocketbase_pid=""
+api_pid=""
 device_serial=""
 stop_requested=false
 wireless_address="${ANDROID_WIRELESS_ADDRESS:-}"
@@ -60,7 +60,7 @@ done
 cleanup() {
   if [[ -n "$device_serial" ]]; then
     adb -s "$device_serial" reverse --remove "tcp:$vite_port" >/dev/null 2>&1 || true
-    adb -s "$device_serial" reverse --remove "tcp:$pocketbase_port" >/dev/null 2>&1 || true
+    adb -s "$device_serial" reverse --remove "tcp:$api_port" >/dev/null 2>&1 || true
   fi
 
   if [[ -n "$vite_pid" ]]; then
@@ -68,9 +68,9 @@ cleanup() {
     wait "$vite_pid" >/dev/null 2>&1 || true
   fi
 
-  if [[ -n "$pocketbase_pid" ]]; then
-    kill "$pocketbase_pid" >/dev/null 2>&1 || true
-    wait "$pocketbase_pid" >/dev/null 2>&1 || true
+  if [[ -n "$api_pid" ]]; then
+    kill "$api_pid" >/dev/null 2>&1 || true
+    wait "$api_pid" >/dev/null 2>&1 || true
   fi
 }
 
@@ -286,25 +286,25 @@ fi
 
 pnpm build
 
-if curl --silent --fail --output /dev/null "http://127.0.0.1:$pocketbase_port/api/health"; then
-  echo "Using PocketBase already running on port $pocketbase_port."
+if curl --silent --fail --output /dev/null "http://127.0.0.1:$api_port/health"; then
+  echo "Using the PHP API already running on port $api_port."
 else
-  bash scripts/run-pocketbase.sh &
-  pocketbase_pid=$!
-  wait_for_url "PocketBase" "http://127.0.0.1:$pocketbase_port/api/health" "$pocketbase_pid"
+  bash scripts/run-php-api.sh &
+  api_pid=$!
+  wait_for_url "PHP API" "http://127.0.0.1:$api_port/health" "$api_pid"
 fi
 
 if curl --silent --fail --output /dev/null "http://127.0.0.1:$vite_port"; then
   echo "Using Vite already running on port $vite_port."
 else
-  VITE_POCKETBASE_URL="http://localhost:$pocketbase_port" \
+  VITE_API_URL="http://localhost:$api_port" \
     pnpm exec vite --host 0.0.0.0 --port "$vite_port" --strictPort &
   vite_pid=$!
   wait_for_url "Vite" "http://127.0.0.1:$vite_port" "$vite_pid"
 fi
 
 adb -s "$device_serial" reverse "tcp:$vite_port" "tcp:$vite_port"
-adb -s "$device_serial" reverse "tcp:$pocketbase_port" "tcp:$pocketbase_port"
+adb -s "$device_serial" reverse "tcp:$api_port" "tcp:$api_port"
 
 echo "Launching Mom with live reload. Press Ctrl+C to stop."
 set +e

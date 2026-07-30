@@ -5,6 +5,7 @@ import ColorSwatchPicker from '@/components/ColorSwatchPicker.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import IntervalNodeEditor from '@/components/IntervalNodeEditor.vue'
 import {
+  cloneIntervalTemplateDraft,
   createIntervalGroup,
   createIntervalId,
   createIntervalStep,
@@ -154,7 +155,7 @@ onMounted(async () => {
     error.value = 'That interval template could not be found.'
     return
   }
-  Object.assign(draft, structuredClone(template))
+  Object.assign(draft, cloneIntervalTemplateDraft(template))
 })
 
 async function save() {

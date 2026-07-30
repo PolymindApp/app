@@ -5,11 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:all": "concurrently -k -n WEB,API -c green,magenta \"pnpm dev\" \"pnpm pb:serve\"",
-    "pb:download": "bash scripts/setup-pocketbase.sh",
-    "pb:serve": "bash scripts/run-pocketbase.sh",
+    "dev:all": "concurrently -k -n WEB,API -c green,magenta \"pnpm dev\" \"pnpm api:serve\"",
+    "api:serve": "bash scripts/run-php-api.sh",
     "build": "vue-tsc --noEmit && vite build",
-    "android:sync": "pnpm build && cap sync android",
+    "build:prod": "vue-tsc --noEmit && vite build --mode prod",
+    "android:sync": "pnpm build:prod && cap sync android",
     "android:assets": "capacitor-assets generate --android",
     "android:dev": "bash scripts/android-dev.sh",
     "android:open": "cap open android",
@@ -17,9 +17,11 @@
     "android:build": "bash scripts/build-android.sh",
     "android:build:release": "bash scripts/build-android.sh release",
     "android:bundle": "bash scripts/build-android.sh bundle",
+    "android:install:release": "adb install -r android/app/build/outputs/apk/release/app-release.apk",
     "preview": "vite preview",
     "typecheck": "vue-tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:api": "bash server/tests/integration.sh"
   },
   "dependencies": {
     "@capacitor/android": "8.4.2",
@@ -29,7 +31,6 @@
     "@mdi/font": "^7.4.47",
     "date-fns": "^4.4.0",
     "pinia": "^4.0.2",
-    "pocketbase": "^0.27.0",
     "vue": "^3.5.13",
     "vue-router": "^4.6.4",
     "vuetify": "^3.7.6"
