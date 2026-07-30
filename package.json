@@ -19,7 +19,7 @@
     "android:build:release": "bash scripts/build-android.sh release",
     "android:bundle": "bash scripts/build-android.sh bundle",
     "android:install:release": "adb install -r android/app/build/outputs/apk/release/app-release.apk",
-    "android:full:release": "pnpm android:build:release && adb install -r android/app/build/outputs/apk/release/app-release.apk",
+    "android:build:install:release": "pnpm android:build:release && adb install -r android/app/build/outputs/apk/release/app-release.apk",
     "release:android": "bash scripts/release-android.sh",
     "preview": "vite preview",
     "typecheck": "vue-tsc --noEmit",

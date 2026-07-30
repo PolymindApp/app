@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useDisplay } from 'vuetify'
+import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import {
   avatarCropMetrics,
@@ -284,22 +285,15 @@ function requestRemoval() {
     </v-list>
   </v-menu>
 
-  <v-navigation-drawer
+  <ActionBottomSheet
     v-if="smAndDown"
     v-model="actionsDrawer"
-    temporary
-    location="bottom"
-    class="avatar-actions-drawer"
+    title="Avatar"
+    aria-label="Avatar actions"
   >
-    <div class="drawer-handle" aria-hidden="true" />
-    <div class="pa-4 pb-2">
-      <strong>Avatar</strong>
-    </div>
-    <v-list class="px-2 pb-4">
-      <v-list-item prepend-icon="mdi-image-plus-outline" title="Upload new avatar" rounded="lg" @click="choosePhoto" />
-      <v-list-item prepend-icon="mdi-delete-outline" title="Remove" rounded="lg" base-color="error" @click="requestRemoval" />
-    </v-list>
-  </v-navigation-drawer>
+    <v-list-item prepend-icon="mdi-image-plus-outline" title="Upload new avatar" rounded="lg" @click="choosePhoto" />
+    <v-list-item prepend-icon="mdi-delete-outline" title="Remove" rounded="lg" base-color="error" @click="requestRemoval" />
+  </ActionBottomSheet>
 
   <v-dialog
     :model-value="cropDialog"
@@ -425,20 +419,6 @@ function requestRemoval() {
   border-radius: 50%;
   background: rgb(var(--v-theme-secondary));
   color: rgb(var(--v-theme-on-secondary));
-}
-
-.avatar-actions-drawer {
-  height: auto !important;
-  max-height: min(65dvh, 250px);
-  border-radius: 24px 24px 0 0;
-}
-
-.drawer-handle {
-  width: 42px;
-  height: 4px;
-  margin: 10px auto 2px;
-  border-radius: 999px;
-  background: rgb(var(--v-theme-on-surface) / .24);
 }
 
 .crop-card {

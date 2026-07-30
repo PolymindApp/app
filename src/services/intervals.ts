@@ -193,6 +193,156 @@ export function resolveIntervalStep(
   return resolved ? { ...resolved, index, totalSteps } : undefined
 }
 
+interface IntervalProgressGroup {
+  iteration: number
+  total: number
+  startSeconds: number
+  durationSeconds: number
+  stepOffset: number
+  stepCount: number
+}
+
+interface IntervalProgressContext {
+  step: IntervalStepNode
+  elapsedBeforeSeconds: number
+  groups: IntervalProgressGroup[]
+}
+
+export interface IntervalRunProgress {
+  total: number
+  item: number
+  round?: number
+  roundIteration?: number
+  roundTotal?: number
+}
+
+function resolveIntervalProgressContext(
+  nodes: IntervalNode[],
+  requestedIndex: number,
+  elapsedBeforeSeconds: number,
+  groups: IntervalProgressGroup[],
+): IntervalProgressContext | undefined {
+  let index = requestedIndex
+  let elapsed = elapsedBeforeSeconds
+
+  for (const node of nodes) {
+    const count = intervalNodeStepCount(node)
+    if (index >= count) {
+      index -= count
+      elapsed = safeAdd(elapsed, intervalNodeDuration(node))
+      continue
+    }
+    if (node.type === 'step') {
+      return {
+        step: node,
+        elapsedBeforeSeconds: elapsed,
+        groups,
+      }
+    }
+
+    const childCount = node.children.reduce(
+      (sum, child) => safeAdd(sum, intervalNodeStepCount(child)),
+      0,
+    )
+    if (!childCount) return undefined
+
+    const repeatCount = Math.max(0, Math.floor(node.repeatCount))
+    const skippedStep = skippedLastRoundStep(node)
+    const fullIterationsCount = skippedStep
+      ? safeMultiply(childCount, Math.max(0, repeatCount - 1))
+      : 0
+    const iteration = skippedStep && index >= fullIterationsCount
+      ? repeatCount - 1
+      : Math.floor(index / childCount)
+    const childIndex = skippedStep && index >= fullIterationsCount
+      ? index - fullIterationsCount
+      : index % childCount
+    const childDuration = node.children.reduce(
+      (sum, child) => safeAdd(sum, intervalNodeDuration(child)),
+      0,
+    )
+    const skipsThisIteration = Boolean(skippedStep && iteration === repeatCount - 1)
+    const iterationDuration = skipsThisIteration
+      ? Math.max(0, childDuration - intervalStepDurationSeconds(skippedStep!))
+      : childDuration
+    const iterationStart = safeAdd(elapsed, safeMultiply(childDuration, iteration))
+
+    return resolveIntervalProgressContext(
+      node.children,
+      childIndex,
+      iterationStart,
+      [
+        ...groups,
+        {
+          iteration: iteration + 1,
+          total: repeatCount,
+          startSeconds: iterationStart,
+          durationSeconds: iterationDuration,
+          stepOffset: childIndex,
+          stepCount: Math.max(0, childCount - (skipsThisIteration ? 1 : 0)),
+        },
+      ],
+    )
+  }
+
+  return undefined
+}
+
+function progressPercent(value: number) {
+  if (!Number.isFinite(value)) return 0
+  return Math.min(100, Math.max(0, value * 100))
+}
+
+export function intervalRunProgress(
+  definition: IntervalDefinition,
+  stepIndex: number,
+  remainingMs: number,
+): IntervalRunProgress {
+  const totalSteps = intervalStepCount(definition)
+  const context = resolveIntervalProgressContext(definition.children, stepIndex, 0, [])
+  if (!context) {
+    return {
+      total: stepIndex >= totalSteps && totalSteps > 0 ? 100 : 0,
+      item: stepIndex >= totalSteps && totalSteps > 0 ? 100 : 0,
+    }
+  }
+
+  const itemDuration = intervalStepDurationSeconds(context.step)
+  const itemProgress = itemDuration > 0
+    ? 1 - (Math.max(0, remainingMs) / (itemDuration * 1000))
+    : 0
+  const elapsedThroughItem = safeAdd(
+    context.elapsedBeforeSeconds,
+    itemDuration * Math.min(1, Math.max(0, itemProgress)),
+  )
+  const totalDuration = intervalDuration(definition)
+  const totalProgress = totalDuration > 0
+    ? elapsedThroughItem / totalDuration
+    : (stepIndex + itemProgress) / Math.max(1, totalSteps)
+  const currentRound = context.groups
+    .filter((group) => group.total > 1 && group.stepCount > 1)
+    .at(-1)
+
+  if (!currentRound) {
+    return {
+      total: progressPercent(totalProgress),
+      item: progressPercent(itemProgress),
+    }
+  }
+
+  const roundProgress = currentRound.durationSeconds > 0
+    ? (elapsedThroughItem - currentRound.startSeconds) / currentRound.durationSeconds
+    : (currentRound.stepOffset + itemProgress) / Math.max(1, currentRound.stepCount)
+
+  return {
+    total: progressPercent(totalProgress),
+    item: progressPercent(itemProgress),
+    round: progressPercent(roundProgress),
+    roundIteration: currentRound.iteration,
+    roundTotal: currentRound.total,
+  }
+}
+
 export function validateIntervalDefinition(definition: IntervalDefinition): string[] {
   const errors: string[] = []
   let steps = 0

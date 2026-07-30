@@ -365,6 +365,7 @@ function logout() {
 .page-transition-stage > * {
   min-width: 0;
   grid-area: 1 / 1;
+  align-self: start;
 }
 
 @media (min-width: 960px) {

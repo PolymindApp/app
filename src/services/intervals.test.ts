@@ -7,6 +7,7 @@ import {
   createRuntimeState,
   duplicateIntervalNode,
   intervalDuration,
+  intervalRunProgress,
   intervalStepCount,
   normalizeQuickIntervalSettings,
   quickIntervalDefinition,
@@ -141,6 +142,64 @@ describe('interval definitions', () => {
     expect(step?.step.name).toBe('Set rest')
     expect(step?.groups).toEqual([{ name: 'Sets', iteration: 1, total: 2 }])
     expect(resolveIntervalStep(nestedDefinition(), 15)?.step.name).toBe('Cool down')
+  })
+
+  it('weights total progress by each interval duration', () => {
+    const definition: IntervalDefinition = {
+      version: 1,
+      children: [
+        createIntervalStep('Short', 'prepare', 10),
+        createIntervalStep('Long', 'work', 90),
+      ],
+    }
+
+    expect(intervalRunProgress(definition, 1, 90_000)).toMatchObject({
+      total: 10,
+      item: 0,
+    })
+    const halfwayThroughLongItem = intervalRunProgress(definition, 1, 45_000)
+    expect(halfwayThroughLongItem.total).toBeCloseTo(55)
+    expect(halfwayThroughLongItem.item).toBe(50)
+  })
+
+  it('weights progress within the current repeated round', () => {
+    const rounds = createIntervalGroup('Rounds', 2)
+    rounds.children = [
+      createIntervalStep('Work', 'work', 30),
+      createIntervalStep('Rest', 'rest', 10),
+    ]
+    const definition: IntervalDefinition = { version: 1, children: [rounds] }
+
+    expect(intervalRunProgress(definition, 1, 5_000)).toEqual({
+      total: 43.75,
+      item: 50,
+      round: 87.5,
+      roundIteration: 1,
+      roundTotal: 2,
+    })
+    expect(intervalRunProgress(definition, 2, 15_000)).toEqual({
+      total: 68.75,
+      item: 50,
+      round: 37.5,
+      roundIteration: 2,
+      roundTotal: 2,
+    })
+  })
+
+  it('uses the shortened final round when its last interval is skipped', () => {
+    const rounds = createIntervalGroup('Rounds', 2)
+    const rest = createIntervalStep('Rest', 'rest', 10)
+    rest.skipOnLastRound = true
+    rounds.children = [
+      createIntervalStep('Work', 'work', 30),
+      rest,
+    ]
+    const definition: IntervalDefinition = { version: 1, children: [rounds] }
+
+    expect(intervalRunProgress(definition, 2, 15_000)).toEqual({
+      total: 78.57142857142857,
+      item: 50,
+    })
   })
 
   it('skips only the last step of the final round when selected', () => {

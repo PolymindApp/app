@@ -54,6 +54,6 @@ const model = defineModel<boolean>({ default: false })
   height: 5px;
   margin: 10px auto 0;
   border-radius: 999px;
-  background: rgb(var(--v-theme-on-surface) / .42);
+  background: rgba(var(--v-theme-on-surface), .42);
 }
 </style>

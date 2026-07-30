@@ -5,6 +5,7 @@ import { addDays, addWeeks, format, isSameDay, startOfWeek } from 'date-fns'
 import { storeToRefs } from 'pinia'
 import { useDisplay } from 'vuetify'
 import { useRouter } from 'vue-router'
+import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import TaskCard from '@/components/TaskCard.vue'
 import WeekNavigator from '@/components/WeekNavigator.vue'
 import { toDateKey } from '@/services/schedule'
@@ -360,45 +361,46 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
       </v-card>
     </v-dialog>
 
-    <v-bottom-sheet v-model="reviewSheet">
-      <v-card class="pa-5 safe-bottom" rounded="t-xl">
-        <h2 class="text-h5 font-weight-black mb-5">Resolve open work</h2>
-        <div v-for="item in reviewItems" :key="`${item.task.id}-${item.programStep?.id || ''}`" class="review-row py-3">
-          <div class="flex-grow-1"><strong>{{ item.programStep?.name || item.task.name }}</strong><p class="text-caption muted">Choose how this attempt ends.</p></div>
-          <div class="review-actions">
-            <v-btn
-              size="large"
-              variant="tonal"
-              color="error"
-              prepend-icon="mdi-close-circle-outline"
-              :disabled="busy"
-              @click="resolveReview(item, 'missed')"
-            >
-              Mark missed
-            </v-btn>
-            <v-btn
-              size="large"
-              variant="tonal"
-              prepend-icon="mdi-arrow-right-bold"
-              :disabled="busy"
-              @click="resolveReview(item, 'carried')"
-            >
-              Carry forward
-            </v-btn>
-            <v-btn
-              v-if="item.programStep"
-              size="large"
-              variant="tonal"
-              prepend-icon="mdi-calendar-arrow-right"
-              :disabled="busy"
-              @click="run(() => store.shiftProgram(item))"
-            >
-              Shift program
-            </v-btn>
-          </div>
+    <ActionBottomSheet
+      v-model="reviewSheet"
+      title="Resolve open work"
+      aria-label="Resolve open task actions"
+    >
+      <div v-for="item in reviewItems" :key="`${item.task.id}-${item.programStep?.id || ''}`" class="review-row px-2 py-3">
+        <div class="flex-grow-1"><strong>{{ item.programStep?.name || item.task.name }}</strong><p class="text-caption muted">Choose how this attempt ends.</p></div>
+        <div class="review-actions">
+          <v-btn
+            size="large"
+            variant="tonal"
+            color="error"
+            prepend-icon="mdi-close-circle-outline"
+            :disabled="busy"
+            @click="resolveReview(item, 'missed')"
+          >
+            Mark missed
+          </v-btn>
+          <v-btn
+            size="large"
+            variant="tonal"
+            prepend-icon="mdi-arrow-right-bold"
+            :disabled="busy"
+            @click="resolveReview(item, 'carried')"
+          >
+            Carry forward
+          </v-btn>
+          <v-btn
+            v-if="item.programStep"
+            size="large"
+            variant="tonal"
+            prepend-icon="mdi-calendar-arrow-right"
+            :disabled="busy"
+            @click="run(() => store.shiftProgram(item))"
+          >
+            Shift program
+          </v-btn>
         </div>
-      </v-card>
-    </v-bottom-sheet>
+      </div>
+    </ActionBottomSheet>
   </main>
 </template>
 

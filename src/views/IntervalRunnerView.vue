@@ -14,6 +14,7 @@ import {
   createRuntimeState,
   formatIntervalDuration,
   intervalDuration,
+  intervalRunProgress,
   reconcileIntervalRuntime,
   resolveIntervalStep,
   intervalStepDurationSeconds,
@@ -46,17 +47,23 @@ const current = computed(() => session.value ? resolveIntervalStep(session.value
 const next = computed(() => session.value ? resolveIntervalStep(session.value.definition, session.value.runtime.stepIndex + 1) : undefined)
 const finished = computed(() => session.value?.status === 'completed' || session.value?.status === 'ended')
 const currentConfirmation = computed(() => current.value?.step.kind === 'confirmation')
-const currentDurationMs = computed(() => current.value ? intervalStepDurationSeconds(current.value.step) * 1000 : 0)
 const remainingLabel = computed(() => {
   const totalSeconds = Math.max(0, Math.ceil(displayRemainingMs.value / 1000))
   const minutes = Math.floor(totalSeconds / 60)
   return `${String(minutes).padStart(2, '0')}:${String(totalSeconds % 60).padStart(2, '0')}`
 })
 const progress = computed(() => {
-  if (!current.value || !currentDurationMs.value) return finished.value ? 100 : 0
-  const stepProgress = 1 - (displayRemainingMs.value / currentDurationMs.value)
-  return Math.min(100, ((current.value.index + stepProgress) / current.value.totalSteps) * 100)
+  if (!session.value || !current.value) {
+    return { total: finished.value ? 100 : 0, item: finished.value ? 100 : 0 }
+  }
+  return intervalRunProgress(
+    session.value.definition,
+    current.value.index,
+    displayRemainingMs.value,
+  )
 })
+const showTotalProgress = computed(() => (current.value?.totalSteps || 0) > 1)
+const showRoundProgress = computed(() => progress.value.round !== undefined)
 const elapsedSeconds = computed(() => {
   const item = session.value
   if (!item) return 0
@@ -462,31 +469,59 @@ async function runAgain() {
             </div>
             <h1 class="runner-step">{{ current.step.name }}</h1>
           </div>
-          <div v-if="currentConfirmation" class="confirmation-action">
-            <v-btn
-              color="secondary"
-              size="x-large"
-              prepend-icon="mdi-check-bold"
-              :loading="starting || syncing"
-              :disabled="!isTemplatePreview && session.status !== 'running'"
-              @touchstart.stop
-              @click.stop="isTemplatePreview ? startTemplate() : confirmCurrent()"
-            >
-              {{ isTemplatePreview ? playActionLabel : 'Confirm and continue' }}
-            </v-btn>
-          </div>
-          <div v-else class="timer-ring">
-            <v-progress-circular :model-value="progress" :size="260" :width="12" color="secondary" bg-color="surface-variant">
-              <span
-                :key="timerEffectKey"
-                class="timer-value"
-                :class="{
-                  'timer-value--count': timerEffect === 'count',
-                }"
-              >
-                {{ remainingLabel }}
-              </span>
-            </v-progress-circular>
+          <div class="runner-progress" :class="{ 'runner-progress--confirmation': currentConfirmation }">
+            <div class="progress-rings">
+              <v-progress-circular
+                v-if="showTotalProgress"
+                class="progress-ring progress-ring--total"
+                :model-value="progress.total"
+                :width="7"
+                color="info"
+                bg-color="surface-variant"
+                :aria-label="`Total progress: ${Math.round(progress.total)}%`"
+              />
+              <v-progress-circular
+                v-if="showRoundProgress"
+                class="progress-ring progress-ring--round"
+                :model-value="progress.round"
+                :width="7"
+                color="warning"
+                bg-color="surface-variant"
+                :aria-label="`Current round progress: ${Math.round(progress.round || 0)}%`"
+              />
+              <v-progress-circular
+                class="progress-ring progress-ring--item"
+                :model-value="progress.item"
+                :width="12"
+                color="secondary"
+                bg-color="surface-variant"
+                :aria-label="`Current item progress: ${Math.round(progress.item)}%`"
+              />
+              <div class="progress-rings__content">
+                <v-btn
+                  v-if="currentConfirmation"
+                  color="secondary"
+                  size="large"
+                  prepend-icon="mdi-check-bold"
+                  :loading="starting || syncing"
+                  :disabled="!isTemplatePreview && session.status !== 'running'"
+                  @touchstart.stop
+                  @click.stop="isTemplatePreview ? startTemplate() : confirmCurrent()"
+                >
+                  {{ isTemplatePreview ? playActionLabel : 'Confirm and continue' }}
+                </v-btn>
+                <span
+                  v-else
+                  :key="timerEffectKey"
+                  class="timer-value"
+                  :class="{
+                    'timer-value--count': timerEffect === 'count',
+                  }"
+                >
+                  {{ remainingLabel }}
+                </span>
+              </div>
+            </div>
           </div>
           <p class="next-copy">{{ next ? `Next: ${next.step.name}` : 'Final interval' }}</p>
         </section>
@@ -601,9 +636,47 @@ async function runAgain() {
 .group-breadcrumb { display: flex; flex-wrap: wrap; justify-content: center; gap: .35rem; margin-bottom: 1.25rem; }
 .group-breadcrumb span { padding: 4px 8px; border-radius: 999px; background: rgb(var(--v-theme-surface-variant)); color: rgb(var(--v-theme-on-surface) / .7); font-size: .65rem; }
 .runner-step { max-width: 640px; margin-top: .5rem; font-size: clamp(2rem, 10vw, 4.5rem); font-weight: 900; line-height: 1; }
-.timer-ring { margin: 2.25rem 0 1.5rem; }
-.confirmation-action { display: grid; width: min(100%, 22rem); min-height: 260px; margin: 2.25rem 0 1.5rem; place-items: center; }
-.confirmation-action :deep(.v-btn) { width: 100%; min-height: 64px; }
+.runner-progress {
+  display: flex;
+  width: 100%;
+  margin: 2.25rem 0 1.5rem;
+  flex-direction: column;
+  align-items: center;
+}
+.progress-rings {
+  position: relative;
+  width: min(292px, calc(100vw - 2rem));
+  aspect-ratio: 1;
+}
+.progress-ring {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+.progress-ring--total {
+  width: 100% !important;
+  height: 100% !important;
+}
+.progress-ring--round {
+  width: calc(100% - 16px) !important;
+  height: calc(100% - 16px) !important;
+}
+.progress-ring--item {
+  width: calc(100% - 32px) !important;
+  height: calc(100% - 32px) !important;
+}
+.progress-rings__content {
+  position: absolute;
+  inset: 40px;
+  display: grid;
+  place-items: center;
+}
+.runner-progress--confirmation .progress-rings__content :deep(.v-btn) {
+  width: min(100%, 13rem);
+  min-height: 64px;
+  white-space: normal;
+}
 .timer-value { display: inline-block; font-family: "Arial Narrow", Impact, sans-serif; font-size: 4rem; font-weight: 900; letter-spacing: -.04em; transform-origin: center; }
 .timer-value--count { color: rgb(var(--v-theme-warning)); animation: timer-value-pulse 560ms cubic-bezier(.22, 1, .36, 1); }
 @keyframes timer-value-pulse {
@@ -733,54 +806,42 @@ async function runAgain() {
     line-height: .96;
   }
 
-  .timer-ring {
-    --timer-ring-inset: clamp(2rem, 8dvh, 4rem);
-    display: grid;
+  .runner-progress {
+    --runner-progress-inset: clamp(1rem, 5dvh, 2.5rem);
+    display: flex;
     min-width: 0;
     min-height: 0;
     margin: 0;
-    padding: var(--timer-ring-inset);
+    padding: var(--runner-progress-inset);
     grid-column: 1;
     grid-row: 1 / 4;
-    place-items: center;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
     overflow: visible;
     border-radius: 0;
     background: transparent;
   }
 
-  .confirmation-action {
-    display: grid;
-    width: 100%;
-    min-height: 0;
-    margin: 0;
-    padding: clamp(1rem, 6dvh, 3rem);
-    grid-column: 1;
-    grid-row: 1 / 4;
-    place-items: center;
-  }
-
-  .confirmation-action :deep(.v-btn) {
-    width: min(100%, 22rem);
-    min-height: clamp(3.5rem, 18dvh, 5rem);
-  }
-
-  .timer-ring :deep(.v-progress-circular) {
+  .progress-rings {
     width: min(
       100%,
       calc(
         100dvh
         - max(1rem, env(safe-area-inset-top))
         - max(1rem, env(safe-area-inset-bottom))
-        - var(--timer-ring-inset)
-        - var(--timer-ring-inset)
+        - var(--runner-progress-inset)
+        - var(--runner-progress-inset)
       )
-    ) !important;
-    height: auto !important;
-    aspect-ratio: 1;
+    );
   }
 
   .timer-value {
     font-size: clamp(3rem, 18dvh, 6rem);
+  }
+
+  .runner-progress--confirmation .progress-rings__content :deep(.v-btn) {
+    min-height: clamp(3.5rem, 18dvh, 5rem);
   }
 
   .next-copy {
