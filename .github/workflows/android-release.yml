@@ -16,7 +16,7 @@ concurrency:
 jobs:
   build:
     name: Build signed APK
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
 
     steps:
@@ -44,8 +44,16 @@ jobs:
             android/**/*.gradle
             android/gradle/wrapper/gradle-wrapper.properties
 
-      - name: Install Android SDK 36
-        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+      - name: Verify Android SDK 36
+        run: |
+          if [[ ! -d "$ANDROID_HOME/platforms/android-36" ]]; then
+            echo "Android SDK platform 36 is missing from the runner." >&2
+            exit 1
+          fi
+          if [[ ! -d "$ANDROID_HOME/build-tools/36.0.0" ]]; then
+            echo "Android SDK build-tools 36.0.0 are missing from the runner." >&2
+            exit 1
+          fi
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
