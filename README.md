@@ -8,7 +8,7 @@ A mobile-first personal management app for tasks, plans, habits, workouts, and p
 - pnpm 11+
 - PHP 8.1+ with PDO_SQLITE
 - Composer 2
-- A Mom SQLite database initialized from `server/schema.sql`
+- A writable Mom SQLite database
 - Android Studio 2025.2.1+ and an Android SDK for Android builds
 
 ## Start locally
@@ -26,8 +26,11 @@ Open `http://localhost:5173`. Vite proxies `/api` to the PHP server at `http://1
 The database is intentionally ignored by Git. For a new empty installation only:
 
 ```bash
-sqlite3 private/data.db < server/schema.sql
+sqlite3 private/data.db 'VACUUM;'
+pnpm api:migrate
 ```
+
+Every API startup also applies pending migrations automatically. The explicit command is useful for checking an upgrade before serving requests. `server/schema.sql` is a readable snapshot of the current schema, not the upgrade mechanism.
 
 `pnpm api:serve` uses a local-development signing secret when no secret or local configuration is supplied. That fallback is bound to `127.0.0.1` and must never be used for deployment.
 
@@ -64,7 +67,7 @@ composer install --no-dev --optimize-autoloader
 pnpm build:prod
 ```
 
-For the prepared `mom.coulombe.dev` deployment, this loads `.env.prod` and embeds `https://mom.coulombe.dev/server` as the browser API URL. Upload the contents of `dist` as the web application, then upload the `server` and Composer-generated `vendor` directories. The generated `dist/.htaccess` routes `/server/*` to the protected PHP front controller without exposing `/public` in the URL.
+For the prepared `mom.coulombe.dev` deployment, this loads `.env.prod` and embeds `https://mom.coulombe.dev/server` as the browser API URL. Upload the contents of `dist` as the web application, then upload the `server` and Composer-generated `vendor` directories. Back up the database and run `php server/migrate.php` before sending traffic to the updated API. The generated `dist/.htaccess` routes `/server/*` to the protected PHP front controller without exposing `/public` in the URL.
 
 On the host, place a copy of `.env.prod` named `.env` at the project root because the PHP runtime reads `.env`. Prefer keeping both environment files and `private` outside the public document root. When shared hosting requires them at the deployment root, the included Apache rules deny browser access to `.env`, `private`, and the server implementation. The PHP process must be able to read the root `.env` and read/write `private/data.db`.
 
@@ -72,6 +75,7 @@ On the host, place a copy of `.env.prod` named `.env` at the project root becaus
 
 - `pnpm dev` — run the Vue client
 - `pnpm api:serve` — run the PHP API
+- `pnpm api:migrate` — apply pending SQLite migrations and report the current version
 - `pnpm dev:all` — run the Vue client and PHP API
 - `pnpm typecheck` — validate TypeScript and Vue templates
 - `pnpm test` — run unit tests

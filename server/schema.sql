@@ -183,4 +183,11 @@ CREATE TABLE mom_passkeys (
 
 CREATE INDEX idx_mom_passkeys_user ON mom_passkeys (user_id);
 
+CREATE TABLE mom_schema_migrations (
+    version TEXT PRIMARY KEY NOT NULL,
+    name TEXT NOT NULL,
+    checksum TEXT NOT NULL,
+    applied_at TEXT NOT NULL
+);
+
 COMMIT;

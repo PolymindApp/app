@@ -10,6 +10,7 @@ use Mom\Api\Database;
 require dirname(__DIR__, 2) . '/vendor/autoload.php';
 require dirname(__DIR__) . '/src/ApiException.php';
 require dirname(__DIR__) . '/src/Config.php';
+require dirname(__DIR__) . '/src/MigrationRunner.php';
 require dirname(__DIR__) . '/src/Database.php';
 require dirname(__DIR__) . '/src/Schema.php';
 require dirname(__DIR__) . '/src/Api.php';

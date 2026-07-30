@@ -55,6 +55,12 @@ api_url="http://127.0.0.1:$test_port"
 suffix="$(php -r 'echo bin2hex(random_bytes(5));')"
 password="correct-horse-battery"
 
+migration_count="$(sqlite3 "$test_db" 'SELECT COUNT(*) FROM mom_schema_migrations;')"
+[[ "$migration_count" == 3 ]] || {
+  echo "The API did not apply the complete database migration sequence." >&2
+  exit 1
+}
+
 same_origin_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
   -H "Origin: http://127.0.0.1:$test_port" \
   "$api_url/health")"

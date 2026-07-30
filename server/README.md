@@ -61,10 +61,41 @@ chmod 600 private/data.db
 For a new installation, create the database with:
 
 ```bash
-sqlite3 private/data.db < server/schema.sql
+sqlite3 private/data.db 'VACUUM;'
+php server/migrate.php
 ```
 
-On startup, the API checks for the expected Mom tables and creates its rate-limit, passkey-credential, and one-time-challenge support tables when necessary.
+## Database migrations
+
+The API applies pending migrations automatically before handling a request. For deployments, run them explicitly after uploading the new server code and before directing traffic to it:
+
+```bash
+php server/migrate.php
+```
+
+Applied versions are stored in `mom_schema_migrations` with the migration filename checksum and application time. All pending migrations run inside one SQLite `BEGIN IMMEDIATE` transaction, so concurrent PHP requests cannot apply the same migration and a failed batch is rolled back.
+
+The reconstructed PHP-era history is:
+
+| Version | Change |
+| --- | --- |
+| `202607290001` | Baseline schema used when the standalone PHP server replaced the previous backend |
+| `202607290002` | API rate-limit storage |
+| `202607290003` | Android passkey credentials and one-time challenges |
+
+Existing PHP databases are safely baselined because these migrations use `IF NOT EXISTS`; application rows are not recreated or deleted. The schema is validated after migration, including required columns.
+
+Migration files in `server/migrations` are immutable after deployment. Any later schema or data change must be a new file named with the next 12-digit version and a descriptive suffix. Editing or removing an applied migration causes startup to fail instead of silently accepting schema drift.
+
+Recommended deployment order:
+
+1. Create and verify an online SQLite backup.
+2. Upload the new `server`, `vendor`, and migration files.
+3. Confirm `.env` points to the intended database.
+4. Run `php server/migrate.php`.
+5. Verify `/health`, then deploy or enable the client.
+
+If the hosting provider has no CLI access, the first API request performs step 4 automatically. Keep the backup: migrations are forward-only and do not perform automatic rollbacks after a successful deployment.
 
 ## Apache/shared hosting
 

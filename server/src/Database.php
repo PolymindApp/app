@@ -10,8 +10,9 @@ use PDOException;
 final class Database
 {
     public readonly PDO $pdo;
+    public readonly array $migrationsApplied;
 
-    public function __construct(string $path)
+    public function __construct(string $path, ?string $migrationDirectory = null)
     {
         try {
             $this->pdo = new PDO('sqlite:' . $path, null, null, [
@@ -21,79 +22,88 @@ final class Database
             ]);
             $this->pdo->exec('PRAGMA busy_timeout = 5000');
             $this->pdo->exec('PRAGMA foreign_keys = ON');
-            $this->ensureSupportTables();
+            $this->migrationsApplied = (new MigrationRunner(
+                $this->pdo,
+                $migrationDirectory ?? dirname(__DIR__) . '/migrations',
+            ))->migrate();
             $this->assertCompatibleSchema();
         } catch (PDOException $exception) {
             throw new ApiException(500, 'Could not open the application database.', [], $exception);
         }
     }
 
-    private function ensureSupportTables(): void
-    {
-        $this->pdo->exec(
-            'CREATE TABLE IF NOT EXISTS mom_rate_limits (
-                rate_key TEXT PRIMARY KEY NOT NULL,
-                window_start INTEGER NOT NULL,
-                hits INTEGER NOT NULL
-            )',
-        );
-        $this->pdo->exec(
-            "CREATE TABLE IF NOT EXISTS mom_passkey_challenges (
-                id TEXT PRIMARY KEY NOT NULL,
-                purpose TEXT NOT NULL CHECK (purpose IN ('register', 'login')),
-                user_id TEXT,
-                user_handle TEXT,
-                challenge BLOB NOT NULL,
-                expires_at INTEGER NOT NULL,
-                created_at INTEGER NOT NULL
-            )",
-        );
-        $this->pdo->exec(
-            'CREATE INDEX IF NOT EXISTS idx_mom_passkey_challenges_expiry
-             ON mom_passkey_challenges (expires_at)',
-        );
-        $this->pdo->exec(
-            'CREATE TABLE IF NOT EXISTS mom_passkeys (
-                credential_id TEXT PRIMARY KEY NOT NULL,
-                user_id TEXT NOT NULL,
-                user_handle TEXT NOT NULL,
-                public_key TEXT NOT NULL,
-                signature_counter INTEGER,
-                transports TEXT NOT NULL DEFAULT \'[]\',
-                backup_eligible INTEGER NOT NULL DEFAULT 0,
-                backed_up INTEGER NOT NULL DEFAULT 0,
-                created TEXT NOT NULL,
-                last_used TEXT NOT NULL DEFAULT \'\',
-                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-            )',
-        );
-        $this->pdo->exec(
-            'CREATE INDEX IF NOT EXISTS idx_mom_passkeys_user
-             ON mom_passkeys (user_id)',
-        );
-    }
-
     private function assertCompatibleSchema(): void
     {
         $required = [
-            'users',
-            'tags',
-            'tasks',
-            'program_steps',
-            'occurrences',
-            'entries',
-            'interval_templates',
-            'interval_sessions',
+            'users' => [
+                'id', 'email', 'email_visibility', 'verified', 'name', 'avatar',
+                'password', 'token_key', 'timezone', 'created', 'updated',
+            ],
+            'tags' => ['id', 'owner', 'name'],
+            'tasks' => [
+                'id', 'owner', 'name', 'description', 'type', 'tags', 'mandatory',
+                'review_when_missed', 'active', 'start_date', 'end_date',
+                'recurrence_type', 'weekdays', 'interval_weeks', 'target_value',
+                'target_operator', 'unit', 'custom_unit', 'goal_period',
+                'quick_amounts', 'cycle_length', 'program_repeat', 'program_strict',
+                'sort_order', 'color',
+            ],
+            'program_steps' => [
+                'id', 'owner', 'task', 'name', 'description', 'sort_order',
+                'cycle_days', 'completion_type', 'target_value', 'target_operator',
+                'unit', 'custom_unit', 'quick_amounts', 'active',
+            ],
+            'occurrences' => [
+                'id', 'owner', 'task', 'program_step', 'scheduled_date', 'status',
+                'sealed', 'completed_at', 'snapshot_name', 'snapshot_target',
+                'snapshot_unit',
+            ],
+            'entries' => [
+                'id', 'owner', 'task', 'occurrence', 'program_step', 'entry_date',
+                'value', 'kind', 'unit', 'note',
+            ],
+            'interval_templates' => [
+                'id', 'owner', 'name', 'description', 'color', 'definition',
+                'sound_enabled', 'vibration_enabled', 'sound', 'sort_order',
+            ],
+            'interval_sessions' => [
+                'id', 'owner', 'template', 'source', 'status', 'snapshot_name',
+                'definition_snapshot', 'cue_snapshot', 'started_at', 'ended_at',
+                'planned_seconds', 'elapsed_seconds', 'runtime_state',
+            ],
+            'mom_rate_limits' => ['rate_key', 'window_start', 'hits'],
+            'mom_passkey_challenges' => [
+                'id', 'purpose', 'user_id', 'user_handle', 'challenge',
+                'expires_at', 'created_at',
+            ],
+            'mom_passkeys' => [
+                'credential_id', 'user_id', 'user_handle', 'public_key',
+                'signature_counter', 'transports', 'backup_eligible', 'backed_up',
+                'created', 'last_used',
+            ],
+            'mom_schema_migrations' => ['version', 'name', 'checksum', 'applied_at'],
         ];
-        $placeholders = implode(',', array_fill(0, count($required), '?'));
+        $tableNames = array_keys($required);
+        $placeholders = implode(',', array_fill(0, count($tableNames), '?'));
         $statement = $this->pdo->prepare(
             "SELECT name FROM sqlite_schema WHERE type = 'table' AND name IN ({$placeholders})",
         );
-        $statement->execute($required);
+        $statement->execute($tableNames);
         $found = $statement->fetchAll(PDO::FETCH_COLUMN);
-        $missing = array_values(array_diff($required, $found));
+        $missing = array_values(array_diff($tableNames, $found));
         if ($missing !== []) {
             throw new ApiException(500, 'The SQLite database does not have the expected Mom schema.');
+        }
+
+        foreach ($required as $table => $columns) {
+            $statement = $this->pdo->query("PRAGMA table_info({$table})");
+            $foundColumns = $statement->fetchAll(PDO::FETCH_COLUMN, 1);
+            if (array_diff($columns, $foundColumns) !== []) {
+                throw new ApiException(
+                    500,
+                    "The SQLite {$table} table does not have the expected Mom schema.",
+                );
+            }
         }
     }
 }
