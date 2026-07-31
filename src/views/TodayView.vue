@@ -358,7 +358,7 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
     <v-dialog
       v-model="exactDialog"
       max-width="440"
-      :transition="smAndUp ? 'dialog-transition' : 'dialog-bottom-transition'"
+      :transition="smAndUp ? 'dialog-transition' : 'scale-transition'"
     >
       <v-card class="pa-5">
         <div class="d-flex align-center justify-space-between mb-5">

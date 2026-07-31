@@ -200,6 +200,32 @@ body.long-press-drag-active {
   ) !important;
 }
 
+/* Vuetify snackbars are teleported outside AppShell, so they do not inherit
+   the custom bottom navigation or native system-bar spacing. */
+.v-snackbar--bottom {
+  padding-bottom: calc(
+    var(--v-layout-bottom, 0px)
+    + max(
+      env(safe-area-inset-bottom, 0px),
+      var(--safe-area-inset-bottom, 0px)
+    )
+  ) !important;
+}
+
+@media (max-width: 959.98px) {
+  .v-snackbar--bottom {
+    padding-bottom: calc(
+      var(--v-layout-bottom, 0px)
+      + 72px
+      + max(
+        env(safe-area-inset-bottom, 0px),
+        var(--safe-area-inset-bottom, 0px)
+      )
+      + .75rem
+    ) !important;
+  }
+}
+
 .section-heading {
   display: flex;
   align-items: center;
