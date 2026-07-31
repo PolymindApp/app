@@ -301,6 +301,9 @@ export const useTaskStore = defineStore('tasks', () => {
   }
 
   async function saveTask(draft: TaskDraft) {
+    const sortOrder = draft.id
+      ? draft.sortOrder
+      : tasks.value.reduce((highest, task) => Math.max(highest, task.sortOrder), -1) + 1
     const payload = {
       owner: api.authStore.record!.id,
       name: draft.name,
@@ -324,7 +327,7 @@ export const useTaskStore = defineStore('tasks', () => {
       cycle_length: draft.cycleLength || 0,
       program_repeat: draft.programRepeat ?? true,
       program_strict: draft.programStrict ?? false,
-      sort_order: draft.sortOrder,
+      sort_order: sortOrder,
     }
     const record = draft.id
       ? await api.collection('tasks').update(draft.id, payload)
@@ -369,6 +372,60 @@ export const useTaskStore = defineStore('tasks', () => {
     Object.assign(task, mapTask(record))
   }
 
+  function reorderTasksInMemory(orderedIds: string[]) {
+    const uniqueIds = [...new Set(orderedIds)]
+    const orderedIdSet = new Set(uniqueIds)
+    const orderedTasks = uniqueIds
+      .map((id) => tasks.value.find((task) => task.id === id))
+      .filter((task): task is Task => Boolean(task))
+
+    if (orderedTasks.length < 2) return
+
+    let orderedIndex = 0
+    tasks.value = tasks.value.map((task) =>
+      orderedIdSet.has(task.id)
+        ? orderedTasks[orderedIndex++] ?? task
+        : task,
+    )
+    tasks.value.forEach((task, index) => {
+      task.sortOrder = index
+    })
+  }
+
+  async function reorderTasks(orderedIds: string[]) {
+    const previousTasks = tasks.value.map((task) => ({ ...task }))
+    const previousSortOrders = new Map(
+      previousTasks.map((task) => [task.id, task.sortOrder]),
+    )
+    reorderTasksInMemory(orderedIds)
+    const changedTasks = tasks.value.filter(
+      (task) => previousSortOrders.get(task.id) !== task.sortOrder,
+    )
+    if (!changedTasks.length) return
+
+    error.value = ''
+    try {
+      await Promise.all(
+        changedTasks.map((task) =>
+          api.collection('tasks').update(task.id, { sort_order: task.sortOrder }),
+        ),
+      )
+    } catch (cause) {
+      tasks.value = previousTasks
+      await Promise.allSettled(
+        changedTasks.map((task) =>
+          api.collection('tasks').update(task.id, {
+            sort_order: previousSortOrders.get(task.id),
+          }),
+        ),
+      )
+      error.value = cause instanceof Error
+        ? cause.message
+        : 'Could not save the task order.'
+      throw cause
+    }
+  }
+
   async function deleteTask(taskId: string) {
     await api.collection('tasks').delete(taskId)
     tasks.value = tasks.value.filter((task) => task.id !== taskId)
@@ -405,6 +462,7 @@ export const useTaskStore = defineStore('tasks', () => {
     shiftProgram,
     saveTask,
     toggleTaskActive,
+    reorderTasks,
     deleteTask,
   }
 })

@@ -6,6 +6,7 @@ import { useRouter } from 'vue-router'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import { nextScheduledDates } from '@/services/schedule'
 import { useTaskStore } from '@/stores/tasks'
+import type { LongPressDragResult } from '@/directives/longPressDrag'
 import type { Task, TaskType } from '@/types/domain'
 
 const store = useTaskStore()
@@ -15,6 +16,7 @@ const filter = ref<'active' | 'paused'>('active')
 const pendingStatusTask = ref<Task>()
 const statusDialog = ref(false)
 const updatingStatus = ref(false)
+const reorderingTasks = ref(false)
 const statusDirection = ref<'forward' | 'back'>('forward')
 
 watch(filter, (status, previousStatus) => {
@@ -52,6 +54,17 @@ function nextLabel(task: Task) {
 function requestStatusChange(task: Task) {
   pendingStatusTask.value = task
   statusDialog.value = true
+}
+
+async function reorderVisibleTasks(result: LongPressDragResult) {
+  reorderingTasks.value = true
+  try {
+    await store.reorderTasks(result.orderedIds)
+  } catch {
+    // The store restores the previous order and exposes the save error.
+  } finally {
+    reorderingTasks.value = false
+  }
 }
 
 async function confirmStatusChange() {
@@ -97,6 +110,12 @@ async function confirmStatusChange() {
             <v-card
               v-for="task in visibleTasks"
               :key="task.id"
+              v-long-press-drag="{
+                id: task.id,
+                group: `manage-tasks-${filter}`,
+                disabled: visibleTasks.length < 2 || updatingStatus || reorderingTasks,
+                onDrop: reorderVisibleTasks,
+              }"
               class="manage-card surface-card pa-4"
               @click="router.push(`/tasks/${task.id}`)"
             >
@@ -255,11 +274,10 @@ async function confirmStatusChange() {
 
 .manage-card {
   cursor: pointer;
-  transition: transform .18s ease, box-shadow .18s ease;
+  transition: box-shadow .18s ease;
 }
 
 .manage-card:hover {
-  transform: translateY(-2px);
   box-shadow: 0 16px 34px rgba(0, 0, 0, .32) !important;
 }
 

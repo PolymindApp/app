@@ -157,15 +157,42 @@ export const useIntervalStore = defineStore('intervals', () => {
   }
 
   async function reorderTemplates(ordered: IntervalTemplate[]) {
+    const previousTemplates = templates.value.map((template) => ({ ...template }))
+    const previousSortOrders = new Map(
+      previousTemplates.map((template) => [template.id, template.sortOrder]),
+    )
     templates.value = ordered
     templates.value.forEach((template, index) => {
       template.sortOrder = index
     })
-    await Promise.all(
-      templates.value.map((template) =>
-        api.collection('interval_templates').update(template.id, { sort_order: template.sortOrder }),
-      ),
+    const changedTemplates = templates.value.filter(
+      (template) => previousSortOrders.get(template.id) !== template.sortOrder,
     )
+    if (!changedTemplates.length) return
+
+    error.value = ''
+    try {
+      await Promise.all(
+        changedTemplates.map((template) =>
+          api.collection('interval_templates').update(template.id, {
+            sort_order: template.sortOrder,
+          }),
+        ),
+      )
+    } catch (cause) {
+      templates.value = previousTemplates
+      await Promise.allSettled(
+        changedTemplates.map((template) =>
+          api.collection('interval_templates').update(template.id, {
+            sort_order: previousSortOrders.get(template.id),
+          }),
+        ),
+      )
+      error.value = cause instanceof Error
+        ? cause.message
+        : 'Could not save the interval order.'
+      throw cause
+    }
   }
 
   async function startSession(input: {

@@ -7,6 +7,7 @@ import {
   endSelectionFeedback,
   startSelectionFeedback,
 } from '@/services/haptics'
+import type { LongPressDragResult } from '@/directives/longPressDrag'
 import type { IntervalGroupNode, IntervalNode, IntervalStepKind } from '@/types/domain'
 
 const props = defineProps<{
@@ -17,6 +18,8 @@ const props = defineProps<{
   canIndent: boolean
   canOutdent: boolean
   canSkipOnLastRound: boolean
+  parentId?: string
+  expandedNodeId?: string
   actions: {
     add: (parentId: string, type: 'step' | 'group') => void
     move: (id: string, direction: -1 | 1) => void
@@ -25,6 +28,8 @@ const props = defineProps<{
     duplicate: (id: string) => void
     remove: (id: string) => void
     open: (id: string) => void
+    toggle: (id: string) => void
+    reorder: (result: LongPressDragResult) => void
   }
 }>()
 
@@ -56,6 +61,11 @@ const presentation = computed(() =>
       ? kindPresentation[props.node.kind]
       : emptyKindPresentation,
 )
+const isExpanded = computed(() => props.expandedNodeId === props.node.id)
+const nodeTitle = computed(() =>
+  props.node.name || (props.node.type === 'group' ? 'Untitled group' : 'Untitled interval'),
+)
+const editorPanelId = computed(() => `interval-node-panel-${props.node.id}`)
 
 const repeatCount = computed({
   get: () => props.node.type === 'group'
@@ -91,24 +101,47 @@ function selectKind(kind: IntervalStepKind) {
 
 <template>
   <v-card
+    v-long-press-drag="{
+      id: node.id,
+      group: `interval-sequence-${parentId || 'root'}`,
+      handle: '.interval-node__drag-handle',
+      disabled: siblingCount < 2,
+      onDrop: actions.reorder,
+    }"
     class="interval-node surface-card pa-4"
     :class="[
       `interval-node--${node.type}`,
-      { 'interval-node--nested': depth > 0, 'interval-node--deep': depth > 1 },
+      {
+        'interval-node--nested': depth > 0,
+        'interval-node--deep': depth > 1,
+        'interval-node--expanded': isExpanded,
+        'interval-node--draggable': siblingCount > 1,
+      },
     ]"
     :style="{ '--node-accent': presentation.color }"
     :data-interval-node-id="node.id"
   >
     <div class="interval-node__header">
-      <div class="d-flex align-center ga-2 min-width-0">
+      <button
+        v-if="node.type === 'step'"
+        type="button"
+        class="interval-node__toggle interval-node__drag-handle"
+        :aria-expanded="isExpanded"
+        :aria-controls="editorPanelId"
+        :aria-label="`${isExpanded ? 'Collapse' : 'Expand'} ${nodeTitle}`"
+        @click="actions.toggle(node.id)"
+      >
         <span class="node-index">{{ index + 1 }}</span>
-        <div class="min-width-0">
-          <strong class="text-body-2">{{ node.name || (node.type === 'group' ? 'Untitled group' : 'Untitled interval') }}</strong>
-          <p class="node-meta">
-            <v-icon :icon="presentation.icon" size="13" />
-            <span>{{ node.type === 'group' ? `${node.repeatCount} repetitions` : node.kind || 'Choose type' }}</span>
-          </p>
-        </div>
+        <strong class="node-title text-body-2 text-truncate">{{ nodeTitle }}</strong>
+        <v-icon
+          class="node-toggle-icon"
+          :icon="isExpanded ? 'mdi-chevron-up' : 'mdi-chevron-down'"
+          size="20"
+        />
+      </button>
+      <div v-else class="interval-node__group-heading interval-node__drag-handle">
+        <span class="node-index">{{ index + 1 }}</span>
+        <strong class="node-title text-body-2 text-truncate">{{ nodeTitle }}</strong>
       </div>
       <v-btn
         v-if="smAndDown"
@@ -134,88 +167,96 @@ function selectKind(kind: IntervalStepKind) {
       </v-menu>
     </div>
 
-    <div v-if="node.type === 'step'" class="node-fields mt-4">
-      <v-text-field v-model="node.name" label="Interval name" />
-      <fieldset class="kind-field">
-        <legend>Type</legend>
-        <div class="kind-selector-scroll">
-          <div class="kind-selector" role="radiogroup" aria-label="Interval type">
-            <button
-              v-for="option in kinds"
-              :key="option.value"
-              type="button"
-              class="kind-selector__button"
-              :class="{ 'kind-selector__button--selected': node.kind === option.value }"
-              :style="{ '--kind-color': kindPresentation[option.value].color }"
-              role="radio"
-              :aria-checked="node.kind === option.value"
-              @click="selectKind(option.value)"
-            >
-              <v-icon :icon="kindPresentation[option.value].icon" size="18" />
-              <span>{{ option.title }}</span>
-            </button>
+    <v-expand-transition v-if="node.type === 'step'">
+      <div v-show="isExpanded" :id="editorPanelId" class="node-fields mt-4">
+        <v-text-field v-model="node.name" label="Interval name" />
+        <fieldset class="kind-field">
+          <legend>Type</legend>
+          <div class="kind-selector-scroll">
+            <div class="kind-selector" role="radiogroup" aria-label="Interval type">
+              <button
+                v-for="option in kinds"
+                :key="option.value"
+                type="button"
+                class="kind-selector__button"
+                :class="{ 'kind-selector__button--selected': node.kind === option.value }"
+                :style="{ '--kind-color': kindPresentation[option.value].color }"
+                role="radio"
+                :aria-checked="node.kind === option.value"
+                @click="selectKind(option.value)"
+              >
+                <v-icon :icon="kindPresentation[option.value].icon" size="18" />
+                <span>{{ option.title }}</span>
+              </button>
+            </div>
           </div>
-        </div>
-      </fieldset>
-      <fieldset v-if="node.kind !== 'confirmation'" class="duration-wheel">
-        <legend>Duration</legend>
-        <TimerWheelPicker v-model="durationSeconds" />
-      </fieldset>
-      <v-checkbox
-        v-if="canSkipOnLastRound"
-        v-model="node.skipOnLastRound"
-        label="Skip this step on the final round"
-        color="secondary"
-        density="comfortable"
-        hide-details
-      />
-    </div>
-
-    <template v-else>
-      <div class="node-fields mt-4">
-        <v-text-field v-model="node.name" label="Group name" />
-        <div class="repeat-control">
-          <div class="repeat-control__heading">
-            <span>Repeat</span>
-            <strong>{{ repeatCount }}</strong>
-          </div>
-          <v-slider
-            v-model="repeatCount"
-            :min="1"
-            :max="15"
-            :step="1"
-            color="secondary"
-            hide-details
-            aria-label="Repeat count"
-            @start="startSelectionFeedback"
-            @update:model-value="changeSelectionFeedback"
-            @end="endSelectionFeedback"
-          />
-          <div class="repeat-control__range" aria-hidden="true">
-            <span>1</span>
-            <span>15</span>
-          </div>
-        </div>
-      </div>
-      <div class="group-actions mt-4">
-        <v-btn size="small" variant="tonal" prepend-icon="mdi-timer-plus-outline" @click="actions.add(node.id, 'step')">Add interval</v-btn>
-        <v-btn size="small" variant="tonal" prepend-icon="mdi-folder-plus-outline" @click="actions.add(node.id, 'group')">Add group</v-btn>
-      </div>
-      <div v-if="node.children.length" class="nested-nodes mt-4">
-        <IntervalNodeEditor
-          v-for="(child, childIndex) in node.children"
-          :key="child.id"
-          :node="child"
-          :index="childIndex"
-          :sibling-count="node.children.length"
-          :depth="depth + 1"
-          :can-indent="childIndex > 0 && node.children[childIndex - 1]?.type === 'group'"
-          :can-outdent="true"
-          :can-skip-on-last-round="node.repeatCount > 1 && childIndex === node.children.length - 1 && child.type === 'step'"
-          :actions="actions"
+        </fieldset>
+        <fieldset v-if="node.kind !== 'confirmation'" class="duration-wheel">
+          <legend>Duration</legend>
+          <TimerWheelPicker v-model="durationSeconds" />
+        </fieldset>
+        <v-checkbox
+          v-if="canSkipOnLastRound"
+          v-model="node.skipOnLastRound"
+          label="Skip this step on the final round"
+          color="secondary"
+          density="comfortable"
+          hide-details
         />
       </div>
-      <p v-else class="empty-group muted mt-4">Add an interval or nested group.</p>
+    </v-expand-transition>
+
+    <template v-else>
+      <div :id="editorPanelId" class="group-branch">
+        <div class="group-editor-panel">
+          <div class="node-fields mt-4">
+            <v-text-field v-model="node.name" label="Group name" />
+            <div class="repeat-control">
+              <div class="repeat-control__heading">
+                <span>Repeat</span>
+                <strong>{{ repeatCount }}</strong>
+              </div>
+              <v-slider
+                v-model="repeatCount"
+                :min="1"
+                :max="15"
+                :step="1"
+                color="secondary"
+                hide-details
+                aria-label="Repeat count"
+                @start="startSelectionFeedback"
+                @update:model-value="changeSelectionFeedback"
+                @end="endSelectionFeedback"
+              />
+              <div class="repeat-control__range" aria-hidden="true">
+                <span>1</span>
+                <span>15</span>
+              </div>
+            </div>
+          </div>
+          <div class="group-actions mt-4">
+            <v-btn size="small" variant="tonal" prepend-icon="mdi-timer-plus-outline" @click="actions.add(node.id, 'step')">Add interval</v-btn>
+            <v-btn size="small" variant="tonal" prepend-icon="mdi-folder-plus-outline" @click="actions.add(node.id, 'group')">Add group</v-btn>
+          </div>
+          <p v-if="!node.children.length" class="empty-group muted mt-4">Add an interval or nested group.</p>
+        </div>
+        <div v-if="node.children.length" class="nested-nodes mt-4">
+          <IntervalNodeEditor
+            v-for="(child, childIndex) in node.children"
+            :key="child.id"
+            :node="child"
+            :index="childIndex"
+            :sibling-count="node.children.length"
+            :depth="depth + 1"
+            :can-indent="childIndex > 0 && node.children[childIndex - 1]?.type === 'group'"
+            :can-outdent="true"
+            :can-skip-on-last-round="node.repeatCount > 1 && childIndex === node.children.length - 1 && child.type === 'step'"
+            :parent-id="node.id"
+            :expanded-node-id="expandedNodeId"
+            :actions="actions"
+          />
+        </div>
+      </div>
     </template>
   </v-card>
 </template>
@@ -231,6 +272,7 @@ function selectKind(kind: IntervalStepKind) {
   border-color: rgba(241, 244, 236, .28) !important;
   background: #2c332a !important;
 }
+.interval-node--expanded { border-color: rgba(var(--v-theme-secondary), .52) !important; }
 .interval-node--step.interval-node--nested { background: #171b17 !important; }
 .interval-node--step.interval-node--deep { background: #222821 !important; }
 .interval-node--group.interval-node--nested { background: #343c31 !important; }
@@ -244,10 +286,15 @@ function selectKind(kind: IntervalStepKind) {
   box-shadow: 0 0 0 2px rgb(var(--v-theme-secondary) / .24), 0 12px 28px rgba(0, 0, 0, .32) !important;
 }
 .interval-node__header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.interval-node__toggle,
+.interval-node__group-heading { display: flex; min-width: 0; flex: 1 1 auto; align-items: center; gap: .5rem; padding: 0; border: 0; border-radius: 10px; background: transparent; color: inherit; text-align: left; }
+.interval-node__toggle { cursor: pointer; }
+.interval-node--draggable > .interval-node__header > .interval-node__drag-handle { cursor: grab; }
+.interval-node__toggle:focus-visible { outline: 2px solid rgba(var(--v-theme-secondary), .82); outline-offset: 4px; }
+.node-title { min-width: 0; flex: 1 1 auto; }
+.node-toggle-icon { flex: 0 0 auto; color: rgba(var(--v-theme-on-surface), .62); }
 .interval-node--group > .interval-node__header { padding-bottom: .75rem; border-bottom: 1px solid rgba(241, 244, 236, .14); }
 .node-index { display: grid; width: 30px; height: 30px; flex: 0 0 auto; place-items: center; border-radius: 10px; background: var(--node-accent); color: #17200f; font-size: .72rem; font-weight: 900; }
-.node-meta { display: flex; width: fit-content; align-items: center; gap: .3rem; margin-top: .3rem; padding: 3px 7px; border: 1px solid rgba(241, 244, 236, .12); border-radius: 999px; background: rgba(16, 19, 16, .52); color: rgb(var(--v-theme-on-surface) / .72); font-size: .66rem; font-weight: 750; line-height: 1; text-transform: capitalize; }
-.node-meta .v-icon { color: var(--node-accent); }
 .node-fields, .nested-nodes { display: grid; gap: 1rem; }
 .nested-nodes { border-left: 3px solid rgb(var(--v-theme-secondary) / .62); }
 .kind-field, .duration-wheel { min-width: 0; margin: 0; padding: 0; border: 0; }

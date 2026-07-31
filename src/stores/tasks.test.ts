@@ -5,6 +5,7 @@ import type { Entry, Occurrence, Task } from '@/types/domain'
 const apiMocks = vi.hoisted(() => ({
   createEntry: vi.fn(),
   updateOccurrence: vi.fn(),
+  updateTask: vi.fn(),
 }))
 
 vi.mock('@/lib/api', () => ({
@@ -13,6 +14,7 @@ vi.mock('@/lib/api', () => ({
     collection: (name: string) => {
       if (name === 'entries') return { create: apiMocks.createEntry }
       if (name === 'occurrences') return { update: apiMocks.updateOccurrence }
+      if (name === 'tasks') return { update: apiMocks.updateTask }
       throw new Error(`Unexpected collection: ${name}`)
     },
   },
@@ -140,5 +142,50 @@ describe('quantitative task completion', () => {
       complete: false,
       status: 'pending',
     })
+  })
+})
+
+describe('task ordering', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    apiMocks.updateTask.mockReset()
+    apiMocks.updateTask.mockResolvedValue({})
+  })
+
+  it('reorders the requested task subset and persists every changed position', async () => {
+    const store = useTaskStore()
+    const secondActive = { ...task, id: 'second-active', name: 'Second', sortOrder: 2 }
+    const thirdActive = { ...task, id: 'third-active', name: 'Third', sortOrder: 3 }
+    const paused = { ...task, id: 'paused', name: 'Paused', active: false, sortOrder: 1 }
+    store.tasks = [{ ...task }, paused, secondActive, thirdActive]
+
+    await store.reorderTasks(['third-active', task.id, 'second-active'])
+
+    expect(store.tasks.map((item) => item.id)).toEqual([
+      'third-active',
+      'paused',
+      task.id,
+      'second-active',
+    ])
+    expect(store.tasks.map((item) => item.sortOrder)).toEqual([0, 1, 2, 3])
+    expect(apiMocks.updateTask.mock.calls).toEqual([
+      ['third-active', { sort_order: 0 }],
+      [task.id, { sort_order: 2 }],
+      ['second-active', { sort_order: 3 }],
+    ])
+  })
+
+  it('restores the previous order when persistence fails', async () => {
+    const store = useTaskStore()
+    const second = { ...task, id: 'second', name: 'Second', sortOrder: 1 }
+    store.tasks = [{ ...task }, second]
+    apiMocks.updateTask.mockRejectedValueOnce(new Error('The API is offline.'))
+
+    await expect(store.reorderTasks(['second', task.id]))
+      .rejects.toThrow('The API is offline.')
+
+    expect(store.tasks.map((item) => item.id)).toEqual([task.id, 'second'])
+    expect(store.tasks.map((item) => item.sortOrder)).toEqual([0, 1])
+    expect(store.error).toBe('The API is offline.')
   })
 })

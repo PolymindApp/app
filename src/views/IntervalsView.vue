@@ -5,9 +5,13 @@ import IntervalPlanList from '@/components/IntervalPlanList.vue'
 import WeekNavigator from '@/components/WeekNavigator.vue'
 import { formatIntervalDuration } from '@/services/intervals'
 import { useIntervalStore } from '@/stores/intervals'
+import type { IntervalSession } from '@/types/domain'
 
 const store = useIntervalStore()
 const recentWeekStart = ref(startOfWeek(new Date(), { weekStartsOn: 1 }))
+const intervalColors = computed(() =>
+  new Map(store.templates.map((template) => [template.id, template.color])),
+)
 const recentSessionsForWeek = computed(() =>
   store.sessions.filter((session) =>
     (session.status === 'completed' || session.status === 'ended')
@@ -17,6 +21,13 @@ const recentSessionsForWeek = computed(() =>
 const recentWeekIsCurrent = computed(() =>
   isSameWeek(recentWeekStart.value, new Date(), { weekStartsOn: 1 }),
 )
+
+function recentRunColor(session: IntervalSession) {
+  if (session.status !== 'completed') return 'warning'
+  return session.template
+    ? intervalColors.value.get(session.template) || 'success'
+    : 'success'
+}
 
 async function reconcileWhenVisible() {
   if (document.visibilityState !== 'visible') return
@@ -96,7 +107,10 @@ onBeforeUnmount(() => {
             :subtitle="`${format(new Date(session.startedAt), 'MMM d · h:mm a')} · ${session.source === 'quick' ? 'Quick' : 'Template'}`"
           >
             <template #prepend>
-              <v-icon :icon="session.status === 'completed' ? 'mdi-check-circle-outline' : 'mdi-stop-circle-outline'" :color="session.status === 'completed' ? 'success' : 'warning'" />
+              <v-icon
+                :icon="session.status === 'completed' ? 'mdi-check-circle-outline' : 'mdi-stop-circle-outline'"
+                :color="recentRunColor(session)"
+              />
             </template>
             <template #append><strong class="text-caption">{{ formatIntervalDuration(session.elapsedSeconds) }}</strong></template>
           </v-list-item>

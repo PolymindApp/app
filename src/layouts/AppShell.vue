@@ -69,6 +69,23 @@ function logout() {
   router.replace('/auth')
 }
 
+function pinLeavingPage(element: Element) {
+  if (!(element instanceof HTMLElement) || getComputedStyle(element).position === 'fixed') return
+  const bounds = element.getBoundingClientRect()
+  element.style.setProperty('--page-leave-top', `${bounds.top}px`)
+  element.style.setProperty('--page-leave-left', `${bounds.left}px`)
+  element.style.setProperty('--page-leave-width', `${bounds.width}px`)
+  element.classList.add('page-route-leaving-pinned')
+}
+
+function releaseLeavingPage(element: Element) {
+  if (!(element instanceof HTMLElement)) return
+  element.classList.remove('page-route-leaving-pinned')
+  element.style.removeProperty('--page-leave-top')
+  element.style.removeProperty('--page-leave-left')
+  element.style.removeProperty('--page-leave-width')
+}
+
 </script>
 
 <template>
@@ -147,7 +164,12 @@ function logout() {
     >
       <div class="page-transition-stage">
         <router-view v-slot="{ Component, route: viewRoute }">
-          <transition :name="pageTransition">
+          <transition
+            :name="pageTransition"
+            @before-leave="pinLeavingPage"
+            @after-leave="releaseLeavingPage"
+            @leave-cancelled="releaseLeavingPage"
+          >
             <component :is="Component" :key="viewRoute.path" />
           </transition>
         </router-view>
@@ -410,6 +432,16 @@ function logout() {
   .page-depth-higher-leave-active
 ) {
   pointer-events: none;
+}
+
+.page-route-leaving-pinned {
+  position: fixed !important;
+  z-index: 1;
+  top: var(--page-leave-top) !important;
+  right: auto !important;
+  left: var(--page-leave-left) !important;
+  width: var(--page-leave-width) !important;
+  margin: 0 !important;
 }
 
 :where(

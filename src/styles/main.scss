@@ -139,6 +139,33 @@ html.platform-android .app-page {
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2) !important;
 }
 
+.long-press-drag-item {
+  -webkit-touch-callout: none;
+}
+
+body.long-press-drag-active {
+  cursor: grabbing;
+  user-select: none;
+}
+
+.long-press-drag-ghost {
+  position: fixed !important;
+  z-index: 3000 !important;
+  margin: 0 !important;
+  opacity: .94;
+  pointer-events: none !important;
+  transition: none !important;
+  will-change: transform;
+  box-shadow: 0 22px 48px rgba(0, 0, 0, .42) !important;
+}
+
+.long-press-drag-placeholder {
+  box-sizing: border-box;
+  border: 2px dashed rgba(var(--v-theme-secondary), .64);
+  background: rgba(var(--v-theme-secondary), .08);
+  pointer-events: none;
+}
+
 .muted {
   color: rgb(var(--v-theme-on-surface) / 0.56);
 }

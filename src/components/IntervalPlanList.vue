@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { useDisplay } from 'vuetify'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import type { LongPressDragResult } from '@/directives/longPressDrag'
 import { formatIntervalDuration, intervalDuration, intervalStepCount } from '@/services/intervals'
 import { useIntervalStore } from '@/stores/intervals'
 import type { IntervalTemplate } from '@/types/domain'
@@ -15,6 +16,7 @@ const pendingDelete = ref<IntervalTemplate>()
 const selectedTemplate = ref<IntervalTemplate>()
 const actionsDrawer = ref(false)
 const deleting = ref(false)
+const reordering = ref(false)
 
 onMounted(() => {
   if (!store.templates.length) store.load().catch(() => undefined)
@@ -39,7 +41,29 @@ async function move(template: IntervalTemplate, direction: -1 | 1) {
   const [item] = ordered.splice(index, 1)
   if (!item) return
   ordered.splice(target, 0, item)
-  await store.reorderTemplates(ordered)
+  await saveTemplateOrder(ordered)
+}
+
+async function saveTemplateOrder(ordered: IntervalTemplate[]) {
+  reordering.value = true
+  try {
+    await store.reorderTemplates(ordered)
+  } catch {
+    // The store restores the previous order and exposes the save error.
+  } finally {
+    reordering.value = false
+  }
+}
+
+async function reorderByDrag(result: LongPressDragResult) {
+  const templatesById = new Map(
+    store.templates.map((template) => [template.id, template]),
+  )
+  const ordered = result.orderedIds
+    .map((id) => templatesById.get(id))
+    .filter((template): template is IntervalTemplate => Boolean(template))
+  if (ordered.length !== store.templates.length) return
+  await saveTemplateOrder(ordered)
 }
 
 function startTemplate(template: IntervalTemplate) {
@@ -78,6 +102,12 @@ function requestDelete(template: IntervalTemplate) {
     <v-card
       v-for="(template, index) in store.templates"
       :key="template.id"
+      v-long-press-drag="{
+        id: template.id,
+        group: 'interval-templates',
+        disabled: store.templates.length < 2 || reordering,
+        onDrop: reorderByDrag,
+      }"
       class="surface-card pa-4 interval-plan-card"
       role="button"
       tabindex="0"

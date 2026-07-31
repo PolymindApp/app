@@ -5,6 +5,7 @@ import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import ColorSwatchPicker from '@/components/ColorSwatchPicker.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import IntervalNodeEditor from '@/components/IntervalNodeEditor.vue'
+import type { LongPressDragResult } from '@/directives/longPressDrag'
 import {
   cloneIntervalTemplateDraft,
   createIntervalGroup,
@@ -27,6 +28,7 @@ const deleting = ref(false)
 const deleteDialog = ref(false)
 const pendingNodeDelete = ref<{ id: string; name: string; type: IntervalNode['type'] }>()
 const selectedNodeId = ref<string>()
+const expandedNodeId = ref<string>()
 const nodeActionsDrawer = ref(false)
 const error = ref('')
 const isEditing = computed(() => Boolean(route.params.id))
@@ -86,6 +88,15 @@ function createNode(type: 'step' | 'group') {
     : createIntervalGroup('')
 }
 
+function firstIntervalId(nodes: IntervalNode[]): string | undefined {
+  for (const node of nodes) {
+    if (node.type === 'step') return node.id
+    const nested = firstIntervalId(node.children)
+    if (nested) return nested
+  }
+  return undefined
+}
+
 async function scrollToNode(nodeId: string) {
   await nextTick()
   const node = Array.from(document.querySelectorAll<HTMLElement>('[data-interval-node-id]'))
@@ -96,6 +107,7 @@ async function scrollToNode(nodeId: string) {
 function addRootNode(type: 'step' | 'group') {
   const node = createNode(type)
   draft.definition.children.push(node)
+  if (node.type === 'step') expandedNodeId.value = node.id
   void scrollToNode(node.id)
 }
 
@@ -106,6 +118,7 @@ const actions = {
     if (!parent || parent.type !== 'group') return
     const node = createNode(type)
     parent.children.push(node)
+    if (node.type === 'step') expandedNodeId.value = node.id
     void scrollToNode(node.id)
   },
   move(id: string, direction: -1 | 1) {
@@ -136,6 +149,7 @@ const actions = {
     if (!location || !node) return
     const duplicate = duplicateIntervalNode(node)
     location.nodes.splice(location.index + 1, 0, duplicate)
+    if (duplicate.type === 'step') expandedNodeId.value = duplicate.id
     void scrollToNode(duplicate.id)
   },
   remove(id: string) {
@@ -151,6 +165,22 @@ const actions = {
   open(id: string) {
     selectedNodeId.value = id
     nodeActionsDrawer.value = true
+  },
+  toggle(id: string) {
+    const location = findNode(draft.definition.children, id)
+    const node = location?.nodes[location.index]
+    if (!node || node.type !== 'step') return
+    expandedNodeId.value = expandedNodeId.value === id ? undefined : id
+  },
+  reorder(result: LongPressDragResult) {
+    const location = findNode(draft.definition.children, result.id)
+    if (!location || result.orderedIds.length !== location.nodes.length) return
+    const nodesById = new Map(location.nodes.map((node) => [node.id, node]))
+    const ordered = result.orderedIds
+      .map((id) => nodesById.get(id))
+      .filter((node): node is IntervalNode => Boolean(node))
+    if (ordered.length !== location.nodes.length) return
+    location.nodes.splice(0, location.nodes.length, ...ordered)
   },
 }
 
@@ -173,7 +203,18 @@ function runSelectedNodeAction(action: 'indent' | 'outdent' | 'duplicate' | 'rem
 function confirmNodeDelete() {
   if (!pendingNodeDelete.value) return
   const location = findNode(draft.definition.children, pendingNodeDelete.value.id)
-  if (location) location.nodes.splice(location.index, 1)
+  if (location) {
+    const node = location.nodes[location.index]
+    location.nodes.splice(location.index, 1)
+    if (
+      node
+      && expandedNodeId.value
+      && (node.id === expandedNodeId.value
+        || (node.type === 'group' && Boolean(findNode(node.children, expandedNodeId.value))))
+    ) {
+      expandedNodeId.value = undefined
+    }
+  }
   pendingNodeDelete.value = undefined
 }
 
@@ -189,6 +230,7 @@ onMounted(async () => {
     return
   }
   Object.assign(draft, cloneIntervalTemplateDraft(template))
+  expandedNodeId.value = firstIntervalId(draft.definition.children)
 })
 
 async function save() {
@@ -297,6 +339,7 @@ async function removeTemplate() {
             :can-indent="index > 0 && draft.definition.children[index - 1]?.type === 'group'"
             :can-outdent="false"
             :can-skip-on-last-round="false"
+            :expanded-node-id="expandedNodeId"
             :actions="actions"
           />
         </template>
