@@ -32,7 +32,12 @@ function bounds(top: number, left = 0, width = 200, height = 80): DOMRect {
 function pointerEvent(
   target: EventTarget,
   type: string,
-  { x, y, pointerId = 1 }: { x: number; y: number; pointerId?: number },
+  {
+    x,
+    y,
+    pointerId = 1,
+    pointerType,
+  }: { x: number; y: number; pointerId?: number; pointerType?: string },
 ) {
   const event = new Event(type, { bubbles: true, cancelable: true })
   Object.defineProperties(event, {
@@ -40,6 +45,7 @@ function pointerEvent(
     clientX: { value: x },
     clientY: { value: y },
     pointerId: { value: pointerId },
+    pointerType: { value: pointerType },
   })
   target.dispatchEvent(event)
 }
@@ -96,6 +102,15 @@ function mountDirective(element: HTMLElement, options: LongPressDragOptions) {
 
 function unmountDirective(element: HTMLElement) {
   longPressDrag.beforeUnmount?.(element, {} as DirectiveBinding, {} as VNode, null)
+}
+
+function updateDirective(element: HTMLElement, options: LongPressDragOptions) {
+  longPressDrag.updated?.(
+    element,
+    { value: options } as DirectiveBinding<LongPressDragOptions>,
+    {} as VNode,
+    null,
+  )
 }
 
 function mountDropDirective(element: HTMLElement, options: LongPressDropOptions) {
@@ -250,6 +265,34 @@ describe('long press drag directive', () => {
     unmountDirective(second)
   })
 
+  it('lets touch events take over Android gestures when matching pointer events fire', () => {
+    const card = document.createElement('article')
+    document.body.append(card)
+    vi.spyOn(card, 'getBoundingClientRect').mockReturnValue(bounds(0))
+    mountDirective(card, { id: 'android-touch', onDrop: vi.fn() })
+
+    pointerEvent(card, 'pointerdown', {
+      x: 100,
+      y: 40,
+      pointerType: 'touch',
+    })
+    touchEvent(card, 'touchstart', { x: 100, y: 40 })
+    vi.advanceTimersByTime(500)
+
+    expect(card.getAttribute('aria-grabbed')).toBe('true')
+    expect(hapticsMocks.dragActivationFeedback).toHaveBeenCalledOnce()
+
+    pointerEvent(card, 'pointercancel', {
+      x: 100,
+      y: 40,
+      pointerType: 'touch',
+    })
+    expect(card.getAttribute('aria-grabbed')).toBe('true')
+
+    touchEvent(card, 'touchend', { x: 100, y: 40 })
+    unmountDirective(card)
+  })
+
   it('uses horizontal placement when the cards share a grid row', () => {
     const list = document.createElement('div')
     const first = document.createElement('article')
@@ -310,6 +353,31 @@ describe('long press drag directive', () => {
     unmountDirective(card)
   })
 
+  it('can drag after an expandable card updates during a short press', () => {
+    const card = document.createElement('article')
+    const handle = document.createElement('button')
+    handle.className = 'card-handle'
+    card.append(handle)
+    document.body.append(card)
+    vi.spyOn(card, 'getBoundingClientRect').mockReturnValue(bounds(0))
+    const options = {
+      id: 'expandable-card',
+      handle: '.card-handle',
+      onDrop: vi.fn(),
+    }
+    mountDirective(card, options)
+
+    pointerEvent(handle, 'pointerdown', { x: 30, y: 30 })
+    updateDirective(card, { ...options })
+
+    pointerEvent(handle, 'pointerdown', { x: 30, y: 30, pointerId: 2 })
+    vi.advanceTimersByTime(500)
+
+    expect(card.getAttribute('aria-grabbed')).toBe('true')
+    pointerEvent(handle, 'pointerup', { x: 30, y: 30, pointerId: 2 })
+    unmountDirective(card)
+  })
+
   it('does not activate an ancestor draggable from a nested card handle', () => {
     const parentCard = document.createElement('article')
     const parentHandle = document.createElement('button')
@@ -332,6 +400,9 @@ describe('long press drag directive', () => {
       handle: '.card-handle',
       onDrop: vi.fn(),
     })
+
+    // Vue can rewrite component-root classes when expand/collapse state changes.
+    childCard.classList.remove('long-press-drag-item')
 
     pointerEvent(childHandle, 'pointerdown', { x: 30, y: 50 })
     vi.advanceTimersByTime(500)

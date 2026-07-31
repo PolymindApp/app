@@ -4,9 +4,14 @@ import { App as NativeApp } from '@capacitor/app'
 import { Capacitor } from '@capacitor/core'
 import App from './App.vue'
 import { longPressDrag, longPressDrop } from './directives/longPressDrag'
+import { api } from './lib/api'
 import router from './router'
 import { vuetify } from './plugins/vuetify'
 import { installAndroidFocusAutoScroll } from './services/androidFocusAutoScroll'
+import {
+  readAndroidRoute,
+  rememberAndroidRoute,
+} from './services/androidRoutePersistence'
 import './styles/main.scss'
 
 const nativePlatform = Capacitor.getPlatform()
@@ -17,31 +22,46 @@ if (nativePlatform === 'android') {
   document.documentElement.classList.add('platform-ios')
 }
 
-createApp(App)
+const app = createApp(App)
   .use(createPinia())
   .use(router)
   .use(vuetify)
   .directive('long-press-drag', longPressDrag)
   .directive('long-press-drop', longPressDrop)
-  .mount('#app')
+
+if (
+  nativePlatform === 'android'
+  && api.authStore.isValid
+  && window.location.pathname === '/'
+) {
+  const savedRoute = readAndroidRoute(router)
+  if (savedRoute) void router.replace(savedRoute)
+}
+
+app.mount('#app')
 
 if (nativePlatform === 'android') {
   installAndroidFocusAutoScroll()
-  void router.isReady().then(() => NativeApp.addListener('backButton', () => {
-    const historyState = window.history.state as { back?: unknown } | null
-    if (typeof historyState?.back === 'string') {
-      router.back()
-      return
-    }
+  void router.isReady().then(() => {
+    rememberAndroidRoute(router.currentRoute.value)
+    router.afterEach((to) => rememberAndroidRoute(to))
 
-    const backTo = router.currentRoute.value.meta.backTo
-    if (typeof backTo === 'string') {
-      void router.replace(backTo)
-      return
-    }
+    return NativeApp.addListener('backButton', () => {
+      const historyState = window.history.state as { back?: unknown } | null
+      if (typeof historyState?.back === 'string') {
+        router.back()
+        return
+      }
 
-    void NativeApp.minimizeApp()
-  }))
+      const backTo = router.currentRoute.value.meta.backTo
+      if (typeof backTo === 'string') {
+        void router.replace(backTo)
+        return
+      }
+
+      void NativeApp.minimizeApp()
+    })
+  })
 }
 
 if ('serviceWorker' in navigator && import.meta.env.PROD) {

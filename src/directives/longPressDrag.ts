@@ -108,9 +108,18 @@ function acceptsDrag(dropState: DropState, dragState: DragState) {
   )
 }
 
+function closestDragStateElement(target: EventTarget | null) {
+  let element = target instanceof Element ? target : null
+  while (element) {
+    if (element instanceof HTMLElement && states.has(element)) return element
+    element = element.parentElement
+  }
+  return undefined
+}
+
 function isDragStartTarget(state: DragState, target: EventTarget | null) {
   if (!(target instanceof Element)) return false
-  if (target.closest('.long-press-drag-item') !== state.element) return false
+  if (closestDragStateElement(target) !== state.element) return false
   if (!state.options.handle) return !target.closest(INTERACTIVE_SELECTOR)
 
   try {
@@ -411,8 +420,7 @@ function updatePlaceholder(state: DragState, x: number, y: number) {
     return
   }
 
-  const hit = document.elementFromPoint(x, y)
-    ?.closest<HTMLElement>('.long-press-drag-item')
+  const hit = closestDragStateElement(document.elementFromPoint(x, y))
   let target = hit
     ? candidates.find((candidate) => candidate.element === hit)
     : undefined
@@ -733,8 +741,14 @@ function createState(element: HTMLElement, options: LongPressDragOptions): DragS
     if (state.gesture) {
       if (state.gesture.input === 'touch' && event.touches.length > 1) {
         finishGesture(state, false)
+      } else if (state.gesture.input === 'pointer' && event.touches.length === 1) {
+        // Browsers may emit both pointer and touch events for one contact. Keep
+        // pointer-only WebViews working, but prefer touch when it is available
+        // because Android can cancel touch-origin pointer streams during a pan.
+        finishGesture(state, false)
+      } else {
+        return
       }
-      return
     }
     if (event.touches.length !== 1) return
     const touch = event.touches.item(0)
@@ -816,6 +830,10 @@ export const longPressDrag: ObjectDirective<HTMLElement, LongPressDragOptions> =
     const state = states.get(element)
     if (!state) return
     state.options = binding.value
+    // A short press can update an expandable card before every platform has
+    // delivered its matching end event. Do not let that pending gesture block
+    // the next long press after the card expands or collapses.
+    if (state.gesture && !state.gesture.active) finishGesture(state, false)
     if (state.options.disabled && state.gesture) finishGesture(state, false)
   },
 

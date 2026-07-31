@@ -5,6 +5,7 @@ set -euo pipefail
 build_variant="${1:-debug}"
 signing_properties="private/android-signing.properties"
 release_keystore="private/mom-release.jks"
+termux_aapt2="private/android-sdk/qemu/aapt2"
 
 if [[ -z "${JAVA_HOME:-}" || ! -x "$JAVA_HOME/bin/java" ]]; then
   java_command="$(command -v java || true)"
@@ -46,9 +47,20 @@ esac
 pnpm build:prod
 pnpm exec cap sync android
 
-(
-  cd android
-  ./gradlew "$gradle_task"
-)
+if [[ "$(uname -o 2>/dev/null || true)" == Android && -x "$termux_aapt2" ]]; then
+  if ! command -v proot-distro >/dev/null 2>&1; then
+    echo "proot-distro is required for Android builds on this phone." >&2
+    exit 1
+  fi
+
+  repository_root="$(pwd)"
+  proot-distro login debian -- bash -lc \
+    "cd '$repository_root/android' && ./gradlew '$gradle_task' --no-daemon -Pandroid.aapt2FromMavenOverride='$repository_root/$termux_aapt2'"
+else
+  (
+    cd android
+    ./gradlew "$gradle_task"
+  )
+fi
 
 echo "Android build created: $artifact_path"
