@@ -32,12 +32,11 @@ function removeAmount(value: number) {
   <div class="quick-editor">
     <label class="quick-editor__label">Quick-add buttons</label>
     <div class="quick-editor__input mt-2">
-      <v-text-field
-        v-model.number="amount"
+      <v-number-input
+        v-model="amount"
         label="New amount"
-        type="number"
-        min="0"
-        step="any"
+        :min="0"
+        :precision="null"
         hide-details
         @keydown.enter.prevent="addAmount"
       />

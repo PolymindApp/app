@@ -7,19 +7,25 @@ import ColorSwatchPicker from '@/components/ColorSwatchPicker.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import DatePickerField from '@/components/DatePickerField.vue'
 import QuickAmountsEditor from '@/components/QuickAmountsEditor.vue'
+import type { LongPressDragResult } from '@/directives/longPressDrag'
+import { formatIntervalDuration, intervalDuration, intervalStepCount } from '@/services/intervals'
+import { useIntervalStore } from '@/stores/intervals'
 import { useTaskStore } from '@/stores/tasks'
-import type { TaskDraft, TaskType } from '@/types/domain'
+import type { ProgramStepDraft, TaskDraft, TaskType } from '@/types/domain'
 
 const allowAutomaticFocus = Capacitor.getPlatform() !== 'android'
 const route = useRoute()
 const router = useRouter()
 const store = useTaskStore()
+const intervalStore = useIntervalStore()
 const form = ref()
 const saving = ref(false)
 const deleting = ref(false)
 const deleteDialog = ref(false)
 const openStep = ref<number>()
 const error = ref('')
+const stepDragIds = new WeakMap<ProgramStepDraft, string>()
+let nextStepDragId = 0
 const typeLocked = computed(() => Boolean(route.params.id))
 const isEditing = computed(() => Boolean(route.params.id))
 
@@ -28,6 +34,7 @@ const typeOptions: Array<{ type: TaskType; title: string; subtitle: string; icon
   { type: 'duration', title: 'Duration', subtitle: 'Track time toward a goal', icon: 'mdi-timer-outline', color: '#D4A5FF' },
   { type: 'daily_total', title: 'Daily total', subtitle: 'Protein, calories, water…', icon: 'mdi-chart-donut', color: '#FFB86B' },
   { type: 'program', title: 'Program', subtitle: 'A flexible sequence', icon: 'mdi-repeat-variant', color: '#C7F464' },
+  { type: 'interval', title: 'Interval', subtitle: 'Complete a saved interval', icon: 'mdi-timer-play-outline', color: '#66D9C8' },
 ]
 
 const weekdays = [
@@ -65,11 +72,20 @@ const draft = reactive<TaskDraft>({
   programRepeat: true,
   programStrict: false,
   sortOrder: 0,
+  intervalTemplate: undefined,
   steps: [],
 })
 
 const cycleDays = computed(() => Array.from({ length: Math.max(1, draft.cycleLength || 1) }, (_, index) => index + 1))
 const showTarget = computed(() => draft.type === 'duration' || draft.type === 'daily_total')
+const selectedInterval = computed(() => intervalStore.templates.find((item) => item.id === draft.intervalTemplate))
+const intervalItems = computed(() => intervalStore.templates.map((item) => ({
+  title: item.name,
+  value: item.id,
+  props: {
+    subtitle: `${formatIntervalDuration(intervalDuration(item.definition))} · ${intervalStepCount(item.definition)} intervals`,
+  },
+})))
 
 watch(() => draft.type, (type) => {
   if (typeLocked.value) return
@@ -81,7 +97,10 @@ watch(() => draft.type, (type) => {
 })
 
 onMounted(async () => {
-  if (!store.tasks.length) await store.load()
+  await Promise.all([
+    store.tasks.length ? Promise.resolve() : store.load(),
+    intervalStore.loaded ? Promise.resolve() : intervalStore.load(),
+  ])
   if (!route.params.id) {
     if (draft.type === 'program' && !draft.steps.length) addStep(false)
     return
@@ -142,11 +161,44 @@ function moveStep(index: number, direction: -1 | 1) {
   else if (openStep.value === targetIndex) openStep.value = index
 }
 
+function stepDragId(step: ProgramStepDraft) {
+  if (step.id) return step.id
+  const existing = stepDragIds.get(step)
+  if (existing) return existing
+  nextStepDragId += 1
+  const id = `new-program-step-${nextStepDragId}`
+  stepDragIds.set(step, id)
+  return id
+}
+
+function reorderStepsByDrag(result: LongPressDragResult) {
+  const expandedStep = openStep.value === undefined
+    ? undefined
+    : draft.steps[openStep.value]
+  const stepsById = new Map(draft.steps.map(step => [stepDragId(step), step]))
+  const orderedSteps = result.orderedIds
+    .map(id => stepsById.get(id))
+    .filter((step): step is ProgramStepDraft => Boolean(step))
+  if (orderedSteps.length !== draft.steps.length) return
+
+  draft.steps.splice(0, draft.steps.length, ...orderedSteps)
+  draft.steps.forEach((step, index) => {
+    step.sortOrder = index
+  })
+  openStep.value = expandedStep
+    ? draft.steps.indexOf(expandedStep)
+    : undefined
+}
+
 async function save() {
   const result = await form.value?.validate()
   if (!result?.valid) return
   if (draft.type === 'program' && !draft.steps.length) {
     error.value = 'Add at least one program step.'
+    return
+  }
+  if (draft.type === 'interval' && !draft.intervalTemplate) {
+    error.value = 'Select an interval for this task.'
     return
   }
   saving.value = true
@@ -224,6 +276,35 @@ async function removeTask() {
         </div>
       </v-card>
 
+      <v-card v-if="draft.type === 'interval'" class="surface-card field-stack pa-5 mb-4">
+        <template v-if="intervalStore.templates.length">
+          <v-select
+            v-model="draft.intervalTemplate"
+            label="Attached interval"
+            :items="intervalItems"
+            :rules="[v => Boolean(v) || 'Select an interval']"
+          />
+          <div v-if="selectedInterval" class="interval-attachment-summary">
+            <div class="interval-attachment-icon" :style="{ background: selectedInterval.color }">
+              <v-icon icon="mdi-timer-play-outline" />
+            </div>
+            <div class="min-width-0">
+              <strong class="d-block text-truncate">{{ selectedInterval.name }}</strong>
+              <p class="text-caption muted">
+                {{ formatIntervalDuration(intervalDuration(selectedInterval.definition)) }} ·
+                {{ intervalStepCount(selectedInterval.definition) }} intervals
+              </p>
+            </div>
+          </div>
+        </template>
+        <div v-else class="text-center py-3">
+          <v-icon icon="mdi-timer-plus-outline" size="36" class="mb-3" />
+          <h2 class="text-body-1 font-weight-black">Create an interval first</h2>
+          <p class="text-body-2 muted mt-2 mb-4">Interval tasks need a saved interval to run.</p>
+          <v-btn color="secondary" variant="tonal" to="/intervals/new">Create interval</v-btn>
+        </div>
+      </v-card>
+
       <v-card v-if="draft.type !== 'program'" class="surface-card field-stack pa-5 mb-4">
         <v-select
           v-model="draft.recurrenceType"
@@ -248,7 +329,15 @@ async function removeTask() {
             </v-btn-toggle>
           </div>
         </div>
-        <v-text-field v-if="draft.recurrenceType === 'interval_weeks'" v-model.number="draft.intervalWeeks" label="Repeat every" type="number" min="1" max="52" suffix="weeks" />
+        <v-number-input
+          v-if="draft.recurrenceType === 'interval_weeks'"
+          v-model="draft.intervalWeeks"
+          label="Repeat every"
+          :min="1"
+          :max="52"
+          :step="1"
+          suffix="weeks"
+        />
         <div class="date-grid date-range-grid">
           <DatePickerField v-model="draft.startDate" label="Starts" />
           <DatePickerField v-model="draft.endDate" label="Ends (optional)" clearable />
@@ -263,7 +352,12 @@ async function removeTask() {
             label="Goal"
             :items="[{ title: 'At least', value: 'gte' }, { title: 'At most', value: 'lte' }, { title: 'Exactly', value: 'eq' }]"
           />
-          <v-text-field v-model.number="draft.targetValue" label="Target" type="number" min="0" />
+          <v-number-input
+            v-model="draft.targetValue"
+            label="Target"
+            :min="0"
+            :precision="null"
+          />
           <v-select v-model="draft.unit" label="Unit" :items="units" />
           <v-text-field v-if="draft.unit === 'custom'" v-model="draft.customUnit" label="Custom unit" />
         </div>
@@ -282,7 +376,14 @@ async function removeTask() {
       <template v-if="draft.type === 'program'">
         <v-card class="surface-card pa-5 mb-4">
           <div class="date-grid mb-4">
-            <v-text-field v-model.number="draft.cycleLength" label="Cycle length" type="number" min="1" max="365" suffix="days" />
+            <v-number-input
+              v-model="draft.cycleLength"
+              label="Cycle length"
+              :min="1"
+              :max="365"
+              :step="1"
+              suffix="days"
+            />
             <DatePickerField v-model="draft.startDate" label="Starts" />
           </div>
           <div class="setting-row">
@@ -298,8 +399,22 @@ async function removeTask() {
 
         <div class="section-heading"><h2>Program steps</h2><v-btn size="small" variant="tonal" prepend-icon="mdi-plus" @click="addStep()">Add step</v-btn></div>
         <v-expansion-panels v-model="openStep" variant="accordion" class="step-panels mb-4">
-          <v-expansion-panel v-for="(step, index) in draft.steps" :key="index" elevation="0" rounded="xl" class="surface-card">
-            <v-expansion-panel-title>
+          <v-expansion-panel
+            v-for="(step, index) in draft.steps"
+            :key="stepDragId(step)"
+            v-long-press-drag="{
+              id: stepDragId(step),
+              group: 'program-steps',
+              handle: '.program-step__drag-handle',
+              disabled: draft.steps.length < 2,
+              onDrop: reorderStepsByDrag,
+            }"
+            elevation="0"
+            rounded="xl"
+            class="surface-card program-step-panel"
+            :class="{ 'program-step-panel--draggable': draft.steps.length > 1 }"
+          >
+            <v-expansion-panel-title class="program-step__drag-handle">
               <div class="d-flex align-center ga-3">
                 <span class="step-number">{{ index + 1 }}</span>
                 <div><strong>{{ step.name || `Step ${index + 1}` }}</strong><p class="text-caption muted">Day {{ step.cycleDays.join(', ') || 'not set' }}</p></div>
@@ -321,7 +436,12 @@ async function removeTask() {
                 />
               </div>
               <div v-if="step.completionType === 'quantity'" class="target-grid mb-4">
-                <v-text-field v-model.number="step.targetValue" label="Target" type="number" min="0" />
+                <v-number-input
+                  v-model="step.targetValue"
+                  label="Target"
+                  :min="0"
+                  :precision="null"
+                />
                 <v-select v-model="step.targetOperator" label="Goal" :items="[{ title: 'At least', value: 'gte' }, { title: 'At most', value: 'lte' }, { title: 'Exactly', value: 'eq' }]" />
                 <v-select v-model="step.unit" label="Unit" :items="units" />
                 <v-text-field v-if="step.unit === 'custom'" v-model="step.customUnit" label="Custom unit" />
@@ -449,6 +569,9 @@ async function removeTask() {
 .date-grid, .target-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
 .date-range-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); }
 .step-panels :deep(.v-expansion-panel) { border: 1px solid rgb(var(--v-theme-on-surface) / .08); }
+.step-panels :deep(.program-step-panel--draggable .program-step__drag-handle) { cursor: grab; }
+.interval-attachment-summary { display: flex; align-items: center; gap: .75rem; padding: .85rem; border-radius: 16px; background: rgb(var(--v-theme-surface-variant)); }
+.interval-attachment-icon { display: grid; width: 42px; height: 42px; flex: 0 0 auto; place-items: center; border-radius: 14px; color: #17200f; }
 .step-number { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 11px; background: rgb(var(--v-theme-secondary)); color: rgb(var(--v-theme-on-secondary)); font-size: .75rem; font-weight: 900; }
 .cycle-day-picker { max-height: 145px; overflow-y: auto; }
 .step-actions { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }

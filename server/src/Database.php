@@ -46,7 +46,7 @@ final class Database
                 'recurrence_type', 'weekdays', 'interval_weeks', 'target_value',
                 'target_operator', 'unit', 'custom_unit', 'goal_period',
                 'quick_amounts', 'cycle_length', 'program_repeat', 'program_strict',
-                'sort_order', 'color',
+                'sort_order', 'color', 'interval_template',
             ],
             'program_steps' => [
                 'id', 'owner', 'task', 'name', 'description', 'sort_order',
@@ -69,7 +69,8 @@ final class Database
             'interval_sessions' => [
                 'id', 'owner', 'template', 'source', 'status', 'snapshot_name',
                 'definition_snapshot', 'cue_snapshot', 'started_at', 'ended_at',
-                'planned_seconds', 'elapsed_seconds', 'runtime_state',
+                'planned_seconds', 'elapsed_seconds', 'runtime_state', 'task',
+                'task_date',
             ],
             'mom_rate_limits' => ['rate_key', 'window_start', 'hits'],
             'mom_passkey_challenges' => [

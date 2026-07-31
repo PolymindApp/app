@@ -56,7 +56,7 @@ suffix="$(php -r 'echo bin2hex(random_bytes(5));')"
 password="correct-horse-battery"
 
 migration_count="$(sqlite3 "$test_db" 'SELECT COUNT(*) FROM mom_schema_migrations;')"
-[[ "$migration_count" == 4 ]] || {
+[[ "$migration_count" == 5 ]] || {
   echo "The API did not apply the complete database migration sequence." >&2
   exit 1
 }
@@ -362,6 +362,158 @@ task_id="$(json_field id <<<"$task_response")"
 task_owner="$(json_field owner <<<"$task_response")"
 [[ "$task_owner" == "$alice_id" ]] || {
   echo "The API accepted a forged owner." >&2
+  exit 1
+}
+
+interval_template_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"name":"Attached interval","description":"","color":"#66D9C8","definition":{"version":1,"children":[{"id":"step-1","type":"step","name":"Work","kind":"work","durationSeconds":1}]},"sound_enabled":true,"vibration_enabled":true,"sound":"beep","sort_order":0}' \
+  "$api_url/collections/interval_templates/records")"
+interval_template_id="$(json_field id <<<"$interval_template_response")"
+
+interval_task_payload="$(php -r '
+  echo json_encode([
+    "name" => $argv[1], "description" => "", "type" => "interval",
+    "mandatory" => true, "review_when_missed" => false, "active" => true,
+    "start_date" => "2026-07-01", "end_date" => "", "recurrence_type" => "daily",
+    "weekdays" => [], "interval_weeks" => 1, "target_value" => 1,
+    "target_operator" => "gte", "unit" => "", "custom_unit" => "",
+    "goal_period" => "occurrence", "quick_amounts" => [], "cycle_length" => 0,
+    "program_repeat" => true, "program_strict" => false, "sort_order" => (int) $argv[2],
+    "color" => "#66D9C8", "interval_template" => $argv[3],
+  ], JSON_THROW_ON_ERROR);
+' "Interval task one" 1 "$interval_template_id")"
+interval_task_one_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "$interval_task_payload" \
+  "$api_url/collections/tasks/records")"
+interval_task_one_id="$(json_field id <<<"$interval_task_one_response")"
+
+interval_task_payload="$(php -r '
+  echo json_encode([
+    "name" => $argv[1], "description" => "", "type" => "interval",
+    "mandatory" => true, "review_when_missed" => false, "active" => true,
+    "start_date" => "2026-07-01", "end_date" => "", "recurrence_type" => "daily",
+    "weekdays" => [], "interval_weeks" => 1, "target_value" => 1,
+    "target_operator" => "gte", "unit" => "", "custom_unit" => "",
+    "goal_period" => "occurrence", "quick_amounts" => [], "cycle_length" => 0,
+    "program_repeat" => true, "program_strict" => false, "sort_order" => (int) $argv[2],
+    "color" => "#66D9C8", "interval_template" => $argv[3],
+  ], JSON_THROW_ON_ERROR);
+' "Interval task two" 2 "$interval_template_id")"
+interval_task_two_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "$interval_task_payload" \
+  "$api_url/collections/tasks/records")"
+interval_task_two_id="$(json_field id <<<"$interval_task_two_response")"
+
+session_payload="$(php -r '
+  echo json_encode([
+    "template" => $argv[1], "task" => $argv[2], "source" => "template",
+    "status" => "running", "snapshot_name" => "Attached interval",
+    "definition_snapshot" => ["version" => 1, "children" => [[
+      "id" => "step-1", "type" => "step", "name" => "Work",
+      "kind" => "work", "durationSeconds" => 1,
+    ]]],
+    "cue_snapshot" => ["soundEnabled" => true, "vibrationEnabled" => true],
+    "started_at" => "2026-07-31T14:00:00Z", "planned_seconds" => 1,
+    "elapsed_seconds" => 0, "runtime_state" => [
+      "stepIndex" => 0, "remainingMs" => 1000,
+      "stepStartedAt" => "2026-07-31T14:00:00Z", "accumulatedMs" => 0,
+      "updatedAt" => "2026-07-31T14:00:00Z",
+    ],
+  ], JSON_THROW_ON_ERROR);
+' "$interval_template_id" "$interval_task_one_id")"
+attributed_session_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "$session_payload" \
+  "$api_url/collections/interval_sessions/records")"
+attributed_session_id="$(json_field id <<<"$attributed_session_response")"
+attributed_session_date="$(json_field task_date <<<"$attributed_session_response")"
+[[ "$attributed_session_date" == "2026-07-31" ]] || {
+  echo "The attributed interval did not use its Toronto start date." >&2
+  exit 1
+}
+
+active_conflict_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "$session_payload" \
+  "$api_url/collections/interval_sessions/records")"
+[[ "$active_conflict_status" == 409 ]] || {
+  echo "The API allowed two active interval sessions." >&2
+  exit 1
+}
+
+generic_complete_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  -X PATCH -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"status":"completed"}' \
+  "$api_url/collections/interval_sessions/records/$attributed_session_id")"
+[[ "$generic_complete_status" == 422 ]] || {
+  echo "A generic session update bypassed atomic interval completion." >&2
+  exit 1
+}
+
+completion_payload='{"runtime_state":{"stepIndex":1,"remainingMs":0,"accumulatedMs":1000,"updatedAt":"2026-08-01T04:01:00Z"},"elapsed_seconds":1,"ended_at":"2026-08-01T04:01:00Z"}'
+curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "$completion_payload" \
+  "$api_url/interval-sessions/$attributed_session_id/complete" >/dev/null
+curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "$completion_payload" \
+  "$api_url/interval-sessions/$attributed_session_id/complete" >/dev/null
+
+first_task_completion_count="$(sqlite3 "$test_db" \
+  "SELECT COUNT(*) FROM occurrences WHERE task = '$interval_task_one_id' AND scheduled_date = '2026-07-31' AND status = 'completed';")"
+second_task_completion_count="$(sqlite3 "$test_db" \
+  "SELECT COUNT(*) FROM occurrences WHERE task = '$interval_task_two_id';")"
+[[ "$first_task_completion_count" == 1 && "$second_task_completion_count" == 0 ]] || {
+  echo "An attributed interval did not complete exactly one selected task." >&2
+  exit 1
+}
+
+standalone_session_payload="$(php -r '
+  $payload = json_decode($argv[1], true, 512, JSON_THROW_ON_ERROR);
+  $payload["task"] = "";
+  $payload["started_at"] = "2026-08-01T14:00:00Z";
+  $payload["runtime_state"]["stepStartedAt"] = "2026-08-01T14:00:00Z";
+  $payload["runtime_state"]["updatedAt"] = "2026-08-01T14:00:00Z";
+  echo json_encode($payload, JSON_THROW_ON_ERROR);
+' "$session_payload")"
+standalone_session_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "$standalone_session_payload" \
+  "$api_url/collections/interval_sessions/records")"
+standalone_session_id="$(json_field id <<<"$standalone_session_response")"
+standalone_completion_payload='{"runtime_state":{"stepIndex":1,"remainingMs":0,"accumulatedMs":1000,"updatedAt":"2026-08-01T14:00:01Z"},"elapsed_seconds":1,"ended_at":"2026-08-01T14:00:01Z"}'
+standalone_completion_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "$standalone_completion_payload" \
+  "$api_url/interval-sessions/$standalone_session_id/complete")"
+standalone_occurrence_is_null="$(php -r '
+  $data = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+  echo $data["occurrence"] === null ? "yes" : "no";
+' <<<"$standalone_completion_response")"
+[[ "$standalone_occurrence_is_null" == yes ]] || {
+  echo "A standalone interval unexpectedly completed a task." >&2
+  exit 1
+}
+
+template_delete_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  -X DELETE -H "Authorization: Bearer $alice_token" \
+  "$api_url/collections/interval_templates/records/$interval_template_id")"
+[[ "$template_delete_status" == 409 ]] || {
+  echo "The API deleted an interval that is still attached to tasks." >&2
   exit 1
 }
 

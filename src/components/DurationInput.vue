@@ -18,8 +18,8 @@ const seconds = computed({
   <fieldset class="duration-input">
     <legend>{{ label }}</legend>
     <div>
-      <v-text-field v-model.number="minutes" label="Minutes" type="number" min="0" />
-      <v-text-field v-model.number="seconds" label="Seconds" type="number" min="0" max="59" />
+      <v-number-input v-model="minutes" label="Minutes" :min="0" :step="1" />
+      <v-number-input v-model="seconds" label="Seconds" :min="0" :max="59" :step="1" />
     </div>
   </fieldset>
 </template>

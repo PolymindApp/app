@@ -5,6 +5,13 @@
   text-rendering: optimizeLegibility;
 }
 
+*,
+*::before,
+*::after {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
 html,
 body,
 #app {
@@ -151,6 +158,7 @@ body.long-press-drag-active {
 .long-press-drag-ghost {
   position: fixed !important;
   z-index: 3000 !important;
+  box-sizing: border-box;
   margin: 0 !important;
   opacity: .94;
   pointer-events: none !important;
@@ -160,10 +168,23 @@ body.long-press-drag-active {
 }
 
 .long-press-drag-placeholder {
+  width: 100%;
   box-sizing: border-box;
   border: 2px dashed rgba(var(--v-theme-secondary), .64);
   background: rgba(var(--v-theme-secondary), .08);
   pointer-events: none;
+  will-change: transform;
+}
+
+.long-press-drag-shifting {
+  transition: transform .1s ease-out !important;
+  will-change: transform;
+}
+
+.long-press-drop-zone--available,
+.long-press-drop-zone--active {
+  outline: none !important;
+  background: transparent !important;
 }
 
 .muted {

@@ -33,6 +33,7 @@ function mapTask(record: Record<string, any>): Task {
     programRepeat: record.program_repeat,
     programStrict: record.program_strict,
     sortOrder: record.sort_order || 0,
+    intervalTemplate: record.interval_template || undefined,
   }
 }
 
@@ -124,15 +125,16 @@ export const useTaskStore = defineStore('tasks', () => {
     const operator = step?.targetOperator || task.targetOperator || 'gte'
     const targetReached = meetsTarget(value, target, operator)
     const occurrenceComplete = occurrence?.status === 'completed'
-    const isCheck = (step && step.completionType === 'check') || (!step && task.type === 'check')
+    const isOccurrenceDriven = (step && step.completionType === 'check')
+      || (!step && (task.type === 'check' || task.type === 'interval'))
     const isDailyTotal = !step && task.type === 'daily_total'
     const sealed = isDailyTotal && Boolean(occurrence?.sealed)
     return {
       task,
       occurrence,
       value,
-      percent: isCheck ? (occurrenceComplete ? 100 : 0) : progressPercent(value, target, operator),
-      complete: isCheck
+      percent: isOccurrenceDriven ? (occurrenceComplete ? 100 : 0) : progressPercent(value, target, operator),
+      complete: isOccurrenceDriven
         ? occurrenceComplete
         : isDailyTotal
           ? sealed
@@ -328,6 +330,7 @@ export const useTaskStore = defineStore('tasks', () => {
       program_repeat: draft.programRepeat ?? true,
       program_strict: draft.programStrict ?? false,
       sort_order: sortOrder,
+      interval_template: draft.type === 'interval' ? draft.intervalTemplate || '' : '',
     }
     const record = draft.id
       ? await api.collection('tasks').update(draft.id, payload)
@@ -370,6 +373,14 @@ export const useTaskStore = defineStore('tasks', () => {
   async function toggleTaskActive(task: Task) {
     const record = await api.collection('tasks').update(task.id, { active: !task.active })
     Object.assign(task, mapTask(record))
+  }
+
+  function upsertOccurrenceRecord(record: Record<string, any>) {
+    const occurrence = mapOccurrence(record)
+    const index = occurrences.value.findIndex((item) => item.id === occurrence.id)
+    if (index >= 0) occurrences.value.splice(index, 1, occurrence)
+    else occurrences.value.push(occurrence)
+    return occurrence
   }
 
   function reorderTasksInMemory(orderedIds: string[]) {
@@ -462,6 +473,7 @@ export const useTaskStore = defineStore('tasks', () => {
     shiftProgram,
     saveTask,
     toggleTaskActive,
+    upsertOccurrenceRecord,
     reorderTasks,
     deleteTask,
   }

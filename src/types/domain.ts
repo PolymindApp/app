@@ -1,4 +1,4 @@
-export type TaskType = 'check' | 'duration' | 'daily_total' | 'program'
+export type TaskType = 'check' | 'duration' | 'daily_total' | 'program' | 'interval'
 export type RecurrenceType = 'daily' | 'weekdays' | 'interval_weeks'
 export type GoalPeriod = 'occurrence' | 'week'
 export type TargetOperator = 'gte' | 'lte' | 'eq'
@@ -33,6 +33,7 @@ export interface Task {
   programRepeat?: boolean
   programStrict?: boolean
   sortOrder: number
+  intervalTemplate?: string
 }
 
 export interface ProgramStep {
@@ -155,6 +156,8 @@ export interface IntervalRuntimeState {
 export interface IntervalSession {
   id: string
   template?: string
+  task?: string
+  taskDate: string
   source: 'template' | 'quick'
   status: IntervalSessionStatus
   name: string

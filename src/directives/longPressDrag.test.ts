@@ -2,7 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DirectiveBinding, VNode } from 'vue'
 import {
   longPressDrag,
+  longPressDrop,
   type LongPressDragOptions,
+  type LongPressDropOptions,
 } from './longPressDrag'
 
 const hapticsMocks = vi.hoisted(() => ({
@@ -42,6 +44,47 @@ function pointerEvent(
   target.dispatchEvent(event)
 }
 
+function touchEvent(
+  target: EventTarget,
+  type: string,
+  {
+    x,
+    y,
+    identifier = 7,
+    active = type !== 'touchend' && type !== 'touchcancel',
+  }: {
+    x: number
+    y: number
+    identifier?: number
+    active?: boolean
+  },
+) {
+  const touch = {
+    identifier,
+    clientX: x,
+    clientY: y,
+    target,
+  } as unknown as Touch
+  const touchList = (touches: Touch[]) => {
+    const list = {
+      length: touches.length,
+      item: (index: number) => touches[index] || null,
+    } as TouchList
+    touches.forEach((item, index) => {
+      Object.defineProperty(list, index, { value: item })
+    })
+    return list
+  }
+  const event = new Event(type, { bubbles: true, cancelable: true }) as TouchEvent
+  Object.defineProperties(event, {
+    touches: { value: touchList(active ? [touch] : []) },
+    targetTouches: { value: touchList(active ? [touch] : []) },
+    changedTouches: { value: touchList([touch]) },
+  })
+  target.dispatchEvent(event)
+  return event
+}
+
 function mountDirective(element: HTMLElement, options: LongPressDragOptions) {
   longPressDrag.mounted?.(
     element,
@@ -53,6 +96,19 @@ function mountDirective(element: HTMLElement, options: LongPressDragOptions) {
 
 function unmountDirective(element: HTMLElement) {
   longPressDrag.beforeUnmount?.(element, {} as DirectiveBinding, {} as VNode, null)
+}
+
+function mountDropDirective(element: HTMLElement, options: LongPressDropOptions) {
+  longPressDrop.mounted?.(
+    element,
+    { value: options } as DirectiveBinding<LongPressDropOptions>,
+    {} as VNode,
+    null,
+  )
+}
+
+function unmountDropDirective(element: HTMLElement) {
+  longPressDrop.beforeUnmount?.(element, {} as DirectiveBinding, {} as VNode, null)
 }
 
 describe('long press drag directive', () => {
@@ -82,7 +138,13 @@ describe('long press drag directive', () => {
     list.append(first, second)
     document.body.append(list)
     vi.spyOn(first, 'getBoundingClientRect').mockReturnValue(bounds(0))
-    vi.spyOn(second, 'getBoundingClientRect').mockReturnValue(bounds(100))
+    vi.spyOn(second, 'getBoundingClientRect').mockImplementation(() => {
+      const placeholder = list.querySelector('.long-press-drag-placeholder')
+      if (!placeholder) return bounds(100)
+      const placeholderIndex = Array.from(list.children).indexOf(placeholder)
+      const secondIndex = Array.from(list.children).indexOf(second)
+      return bounds(placeholderIndex >= 0 && placeholderIndex < secondIndex ? 100 : 0)
+    })
     Object.defineProperty(document, 'elementFromPoint', {
       configurable: true,
       value: vi.fn(() => second),
@@ -99,11 +161,17 @@ describe('long press drag directive', () => {
 
     vi.advanceTimersByTime(1)
     expect(document.querySelector('.long-press-drag-placeholder')).not.toBeNull()
-    expect(document.querySelector('.long-press-drag-ghost')).not.toBeNull()
+    const ghost = document.querySelector<HTMLElement>('.long-press-drag-ghost')
+    expect(ghost).not.toBeNull()
+    expect(ghost?.style.width).toBe('200px')
+    expect(ghost?.style.getPropertyPriority('width')).toBe('important')
     expect(first.getAttribute('aria-grabbed')).toBe('true')
     expect(hapticsMocks.dragActivationFeedback).toHaveBeenCalledOnce()
 
     pointerEvent(first, 'pointermove', { x: 100, y: 175 })
+    expect(second.style.transform).toBe('translate3d(0, 100px, 0)')
+    pointerEvent(first, 'pointermove', { x: 100, y: 38 })
+    expect(second.style.transform).toBe('translate3d(0, 100px, 0)')
     pointerEvent(first, 'pointerup', { x: 100, y: 175 })
 
     expect(onDrop).toHaveBeenCalledWith({
@@ -139,6 +207,47 @@ describe('long press drag directive', () => {
     expect(onDrop).not.toHaveBeenCalled()
 
     unmountDirective(card)
+  })
+
+  it('supports long-press dragging with touch events', () => {
+    const list = document.createElement('div')
+    const first = document.createElement('article')
+    const second = document.createElement('article')
+    list.append(first, second)
+    document.body.append(list)
+    vi.spyOn(first, 'getBoundingClientRect').mockReturnValue(bounds(0))
+    vi.spyOn(second, 'getBoundingClientRect').mockReturnValue(bounds(100))
+    Object.defineProperty(document, 'elementFromPoint', {
+      configurable: true,
+      value: vi.fn(() => second),
+    })
+
+    const onDrop = vi.fn()
+    mountDirective(first, { id: 'first', group: 'touch-list', onDrop })
+    mountDirective(second, {
+      id: 'second',
+      group: 'touch-list',
+      onDrop: vi.fn(),
+    })
+
+    touchEvent(first, 'touchstart', { x: 100, y: 40 })
+    vi.advanceTimersByTime(500)
+    expect(first.getAttribute('aria-grabbed')).toBe('true')
+
+    const move = touchEvent(first, 'touchmove', { x: 100, y: 175 })
+    expect(move.defaultPrevented).toBe(true)
+    touchEvent(first, 'touchend', { x: 100, y: 175 })
+
+    expect(onDrop).toHaveBeenCalledWith({
+      id: 'first',
+      fromIndex: 0,
+      toIndex: 1,
+      orderedIds: ['second', 'first'],
+    })
+    expect(first.getAttribute('aria-grabbed')).toBe('false')
+
+    unmountDirective(first)
+    unmountDirective(second)
   })
 
   it('uses horizontal placement when the cards share a grid row', () => {
@@ -274,5 +383,115 @@ describe('long press drag directive', () => {
     pointerEvent(card, 'pointerup', { x: 30, y: pointerY })
     expect(cancelFrame).toHaveBeenCalledWith(42)
     unmountDirective(card)
+  })
+
+  it('moves a typed item into a compatible drop zone', () => {
+    const sourceZone = document.createElement('section')
+    const targetZone = document.createElement('section')
+    const source = document.createElement('article')
+    const sourceSibling = document.createElement('article')
+    const target = document.createElement('article')
+    sourceZone.append(source, sourceSibling)
+    targetZone.append(target)
+    document.body.append(sourceZone, targetZone)
+    vi.spyOn(source, 'getBoundingClientRect').mockReturnValue(bounds(0))
+    vi.spyOn(sourceSibling, 'getBoundingClientRect').mockReturnValue(bounds(100))
+    vi.spyOn(target, 'getBoundingClientRect').mockReturnValue(bounds(200))
+    Object.defineProperty(document, 'elementFromPoint', {
+      configurable: true,
+      value: vi.fn(() => target),
+    })
+    mountDropDirective(sourceZone, {
+      id: 'root',
+      accepts: ['interval-step', 'interval-group'],
+    })
+    mountDropDirective(targetZone, {
+      id: 'group-1',
+      accepts: ['interval-step'],
+    })
+    const onDrop = vi.fn()
+    mountDirective(source, {
+      id: 'step-1',
+      type: 'interval-step',
+      group: 'root',
+      onDrop,
+    })
+    mountDirective(sourceSibling, {
+      id: 'step-2',
+      type: 'interval-step',
+      group: 'root',
+      onDrop: vi.fn(),
+    })
+    mountDirective(target, {
+      id: 'nested-step',
+      type: 'interval-step',
+      group: 'group-1',
+      onDrop: vi.fn(),
+    })
+
+    pointerEvent(source, 'pointerdown', { x: 100, y: 40 })
+    vi.advanceTimersByTime(500)
+    const placeholder = document.querySelector<HTMLElement>('.long-press-drag-placeholder')
+    vi.spyOn(placeholder!, 'getBoundingClientRect').mockImplementation(() => (
+      placeholder?.parentElement === targetZone
+        ? bounds(200, 20, 120)
+        : bounds(0, 0, 200)
+    ))
+    pointerEvent(source, 'pointermove', { x: 100, y: 275 })
+
+    expect(document.querySelector<HTMLElement>('.long-press-drag-ghost')?.style.width)
+      .toBe('120px')
+    expect(placeholder?.style.transform).toBe('translate3d(0, -200px, 0)')
+
+    pointerEvent(source, 'pointerup', { x: 100, y: 275 })
+
+    expect(onDrop).toHaveBeenCalledWith({
+      id: 'step-1',
+      type: 'interval-step',
+      fromIndex: 0,
+      toIndex: 1,
+      orderedIds: ['nested-step', 'step-1'],
+      fromDropZoneId: 'root',
+      toDropZoneId: 'group-1',
+    })
+
+    unmountDirective(source)
+    unmountDirective(sourceSibling)
+    unmountDirective(target)
+    unmountDropDirective(sourceZone)
+    unmountDropDirective(targetZone)
+  })
+
+  it('does not enter a drop zone that rejects the dragged type', () => {
+    const sourceZone = document.createElement('section')
+    const targetZone = document.createElement('section')
+    const source = document.createElement('article')
+    sourceZone.append(source)
+    document.body.append(sourceZone, targetZone)
+    vi.spyOn(source, 'getBoundingClientRect').mockReturnValue(bounds(0))
+    Object.defineProperty(document, 'elementFromPoint', {
+      configurable: true,
+      value: vi.fn(() => targetZone),
+    })
+    mountDropDirective(sourceZone, { id: 'root', accepts: ['interval-step'] })
+    mountDropDirective(targetZone, { id: 'groups-only', accepts: ['interval-group'] })
+    const onDrop = vi.fn()
+    mountDirective(source, {
+      id: 'step-1',
+      type: 'interval-step',
+      onDrop,
+    })
+
+    pointerEvent(source, 'pointerdown', { x: 100, y: 40 })
+    vi.advanceTimersByTime(500)
+    pointerEvent(source, 'pointermove', { x: 100, y: 200 })
+    pointerEvent(source, 'pointerup', { x: 100, y: 200 })
+
+    expect(onDrop).not.toHaveBeenCalled()
+    expect(targetZone.classList.contains('long-press-drop-zone--active')).toBe(false)
+
+    unmountDirective(source)
+    unmountDropDirective(sourceZone)
+    unmountDropDirective(targetZone)
   })
 })

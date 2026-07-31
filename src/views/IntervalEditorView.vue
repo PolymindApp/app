@@ -14,6 +14,7 @@ import {
   formatIntervalDuration,
   intervalDuration,
   intervalStepCount,
+  moveIntervalNodeToGroup,
   validateIntervalDefinition,
 } from '@/services/intervals'
 import { useIntervalStore } from '@/stores/intervals'
@@ -32,6 +33,7 @@ const expandedNodeId = ref<string>()
 const nodeActionsDrawer = ref(false)
 const error = ref('')
 const isEditing = computed(() => Boolean(route.params.id))
+const sequenceDropTypes = ['interval-step', 'interval-group']
 
 const draft = reactive<IntervalTemplateDraft>({
   name: '',
@@ -173,14 +175,15 @@ const actions = {
     expandedNodeId.value = expandedNodeId.value === id ? undefined : id
   },
   reorder(result: LongPressDragResult) {
-    const location = findNode(draft.definition.children, result.id)
-    if (!location || result.orderedIds.length !== location.nodes.length) return
-    const nodesById = new Map(location.nodes.map((node) => [node.id, node]))
-    const ordered = result.orderedIds
-      .map((id) => nodesById.get(id))
-      .filter((node): node is IntervalNode => Boolean(node))
-    if (ordered.length !== location.nodes.length) return
-    location.nodes.splice(0, location.nodes.length, ...ordered)
+    const targetGroupId = result.toDropZoneId === 'root'
+      ? undefined
+      : result.toDropZoneId
+    moveIntervalNodeToGroup(
+      draft.definition,
+      result.id,
+      targetGroupId,
+      result.orderedIds,
+    )
   },
 }
 
@@ -314,7 +317,10 @@ async function removeTemplate() {
           <v-btn size="small" variant="tonal" icon="mdi-folder-plus-outline" aria-label="Add group" @click="addRootNode('group')" />
         </div>
       </div>
-      <div class="sequence-tree">
+      <div
+        v-long-press-drop="{ id: 'root', accepts: sequenceDropTypes }"
+        class="sequence-tree"
+      >
         <div v-if="!draft.definition.children.length" class="sequence-empty">
           <span class="sequence-empty__icon">
             <v-icon icon="mdi-timeline-plus-outline" size="28" />

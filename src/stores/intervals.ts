@@ -1,6 +1,7 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
-import { api } from '@/lib/api'
+import { ApiError, api } from '@/lib/api'
+import { useTaskStore } from '@/stores/tasks'
 import {
   cloneIntervalTemplateDraft,
   createRuntimeState,
@@ -40,6 +41,8 @@ function mapSession(record: Record<string, any>): IntervalSession {
   return {
     id: record.id,
     template: record.template || undefined,
+    task: record.task || undefined,
+    taskDate: record.task_date || '',
     source: record.source,
     status: record.status,
     name: record.snapshot_name,
@@ -139,11 +142,24 @@ export const useIntervalStore = defineStore('intervals', () => {
   }
 
   async function deleteTemplate(templateId: string) {
-    await api.collection('interval_templates').delete(templateId)
-    templates.value = templates.value.filter((template) => template.id !== templateId)
-    sessions.value.forEach((session) => {
-      if (session.template === templateId) session.template = undefined
-    })
+    error.value = ''
+    try {
+      await api.collection('interval_templates').delete(templateId)
+      templates.value = templates.value.filter((template) => template.id !== templateId)
+      sessions.value.forEach((session) => {
+        if (session.template === templateId) session.template = undefined
+      })
+    } catch (cause) {
+      const attachedTasks = cause instanceof ApiError && Array.isArray(cause.details.tasks)
+        ? cause.details.tasks
+          .map((task) => task && typeof task === 'object' && 'name' in task ? String(task.name) : '')
+          .filter(Boolean)
+        : []
+      error.value = cause instanceof Error
+        ? `${cause.message}${attachedTasks.length ? ` Attached tasks: ${attachedTasks.join(', ')}.` : ''}`
+        : 'Could not delete the interval.'
+      throw cause
+    }
   }
 
   async function duplicateTemplate(template: IntervalTemplate) {
@@ -201,6 +217,7 @@ export const useIntervalStore = defineStore('intervals', () => {
     definition: IntervalDefinition
     cues: IntervalCueSettings
     template?: string
+    task?: string
   }) {
     if (activeSession.value) return activeSession.value
     const activeRecords = await api.collection('interval_sessions').getList(1, 1, {
@@ -217,6 +234,7 @@ export const useIntervalStore = defineStore('intervals', () => {
     const record = await api.collection('interval_sessions').create({
       owner: api.authStore.record!.id,
       template: input.template || '',
+      task: input.task || '',
       source: input.source,
       status: 'running',
       snapshot_name: input.name,
@@ -256,6 +274,28 @@ export const useIntervalStore = defineStore('intervals', () => {
     return mapped
   }
 
+  async function completeSession(
+    sessionId: string,
+    changes: {
+      runtime: IntervalRuntimeState
+      elapsedSeconds: number
+      endedAt: string
+    },
+  ) {
+    const response = await api.completeIntervalSession(sessionId, {
+      runtimeState: changes.runtime,
+      elapsedSeconds: changes.elapsedSeconds,
+      endedAt: changes.endedAt,
+    })
+    const mapped = mapSession(response.session)
+    const index = sessions.value.findIndex((session) => session.id === sessionId)
+    if (index >= 0) sessions.value.splice(index, 1, mapped)
+    else sessions.value.unshift(mapped)
+    if (response.occurrence) useTaskStore().upsertOccurrenceRecord(response.occurrence)
+    localStorage.removeItem(RECOVERY_KEY)
+    return mapped
+  }
+
   async function reconcileActiveSession() {
     const active = activeSession.value
     if (!active || active.status !== 'running') return active
@@ -263,8 +303,7 @@ export const useIntervalStore = defineStore('intervals', () => {
     const now = new Date()
     const result = reconcileIntervalRuntime(active.definition, active.runtime, now)
     if (result.completed) {
-      return updateSession(active.id, {
-        status: 'completed',
+      return completeSession(active.id, {
         runtime: result.runtime,
         elapsedSeconds: Math.round(result.runtime.accumulatedMs / 1000),
         endedAt: now.toISOString(),
@@ -317,6 +356,7 @@ export const useIntervalStore = defineStore('intervals', () => {
     reorderTemplates,
     startSession,
     updateSession,
+    completeSession,
     reconcileActiveSession,
     mirrorRuntime,
     loadQuickIntervalSettings,

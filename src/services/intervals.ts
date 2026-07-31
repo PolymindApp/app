@@ -94,6 +94,70 @@ export function duplicateIntervalNode(node: IntervalNode): IntervalNode {
   }
 }
 
+interface IntervalNodeLocation {
+  nodes: IntervalNode[]
+  index: number
+}
+
+function findIntervalNodeLocation(
+  nodes: IntervalNode[],
+  id: string,
+): IntervalNodeLocation | undefined {
+  for (let index = 0; index < nodes.length; index += 1) {
+    const node = nodes[index]
+    if (!node) continue
+    if (node.id === id) return { nodes, index }
+    if (node.type === 'group') {
+      const nested = findIntervalNodeLocation(node.children, id)
+      if (nested) return nested
+    }
+  }
+  return undefined
+}
+
+export function moveIntervalNodeToGroup(
+  definition: IntervalDefinition,
+  nodeId: string,
+  targetGroupId: string | undefined,
+  orderedIds: string[],
+) {
+  const source = findIntervalNodeLocation(definition.children, nodeId)
+  const node = source?.nodes[source.index]
+  if (!source || !node) return false
+
+  let targetNodes = definition.children
+  if (targetGroupId) {
+    if (
+      node.type === 'group'
+      && (
+        targetGroupId === node.id
+        || Boolean(findIntervalNodeLocation(node.children, targetGroupId))
+      )
+    ) return false
+    const targetLocation = findIntervalNodeLocation(definition.children, targetGroupId)
+    const targetGroup = targetLocation?.nodes[targetLocation.index]
+    if (!targetGroup || targetGroup.type !== 'group') return false
+    targetNodes = targetGroup.children
+  }
+
+  source.nodes.splice(source.index, 1)
+  const expectedNodes = [...targetNodes, node]
+  const nodesById = new Map(expectedNodes.map((item) => [item.id, item]))
+  const ordered = orderedIds
+    .map((id) => nodesById.get(id))
+    .filter((item): item is IntervalNode => Boolean(item))
+  if (
+    ordered.length !== expectedNodes.length
+    || new Set(orderedIds).size !== expectedNodes.length
+  ) {
+    source.nodes.splice(source.index, 0, node)
+    return false
+  }
+
+  targetNodes.splice(0, targetNodes.length, ...ordered)
+  return true
+}
+
 function cloneIntervalNode(node: IntervalNode): IntervalNode {
   if (node.type === 'step') return { ...node }
   return {

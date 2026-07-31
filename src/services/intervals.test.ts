@@ -9,13 +9,19 @@ import {
   intervalDuration,
   intervalRunProgress,
   intervalStepCount,
+  moveIntervalNodeToGroup,
   normalizeQuickIntervalSettings,
   quickIntervalDefinition,
   reconcileIntervalRuntime,
   resolveIntervalStep,
   validateIntervalDefinition,
 } from './intervals'
-import type { IntervalDefinition, IntervalTemplate, QuickIntervalDraft } from '@/types/domain'
+import type {
+  IntervalDefinition,
+  IntervalGroupNode,
+  IntervalTemplate,
+  QuickIntervalDraft,
+} from '@/types/domain'
 
 function nestedDefinition(): IntervalDefinition {
   const rounds = createIntervalGroup('Rounds', 3)
@@ -119,6 +125,75 @@ describe('interval definitions', () => {
     expect(validateIntervalDefinition(definition)).toEqual([])
     expect(intervalStepCount(definition)).toBe(1)
     expect(intervalDuration(definition)).toBe(0)
+  })
+
+  it('moves an interval from a group to the root order', () => {
+    const rootStep = createIntervalStep('Root', 'work', 30)
+    const nestedStep = createIntervalStep('Nested', 'rest', 15)
+    const group = createIntervalGroup('Rounds', 2)
+    group.children = [nestedStep]
+    const definition: IntervalDefinition = {
+      version: 1,
+      children: [rootStep, group],
+    }
+
+    expect(moveIntervalNodeToGroup(
+      definition,
+      nestedStep.id,
+      undefined,
+      [rootStep.id, group.id, nestedStep.id],
+    )).toBe(true)
+
+    expect(group.children).toEqual([])
+    expect(definition.children.map((node) => node.id)).toEqual([
+      rootStep.id,
+      group.id,
+      nestedStep.id,
+    ])
+  })
+
+  it('moves a complete group into another group', () => {
+    const sourceGroup = createIntervalGroup('Source', 2)
+    sourceGroup.children = [createIntervalStep('Work', 'work', 30)]
+    const targetGroup = createIntervalGroup('Target', 2)
+    const targetStep = createIntervalStep('Rest', 'rest', 15)
+    targetGroup.children = [targetStep]
+    const definition: IntervalDefinition = {
+      version: 1,
+      children: [sourceGroup, targetGroup],
+    }
+
+    expect(moveIntervalNodeToGroup(
+      definition,
+      sourceGroup.id,
+      targetGroup.id,
+      [targetStep.id, sourceGroup.id],
+    )).toBe(true)
+
+    expect(definition.children).toEqual([targetGroup])
+    expect(targetGroup.children.map((node) => node.id)).toEqual([
+      targetStep.id,
+      sourceGroup.id,
+    ])
+  })
+
+  it('rejects moving a group into one of its descendants', () => {
+    const outerGroup = createIntervalGroup('Outer', 2)
+    const innerGroup = createIntervalGroup('Inner', 2)
+    outerGroup.children = [innerGroup]
+    const definition: IntervalDefinition = {
+      version: 1,
+      children: [outerGroup],
+    }
+
+    expect(moveIntervalNodeToGroup(
+      definition,
+      outerGroup.id,
+      innerGroup.id,
+      [outerGroup.id],
+    )).toBe(false)
+    expect(definition.children).toEqual([outerGroup])
+    expect((definition.children[0] as IntervalGroupNode).children).toEqual([innerGroup])
   })
 
   it('defaults groups to one repeat and limits repeats to fifteen', () => {

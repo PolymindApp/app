@@ -30,6 +30,11 @@ interface UserSettingsResponse {
   updated?: string
 }
 
+interface CompleteIntervalSessionResponse {
+  session: RecordModel
+  occurrence: RecordModel | null
+}
+
 const AUTH_STORAGE_KEY = 'mom-api-auth'
 const baseUrl = (import.meta.env.VITE_API_URL || '/api').replace(/\/+$/, '')
 
@@ -322,6 +327,28 @@ class ApiClient {
     )
     this.saveUserSettings(response)
     return response.settings
+  }
+
+  completeIntervalSession(
+    sessionId: string,
+    input: {
+      runtimeState: unknown
+      elapsedSeconds: number
+      endedAt: string
+    },
+  ) {
+    return request<CompleteIntervalSessionResponse>(
+      `/interval-sessions/${encodeURIComponent(sessionId)}/complete`,
+      {
+        method: 'POST',
+        body: {
+          runtime_state: input.runtimeState,
+          elapsed_seconds: input.elapsedSeconds,
+          ended_at: input.endedAt,
+        },
+      },
+      this.authStore,
+    )
   }
 
   private saveUserSettings(response: UserSettingsResponse) {

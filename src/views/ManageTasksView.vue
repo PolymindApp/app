@@ -5,11 +5,13 @@ import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import { nextScheduledDates } from '@/services/schedule'
+import { useIntervalStore } from '@/stores/intervals'
 import { useTaskStore } from '@/stores/tasks'
 import type { LongPressDragResult } from '@/directives/longPressDrag'
 import type { Task, TaskType } from '@/types/domain'
 
 const store = useTaskStore()
+const intervalStore = useIntervalStore()
 const router = useRouter()
 const { tasks, steps, loading, error } = storeToRefs(store)
 const filter = ref<'active' | 'paused'>('active')
@@ -32,11 +34,17 @@ const typeInfo: Record<TaskType, { label: string; icon: string; color: string }>
   duration: { label: 'Duration', icon: 'mdi-timer-outline', color: '#D4A5FF' },
   daily_total: { label: 'Daily total', icon: 'mdi-chart-donut', color: '#FFB86B' },
   program: { label: 'Program', icon: 'mdi-repeat-variant', color: '#C7F464' },
+  interval: { label: 'Interval', icon: 'mdi-timer-play-outline', color: '#66D9C8' },
 }
 
 onMounted(() => {
   if (!tasks.value.length) store.load().catch(() => undefined)
+  if (!intervalStore.loaded) intervalStore.load().catch(() => undefined)
 })
+
+function attachedIntervalName(task: Task) {
+  return intervalStore.templates.find((item) => item.id === task.intervalTemplate)?.name || 'Attached interval'
+}
 
 function scheduleLabel(task: Task) {
   if (task.type === 'program') return `${task.cycleLength}-day ${task.programRepeat ? 'repeating' : 'one-off'} cycle`
@@ -137,6 +145,10 @@ async function confirmStatusChange() {
                       {{ step.name }}
                     </span>
                   </div>
+                  <p v-else-if="task.type === 'interval'" class="target-copy mt-3">
+                    <v-icon icon="mdi-timer-play-outline" size="15" class="mr-1" />
+                    {{ attachedIntervalName(task) }}
+                  </p>
                   <p v-else-if="task.targetValue" class="target-copy mt-3">
                     Target: <strong>{{ task.targetValue }} {{ task.customUnit || task.unit }}</strong>
                     <span v-if="task.goalPeriod === 'week'"> / week</span>

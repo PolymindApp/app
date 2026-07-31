@@ -3,7 +3,7 @@ import { createPinia } from 'pinia'
 import { App as NativeApp } from '@capacitor/app'
 import { Capacitor } from '@capacitor/core'
 import App from './App.vue'
-import { longPressDrag } from './directives/longPressDrag'
+import { longPressDrag, longPressDrop } from './directives/longPressDrag'
 import router from './router'
 import { vuetify } from './plugins/vuetify'
 import { installAndroidFocusAutoScroll } from './services/androidFocusAutoScroll'
@@ -22,6 +22,7 @@ createApp(App)
   .use(router)
   .use(vuetify)
   .directive('long-press-drag', longPressDrag)
+  .directive('long-press-drop', longPressDrop)
   .mount('#app')
 
 if (nativePlatform === 'android') {

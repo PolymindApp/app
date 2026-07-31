@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import { stopBackgroundInterval, syncBackgroundInterval } from '@/services/backgroundInterval'
 import {
@@ -19,17 +20,29 @@ import {
   resolveIntervalStep,
   intervalStepDurationSeconds,
 } from '@/services/intervals'
+import { isTaskScheduled, toDateKey } from '@/services/schedule'
 import { useIntervalStore } from '@/stores/intervals'
+import { useTaskStore } from '@/stores/tasks'
 import type { IntervalRuntimeState, IntervalSession } from '@/types/domain'
 
 const route = useRoute()
 const router = useRouter()
 const store = useIntervalStore()
+const taskStore = useTaskStore()
 const displayRemainingMs = ref(0)
 const syncing = ref(false)
 const starting = ref(false)
 const endDialog = ref(false)
+const attributionSheet = ref(false)
+const activeSessionSheet = ref(false)
 const error = ref('')
+const completionError = ref('')
+const pendingCompletion = ref<{
+  sessionId: string
+  runtime: IntervalRuntimeState
+  elapsedSeconds: number
+  endedAt: string
+}>()
 const backgroundError = ref('')
 const timerEffect = ref<'count' | ''>('')
 const timerEffectKey = ref(0)
@@ -80,11 +93,33 @@ const hasStarted = computed(() => {
     || item.runtime.remainingMs < initialDurationMs
 })
 const playActionLabel = computed(() => hasStarted.value ? 'Resume' : 'Start')
+const returnTo = computed(() => route.query.from === 'tasks' ? '/tasks' : '/intervals')
+const originTaskId = computed(() => typeof route.query.task === 'string' ? route.query.task : '')
+const attachedTasks = computed(() => {
+  const templateId = typeof route.params.templateId === 'string' ? route.params.templateId : session.value?.template
+  return taskStore.tasks.filter((task) => task.type === 'interval' && task.intervalTemplate === templateId)
+})
+const eligibleTaskProgress = computed(() => {
+  const today = new Date()
+  return attachedTasks.value
+    .filter((task) => task.active)
+    .map((task) => taskStore.makeProgress(task, today))
+    .filter((item) => item.status === 'pending'
+      && !item.complete
+      && (Boolean(item.occurrence) || isTaskScheduled(item.task, today)))
+})
+const attributedTaskName = computed(() => {
+  const taskId = session.value?.task
+  return taskId ? taskStore.tasks.find((task) => task.id === taskId)?.name : undefined
+})
 
 onMounted(async () => {
   runnerMounted = true
   try {
-    if (!store.loaded) await store.load()
+    await Promise.all([
+      store.loaded ? Promise.resolve() : store.load(),
+      taskStore.tasks.length ? Promise.resolve() : taskStore.load(),
+    ])
     if (isTemplatePreview.value) {
       const template = store.templates.find((item) => item.id === route.params.templateId)
       if (!template) {
@@ -97,6 +132,8 @@ onMounted(async () => {
       previewSession.value = {
         id: `template-preview-${template.id}`,
         template: template.id,
+        task: originTaskId.value || undefined,
+        taskDate: toDateKey(now),
         source: 'template',
         status: 'paused',
         name: template.name,
@@ -107,6 +144,10 @@ onMounted(async () => {
         elapsedSeconds: 0,
         runtime,
         updated: now.toISOString(),
+      }
+      if (originTaskId.value && !eligibleTaskProgress.value.some((item) => item.task.id === originTaskId.value)) {
+        error.value = 'This interval task is not open today.'
+        return
       }
     }
     if (!session.value) {
@@ -186,7 +227,7 @@ async function handleVisibility() {
 
 async function tick() {
   const item = session.value
-  if (!item || syncing.value || finished.value) return
+  if (!item || syncing.value || finished.value || pendingCompletion.value) return
   if (item.status === 'paused') {
     displayRemainingMs.value = item.runtime.remainingMs
     return
@@ -231,14 +272,41 @@ async function completeSession(item: IntervalSession, runtime: IntervalRuntimeSt
   playIntervalGoCue(item.cues)
   await notifyIntervalTransition(`${item.name} complete`, 'Your interval session is finished.')
   await stopBackgroundInterval()
-  await store.updateSession(item.id, {
-    status: 'completed',
+  const completion = {
+    sessionId: item.id,
     runtime,
     elapsedSeconds: Math.round(runtime.accumulatedMs / 1000),
     endedAt: new Date().toISOString(),
-  })
+  }
+  try {
+    await store.completeSession(completion.sessionId, completion)
+    completionError.value = ''
+    pendingCompletion.value = undefined
+  } catch (cause) {
+    pendingCompletion.value = completion
+    completionError.value = cause instanceof Error
+      ? cause.message
+      : 'Could not save the completed interval.'
+  }
   await wakeLock?.release()
   wakeLock = undefined
+}
+
+async function retryCompletion() {
+  const completion = pendingCompletion.value
+  if (!completion || syncing.value) return
+  syncing.value = true
+  try {
+    await store.completeSession(completion.sessionId, completion)
+    completionError.value = ''
+    pendingCompletion.value = undefined
+  } catch (cause) {
+    completionError.value = cause instanceof Error
+      ? cause.message
+      : 'Could not save the completed interval.'
+  } finally {
+    syncing.value = false
+  }
 }
 
 async function pause() {
@@ -274,7 +342,28 @@ async function resume() {
   wakeLock = await requestIntervalWakeLock()
 }
 
-async function startTemplate() {
+async function requestStartTemplate() {
+  const active = store.activeSession
+  if (active) {
+    if (originTaskId.value && active.task === originTaskId.value) {
+      await router.replace({
+        name: 'interval-runner',
+        params: { sessionId: active.id },
+        query: { from: route.query.from },
+      })
+    } else {
+      activeSessionSheet.value = true
+    }
+    return
+  }
+  if (!originTaskId.value && attachedTasks.value.length) {
+    attributionSheet.value = true
+    return
+  }
+  await startTemplate(originTaskId.value || undefined)
+}
+
+async function startTemplate(taskId?: string) {
   const item = previewSession.value
   if (!item || starting.value) return
   starting.value = true
@@ -287,9 +376,19 @@ async function startTemplate() {
       definition: item.definition,
       cues: item.cues,
       template: item.template,
+      task: taskId,
     })
+    if (started.task !== taskId) {
+      activeSessionSheet.value = true
+      return
+    }
+    attributionSheet.value = false
     previewSession.value = undefined
-    await router.replace(`/intervals/run/${started.id}`)
+    await router.replace({
+      name: 'interval-runner',
+      params: { sessionId: started.id },
+      query: route.query.from === 'tasks' ? { from: 'tasks' } : {},
+    })
     displayRemainingMs.value = started.runtime.remainingMs
     if (started.status === 'running') {
       await syncNativeTimer(started)
@@ -300,6 +399,17 @@ async function startTemplate() {
   } finally {
     starting.value = false
   }
+}
+
+async function resumeActiveSession() {
+  const active = store.activeSession
+  if (!active) return
+  activeSessionSheet.value = false
+  await router.replace({
+    name: 'interval-runner',
+    params: { sessionId: active.id },
+    query: route.query.from === 'tasks' ? { from: 'tasks' } : {},
+  })
 }
 
 async function advanceCurrent(item: IntervalSession) {
@@ -420,7 +530,11 @@ async function runAgain() {
     cues: item.cues,
     template: item.template,
   })
-  await router.replace(`/intervals/run/${nextSession.id}`)
+  await router.replace({
+    name: 'interval-runner',
+    params: { sessionId: nextSession.id },
+    query: route.query.from === 'tasks' ? { from: 'tasks' } : {},
+  })
   displayRemainingMs.value = nextSession.runtime.remainingMs
   await syncNativeTimer(nextSession)
   wakeLock = await requestIntervalWakeLock()
@@ -430,6 +544,12 @@ async function runAgain() {
 <template>
   <main class="runner-page" :class="{ 'runner-page--finished': finished }">
     <v-alert v-if="backgroundError" type="warning" variant="tonal" class="mb-3">{{ backgroundError }}</v-alert>
+    <v-alert v-if="completionError" type="error" variant="tonal" class="mb-3">
+      {{ completionError }}
+      <template #append>
+        <v-btn size="small" variant="text" :loading="syncing" @click="retryCompletion">Retry</v-btn>
+      </template>
+    </v-alert>
     <v-alert v-if="error" type="error" variant="tonal">{{ error }}</v-alert>
 
     <template v-else-if="session && finished">
@@ -444,14 +564,14 @@ async function runAgain() {
         </div>
         <div class="finish-actions">
           <v-btn color="secondary" size="large" prepend-icon="mdi-replay" @click="runAgain">Run again</v-btn>
-          <v-btn variant="outlined" size="large" to="/intervals">Done</v-btn>
+          <v-btn variant="outlined" size="large" :to="returnTo">Done</v-btn>
         </div>
       </section>
     </template>
 
     <template v-else-if="session && current">
       <header class="runner-header">
-        <v-btn icon="mdi-chevron-down" variant="text" aria-label="Leave runner" to="/intervals" />
+        <v-btn icon="mdi-chevron-down" variant="text" aria-label="Leave runner" :to="returnTo" />
         <div class="text-center min-width-0">
           <p class="runner-label">Interval {{ current.index + 1 }} of {{ current.totalSteps }}</p>
           <strong class="text-truncate d-block">{{ session.name }}</strong>
@@ -463,6 +583,9 @@ async function runAgain() {
         <section class="runner-main">
           <div class="runner-details">
             <p class="runner-session">{{ session.name }}</p>
+            <p v-if="attributedTaskName" class="runner-task-link">
+              Completes {{ attributedTaskName }}
+            </p>
             <p class="runner-label runner-position">Interval {{ current.index + 1 }} of {{ current.totalSteps }}</p>
             <div v-if="current.groups.length" class="group-breadcrumb">
               <span v-for="group in current.groups" :key="`${group.name}-${group.iteration}`">{{ group.name }} {{ group.iteration }}/{{ group.total }}</span>
@@ -506,7 +629,7 @@ async function runAgain() {
                   :loading="starting || syncing"
                   :disabled="!isTemplatePreview && session.status !== 'running'"
                   @touchstart.stop
-                  @click.stop="isTemplatePreview ? startTemplate() : confirmCurrent()"
+                  @click.stop="isTemplatePreview ? requestStartTemplate() : confirmCurrent()"
                 >
                   {{ isTemplatePreview ? playActionLabel : 'Confirm and continue' }}
                 </v-btn>
@@ -535,7 +658,7 @@ async function runAgain() {
             :loading="starting"
             :aria-label="session.status === 'paused' ? playActionLabel : 'Pause'"
             @touchstart.stop
-            @click.stop="isTemplatePreview ? startTemplate() : session.status === 'paused' ? resume() : pause()"
+            @click.stop="isTemplatePreview ? requestStartTemplate() : session.status === 'paused' ? resume() : pause()"
           />
           <v-btn icon="mdi-skip-next" variant="tonal" size="large" aria-label="Skip interval" :disabled="isTemplatePreview || currentConfirmation" @click="skip" />
           <v-btn prepend-icon="mdi-restart" variant="text" class="restart-button" :disabled="isTemplatePreview" @click="restart">Restart</v-btn>
@@ -556,15 +679,15 @@ async function runAgain() {
             :loading="starting"
             :aria-label="session.status === 'paused' ? playActionLabel : 'Pause'"
             @touchstart.stop
-            @click.stop="isTemplatePreview ? startTemplate() : session.status === 'paused' ? resume() : pause()"
+            @click.stop="isTemplatePreview ? requestStartTemplate() : session.status === 'paused' ? resume() : pause()"
           />
           <v-btn icon="mdi-skip-next" variant="tonal" aria-label="Next interval" :disabled="isTemplatePreview || currentConfirmation" @click="skip" />
           <v-btn
             icon="mdi-chevron-left"
             variant="text"
             class="runner-back-button"
-            aria-label="Back to intervals"
-            to="/intervals"
+            aria-label="Leave runner"
+            :to="returnTo"
           />
           <v-btn
             icon="mdi-restart"
@@ -595,6 +718,46 @@ async function runAgain() {
       icon="mdi-stop-circle-outline"
       @confirm="endEarly"
     />
+
+    <ActionBottomSheet
+      v-model="attributionSheet"
+      title="Choose what this run completes"
+      aria-label="Choose an interval task or standalone run"
+    >
+      <p class="text-body-2 muted px-4 pb-3">Choose one open task for today, or run the interval on its own.</p>
+      <p v-if="!eligibleTaskProgress.length" class="text-caption muted px-4 pb-2">No attached tasks are open today.</p>
+      <v-list-item
+        v-for="item in eligibleTaskProgress"
+        :key="item.task.id"
+        prepend-icon="mdi-format-list-checks"
+        :title="item.task.name"
+        subtitle="Complete this task when the interval finishes"
+        rounded="lg"
+        @click="startTemplate(item.task.id)"
+      />
+      <v-list-item
+        prepend-icon="mdi-timer-outline"
+        title="Standalone"
+        subtitle="Save the run without completing a task"
+        rounded="lg"
+        @click="startTemplate()"
+      />
+    </ActionBottomSheet>
+
+    <ActionBottomSheet
+      v-model="activeSessionSheet"
+      title="Interval already running"
+      aria-label="Active interval actions"
+    >
+      <div class="px-2 py-3">
+        <p class="text-body-2 muted mb-4">
+          {{ store.activeSession?.name || 'Another interval' }} is already in progress. Its task attachment will not be changed.
+        </p>
+        <v-btn block color="secondary" prepend-icon="mdi-play" @click="resumeActiveSession">
+          Resume active interval
+        </v-btn>
+      </div>
+    </ActionBottomSheet>
   </main>
 </template>
 
@@ -632,6 +795,7 @@ async function runAgain() {
 .runner-main { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
 .runner-details { display: contents; }
 .runner-session { display: none; }
+.runner-task-link { margin-top: .45rem; color: rgb(var(--v-theme-secondary)); font-size: .76rem; font-weight: 800; }
 .runner-position { display: none; }
 .group-breadcrumb { display: flex; flex-wrap: wrap; justify-content: center; gap: .35rem; margin-bottom: 1.25rem; }
 .group-breadcrumb span { padding: 4px 8px; border-radius: 999px; background: rgb(var(--v-theme-surface-variant)); color: rgb(var(--v-theme-on-surface) / .7); font-size: .65rem; }

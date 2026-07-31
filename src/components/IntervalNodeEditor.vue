@@ -34,6 +34,7 @@ const props = defineProps<{
 }>()
 
 const { smAndDown } = useDisplay()
+const sequenceDropTypes = ['interval-step', 'interval-group']
 
 const kinds: Array<{ title: string; value: IntervalStepKind }> = [
   { title: 'Work', value: 'work' },
@@ -103,19 +104,18 @@ function selectKind(kind: IntervalStepKind) {
   <v-card
     v-long-press-drag="{
       id: node.id,
+      type: node.type === 'step' ? 'interval-step' : 'interval-group',
       group: `interval-sequence-${parentId || 'root'}`,
       handle: '.interval-node__drag-handle',
-      disabled: siblingCount < 2,
       onDrop: actions.reorder,
     }"
-    class="interval-node surface-card pa-4"
+    class="interval-node interval-node--draggable surface-card pa-4"
     :class="[
       `interval-node--${node.type}`,
       {
         'interval-node--nested': depth > 0,
         'interval-node--deep': depth > 1,
         'interval-node--expanded': isExpanded,
-        'interval-node--draggable': siblingCount > 1,
       },
     ]"
     :style="{ '--node-accent': presentation.color }"
@@ -238,9 +238,12 @@ function selectKind(kind: IntervalStepKind) {
             <v-btn size="small" variant="tonal" prepend-icon="mdi-timer-plus-outline" @click="actions.add(node.id, 'step')">Add interval</v-btn>
             <v-btn size="small" variant="tonal" prepend-icon="mdi-folder-plus-outline" @click="actions.add(node.id, 'group')">Add group</v-btn>
           </div>
-          <p v-if="!node.children.length" class="empty-group muted mt-4">Add an interval or nested group.</p>
         </div>
-        <div v-if="node.children.length" class="nested-nodes mt-4">
+        <div
+          v-long-press-drop="{ id: node.id, accepts: sequenceDropTypes }"
+          class="nested-nodes mt-4"
+          :class="{ 'nested-nodes--empty': !node.children.length }"
+        >
           <IntervalNodeEditor
             v-for="(child, childIndex) in node.children"
             :key="child.id"
@@ -255,6 +258,9 @@ function selectKind(kind: IntervalStepKind) {
             :expanded-node-id="expandedNodeId"
             :actions="actions"
           />
+          <p v-if="!node.children.length" class="empty-group muted">
+            Add or drop an interval or nested group.
+          </p>
         </div>
       </div>
     </template>
@@ -297,6 +303,7 @@ function selectKind(kind: IntervalStepKind) {
 .node-index { display: grid; width: 30px; height: 30px; flex: 0 0 auto; place-items: center; border-radius: 10px; background: var(--node-accent); color: #17200f; font-size: .72rem; font-weight: 900; }
 .node-fields, .nested-nodes { display: grid; gap: 1rem; }
 .nested-nodes { border-left: 3px solid rgb(var(--v-theme-secondary) / .62); }
+.nested-nodes--empty { min-height: 3.5rem; align-items: center; }
 .kind-field, .duration-wheel { min-width: 0; margin: 0; padding: 0; border: 0; }
 .duration-wheel > legend,
 .kind-field > legend { margin-bottom: .5rem; color: rgb(var(--v-theme-on-surface) / .68); font-size: .75rem; font-weight: 800; }

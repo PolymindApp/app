@@ -24,6 +24,12 @@ export const vuetify = createVuetify({
       rounded: 'lg',
       hideDetails: 'auto',
     },
+    VNumberInput: {
+      variant: 'outlined',
+      density: 'comfortable',
+      rounded: 'lg',
+      hideDetails: 'auto',
+    },
     VSelect: {
       variant: 'outlined',
       density: 'comfortable',

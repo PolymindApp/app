@@ -32,7 +32,10 @@ final class Schema
                 'fields' => [
                     'name' => self::text(160, true),
                     'description' => self::text(2000),
-                    'type' => self::choice(['check', 'duration', 'daily_total', 'program'], true),
+                    'type' => self::choice(
+                        ['check', 'duration', 'daily_total', 'program', 'interval'],
+                        true,
+                    ),
                     'tags' => self::jsonArray(1000),
                     'mandatory' => self::boolean(),
                     'review_when_missed' => self::boolean(),
@@ -53,6 +56,7 @@ final class Schema
                     'program_strict' => self::boolean(),
                     'sort_order' => self::integer(),
                     'color' => self::text(20),
+                    'interval_template' => self::relation(false, true),
                 ],
                 'required' => ['name', 'type', 'start_date', 'recurrence_type'],
                 'sort' => ['name', 'sort_order', 'start_date'],
@@ -139,6 +143,8 @@ final class Schema
                     'planned_seconds' => self::number(0),
                     'elapsed_seconds' => self::number(0),
                     'runtime_state' => self::json(20000, true),
+                    'task' => self::relation(false, true),
+                    'task_date' => self::dateKey(false, true),
                 ],
                 'required' => [
                     'source',
@@ -150,7 +156,7 @@ final class Schema
                     'runtime_state',
                 ],
                 'sort' => ['started_at', 'ended_at', 'status'],
-                'filter' => ['template', 'source', 'status', 'started_at'],
+                'filter' => ['template', 'task', 'task_date', 'source', 'status', 'started_at'],
             ],
         ];
 

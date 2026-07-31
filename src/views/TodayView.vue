@@ -8,12 +8,15 @@ import { useRouter } from 'vue-router'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import TaskCard from '@/components/TaskCard.vue'
 import WeekNavigator from '@/components/WeekNavigator.vue'
+import { formatIntervalDuration, intervalDuration } from '@/services/intervals'
 import { toDateKey } from '@/services/schedule'
+import { useIntervalStore } from '@/stores/intervals'
 import { useTaskStore } from '@/stores/tasks'
 import type { TaskProgress } from '@/types/domain'
 
 const allowAutomaticFocus = Capacitor.getPlatform() !== 'android'
 const store = useTaskStore()
+const intervalStore = useIntervalStore()
 const router = useRouter()
 const { smAndUp } = useDisplay()
 const { selectedDate, selectedProgress, completionRate, loading, error } = storeToRefs(store)
@@ -24,6 +27,8 @@ const exactProgress = ref<TaskProgress>()
 const exactAmountInput = ref('')
 const exactAction = ref<'add' | 'subtract' | 'set'>()
 const reviewSheet = ref(false)
+const activeIntervalSheet = ref(false)
+const intervalStartError = ref('')
 const weekDirection = ref<'previous' | 'next'>('next')
 const visibleWeekStart = ref(startOfWeek(selectedDate.value, { weekStartsOn: 1 }))
 let weekTouchStart: { x: number; y: number } | undefined
@@ -33,6 +38,12 @@ const exactAmount = computed(() => {
   if (!exactAmountInput.value || exactAmountInput.value === '.') return null
   const value = Number(exactAmountInput.value)
   return Number.isFinite(value) ? value : null
+})
+const exactDesktopAmount = computed<number | null>({
+  get: () => exactAmount.value,
+  set: (value) => {
+    exactAmountInput.value = value === null ? '' : String(value)
+  },
 })
 const keypadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'backspace'] as const
 
@@ -47,8 +58,11 @@ const reviewItems = computed(() =>
   selectedProgress.value.filter((item) => item.task.reviewWhenMissed && item.status === 'pending' && !item.complete),
 )
 const doneCount = computed(() => selectedProgress.value.filter((item) => item.complete).length)
+const selectedDateIsToday = computed(() => isSameDay(selectedDate.value, new Date()))
 onMounted(async () => {
-  try { await store.load() } catch { /* Error state is displayed in the view. */ }
+  try {
+    await Promise.all([store.load(), intervalStore.load()])
+  } catch { /* Store error states are displayed in the view. */ }
 })
 onBeforeUnmount(() => {
   if (suppressDateClickTimer) window.clearTimeout(suppressDateClickTimer)
@@ -126,6 +140,52 @@ function openTimeLogger(progress: TaskProgress) {
     name: 'task-timer',
     params: { id: progress.task.id },
     query: { date: toDateKey(selectedDate.value) },
+  })
+}
+
+function intervalMeta(progress: TaskProgress) {
+  const template = intervalStore.templates.find((item) => item.id === progress.task.intervalTemplate)
+  if (!template) return undefined
+  return {
+    name: template.name,
+    duration: formatIntervalDuration(intervalDuration(template.definition)),
+  }
+}
+
+async function startIntervalTask(progress: TaskProgress) {
+  intervalStartError.value = ''
+  const active = intervalStore.activeSession
+  if (active) {
+    if (active.task === progress.task.id) {
+      await router.push({
+        name: 'interval-runner',
+        params: { sessionId: active.id },
+        query: { from: 'tasks' },
+      })
+    } else {
+      activeIntervalSheet.value = true
+    }
+    return
+  }
+  if (!progress.task.intervalTemplate) {
+    intervalStartError.value = 'This task does not have an attached interval.'
+    return
+  }
+  await router.push({
+    name: 'interval-template-runner',
+    params: { templateId: progress.task.intervalTemplate },
+    query: { task: progress.task.id, from: 'tasks' },
+  })
+}
+
+async function resumeActiveInterval() {
+  const active = intervalStore.activeSession
+  if (!active) return
+  activeIntervalSheet.value = false
+  await router.push({
+    name: 'interval-runner',
+    params: { sessionId: active.id },
+    query: { from: 'tasks' },
   })
 }
 
@@ -228,6 +288,9 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
       {{ error }}
       <template #append><v-btn size="small" variant="text" @click="store.load">Retry</v-btn></template>
     </v-alert>
+    <v-alert v-if="intervalStartError" type="error" variant="tonal" class="mt-4">
+      {{ intervalStartError }}
+    </v-alert>
 
     <template v-if="selectedProgress.length">
       <section v-if="required.length">
@@ -238,11 +301,15 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
             :key="`${item.task.id}-${item.programStep?.id || ''}`"
             :progress="item"
             :busy="progressIsBusy(item)"
+            :interval="intervalMeta(item)"
+            :can-start-interval="selectedDateIsToday && item.status === 'pending'"
+            :interval-active="intervalStore.activeSession?.task === item.task.id"
             @toggle="progress => runForProgress(progress, () => store.toggleComplete(progress))"
             @seal="progress => runForProgress(progress, () => store.setDailyTotalSealed(progress))"
             @add="(progress, amount) => runForProgress(progress, () => store.addEntry(progress, amount))"
             @exact="openExact"
             @log-time="openTimeLogger"
+            @start-interval="startIntervalTask"
           />
         </div>
       </section>
@@ -255,11 +322,15 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
             :key="`${item.task.id}-${item.programStep?.id || ''}`"
             :progress="item"
             :busy="progressIsBusy(item)"
+            :interval="intervalMeta(item)"
+            :can-start-interval="selectedDateIsToday && item.status === 'pending'"
+            :interval-active="intervalStore.activeSession?.task === item.task.id"
             @toggle="progress => runForProgress(progress, () => store.toggleComplete(progress))"
             @seal="progress => runForProgress(progress, () => store.setDailyTotalSealed(progress))"
             @add="(progress, amount) => runForProgress(progress, () => store.addEntry(progress, amount))"
             @exact="openExact"
             @log-time="openTimeLogger"
+            @start-interval="startIntervalTask"
           />
         </div>
       </section>
@@ -284,19 +355,22 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
       Manage tasks
     </v-btn>
 
-    <v-dialog v-model="exactDialog" max-width="440">
+    <v-dialog
+      v-model="exactDialog"
+      max-width="440"
+      :transition="smAndUp ? 'dialog-transition' : 'dialog-bottom-transition'"
+    >
       <v-card class="pa-5">
         <div class="d-flex align-center justify-space-between mb-5">
           <h2 class="text-h6 font-weight-black">{{ exactProgress?.programStep?.name || exactProgress?.task.name }}</h2>
           <v-btn icon="mdi-close" variant="text" @click="exactDialog = false" />
         </div>
         <div class="amount-entry mb-4">
-          <v-text-field
+          <v-number-input
             v-if="smAndUp"
-            v-model="exactAmountInput"
+            v-model="exactDesktopAmount"
             label="Amount"
-            type="number"
-            inputmode="decimal"
+            :precision="null"
             :autofocus="allowAutomaticFocus"
           />
           <div v-else class="amount-keypad">
@@ -399,6 +473,21 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
             Shift program
           </v-btn>
         </div>
+      </div>
+    </ActionBottomSheet>
+
+    <ActionBottomSheet
+      v-model="activeIntervalSheet"
+      title="Interval already running"
+      aria-label="Active interval actions"
+    >
+      <div class="px-2 py-3">
+        <p class="text-body-2 muted mb-4">
+          {{ intervalStore.activeSession?.name || 'Another interval' }} is already in progress. Finish or end it before starting a different task.
+        </p>
+        <v-btn block color="secondary" prepend-icon="mdi-play" @click="resumeActiveInterval">
+          Resume active interval
+        </v-btn>
       </div>
     </ActionBottomSheet>
   </main>

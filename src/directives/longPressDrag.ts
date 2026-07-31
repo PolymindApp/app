@@ -6,10 +6,14 @@ export interface LongPressDragResult {
   fromIndex: number
   toIndex: number
   orderedIds: string[]
+  type?: string
+  fromDropZoneId?: string
+  toDropZoneId?: string
 }
 
 export interface LongPressDragOptions {
   id: string
+  type?: string
   group?: string
   handle?: string
   disabled?: boolean
@@ -17,7 +21,14 @@ export interface LongPressDragOptions {
   onDrop: (result: LongPressDragResult) => void
 }
 
+export interface LongPressDropOptions {
+  id: string
+  accepts: string[]
+  disabled?: boolean
+}
+
 interface DragGesture {
+  input: 'pointer' | 'touch'
   pointerId: number
   startX: number
   startY: number
@@ -30,7 +41,12 @@ interface DragGesture {
   sourceBounds?: DOMRect
   ghost?: HTMLElement
   placeholder?: HTMLElement
+  layoutTransitionFrame?: number
+  layoutTransitionTimer?: number
+  layoutTransitionElements?: Set<HTMLElement>
   autoScrollFrame?: number
+  sourceDropZone?: DropState
+  activeDropZone?: DropState
   fromIndex: number
 }
 
@@ -44,12 +60,22 @@ interface DragState {
   onPointerMove: (event: PointerEvent) => void
   onPointerUp: (event: PointerEvent) => void
   onPointerCancel: (event: PointerEvent) => void
+  onTouchStart: (event: TouchEvent) => void
+  onTouchMove: (event: TouchEvent) => void
+  onTouchEnd: (event: TouchEvent) => void
+  onTouchCancel: (event: TouchEvent) => void
   onClick: (event: MouseEvent) => void
   onContextMenu: (event: MouseEvent) => void
-  onTouchMove: (event: TouchEvent) => void
+}
+
+interface DropState {
+  element: HTMLElement
+  options: LongPressDropOptions
 }
 
 const states = new WeakMap<HTMLElement, DragState>()
+const dropStates = new WeakMap<HTMLElement, DropState>()
+const registeredDropStates = new Set<DropState>()
 const INTERACTIVE_SELECTOR = [
   'a',
   'button',
@@ -61,11 +87,25 @@ const INTERACTIVE_SELECTOR = [
 ].join(',')
 const MOVE_TOLERANCE = 10
 const DEFAULT_HOLD_MS = 500
+const DROP_HYSTERESIS_PX = 6
+const LAYOUT_TRANSITION_CLEANUP_MS = 120
 const AUTO_SCROLL_EDGE_PX = 96
 const AUTO_SCROLL_MAX_PX = 18
 
 function sameGroup(left: DragState, right: DragState) {
   return (left.options.group || '') === (right.options.group || '')
+}
+
+function acceptsDrag(dropState: DropState, dragState: DragState) {
+  const type = dragState.options.type
+  return Boolean(
+    !dropState.options.disabled
+    && type
+    && (
+      dropState.options.accepts.includes(type)
+      || dropState.options.accepts.includes('*')
+    ),
+  )
 }
 
 function isDragStartTarget(state: DragState, target: EventTarget | null) {
@@ -93,10 +133,66 @@ function siblingStates(state: DragState) {
     .filter((candidate): candidate is DragState => Boolean(candidate && sameGroup(state, candidate)))
 }
 
+function directDragStates(parent: HTMLElement) {
+  return Array.from(parent.children)
+    .map((child) => child instanceof HTMLElement ? states.get(child) : undefined)
+    .filter((candidate): candidate is DragState => Boolean(candidate))
+}
+
+function availableDropStates(state: DragState) {
+  return Array.from(registeredDropStates).filter((dropState) =>
+    acceptsDrag(dropState, state)
+    && !state.element.contains(dropState.element),
+  )
+}
+
+function dropStateAtPoint(state: DragState, x: number, y: number) {
+  let target = document.elementFromPoint(x, y)
+  while (target) {
+    if (target instanceof HTMLElement) {
+      const dropState = dropStates.get(target)
+      if (
+        dropState
+        && acceptsDrag(dropState, state)
+        && !state.element.contains(dropState.element)
+      ) return dropState
+    }
+    target = target.parentElement
+  }
+  return undefined
+}
+
+function setActiveDropState(gesture: DragGesture, dropState?: DropState) {
+  if (gesture.activeDropZone === dropState) return
+  gesture.activeDropZone?.element.classList.remove('long-press-drop-zone--active')
+  gesture.activeDropZone = dropState
+  dropState?.element.classList.add('long-press-drop-zone--active')
+}
+
+function showAvailableDropStates(state: DragState) {
+  for (const dropState of availableDropStates(state)) {
+    dropState.element.classList.add('long-press-drop-zone--available')
+  }
+}
+
+function clearDropStateFeedback(gesture: DragGesture) {
+  gesture.activeDropZone?.element.classList.remove('long-press-drop-zone--active')
+  for (const dropState of registeredDropStates) {
+    dropState.element.classList.remove(
+      'long-press-drop-zone--active',
+      'long-press-drop-zone--available',
+    )
+  }
+  gesture.activeDropZone = undefined
+}
+
 function clearWindowListeners(state: DragState) {
   window.removeEventListener('pointermove', state.onPointerMove, true)
   window.removeEventListener('pointerup', state.onPointerUp, true)
   window.removeEventListener('pointercancel', state.onPointerCancel, true)
+  window.removeEventListener('touchmove', state.onTouchMove, true)
+  window.removeEventListener('touchend', state.onTouchEnd, true)
+  window.removeEventListener('touchcancel', state.onTouchCancel, true)
   document.removeEventListener('touchmove', state.onTouchMove, true)
 }
 
@@ -120,6 +216,13 @@ function positionGhost(gesture: DragGesture) {
   gesture.ghost.style.transform = `translate3d(${x}px, ${y}px, 0)`
 }
 
+function syncGhostWidth(gesture: DragGesture) {
+  if (!gesture.ghost || !gesture.placeholder || !gesture.sourceBounds) return
+  const placeholderWidth = gesture.placeholder.getBoundingClientRect().width
+  const width = placeholderWidth > 0 ? placeholderWidth : gesture.sourceBounds.width
+  gesture.ghost.style.setProperty('width', `${width}px`, 'important')
+}
+
 function hasHorizontalSlots(candidates: DragState[]) {
   return candidates.some((candidate, index) => {
     const bounds = candidate.element.getBoundingClientRect()
@@ -135,22 +238,178 @@ function hasHorizontalSlots(candidates: DragState[]) {
   })
 }
 
-function targetBeforePointer(target: HTMLElement, horizontalSlots: boolean, x: number, y: number) {
+function placeholderRelation(
+  placeholder: HTMLElement,
+  target: HTMLElement,
+): 'before' | 'after' | undefined {
+  const parent = placeholder.parentElement
+  if (!parent || target.parentElement !== parent) return undefined
+
+  const visibleSlots = Array.from(parent.children).filter((child) => (
+    child === placeholder
+    || (
+      child instanceof HTMLElement
+      && child.style.display !== 'none'
+      && states.has(child)
+    )
+  ))
+  const placeholderIndex = visibleSlots.indexOf(placeholder)
+  const targetIndex = visibleSlots.indexOf(target)
+  if (placeholderIndex + 1 === targetIndex) return 'before'
+  if (targetIndex + 1 === placeholderIndex) return 'after'
+  return undefined
+}
+
+function targetBeforePointer(
+  target: HTMLElement,
+  placeholder: HTMLElement,
+  horizontalSlots: boolean,
+  x: number,
+  y: number,
+) {
   const bounds = target.getBoundingClientRect()
   const withinRow = y >= bounds.top && y <= bounds.bottom
-  return horizontalSlots && withinRow
-    ? x < bounds.left + bounds.width / 2
-    : y < bounds.top + bounds.height / 2
+  const horizontal = horizontalSlots && withinRow
+  const pointerPosition = horizontal ? x : y
+  const midpoint = horizontal
+    ? bounds.left + bounds.width / 2
+    : bounds.top + bounds.height / 2
+  const relation = placeholderRelation(placeholder, target)
+  if (relation === 'before') return pointerPosition < midpoint + DROP_HYSTERESIS_PX
+  if (relation === 'after') return pointerPosition < midpoint - DROP_HYSTERESIS_PX
+  return pointerPosition < midpoint
+}
+
+function clearLayoutTransition(gesture: DragGesture) {
+  if (gesture.layoutTransitionFrame !== undefined) {
+    window.cancelAnimationFrame(gesture.layoutTransitionFrame)
+    gesture.layoutTransitionFrame = undefined
+  }
+  if (gesture.layoutTransitionTimer !== undefined) {
+    window.clearTimeout(gesture.layoutTransitionTimer)
+    gesture.layoutTransitionTimer = undefined
+  }
+  gesture.layoutTransitionElements?.forEach((element) => {
+    element.classList.remove('long-press-drag-shifting')
+    element.style.removeProperty('transform')
+  })
+  gesture.layoutTransitionElements = undefined
+}
+
+function movePlaceholderVertically(
+  gesture: DragGesture,
+  destination: HTMLElement,
+  move: () => void,
+) {
+  const placeholder = gesture.placeholder
+  if (!placeholder) return
+
+  const source = placeholder.parentElement
+  const elements = new Set<HTMLElement>([placeholder])
+  if (source instanceof HTMLElement) {
+    directDragStates(source).forEach(({ element }) => {
+      if (element.style.display !== 'none') elements.add(element)
+    })
+  }
+  directDragStates(destination).forEach(({ element }) => {
+    if (element.style.display !== 'none') elements.add(element)
+  })
+
+  const before = new Map(
+    Array.from(elements, element => [element, element.getBoundingClientRect()] as const),
+  )
+  clearLayoutTransition(gesture)
+  move()
+
+  const moving = new Set<HTMLElement>()
+  elements.forEach((element) => {
+    const previous = before.get(element)
+    if (!previous || !element.isConnected) return
+    const offsetY = previous.top - element.getBoundingClientRect().top
+    if (!Number.isFinite(offsetY) || Math.abs(offsetY) < 1) return
+    element.style.transform = `translate3d(0, ${offsetY}px, 0)`
+    moving.add(element)
+  })
+  if (!moving.size) return
+
+  gesture.layoutTransitionElements = moving
+  void placeholder.offsetHeight
+  gesture.layoutTransitionFrame = window.requestAnimationFrame(() => {
+    gesture.layoutTransitionFrame = undefined
+    moving.forEach((element) => {
+      element.classList.add('long-press-drag-shifting')
+      element.style.transform = 'translate3d(0, 0, 0)'
+    })
+    gesture.layoutTransitionTimer = window.setTimeout(() => {
+      clearLayoutTransition(gesture)
+    }, LAYOUT_TRANSITION_CLEANUP_MS)
+  })
+}
+
+function placePlaceholderAtEnd(gesture: DragGesture, parent: HTMLElement) {
+  if (
+    gesture.placeholder?.parentElement === parent
+    && gesture.placeholder.nextSibling === null
+  ) return
+  movePlaceholderVertically(gesture, parent, () => {
+    if (gesture.placeholder) parent.append(gesture.placeholder)
+  })
+}
+
+function placePlaceholderBefore(
+  gesture: DragGesture,
+  parent: HTMLElement,
+  reference: ChildNode | null,
+) {
+  if (
+    gesture.placeholder?.parentElement === parent
+    && (
+      reference === gesture.placeholder
+      || gesture.placeholder.nextSibling === reference
+    )
+  ) return
+  movePlaceholderVertically(gesture, parent, () => {
+    if (gesture.placeholder) parent.insertBefore(gesture.placeholder, reference)
+  })
 }
 
 function updatePlaceholder(state: DragState, x: number, y: number) {
   const gesture = state.gesture
-  const parent = state.element.parentElement
-  if (!gesture?.active || !gesture.placeholder || !parent) return
+  const sourceParent = state.element.parentElement
+  if (!gesture?.active || !gesture.placeholder || !sourceParent) return
 
-  const candidates = siblingStates(state)
-    .filter((candidate) => candidate.element !== state.element && !candidate.options.disabled)
-  if (!candidates.length) return
+  const pointedDropState = dropStateAtPoint(state, x, y)
+  const currentDropState = gesture.placeholder.parentElement instanceof HTMLElement
+    ? dropStates.get(gesture.placeholder.parentElement)
+    : undefined
+  const targetDropState = pointedDropState
+    || (
+      currentDropState
+      && acceptsDrag(currentDropState, state)
+      && !state.element.contains(currentDropState.element)
+        ? currentDropState
+        : gesture.sourceDropZone
+    )
+  const parent = targetDropState?.element || sourceParent
+  const dropStateChanged = gesture.activeDropZone !== targetDropState
+  setActiveDropState(gesture, targetDropState)
+
+  const candidates = (
+    targetDropState
+      ? directDragStates(parent)
+      : siblingStates(state)
+  ).filter((candidate) =>
+    candidate.element !== state.element
+    && (targetDropState || !candidate.options.disabled),
+  )
+  if (targetDropState && dropStateChanged) {
+    gesture.horizontalSlots = hasHorizontalSlots(candidates)
+  }
+  if (!candidates.length) {
+    placePlaceholderAtEnd(gesture, parent)
+    syncGhostWidth(gesture)
+    return
+  }
 
   const hit = document.elementFromPoint(x, y)
     ?.closest<HTMLElement>('.long-press-drag-item')
@@ -172,11 +431,18 @@ function updatePlaceholder(state: DragState, x: number, y: number) {
   }
   if (!target) return
 
-  if (targetBeforePointer(target.element, gesture.horizontalSlots, x, y)) {
-    parent.insertBefore(gesture.placeholder, target.element)
+  if (targetBeforePointer(
+    target.element,
+    gesture.placeholder,
+    gesture.horizontalSlots,
+    x,
+    y,
+  )) {
+    placePlaceholderBefore(gesture, parent, target.element)
   } else {
-    parent.insertBefore(gesture.placeholder, target.element.nextSibling)
+    placePlaceholderBefore(gesture, parent, target.element.nextSibling)
   }
+  syncGhostWidth(gesture)
 }
 
 function pageAutoScrollAmount(clientY: number) {
@@ -237,8 +503,15 @@ function activateDrag(state: DragState) {
   if (!gesture || gesture.active || !parent || state.options.disabled) return
 
   const siblings = siblingStates(state)
-  gesture.fromIndex = siblings.findIndex((candidate) => candidate.element === state.element)
-  gesture.horizontalSlots = hasHorizontalSlots(siblings)
+  const sourceDropZone = dropStates.get(parent)
+  gesture.sourceDropZone = sourceDropZone && acceptsDrag(sourceDropZone, state)
+    ? sourceDropZone
+    : undefined
+  const sourceItems = gesture.sourceDropZone
+    ? directDragStates(parent)
+    : siblings
+  gesture.fromIndex = sourceItems.findIndex((candidate) => candidate.element === state.element)
+  gesture.horizontalSlots = hasHorizontalSlots(sourceItems)
   gesture.active = true
   gesture.sourceBounds = state.element.getBoundingClientRect()
   gesture.originalDisplay = state.element.style.display
@@ -246,7 +519,6 @@ function activateDrag(state: DragState) {
   const placeholder = document.createElement('div')
   placeholder.className = 'long-press-drag-placeholder'
   placeholder.setAttribute('aria-hidden', 'true')
-  placeholder.style.width = `${gesture.sourceBounds.width}px`
   placeholder.style.height = `${gesture.sourceBounds.height}px`
   placeholder.style.borderRadius = getComputedStyle(state.element).borderRadius
   state.element.before(placeholder)
@@ -258,16 +530,20 @@ function activateDrag(state: DragState) {
   ghost.setAttribute('aria-hidden', 'true')
   ghost.style.top = `${gesture.sourceBounds.top}px`
   ghost.style.left = `${gesture.sourceBounds.left}px`
-  ghost.style.width = `${gesture.sourceBounds.width}px`
   ghost.style.height = `${gesture.sourceBounds.height}px`
   document.body.append(ghost)
   gesture.ghost = ghost
+  syncGhostWidth(gesture)
 
   state.element.style.display = 'none'
   state.element.setAttribute('aria-grabbed', 'true')
   document.body.classList.add('long-press-drag-active')
-  document.addEventListener('touchmove', state.onTouchMove, { capture: true, passive: false })
+  if (gesture.input === 'pointer') {
+    document.addEventListener('touchmove', state.onTouchMove, { capture: true, passive: false })
+  }
   state.suppressClick = true
+  showAvailableDropStates(state)
+  setActiveDropState(gesture, gesture.sourceDropZone)
   positionGhost(gesture)
   dragActivationFeedback()
   schedulePageAutoScroll(state)
@@ -275,10 +551,11 @@ function activateDrag(state: DragState) {
 
 function orderedIdsAtDrop(state: DragState) {
   const gesture = state.gesture
-  const parent = state.element.parentElement
+  const parent = gesture?.placeholder?.parentElement
   if (!gesture?.placeholder || !parent) return []
 
   const result: string[] = []
+  const dropState = parent instanceof HTMLElement ? dropStates.get(parent) : undefined
   Array.from(parent.children).forEach((child) => {
     if (child === gesture.placeholder) {
       result.push(state.options.id)
@@ -286,7 +563,13 @@ function orderedIdsAtDrop(state: DragState) {
     }
     if (!(child instanceof HTMLElement) || child === state.element) return
     const candidate = states.get(child)
-    if (candidate && sameGroup(state, candidate)) result.push(candidate.options.id)
+    if (
+      candidate
+      && (
+        (dropState && acceptsDrag(dropState, candidate))
+        || (!dropState && sameGroup(state, candidate))
+      )
+    ) result.push(candidate.options.id)
   })
   return result
 }
@@ -296,11 +579,17 @@ function finishGesture(state: DragState, drop: boolean) {
   if (!gesture) return
 
   if (gesture.timer !== undefined) window.clearTimeout(gesture.timer)
+  clearLayoutTransition(gesture)
   stopPageAutoScroll(gesture)
   clearWindowListeners(state)
 
   const orderedIds = gesture.active && drop ? orderedIdsAtDrop(state) : []
   const toIndex = orderedIds.indexOf(state.options.id)
+  const targetDropZone = gesture.placeholder?.parentElement instanceof HTMLElement
+    ? dropStates.get(gesture.placeholder.parentElement)
+    : undefined
+  const movedDropZone = gesture.sourceDropZone?.options.id !== targetDropZone?.options.id
+  clearDropStateFeedback(gesture)
   gesture.ghost?.remove()
   gesture.placeholder?.remove()
   state.element.style.display = gesture.originalDisplay
@@ -310,15 +599,34 @@ function finishGesture(state: DragState, drop: boolean) {
 
   if (gesture.active) {
     clearSuppressedClickLater(state)
-    if (drop && gesture.fromIndex >= 0 && toIndex >= 0 && gesture.fromIndex !== toIndex) {
-      state.options.onDrop({
+    if (
+      drop
+      && gesture.fromIndex >= 0
+      && toIndex >= 0
+      && (gesture.fromIndex !== toIndex || movedDropZone)
+    ) {
+      const result: LongPressDragResult = {
         id: state.options.id,
         fromIndex: gesture.fromIndex,
         toIndex,
         orderedIds,
-      })
+      }
+      if (state.options.type) result.type = state.options.type
+      if (gesture.sourceDropZone) {
+        result.fromDropZoneId = gesture.sourceDropZone.options.id
+      }
+      if (targetDropZone) result.toDropZoneId = targetDropZone.options.id
+      state.options.onDrop(result)
     }
   }
+}
+
+function touchWithId(touches: TouchList, identifier: number) {
+  for (let index = 0; index < touches.length; index += 1) {
+    const touch = touches.item(index)
+    if (touch?.identifier === identifier) return touch
+  }
+  return undefined
 }
 
 function createState(element: HTMLElement, options: LongPressDragOptions): DragState {
@@ -328,20 +636,26 @@ function createState(element: HTMLElement, options: LongPressDragOptions): DragS
     suppressClick: false,
   } as DragState
 
-  state.onPointerDown = (event) => {
+  const startGesture = (
+    input: DragGesture['input'],
+    pointerId: number,
+    x: number,
+    y: number,
+    target: EventTarget | null,
+  ) => {
     if (
       state.options.disabled
-      || event.button !== 0
       || state.gesture
-      || !isDragStartTarget(state, event.target)
-    ) return
+      || !isDragStartTarget(state, target)
+    ) return false
 
     const gesture: DragGesture = {
-      pointerId: event.pointerId,
-      startX: event.clientX,
-      startY: event.clientY,
-      clientX: event.clientX,
-      clientY: event.clientY,
+      input,
+      pointerId,
+      startX: x,
+      startY: y,
+      clientX: x,
+      clientY: y,
       active: false,
       originalDisplay: '',
       horizontalSlots: false,
@@ -352,6 +666,38 @@ function createState(element: HTMLElement, options: LongPressDragOptions): DragS
       () => activateDrag(state),
       Math.max(0, state.options.holdMs ?? DEFAULT_HOLD_MS),
     )
+    return true
+  }
+
+  const moveGesture = (x: number, y: number, preventDefault: () => void) => {
+    const gesture = state.gesture
+    if (!gesture) return
+    gesture.clientX = x
+    gesture.clientY = y
+
+    if (!gesture.active) {
+      if (Math.hypot(x - gesture.startX, y - gesture.startY) > MOVE_TOLERANCE) {
+        finishGesture(state, false)
+      }
+      return
+    }
+
+    preventDefault()
+    positionGhost(gesture)
+    updatePlaceholder(state, x, y)
+    schedulePageAutoScroll(state)
+  }
+
+  state.onPointerDown = (event) => {
+    if (event.button !== 0) return
+    if (!startGesture(
+      'pointer',
+      event.pointerId,
+      event.clientX,
+      event.clientY,
+      event.target,
+    )) return
+
     window.addEventListener('pointermove', state.onPointerMove, true)
     window.addEventListener('pointerup', state.onPointerUp, true)
     window.addEventListener('pointercancel', state.onPointerCancel, true)
@@ -359,29 +705,84 @@ function createState(element: HTMLElement, options: LongPressDragOptions): DragS
 
   state.onPointerMove = (event) => {
     const gesture = state.gesture
-    if (!gesture || event.pointerId !== gesture.pointerId) return
-    gesture.clientX = event.clientX
-    gesture.clientY = event.clientY
+    if (
+      !gesture
+      || gesture.input !== 'pointer'
+      || event.pointerId !== gesture.pointerId
+    ) return
+    moveGesture(event.clientX, event.clientY, () => {
+      if (event.cancelable) event.preventDefault()
+    })
+  }
 
-    if (!gesture.active) {
-      if (Math.hypot(event.clientX - gesture.startX, event.clientY - gesture.startY) > MOVE_TOLERANCE) {
+  state.onPointerUp = (event) => {
+    if (
+      state.gesture?.input === 'pointer'
+      && event.pointerId === state.gesture.pointerId
+    ) finishGesture(state, true)
+  }
+
+  state.onPointerCancel = (event) => {
+    if (
+      state.gesture?.input === 'pointer'
+      && event.pointerId === state.gesture.pointerId
+    ) finishGesture(state, false)
+  }
+
+  state.onTouchStart = (event) => {
+    if (state.gesture) {
+      if (state.gesture.input === 'touch' && event.touches.length > 1) {
         finishGesture(state, false)
       }
       return
     }
+    if (event.touches.length !== 1) return
+    const touch = event.touches.item(0)
+    if (!touch || !startGesture(
+      'touch',
+      touch.identifier,
+      touch.clientX,
+      touch.clientY,
+      event.target,
+    )) return
 
-    if (event.cancelable) event.preventDefault()
-    positionGhost(gesture)
-    updatePlaceholder(state, event.clientX, event.clientY)
-    schedulePageAutoScroll(state)
+    window.addEventListener('touchmove', state.onTouchMove, { capture: true, passive: false })
+    window.addEventListener('touchend', state.onTouchEnd, true)
+    window.addEventListener('touchcancel', state.onTouchCancel, true)
   }
 
-  state.onPointerUp = (event) => {
-    if (event.pointerId === state.gesture?.pointerId) finishGesture(state, true)
+  state.onTouchMove = (event) => {
+    const gesture = state.gesture
+    if (!gesture) return
+    if (gesture.input === 'pointer') {
+      if (gesture.active && event.cancelable) event.preventDefault()
+      return
+    }
+
+    const touch = touchWithId(event.touches, gesture.pointerId)
+    if (!touch) return
+    moveGesture(touch.clientX, touch.clientY, () => {
+      if (event.cancelable) event.preventDefault()
+    })
   }
 
-  state.onPointerCancel = (event) => {
-    if (event.pointerId === state.gesture?.pointerId) finishGesture(state, false)
+  state.onTouchEnd = (event) => {
+    const gesture = state.gesture
+    if (
+      gesture?.input === 'touch'
+      && touchWithId(event.changedTouches, gesture.pointerId)
+    ) finishGesture(state, true)
+  }
+
+  state.onTouchCancel = (event) => {
+    const gesture = state.gesture
+    if (
+      gesture?.input === 'touch'
+      && (
+        event.changedTouches.length === 0
+        || touchWithId(event.changedTouches, gesture.pointerId)
+      )
+    ) finishGesture(state, false)
   }
 
   state.onClick = (event) => {
@@ -396,10 +797,6 @@ function createState(element: HTMLElement, options: LongPressDragOptions): DragS
     event.preventDefault()
   }
 
-  state.onTouchMove = (event) => {
-    if (state.gesture?.active && event.cancelable) event.preventDefault()
-  }
-
   return state
 }
 
@@ -410,6 +807,7 @@ export const longPressDrag: ObjectDirective<HTMLElement, LongPressDragOptions> =
     element.classList.add('long-press-drag-item')
     element.setAttribute('aria-grabbed', 'false')
     element.addEventListener('pointerdown', state.onPointerDown)
+    element.addEventListener('touchstart', state.onTouchStart, { passive: true })
     element.addEventListener('click', state.onClick, true)
     element.addEventListener('contextmenu', state.onContextMenu)
   },
@@ -427,10 +825,37 @@ export const longPressDrag: ObjectDirective<HTMLElement, LongPressDragOptions> =
     finishGesture(state, false)
     if (state.suppressClickTimer !== undefined) window.clearTimeout(state.suppressClickTimer)
     element.removeEventListener('pointerdown', state.onPointerDown)
+    element.removeEventListener('touchstart', state.onTouchStart)
     element.removeEventListener('click', state.onClick, true)
     element.removeEventListener('contextmenu', state.onContextMenu)
     element.classList.remove('long-press-drag-item')
     element.removeAttribute('aria-grabbed')
     states.delete(element)
+  },
+}
+
+export const longPressDrop: ObjectDirective<HTMLElement, LongPressDropOptions> = {
+  mounted(element, binding) {
+    const state: DropState = { element, options: binding.value }
+    dropStates.set(element, state)
+    registeredDropStates.add(state)
+    element.classList.add('long-press-drop-zone')
+  },
+
+  updated(element, binding) {
+    const state = dropStates.get(element)
+    if (state) state.options = binding.value
+  },
+
+  beforeUnmount(element) {
+    const state = dropStates.get(element)
+    if (!state) return
+    registeredDropStates.delete(state)
+    dropStates.delete(element)
+    element.classList.remove(
+      'long-press-drop-zone',
+      'long-press-drop-zone--active',
+      'long-press-drop-zone--available',
+    )
   },
 }

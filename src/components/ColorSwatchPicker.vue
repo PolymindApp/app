@@ -1,5 +1,11 @@
 <script setup lang="ts">
-withDefaults(defineProps<{
+import { computed, ref } from 'vue'
+
+defineOptions({
+  inheritAttrs: false,
+})
+
+const props = withDefaults(defineProps<{
   modelValue: string
   label: string
   customLabel?: string
@@ -12,14 +18,44 @@ const emit = defineEmits<{
 }>()
 
 const colors = ['#C7F464', '#8FB8FF', '#FFB86B', '#D4A5FF', '#79C174', '#FF776B']
+const customColorDialog = ref(false)
+const draftColor = ref(props.modelValue)
 
-function updateCustomColor(event: Event) {
-  emit('update:modelValue', (event.target as HTMLInputElement).value)
+const isCustomColor = computed(() => (
+  !colors.some(color => color.toLowerCase() === props.modelValue.toLowerCase())
+))
+
+const customIconColor = computed(() => {
+  const hex = props.modelValue.match(/^#([0-9a-f]{6})$/i)?.[1]
+  if (!hex) return '#17200F'
+
+  const red = Number.parseInt(hex.slice(0, 2), 16)
+  const green = Number.parseInt(hex.slice(2, 4), 16)
+  const blue = Number.parseInt(hex.slice(4, 6), 16)
+  const luminance = (red * 299 + green * 587 + blue * 114) / 1000
+  return luminance > 150 ? '#17200F' : '#FFFFFF'
+})
+
+function isSelected(color: string) {
+  return props.modelValue.toLowerCase() === color.toLowerCase()
+}
+
+function openCustomColorPicker() {
+  draftColor.value = props.modelValue
+  customColorDialog.value = true
+}
+
+function applyCustomColor() {
+  if (/^#[0-9a-f]{6}$/i.test(draftColor.value)) {
+    emit('update:modelValue', draftColor.value.toUpperCase())
+  }
+
+  customColorDialog.value = false
 }
 </script>
 
 <template>
-  <fieldset class="color-picker">
+  <fieldset class="color-picker" v-bind="$attrs">
     <legend>{{ label }}</legend>
     <div class="color-picker__options">
       <button
@@ -27,21 +63,61 @@ function updateCustomColor(event: Event) {
         :key="color"
         type="button"
         class="color-picker__swatch"
-        :class="{ 'color-picker__swatch--selected': modelValue === color }"
+        :class="{ 'color-picker__swatch--selected': isSelected(color) }"
         :style="{ background: color }"
         :aria-label="`Use color ${color}`"
-        :aria-pressed="modelValue === color"
+        :aria-pressed="isSelected(color)"
         @click="emit('update:modelValue', color)"
       >
-        <v-icon v-if="modelValue === color" icon="mdi-check-bold" size="16" />
+        <v-icon v-if="isSelected(color)" icon="mdi-check-bold" size="16" />
       </button>
 
-      <label class="color-picker__custom" :aria-label="customLabel">
-        <input :value="modelValue" type="color" @input="updateCustomColor" />
+      <button
+        type="button"
+        class="color-picker__custom"
+        :class="{ 'color-picker__custom--selected': isCustomColor }"
+        :style="isCustomColor
+          ? { backgroundColor: modelValue, color: customIconColor }
+          : undefined"
+        :aria-label="customLabel"
+        :aria-pressed="isCustomColor"
+        @click="openCustomColorPicker"
+      >
         <v-icon icon="mdi-eyedropper-variant" size="18" />
-      </label>
+      </button>
     </div>
   </fieldset>
+
+  <v-dialog
+    v-model="customColorDialog"
+    :aria-label="customLabel"
+    max-width="390"
+  >
+    <v-card class="color-picker__dialog" rounded="xl">
+      <v-card-title>{{ customLabel }}</v-card-title>
+
+      <v-card-text>
+        <v-color-picker
+          v-model="draftColor"
+          class="color-picker__vuetify"
+          mode="hex"
+          :modes="['hex']"
+          hide-inputs
+          width="100%"
+        />
+      </v-card-text>
+
+      <v-card-actions>
+        <v-spacer />
+        <v-btn variant="text" @click="customColorDialog = false">
+          Cancel
+        </v-btn>
+        <v-btn color="secondary" variant="flat" @click="applyCustomColor">
+          Apply
+        </v-btn>
+      </v-card-actions>
+    </v-card>
+  </v-dialog>
 </template>
 
 <style scoped>
@@ -53,7 +129,7 @@ function updateCustomColor(event: Event) {
 }
 
 .color-picker > legend {
-  color: rgb(var(--v-theme-on-surface) / .68);
+  color: rgba(var(--v-theme-on-surface), .68);
   font-size: .75rem;
   font-weight: 750;
 }
@@ -79,29 +155,23 @@ function updateCustomColor(event: Event) {
   cursor: pointer;
 }
 
-.color-picker__swatch--selected {
+.color-picker__swatch--selected,
+.color-picker__custom--selected {
   border-color: rgb(var(--v-theme-on-surface));
   box-shadow: 0 0 0 2px rgb(var(--v-theme-background));
 }
 
 .color-picker__custom {
-  position: relative;
-  overflow: hidden;
-  border-color: rgb(var(--v-theme-on-surface) / .18);
+  border-color: rgba(var(--v-theme-on-surface), .18);
   background: rgb(var(--v-theme-surface-variant));
   color: rgb(var(--v-theme-on-surface));
 }
 
-.color-picker__custom input {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  opacity: 0;
-  cursor: pointer;
+.color-picker__dialog {
+  padding: .5rem;
 }
 
-.color-picker__custom .v-icon {
-  pointer-events: none;
+.color-picker__vuetify {
+  max-width: none;
 }
 </style>

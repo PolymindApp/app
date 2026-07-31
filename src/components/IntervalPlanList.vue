@@ -28,6 +28,8 @@ async function removeTemplate() {
   try {
     await store.deleteTemplate(pendingDelete.value.id)
     pendingDelete.value = undefined
+  } catch {
+    pendingDelete.value = undefined
   } finally {
     deleting.value = false
   }

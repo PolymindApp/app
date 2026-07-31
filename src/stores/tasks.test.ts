@@ -145,6 +145,46 @@ describe('quantitative task completion', () => {
   })
 })
 
+describe('interval task completion', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  it('uses the daily occurrence as all-or-nothing progress', () => {
+    const store = useTaskStore()
+    const intervalTask: Task = {
+      ...task,
+      id: 'interval-task',
+      name: 'Morning intervals',
+      type: 'interval',
+      intervalTemplate: 'template-1',
+      targetValue: 1,
+      quickAmounts: [],
+    }
+
+    expect(store.makeProgress(intervalTask, selectedDate)).toMatchObject({
+      percent: 0,
+      complete: false,
+      status: 'pending',
+    })
+
+    store.occurrences = [{
+      ...completedOccurrence,
+      id: 'interval-occurrence',
+      task: intervalTask.id,
+      snapshotName: intervalTask.name,
+      snapshotTarget: 1,
+      snapshotUnit: '',
+    }]
+
+    expect(store.makeProgress(intervalTask, selectedDate)).toMatchObject({
+      percent: 100,
+      complete: true,
+      status: 'completed',
+    })
+  })
+})
+
 describe('task ordering', () => {
   beforeEach(() => {
     setActivePinia(createPinia())

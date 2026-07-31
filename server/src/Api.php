@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Mom\Api;
 
 use DateTimeImmutable;
+use DateTimeZone;
 use JsonException;
 use lbuchs\WebAuthn\WebAuthn;
 use lbuchs\WebAuthn\WebAuthnException;
@@ -76,6 +77,16 @@ final class Api
             }
             if ($method === 'POST' && $path === '/auth/passkeys/login/verify') {
                 $this->verifyPasskeyLogin();
+            }
+            if (
+                $method === 'POST'
+                && preg_match(
+                    '#^/interval-sessions/([a-zA-Z0-9_-]{1,64})/complete/?$#',
+                    $path,
+                    $intervalMatches,
+                ) === 1
+            ) {
+                $this->completeIntervalSession($intervalMatches[1], $this->authenticate());
             }
 
             if (preg_match('#^/collections/([a-z_]+)/records/?$#', $path, $matches) === 1) {
@@ -1217,6 +1228,13 @@ final class Api
         $values = $this->validateRecordInput($collection, $body, true);
         $values['id'] = $this->newId();
         $values['owner'] = $user['id'];
+        if ($collection['name'] === 'interval_sessions') {
+            $values['task_date'] = $this->dateKeyInTimezone(
+                (string) $values['started_at'],
+                (string) $user['timezone'],
+            );
+            $this->validateNewIntervalSession($values, $user);
+        }
         $this->validateRelations($collection['name'], $values, (string) $user['id']);
 
         $columns = array_keys($values);
@@ -1246,6 +1264,14 @@ final class Api
     {
         $existing = $this->ownedRecord($collection['name'], $id, (string) $user['id']);
         $body = $this->jsonBody();
+        if ($collection['name'] === 'interval_sessions') {
+            if (array_key_exists('task', $body) || array_key_exists('task_date', $body)) {
+                throw new ApiException(422, 'Interval task attribution cannot be changed after the session starts.');
+            }
+            if (($body['status'] ?? null) === 'completed') {
+                throw new ApiException(422, 'Use the interval completion endpoint to complete a session.');
+            }
+        }
         $values = $this->validateRecordInput($collection, $body, false);
         if ($values === []) {
             throw new ApiException(422, 'At least one writable field is required.');
@@ -1279,6 +1305,146 @@ final class Api
         $this->respond($this->normalizeRecord($collection, $record));
     }
 
+    private function completeIntervalSession(string $id, array $user): never
+    {
+        $body = $this->jsonBody();
+        $allowedFields = ['runtime_state', 'elapsed_seconds', 'ended_at'];
+        $unknown = array_values(array_diff(array_keys($body), $allowedFields));
+        if ($unknown !== []) {
+            throw new ApiException(422, 'The request contains unknown fields.', ['fields' => $unknown]);
+        }
+        $missing = array_values(array_diff($allowedFields, array_keys($body)));
+        if ($missing !== []) {
+            throw new ApiException(422, 'Required fields are missing.', ['fields' => $missing]);
+        }
+
+        $sessionCollection = $this->requireCollection('interval_sessions');
+        $fields = $sessionCollection['config']['fields'];
+        $runtime = $this->validateField('runtime_state', $body['runtime_state'], $fields['runtime_state']);
+        $elapsedSeconds = $this->validateField(
+            'elapsed_seconds',
+            $body['elapsed_seconds'],
+            $fields['elapsed_seconds'],
+        );
+        $endedAt = $this->validateField('ended_at', $body['ended_at'], $fields['ended_at']);
+        if ($endedAt === '') {
+            throw new ApiException(422, 'The ended_at field is required.', ['ended_at' => 'required']);
+        }
+
+        $owner = (string) $user['id'];
+        $pdo = $this->database->pdo;
+        $pdo->beginTransaction();
+        try {
+            $session = $this->ownedRecord('interval_sessions', $id, $owner);
+            if ((string) $session['status'] === 'ended') {
+                throw new ApiException(409, 'An ended interval session cannot be completed.');
+            }
+
+            if ((string) $session['status'] !== 'completed') {
+                $statement = $pdo->prepare(
+                    'UPDATE interval_sessions SET
+                        status = :status,
+                        runtime_state = :runtime_state,
+                        elapsed_seconds = :elapsed_seconds,
+                        ended_at = :ended_at
+                     WHERE id = :id AND owner = :owner',
+                );
+                $statement->execute([
+                    'status' => 'completed',
+                    'runtime_state' => json_encode($runtime, JSON_THROW_ON_ERROR),
+                    'elapsed_seconds' => $elapsedSeconds,
+                    'ended_at' => $endedAt,
+                    'id' => $id,
+                    'owner' => $owner,
+                ]);
+            }
+
+            $occurrence = $this->completeAttributedIntervalTask($session, $owner, $endedAt);
+            $session = $this->ownedRecord('interval_sessions', $id, $owner);
+            $pdo->commit();
+        } catch (Throwable $exception) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $exception;
+        }
+
+        $this->respond([
+            'session' => $this->normalizeRecord($sessionCollection, $session),
+            'occurrence' => $occurrence,
+        ]);
+    }
+
+    private function completeAttributedIntervalTask(
+        array $session,
+        string $owner,
+        string $completedAt,
+    ): ?array {
+        $taskId = (string) ($session['task'] ?? '');
+        $taskDate = (string) ($session['task_date'] ?? '');
+        if ($taskId === '' || $taskDate === '') {
+            return null;
+        }
+
+        $statement = $this->database->pdo->prepare(
+            'SELECT * FROM tasks WHERE id = :id AND owner = :owner LIMIT 1',
+        );
+        $statement->execute(['id' => $taskId, 'owner' => $owner]);
+        $task = $statement->fetch();
+        if (!is_array($task)) {
+            return null;
+        }
+
+        $statement = $this->database->pdo->prepare(
+            "SELECT * FROM occurrences
+             WHERE task = :task AND program_step = '' AND scheduled_date = :scheduled_date
+               AND owner = :owner
+             LIMIT 1",
+        );
+        $statement->execute([
+            'task' => $taskId,
+            'scheduled_date' => $taskDate,
+            'owner' => $owner,
+        ]);
+        $occurrence = $statement->fetch();
+
+        if (is_array($occurrence)) {
+            $update = $this->database->pdo->prepare(
+                'UPDATE occurrences SET status = :status, completed_at = :completed_at
+                 WHERE id = :id AND owner = :owner',
+            );
+            $update->execute([
+                'status' => 'completed',
+                'completed_at' => $completedAt,
+                'id' => $occurrence['id'],
+                'owner' => $owner,
+            ]);
+            $occurrence = $this->ownedRecord('occurrences', (string) $occurrence['id'], $owner);
+        } else {
+            $occurrenceId = $this->newId();
+            $insert = $this->database->pdo->prepare(
+                "INSERT INTO occurrences (
+                    id, owner, task, program_step, scheduled_date, status, sealed,
+                    completed_at, snapshot_name, snapshot_target, snapshot_unit
+                 ) VALUES (
+                    :id, :owner, :task, '', :scheduled_date, 'completed', FALSE,
+                    :completed_at, :snapshot_name, 1, ''
+                 )",
+            );
+            $insert->execute([
+                'id' => $occurrenceId,
+                'owner' => $owner,
+                'task' => $taskId,
+                'scheduled_date' => $taskDate,
+                'completed_at' => $completedAt,
+                'snapshot_name' => (string) $task['name'],
+            ]);
+            $occurrence = $this->ownedRecord('occurrences', $occurrenceId, $owner);
+        }
+
+        return $this->normalizeRecord($this->requireCollection('occurrences'), $occurrence);
+    }
+
     private function deleteRecord(array $collection, string $id, array $user): never
     {
         $owner = (string) $user['id'];
@@ -1307,6 +1473,10 @@ final class Api
 
     private function deleteTask(string $id, string $owner): void
     {
+        $statement = $this->database->pdo->prepare(
+            "UPDATE interval_sessions SET task = '' WHERE task = :id AND owner = :owner",
+        );
+        $statement->execute(['id' => $id, 'owner' => $owner]);
         foreach (['entries', 'occurrences', 'program_steps'] as $table) {
             $statement = $this->database->pdo->prepare(
                 "DELETE FROM {$table} WHERE task = :id AND owner = :owner",
@@ -1362,6 +1532,26 @@ final class Api
 
     private function deleteIntervalTemplate(string $id, string $owner): void
     {
+        $statement = $this->database->pdo->prepare(
+            'SELECT id, name FROM tasks
+             WHERE interval_template = :id AND owner = :owner
+             ORDER BY sort_order, name',
+        );
+        $statement->execute(['id' => $id, 'owner' => $owner]);
+        $attachedTasks = $statement->fetchAll();
+        if ($attachedTasks !== []) {
+            throw new ApiException(
+                409,
+                'This interval is attached to one or more tasks. Reassign or delete those tasks first.',
+                ['tasks' => array_map(
+                    static fn (array $task): array => [
+                        'id' => (string) $task['id'],
+                        'name' => (string) $task['name'],
+                    ],
+                    $attachedTasks,
+                )],
+            );
+        }
         $statement = $this->database->pdo->prepare(
             "UPDATE interval_sessions SET template = '' WHERE template = :id AND owner = :owner",
         );
@@ -1611,6 +1801,14 @@ final class Api
                     throw new ApiException(422, 'A selected tag is invalid.');
                 }
             }
+            $intervalTemplate = (string) ($record['interval_template'] ?? '');
+            if (($record['type'] ?? '') === 'interval') {
+                if (!$this->relationExists('interval_templates', $intervalTemplate, $owner)) {
+                    throw new ApiException(422, 'Select a valid interval for this task.');
+                }
+            } elseif ($intervalTemplate !== '') {
+                throw new ApiException(422, 'Only interval tasks may have an attached interval.');
+            }
             return;
         }
 
@@ -1637,7 +1835,146 @@ final class Api
             if ($template !== '' && !$this->relationExists('interval_templates', $template, $owner)) {
                 throw new ApiException(422, 'The selected interval template is invalid.');
             }
+            $task = (string) ($record['task'] ?? '');
+            if ($task !== '' && !$this->intervalTaskMatchesTemplate($task, $template, $owner)) {
+                throw new ApiException(422, 'The selected task is not attached to this interval.');
+            }
         }
+    }
+
+    private function validateNewIntervalSession(array $record, array $user): void
+    {
+        if (($record['status'] ?? '') !== 'running') {
+            throw new ApiException(422, 'A new interval session must start in the running state.');
+        }
+
+        $owner = (string) $user['id'];
+        $statement = $this->database->pdo->prepare(
+            "SELECT id FROM interval_sessions
+             WHERE owner = :owner AND status IN ('running', 'paused')
+             ORDER BY started_at DESC LIMIT 1",
+        );
+        $statement->execute(['owner' => $owner]);
+        $activeSession = $statement->fetchColumn();
+        if ($activeSession !== false) {
+            throw new ApiException(
+                409,
+                'Another interval session is already active.',
+                ['activeSession' => (string) $activeSession],
+            );
+        }
+
+        $source = (string) ($record['source'] ?? '');
+        $template = (string) ($record['template'] ?? '');
+        $taskId = (string) ($record['task'] ?? '');
+        if ($source === 'template' && $template === '') {
+            throw new ApiException(422, 'A saved interval session requires a template.');
+        }
+        if ($source === 'quick' && ($template !== '' || $taskId !== '')) {
+            throw new ApiException(422, 'Quick intervals must run standalone.');
+        }
+        if ($taskId === '') {
+            return;
+        }
+        if (!$this->intervalTaskMatchesTemplate($taskId, $template, $owner)) {
+            throw new ApiException(422, 'The selected task is not attached to this interval.');
+        }
+
+        $statement = $this->database->pdo->prepare(
+            'SELECT * FROM tasks WHERE id = :id AND owner = :owner LIMIT 1',
+        );
+        $statement->execute(['id' => $taskId, 'owner' => $owner]);
+        $task = $statement->fetch();
+        if (
+            !is_array($task)
+            || !(bool) $task['active']
+            || !$this->intervalTaskIsOpenOnDate($task, (string) $record['task_date'], $owner)
+        ) {
+            throw new ApiException(409, 'The selected task is not open for this date.');
+        }
+    }
+
+    private function intervalTaskMatchesTemplate(string $taskId, string $templateId, string $owner): bool
+    {
+        if ($taskId === '' || $templateId === '') {
+            return false;
+        }
+        $statement = $this->database->pdo->prepare(
+            "SELECT 1 FROM tasks
+             WHERE id = :id AND owner = :owner AND type = 'interval'
+               AND interval_template = :template
+             LIMIT 1",
+        );
+        $statement->execute([
+            'id' => $taskId,
+            'owner' => $owner,
+            'template' => $templateId,
+        ]);
+        return $statement->fetchColumn() !== false;
+    }
+
+    private function intervalTaskIsOpenOnDate(array $task, string $dateKey, string $owner): bool
+    {
+        $statement = $this->database->pdo->prepare(
+            "SELECT status FROM occurrences
+             WHERE task = :task AND program_step = '' AND scheduled_date = :scheduled_date
+               AND owner = :owner
+             LIMIT 1",
+        );
+        $statement->execute([
+            'task' => $task['id'],
+            'scheduled_date' => $dateKey,
+            'owner' => $owner,
+        ]);
+        $status = $statement->fetchColumn();
+        if ($status !== false) {
+            return $status === 'pending';
+        }
+        return $this->taskScheduledOnDate($task, $dateKey);
+    }
+
+    private function taskScheduledOnDate(array $task, string $dateKey): bool
+    {
+        $startDate = (string) ($task['start_date'] ?? '');
+        $endDate = (string) ($task['end_date'] ?? '');
+        if ($startDate === '' || $dateKey < $startDate || $endDate !== '' && $dateKey > $endDate) {
+            return false;
+        }
+
+        $recurrence = (string) ($task['recurrence_type'] ?? '');
+        if ($recurrence === 'daily') {
+            return true;
+        }
+
+        $weekdays = $this->decodeJsonColumn($task['weekdays'] ?? '[]');
+        if (!is_array($weekdays)) {
+            return false;
+        }
+        $date = new DateTimeImmutable($dateKey . 'T12:00:00');
+        $weekday = (int) $date->format('w');
+        if (!in_array($weekday, array_map('intval', $weekdays), true)) {
+            return false;
+        }
+        if ($recurrence === 'weekdays') {
+            return true;
+        }
+        if ($recurrence !== 'interval_weeks') {
+            return false;
+        }
+
+        $start = new DateTimeImmutable($startDate . 'T12:00:00');
+        $startWeek = $start->modify('monday this week');
+        $dateWeek = $date->modify('monday this week');
+        $days = (int) $startWeek->diff($dateWeek)->format('%r%a');
+        $weeks = intdiv($days, 7);
+        return $weeks >= 0 && $weeks % max(1, (int) $task['interval_weeks']) === 0;
+    }
+
+    private function dateKeyInTimezone(string $timestamp, string $timezone): string
+    {
+        return (new DateTimeImmutable($timestamp))
+            ->setTimezone(new DateTimeZone($timezone))
+            ->format('Y-m-d');
     }
 
     private function relationExists(string $table, string $id, string $owner): bool

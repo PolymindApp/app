@@ -3,7 +3,13 @@ import { computed, ref, watch } from 'vue'
 import { goalState } from '@/services/schedule'
 import type { TaskProgress } from '@/types/domain'
 
-const props = defineProps<{ progress: TaskProgress; busy?: boolean }>()
+const props = defineProps<{
+  progress: TaskProgress
+  busy?: boolean
+  interval?: { name: string; duration: string }
+  canStartInterval?: boolean
+  intervalActive?: boolean
+}>()
 const emit = defineEmits<{
   toggle: [progress: TaskProgress]
   seal: [progress: TaskProgress]
@@ -11,6 +17,7 @@ const emit = defineEmits<{
   exact: [progress: TaskProgress]
   logTime: [progress: TaskProgress]
   review: [progress: TaskProgress]
+  startInterval: [progress: TaskProgress]
 }>()
 
 const task = computed(() => props.progress.task)
@@ -18,6 +25,7 @@ const step = computed(() => props.progress.programStep)
 const optimisticComplete = ref<boolean>()
 const displayedComplete = computed(() => optimisticComplete.value ?? props.progress.complete)
 const isCheck = computed(() => (step.value ? step.value.completionType === 'check' : task.value.type === 'check'))
+const isInterval = computed(() => !step.value && task.value.type === 'interval')
 const isDailyTotal = computed(() => !step.value && task.value.type === 'daily_total')
 const canLogTime = computed(() => !step.value && task.value.type === 'duration')
 const canToggleFromCard = computed(() => isCheck.value && !props.busy && !props.progress.locked)
@@ -28,7 +36,7 @@ const quickAmounts = computed(() =>
 )
 const operator = computed(() => ({ gte: 'at least', lte: 'at most', eq: 'exactly' })[step.value?.targetOperator || task.value.targetOperator || 'gte'])
 const targetOperator = computed(() => step.value?.targetOperator || task.value.targetOperator || 'gte')
-const currentGoalState = computed(() => isCheck.value ? 'neutral' : goalState(props.progress.value, target.value, targetOperator.value))
+const currentGoalState = computed(() => isCheck.value || isInterval.value ? 'neutral' : goalState(props.progress.value, target.value, targetOperator.value))
 const taskColor = computed(() => task.value.color || '#C7F464')
 const stateColor = computed(() => {
   if (currentGoalState.value === 'exceeded') return 'warning'
@@ -41,6 +49,7 @@ const stateIcon = computed(() => {
   if (currentGoalState.value === 'not_enough') return 'mdi-trending-down'
   if (props.progress.sealed) return 'mdi-lock-check'
   if (displayedComplete.value) return 'mdi-check-bold'
+  if (isInterval.value) return 'mdi-timer-play-outline'
   return isCheck.value ? 'mdi-circle-outline' : 'mdi-lightning-bolt'
 })
 const stateIconColor = computed(() => {
@@ -123,7 +132,32 @@ watch(() => props.busy, (busy) => {
       </v-progress-circular>
     </div>
 
-    <template v-if="!isCheck">
+    <template v-if="isInterval">
+      <div class="interval-task-details mt-4">
+        <v-icon icon="mdi-timer-play-outline" color="secondary" size="20" />
+        <div class="min-width-0">
+          <strong class="d-block text-truncate">{{ interval?.name || 'Attached interval' }}</strong>
+          <span v-if="interval?.duration" class="text-caption muted">{{ interval.duration }}</span>
+        </div>
+      </div>
+      <v-btn
+        v-if="!displayedComplete && canStartInterval"
+        block
+        class="mt-4"
+        color="secondary"
+        prepend-icon="mdi-play"
+        :disabled="busy || progress.locked"
+        @touchstart.stop
+        @click.stop="emit('startInterval', progress)"
+      >
+        {{ intervalActive ? 'Resume interval' : 'Start interval' }}
+      </v-btn>
+      <div v-else-if="!displayedComplete && progress.status === 'pending'" class="status-banner mt-3 muted">
+        <v-icon icon="mdi-calendar-today-outline" size="16" /> Select today to start this interval
+      </div>
+    </template>
+
+    <template v-else-if="!isCheck">
       <div class="metric-row mt-4">
         <div>
           <span class="metric-value">{{ formatValue(progress.value) }}</span>
@@ -140,7 +174,7 @@ watch(() => props.busy, (busy) => {
         class="mt-2"
       />
 
-      <div class="quick-actions mt-4">
+      <div v-if="quickAmounts.length" class="quick-actions mt-4">
         <v-btn
           v-for="amount in quickAmounts"
           :key="amount"
@@ -151,7 +185,11 @@ watch(() => props.busy, (busy) => {
         >
           +{{ task.type === 'duration' && !step ? `${amount}h` : `${amount}${unit ? ` ${unit}` : ''}` }}
         </v-btn>
+      </div>
+
+      <div class="task-action-stack mt-4">
         <v-btn
+          block
           size="small"
           variant="tonal"
           prepend-icon="mdi-pencil-plus-outline"
@@ -162,6 +200,7 @@ watch(() => props.busy, (busy) => {
         </v-btn>
         <v-btn
           v-if="canLogTime"
+          block
           size="small"
           variant="tonal"
           color="secondary"
@@ -171,20 +210,20 @@ watch(() => props.busy, (busy) => {
         >
           Log time
         </v-btn>
+        <v-btn
+          v-if="isDailyTotal"
+          block
+          size="small"
+          variant="tonal"
+          :color="progress.sealed ? undefined : 'secondary'"
+          :prepend-icon="progress.sealed ? 'mdi-lock-open-variant-outline' : 'mdi-lock-check-outline'"
+          :disabled="busy || progress.locked"
+          @touchstart.stop
+          @click.stop="emit('seal', progress)"
+        >
+          {{ progress.sealed ? 'Unlock total' : 'Lock in total' }}
+        </v-btn>
       </div>
-      <v-btn
-        v-if="isDailyTotal"
-        block
-        class="mt-4"
-        variant="tonal"
-        :color="progress.sealed ? undefined : 'secondary'"
-        :prepend-icon="progress.sealed ? 'mdi-lock-open-variant-outline' : 'mdi-lock-check-outline'"
-        :disabled="busy || progress.locked"
-        @touchstart.stop
-        @click.stop="emit('seal', progress)"
-      >
-        {{ progress.sealed ? 'Unlock total' : 'Lock in total' }}
-      </v-btn>
     </template>
 
     <div v-if="progress.locked" class="status-banner mt-3 muted">
@@ -310,6 +349,30 @@ watch(() => props.busy, (busy) => {
   flex-wrap: wrap;
   align-items: center;
   gap: .35rem;
+}
+
+.task-action-stack {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .5rem;
+}
+
+.task-action-stack .v-btn {
+  min-height: 40px;
+}
+
+.task-action-stack .v-btn:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
+
+.interval-task-details {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: .75rem;
+  padding: .8rem;
+  border-radius: 16px;
+  background: rgb(var(--v-theme-surface-variant));
 }
 
 .status-banner {
