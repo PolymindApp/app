@@ -31,6 +31,7 @@
     "@capacitor/app": "8.1.1",
     "@capacitor/core": "8.4.2",
     "@capacitor/haptics": "8.0.2",
+    "@capacitor/local-notifications": "8.0.2",
     "@mdi/font": "^7.4.47",
     "date-fns": "^4.4.0",
     "pinia": "^4.0.2",

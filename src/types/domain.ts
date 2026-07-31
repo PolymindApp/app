@@ -191,3 +191,64 @@ export interface QuickIntervalDraft {
 export interface QuickIntervalSettings extends QuickIntervalDraft {
   includeRest: boolean
 }
+
+export type TrackerRole = 'factor' | 'outcome'
+export type TrackerKind = 'yes_no' | 'event' | 'number' | 'rating' | 'duration'
+export type TrackerCategory = 'mindfulness' | 'medication' | 'nutrition' | 'mood' | 'symptom' | 'sleep' | 'activity' | 'other'
+export type DailyAggregation = 'last' | 'average' | 'sum' | 'count'
+export type FavorableDirection = 'higher' | 'lower' | 'neutral'
+
+export interface TrackingTracker {
+  id: string
+  name: string
+  description: string
+  role: TrackerRole
+  kind: TrackerKind
+  category: TrackerCategory
+  unit: string
+  scaleMin: number
+  scaleMax: number
+  favorableDirection: FavorableDirection
+  dailyAggregation: DailyAggregation
+  active: boolean
+  sortOrder: number
+  color: string
+  icon: string
+  reminderEnabled: boolean
+  reminderTime: string
+  reminderShowName: boolean
+}
+
+export interface TrackingTrackerDraft extends Omit<TrackingTracker, 'id'> {
+  id?: string
+}
+
+export interface TrackingEntry {
+  id: string
+  tracker: string
+  occurredAt: string
+  localDate: string
+  timezoneOffset: number
+  value: number
+  note: string
+}
+
+export interface TrackingEntryDraft extends Omit<TrackingEntry, 'id'> {
+  id?: string
+}
+
+export type TrackingSourceKind = 'tracker' | 'task' | 'interval'
+
+export interface TrackingAnalysisSource {
+  id: string
+  source: TrackingSourceKind
+  name: string
+  role: TrackerRole
+  favorableDirection: FavorableDirection
+  unit: string
+}
+
+export interface TrackingDailyValue {
+  date: string
+  value: number
+}

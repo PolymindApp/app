@@ -1,0 +1,80 @@
+import { describe, expect, it } from 'vitest'
+import {
+  aggregateTrackingEntries,
+  compareDateRanges,
+  comparePresentAbsent,
+  trackerDraftFromPreset,
+  TRACKING_PRESETS,
+} from './tracking'
+import type { TrackingEntry, TrackingTracker } from '@/types/domain'
+
+const tracker: TrackingTracker = {
+  id: 'mood', name: 'Mood', description: '', role: 'outcome', kind: 'rating',
+  category: 'mood', unit: '/ 10', scaleMin: 1, scaleMax: 10,
+  favorableDirection: 'higher', dailyAggregation: 'average', active: true,
+  sortOrder: 0, color: '#fff', icon: '', reminderEnabled: false,
+  reminderTime: '20:00', reminderShowName: false,
+}
+
+const entry = (date: string, value: number, suffix = value): TrackingEntry => ({
+  id: `${date}-${suffix}`, tracker: 'mood', occurredAt: `${date}T12:00:00.000Z`,
+  localDate: date, timezoneOffset: 240, value, note: '',
+})
+
+describe('tracking analysis', () => {
+  it('aggregates repeated daily ratings using the tracker rule', () => {
+    const result = aggregateTrackingEntries(tracker, [
+      entry('2026-07-01', 4, 1), entry('2026-07-01', 8, 2), entry('2026-07-02', 7),
+    ])
+    expect(result).toEqual([
+      { date: '2026-07-01', value: 6 },
+      { date: '2026-07-02', value: 7 },
+    ])
+  })
+
+  it('requires five explicitly observed days in each present/absent cohort', () => {
+    const outcome = Array.from({ length: 10 }, (_, index) => ({
+      date: `2026-07-${String(index + 1).padStart(2, '0')}`,
+      value: index < 5 ? 8 : 5,
+    }))
+    const factor = outcome.map((item, index) => ({ date: item.date, value: index < 5 ? 1 : 0 }))
+    const result = comparePresentAbsent(factor, outcome, 'higher')
+    expect(result.ready).toBe(true)
+    expect(result.earlySignal).toBe(true)
+    expect(result.first.count).toBe(5)
+    expect(result.second.count).toBe(5)
+    expect(result.direction).toBe('better')
+    expect(result.caution).toContain('not proof')
+  })
+
+  it('does not invent absent days from missing data', () => {
+    const outcome = Array.from({ length: 10 }, (_, index) => ({ date: `2026-07-${index + 1}`, value: 6 }))
+    const result = comparePresentAbsent([{ date: '2026-07-1', value: 1 }], outcome, 'higher')
+    expect(result.second.count).toBe(0)
+    expect(result.ready).toBe(false)
+  })
+
+  it('compares two user-selected date ranges', () => {
+    const outcome = Array.from({ length: 10 }, (_, index) => ({
+      date: `2026-07-${String(index + 1).padStart(2, '0')}`,
+      value: index < 5 ? 3 : 7,
+    }))
+    const result = compareDateRanges(
+      outcome,
+      { start: '2026-07-01', end: '2026-07-05' },
+      { start: '2026-07-06', end: '2026-07-10' },
+      'higher',
+    )
+    expect(result.ready).toBe(true)
+    expect(result.first.mean).toBe(3)
+    expect(result.second.mean).toBe(7)
+  })
+
+  it('creates safe editable drafts from starter presets', () => {
+    const preset = TRACKING_PRESETS.find((item) => item.id === 'medication')!
+    const draft = trackerDraftFromPreset(preset, 4)
+    expect(draft.kind).toBe('yes_no')
+    expect(draft.sortOrder).toBe(4)
+    expect(draft.reminderEnabled).toBe(false)
+  })
+})

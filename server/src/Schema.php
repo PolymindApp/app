@@ -158,6 +158,49 @@ final class Schema
                 'sort' => ['started_at', 'ended_at', 'status'],
                 'filter' => ['template', 'task', 'task_date', 'source', 'status', 'started_at'],
             ],
+            'tracking_trackers' => [
+                'fields' => [
+                    'name' => self::text(160, true),
+                    'description' => self::text(2000),
+                    'role' => self::choice(['factor', 'outcome'], true),
+                    'kind' => self::choice(['yes_no', 'event', 'number', 'rating', 'duration'], true),
+                    'category' => self::choice([
+                        'mindfulness', 'medication', 'nutrition', 'mood', 'symptom',
+                        'sleep', 'activity', 'other',
+                    ], true),
+                    'unit' => self::text(30),
+                    'scale_min' => self::number(-1000000, 1000000),
+                    'scale_max' => self::number(-1000000, 1000000),
+                    'favorable_direction' => self::choice(['higher', 'lower', 'neutral'], true),
+                    'daily_aggregation' => self::choice(['last', 'average', 'sum', 'count'], true),
+                    'active' => self::boolean(),
+                    'sort_order' => self::integer(0),
+                    'color' => self::text(20),
+                    'icon' => self::text(50),
+                    'reminder_enabled' => self::boolean(),
+                    'reminder_time' => self::timeKey(),
+                    'reminder_show_name' => self::boolean(),
+                ],
+                'required' => [
+                    'name', 'role', 'kind', 'category', 'favorable_direction',
+                    'daily_aggregation', 'reminder_time',
+                ],
+                'sort' => ['name', 'sort_order'],
+                'filter' => ['active', 'role', 'kind', 'category'],
+            ],
+            'tracking_entries' => [
+                'fields' => [
+                    'tracker' => self::relation(true),
+                    'occurred_at' => self::timestamp(true),
+                    'local_date' => self::dateKey(true),
+                    'timezone_offset' => self::integer(-840, 840),
+                    'value' => self::number(-1000000000, 1000000000),
+                    'note' => self::text(2000),
+                ],
+                'required' => ['tracker', 'occurred_at', 'local_date', 'timezone_offset', 'value'],
+                'sort' => ['occurred_at', 'local_date'],
+                'filter' => ['tracker', 'occurred_at', 'local_date'],
+            ],
         ];
 
         return self::$collections;
@@ -201,6 +244,11 @@ final class Schema
     private static function timestamp(bool $required = false, bool $allowEmpty = false): array
     {
         return ['type' => 'timestamp', 'required' => $required, 'allowEmpty' => $allowEmpty];
+    }
+
+    private static function timeKey(): array
+    {
+        return ['type' => 'time_key', 'required' => true];
     }
 
     private static function relation(bool $required = false, bool $allowEmpty = false): array

@@ -56,7 +56,7 @@ suffix="$(php -r 'echo bin2hex(random_bytes(5));')"
 password="correct-horse-battery"
 
 migration_count="$(sqlite3 "$test_db" 'SELECT COUNT(*) FROM mom_schema_migrations;')"
-[[ "$migration_count" == 5 ]] || {
+[[ "$migration_count" == 6 ]] || {
   echo "The API did not apply the complete database migration sequence." >&2
   exit 1
 }
@@ -526,6 +526,40 @@ injection_status="$(curl --silent --output /dev/null --write-out '%{http_code}' 
   exit 1
 }
 
+tracker_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"name":"Mood","description":"Daily mood","role":"outcome","kind":"rating","category":"mood","unit":"/ 10","scale_min":1,"scale_max":10,"favorable_direction":"higher","daily_aggregation":"average","active":true,"sort_order":0,"color":"#D4A5FF","icon":"mdi-emoticon-outline","reminder_enabled":true,"reminder_time":"20:30","reminder_show_name":false}' \
+  "$api_url/collections/tracking_trackers/records")"
+tracker_id="$(json_field id <<<"$tracker_response")"
+
+tracking_entry_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "{\"tracker\":\"$tracker_id\",\"occurred_at\":\"2026-07-31T20:00:00Z\",\"local_date\":\"2026-07-31\",\"timezone_offset\":240,\"value\":8,\"note\":\"Calm evening\"}" \
+  "$api_url/collections/tracking_entries/records")"
+tracking_entry_id="$(json_field id <<<"$tracking_entry_response")"
+
+locked_tracker_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  -X PATCH -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"scale_max":5}' \
+  "$api_url/collections/tracking_trackers/records/$tracker_id")"
+[[ "$locked_tracker_status" == 409 ]] || {
+  echo "A tracker measurement definition changed after its first entry." >&2
+  exit 1
+}
+
+invalid_reminder_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  -X PATCH -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"reminder_time":"25:00"}' \
+  "$api_url/collections/tracking_trackers/records/$tracker_id")"
+[[ "$invalid_reminder_status" == 422 ]] || {
+  echo "An invalid tracker reminder time was accepted." >&2
+  exit 1
+}
+
 register "Bob API" "$bob_email" >/dev/null
 bob_login="$(login "$bob_email")"
 bob_token="$(json_field token <<<"$bob_login")"
@@ -536,6 +570,26 @@ cross_user_status="$(curl --silent --output /dev/null --write-out '%{http_code}'
   "$api_url/collections/tasks/records/$task_id")"
 [[ "$cross_user_status" == 404 ]] || {
   echo "Cross-user record isolation failed." >&2
+  exit 1
+}
+
+cross_user_tracking_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $bob_token" \
+  --data "{\"tracker\":\"$tracker_id\",\"occurred_at\":\"2026-07-31T21:00:00Z\",\"local_date\":\"2026-07-31\",\"timezone_offset\":240,\"value\":1,\"note\":\"\"}" \
+  "$api_url/collections/tracking_entries/records")"
+[[ "$cross_user_tracking_status" == 422 ]] || {
+  echo "Cross-user tracker relation isolation failed." >&2
+  exit 1
+}
+
+tracker_delete_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  -X DELETE -H "Authorization: Bearer $alice_token" \
+  "$api_url/collections/tracking_trackers/records/$tracker_id")"
+remaining_tracking_entries="$(sqlite3 "$test_db" \
+  "SELECT COUNT(*) FROM tracking_entries WHERE id = '$tracking_entry_id';")"
+[[ "$tracker_delete_status" == 204 && "$remaining_tracking_entries" == 0 ]] || {
+  echo "Permanent tracker deletion did not cascade to its entries." >&2
   exit 1
 }
 

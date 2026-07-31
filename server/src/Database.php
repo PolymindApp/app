@@ -72,6 +72,16 @@ final class Database
                 'planned_seconds', 'elapsed_seconds', 'runtime_state', 'task',
                 'task_date',
             ],
+            'tracking_trackers' => [
+                'id', 'owner', 'name', 'description', 'role', 'kind', 'category',
+                'unit', 'scale_min', 'scale_max', 'favorable_direction',
+                'daily_aggregation', 'active', 'sort_order', 'color', 'icon',
+                'reminder_enabled', 'reminder_time', 'reminder_show_name',
+            ],
+            'tracking_entries' => [
+                'id', 'owner', 'tracker', 'occurred_at', 'local_date',
+                'timezone_offset', 'value', 'note',
+            ],
             'mom_rate_limits' => ['rate_key', 'window_start', 'hits'],
             'mom_passkey_challenges' => [
                 'id', 'purpose', 'user_id', 'user_handle', 'challenge',

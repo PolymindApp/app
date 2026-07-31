@@ -17,6 +17,7 @@ const isIos = Capacitor.getPlatform() === 'ios'
 const items = [
   { title: 'Tasks', icon: 'mdi-lightning-bolt', to: '/tasks' },
   { title: 'Intervals', icon: 'mdi-timer-outline', to: '/intervals' },
+  { title: 'Tracking', icon: 'mdi-chart-timeline-variant', to: '/tracking' },
 ]
 
 const immersive = computed(() => Boolean(router.currentRoute.value.meta.immersive))
@@ -38,6 +39,7 @@ const current = computed({
   get: () => {
     const path = router.currentRoute.value.path
     if (path.startsWith('/intervals')) return '/intervals'
+    if (path.startsWith('/tracking')) return '/tracking'
     if (path.startsWith('/tasks')) return '/tasks'
     return path
   },

@@ -1276,6 +1276,9 @@ final class Api
         if ($values === []) {
             throw new ApiException(422, 'At least one writable field is required.');
         }
+        if ($collection['name'] === 'tracking_trackers') {
+            $this->validateTrackerDefinitionUpdate($existing, $values, (string) $user['id']);
+        }
 
         $combined = array_merge($this->normalizeRecord($collection, $existing), $values);
         $this->validateRelations($collection['name'], $combined, (string) $user['id']);
@@ -1458,6 +1461,7 @@ final class Api
                 'occurrences' => $this->deleteOccurrence($id, $owner),
                 'tags' => $this->deleteTag($id, $owner),
                 'interval_templates' => $this->deleteIntervalTemplate($id, $owner),
+                'tracking_trackers' => $this->deleteTrackingTracker($id, $owner),
                 default => $this->deleteOwnedRow($collection['name'], $id, $owner),
             };
             $pdo->commit();
@@ -1559,6 +1563,15 @@ final class Api
         $this->deleteOwnedRow('interval_templates', $id, $owner);
     }
 
+    private function deleteTrackingTracker(string $id, string $owner): void
+    {
+        $statement = $this->database->pdo->prepare(
+            'DELETE FROM tracking_entries WHERE tracker = :id AND owner = :owner',
+        );
+        $statement->execute(['id' => $id, 'owner' => $owner]);
+        $this->deleteOwnedRow('tracking_trackers', $id, $owner);
+    }
+
     private function deleteOwnedRow(string $table, string $id, string $owner): void
     {
         $statement = $this->database->pdo->prepare(
@@ -1606,7 +1619,7 @@ final class Api
         $required = (bool) ($rules['required'] ?? false);
         $allowEmpty = (bool) ($rules['allowEmpty'] ?? false);
 
-        if (in_array($rules['type'], ['text', 'choice', 'date_key', 'timestamp', 'relation'], true)) {
+        if (in_array($rules['type'], ['text', 'choice', 'date_key', 'time_key', 'timestamp', 'relation'], true)) {
             if (!is_string($value)) {
                 throw new ApiException(422, "The {$field} field must be a string.", [$field => 'string']);
             }
@@ -1625,6 +1638,7 @@ final class Api
             'integer' => $this->validateInteger($value, $field, $rules),
             'number' => $this->validateNumber($value, $field, $rules),
             'date_key' => $this->validateDateKey($value, $field),
+            'time_key' => $this->validateTimeKey($value, $field),
             'timestamp' => $this->validateTimestamp($value, $field),
             'relation' => $this->validateRelationId($value, $field),
             'json', 'json_array', 'number_array' => $this->validateJson($value, $field, $rules),
@@ -1747,6 +1761,16 @@ final class Api
         return $value;
     }
 
+    private function validateTimeKey(string $value, string $field): string
+    {
+        if (preg_match('/^(?:[01]\d|2[0-3]):[0-5]\d$/', $value) !== 1) {
+            throw new ApiException(422, "The {$field} field must use HH:MM.", [
+                $field => 'time',
+            ]);
+        }
+        return $value;
+    }
+
     private function validateRelationId(string $value, string $field): string
     {
         if ($value === '') {
@@ -1795,6 +1819,29 @@ final class Api
 
     private function validateRelations(string $collection, array $record, string $owner): void
     {
+        if ($collection === 'tracking_trackers') {
+            $kind = (string) ($record['kind'] ?? '');
+            $aggregation = (string) ($record['daily_aggregation'] ?? '');
+            $validAggregation = match ($kind) {
+                'yes_no' => $aggregation === 'last',
+                'event' => $aggregation === 'count',
+                'rating' => $aggregation === 'average',
+                'duration' => $aggregation === 'sum',
+                'number' => in_array($aggregation, ['last', 'average', 'sum'], true),
+                default => false,
+            };
+            if (!$validAggregation) {
+                throw new ApiException(422, 'The daily calculation does not match the tracker type.');
+            }
+            if (
+                $kind === 'rating'
+                && (float) ($record['scale_max'] ?? 0) <= (float) ($record['scale_min'] ?? 0)
+            ) {
+                throw new ApiException(422, 'A rating scale maximum must be greater than its minimum.');
+            }
+            return;
+        }
+
         if ($collection === 'tasks') {
             foreach (($record['tags'] ?? []) as $tag) {
                 if (!is_string($tag) || !$this->relationExists('tags', $tag, $owner)) {
@@ -1839,6 +1886,54 @@ final class Api
             if ($task !== '' && !$this->intervalTaskMatchesTemplate($task, $template, $owner)) {
                 throw new ApiException(422, 'The selected task is not attached to this interval.');
             }
+            return;
+        }
+
+        if ($collection === 'tracking_entries') {
+            $tracker = (string) ($record['tracker'] ?? '');
+            if (!$this->relationExists('tracking_trackers', $tracker, $owner)) {
+                throw new ApiException(422, 'The selected tracker is invalid.');
+            }
+            $definition = $this->ownedRecord('tracking_trackers', $tracker, $owner);
+            $kind = (string) $definition['kind'];
+            $value = (float) ($record['value'] ?? 0);
+            if (in_array($kind, ['yes_no', 'event'], true) && $value !== 0.0 && $value !== 1.0) {
+                throw new ApiException(422, 'This tracker accepts only an explicit yes/no value.');
+            }
+            if ($kind === 'duration' && $value < 0) {
+                throw new ApiException(422, 'A tracked duration cannot be negative.');
+            }
+            if (
+                $kind === 'rating'
+                && ($value < (float) $definition['scale_min'] || $value > (float) $definition['scale_max'])
+            ) {
+                throw new ApiException(422, 'The rating is outside this tracker’s scale.');
+            }
+        }
+    }
+
+    private function validateTrackerDefinitionUpdate(array $existing, array $body, string $owner): void
+    {
+        $immutable = ['kind', 'unit', 'scale_min', 'scale_max', 'daily_aggregation'];
+        $changed = array_filter(
+            $immutable,
+            static fn (string $field): bool => array_key_exists($field, $body)
+                && (string) $body[$field] !== (string) ($existing[$field] ?? ''),
+        );
+        if ($changed === []) {
+            return;
+        }
+
+        $statement = $this->database->pdo->prepare(
+            'SELECT 1 FROM tracking_entries WHERE tracker = :tracker AND owner = :owner LIMIT 1',
+        );
+        $statement->execute(['tracker' => $existing['id'], 'owner' => $owner]);
+        if ($statement->fetchColumn() !== false) {
+            throw new ApiException(
+                409,
+                'This tracker already has entries, so its measurement settings cannot be changed.',
+                ['fields' => array_values($changed)],
+            );
         }
     }
 

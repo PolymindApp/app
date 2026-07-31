@@ -8,6 +8,7 @@ import { api } from './lib/api'
 import router from './router'
 import { vuetify } from './plugins/vuetify'
 import { installAndroidFocusAutoScroll } from './services/androidFocusAutoScroll'
+import { installTrackingNotificationRouting } from './services/trackingReminders'
 import {
   readAndroidRoute,
   rememberAndroidRoute,
@@ -43,6 +44,7 @@ app.mount('#app')
 if (nativePlatform === 'android') {
   installAndroidFocusAutoScroll()
   void router.isReady().then(() => {
+    void installTrackingNotificationRouting(router)
     rememberAndroidRoute(router.currentRoute.value)
     router.afterEach((to) => rememberAndroidRoute(to))
 
