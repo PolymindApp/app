@@ -158,7 +158,7 @@ function selectKind(kind: IntervalStepKind | null) {
       <div v-show="isExpanded" :id="editorPanelId" class="node-fields mt-4">
         <v-text-field v-model="node.name" label="Interval name" />
         <v-select
-          :model-value="node.kind"
+          :model-value="node.kind || null"
           label="Type"
           :items="INTERVAL_STEP_TYPES"
           item-title="title"

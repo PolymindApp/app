@@ -108,7 +108,6 @@ onBeforeUnmount(() => {
               :key="session.id"
               class="recent-run-item"
               :title="session.name"
-              :subtitle="`${format(new Date(session.startedAt), 'h:mm a')} · ${session.source === 'quick' ? 'Quick' : 'Template'}`"
             >
               <template #prepend>
                 <v-icon
@@ -116,6 +115,9 @@ onBeforeUnmount(() => {
                   :color="recentRunColor(session)"
                 />
               </template>
+              <span class="recent-run-meta">
+                {{ format(new Date(session.startedAt), 'h:mm a') }} · {{ session.source === 'quick' ? 'Quick' : 'Template' }}
+              </span>
               <div class="recent-run-progress">
                 <v-progress-linear
                   :model-value="intervalRunProgressPercent(session)"
@@ -125,9 +127,10 @@ onBeforeUnmount(() => {
                   rounded
                   :aria-label="`${session.name}: ${intervalRunProgressPercent(session)}% accomplished`"
                 />
-                <span class="text-end">{{ intervalRunProgressPercent(session) }}%</span>
               </div>
-              <template #append><strong class="text-caption">{{ formatIntervalDuration(session.elapsedSeconds) }}</strong></template>
+              <template #append>
+                <strong class="text-caption">{{ formatIntervalDuration(session.elapsedSeconds) }}</strong>
+              </template>
             </v-list-item>
           </v-list>
         </section>
@@ -183,8 +186,8 @@ onBeforeUnmount(() => {
 .recent-run-group__heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
 .recent-run-group__heading h3 { font-size: .75rem; font-weight: 900; letter-spacing: .04em; }
 .recent-run-group__heading span { color: rgba(var(--v-theme-on-surface), .54); font-size: .68rem; font-weight: 800; }
-.recent-run-progress { display: grid; margin-top: .45rem; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: .5rem; }
-.recent-run-progress span { color: rgba(var(--v-theme-on-surface), .58); font-size: .64rem; font-variant-numeric: tabular-nums; font-weight: 800; }
+.recent-run-progress { margin-top: .45rem; }
+.recent-run-meta { display: block; margin-top: .25rem; overflow: hidden; color: rgba(var(--v-theme-on-surface), .62); font-size: .875rem; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
 @media (min-width: 700px) {
   .quick-card__content { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
   .quick-card__intro { grid-column: 1; }

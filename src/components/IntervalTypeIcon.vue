@@ -26,36 +26,50 @@ const presentation = computed(() => INTERVAL_TYPE_PRESENTATION[props.kind])
     aria-hidden="true"
   >
     <span class="interval-type-icon__base">
-      <v-icon :icon="presentation.icon" />
+      <span class="interval-type-icon__glyph">
+        <v-icon :icon="presentation.icon" />
+      </span>
     </span>
     <span
       v-if="animated && presentation.animation === 'focus'"
       class="interval-type-icon__echo"
     >
-      <v-icon :icon="presentation.icon" />
+      <span class="interval-type-icon__glyph">
+        <v-icon :icon="presentation.icon" />
+      </span>
     </span>
   </span>
 </template>
 
 <style scoped>
 .interval-type-icon {
-  display: inline-grid;
+  position: relative;
+  display: inline-block;
   width: var(--interval-type-size);
   height: var(--interval-type-size);
   flex: 0 0 var(--interval-type-size);
-  place-items: center;
   color: var(--interval-type-color);
   font-size: var(--interval-type-size);
   line-height: 1;
+  vertical-align: middle;
 }
 
 .interval-type-icon__base,
 .interval-type-icon__echo {
-  display: inline-grid;
-  width: 1em;
-  height: 1em;
-  grid-area: 1 / 1;
+  position: absolute;
+  inset: 0;
+  display: grid;
   place-items: center;
+  transform-box: border-box;
+  transform-origin: center center;
+}
+
+.interval-type-icon__glyph {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  transform-box: border-box;
   transform-origin: center center;
 }
 
@@ -73,7 +87,7 @@ const presentation = computed(() => INTERVAL_TYPE_PRESENTATION[props.kind])
   animation: interval-heart-pulse 1.35s ease-in-out infinite;
 }
 
-.interval-type-icon--charge > .interval-type-icon__base {
+.interval-type-icon--charge > .interval-type-icon__base .interval-type-icon__glyph {
   animation: interval-charge 1.8s cubic-bezier(.22, 1, .36, 1) infinite;
 }
 
@@ -109,14 +123,14 @@ const presentation = computed(() => INTERVAL_TYPE_PRESENTATION[props.kind])
 }
 
 @keyframes interval-charge {
-  0%, 60%, 100% { transform: translateY(.08em) scale(.94); opacity: .72; }
-  12% { transform: translateY(-.08em) scale(1.14); opacity: 1; filter: drop-shadow(0 0 .22em currentColor); }
-  24% { transform: translateY(0) scale(1); opacity: 1; }
+  0%, 60%, 100% { transform: scale(.94); opacity: .72; }
+  12% { transform: scale(1.14); opacity: 1; filter: drop-shadow(0 0 .22em currentColor); }
+  24% { transform: scale(1); opacity: 1; }
 }
 
 @keyframes interval-breathe {
-  0%, 100% { transform: translateY(.04em) scale(.94); opacity: .68; }
-  50% { transform: translateY(-.04em) scale(1.04); opacity: 1; }
+  0%, 100% { transform:scale(.94); opacity: .68; }
+  50% { transform: scale(1.04); opacity: 1; }
 }
 
 @keyframes interval-hourglass-turn {

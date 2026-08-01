@@ -70,7 +70,6 @@ const emit = defineEmits<{
   left: 0;
   padding: .75rem 1rem;
   border-top: .0625rem solid rgba(255, 255, 255, .08);
-  background: rgba(var(--v-theme-background), .9);
   -webkit-backdrop-filter: blur(1rem);
   backdrop-filter: blur(1rem);
 }

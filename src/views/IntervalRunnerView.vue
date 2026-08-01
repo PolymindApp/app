@@ -611,13 +611,6 @@ async function runAgain() {
       </header>
 
       <div class="runner-stage">
-        <IntervalTypeIcon
-          v-if="current.step.kind"
-          class="runner-type-backdrop"
-          :kind="current.step.kind"
-          size="clamp(8rem, 44vw, 28rem)"
-          :animated="session.status === 'running'"
-        />
         <section class="runner-main">
           <div class="runner-details">
             <p class="runner-session">{{ session.name }}</p>
@@ -632,6 +625,13 @@ async function runAgain() {
           </div>
           <div class="runner-progress" :class="{ 'runner-progress--confirmation': currentConfirmation }">
             <div class="progress-rings">
+              <IntervalTypeIcon
+                v-if="current.step.kind"
+                class="runner-type-backdrop"
+                :kind="current.step.kind"
+                size="clamp(8rem, 44vw, 28rem)"
+                :animated="session.status === 'running'"
+              />
               <v-progress-circular
                 v-if="showTotalProgress"
                 class="progress-ring progress-ring--total"
@@ -867,9 +867,11 @@ async function runAgain() {
   position: relative;
   width: min(292px, calc(100vw - 2rem));
   aspect-ratio: 1;
+  isolation: isolate;
 }
 .progress-ring {
   position: absolute;
+  z-index: 1;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
@@ -888,6 +890,7 @@ async function runAgain() {
 }
 .progress-rings__content {
   position: absolute;
+  z-index: 2;
   inset: 40px;
   display: grid;
   place-items: center;

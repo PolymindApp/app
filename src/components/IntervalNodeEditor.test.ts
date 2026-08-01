@@ -71,6 +71,36 @@ function editorProps(node: IntervalStepNode) {
 }
 
 describe('IntervalNodeEditor interval type select', () => {
+  it('keeps a newly added interval unselected until a type is chosen', () => {
+    const node: IntervalStepNode = {
+      id: 'step-new',
+      type: 'step',
+      name: '',
+      kind: '',
+      durationSeconds: 30,
+    }
+    const wrapper = mount(IntervalNodeEditor, {
+      props: editorProps(node),
+      global: {
+        directives: { longPressDrag: {}, longPressDrop: {} },
+        stubs: {
+          ExpandTransition: { template: '<div><slot /></div>' },
+          VBtn: true,
+          VCard: { template: '<div><slot /></div>' },
+          VCheckbox: true,
+          VIcon: VIconStub,
+          VListItem: VListItemStub,
+          VSelect: VSelectStub,
+          VTextField: true,
+          TimerWheelPicker: true,
+        },
+      },
+    })
+
+    expect(wrapper.findComponent(VSelectStub).props('modelValue')).toBeNull()
+    expect(wrapper.find('.stub-selection .interval-type-icon').exists()).toBe(false)
+  })
+
   it('renders colored type icons in the selection and every item slot', async () => {
     const node: IntervalStepNode = {
       id: 'step-1',
