@@ -42,6 +42,7 @@ function mapSession(record: Record<string, any>): IntervalSession {
     id: record.id,
     template: record.template || undefined,
     task: record.task || undefined,
+    programStep: record.program_step || undefined,
     taskDate: record.task_date || '',
     source: record.source,
     status: record.status,
@@ -155,8 +156,17 @@ export const useIntervalStore = defineStore('intervals', () => {
           .map((task) => task && typeof task === 'object' && 'name' in task ? String(task.name) : '')
           .filter(Boolean)
         : []
+      const attachedProgramSteps = cause instanceof ApiError && Array.isArray(cause.details.programSteps)
+        ? cause.details.programSteps
+          .map((step) => {
+            if (!step || typeof step !== 'object' || !('name' in step)) return ''
+            const taskName = 'taskName' in step ? String(step.taskName) : ''
+            return `${taskName ? `${taskName} · ` : ''}${String(step.name)}`
+          })
+          .filter(Boolean)
+        : []
       error.value = cause instanceof Error
-        ? `${cause.message}${attachedTasks.length ? ` Attached tasks: ${attachedTasks.join(', ')}.` : ''}`
+        ? `${cause.message}${attachedTasks.length ? ` Attached tasks: ${attachedTasks.join(', ')}.` : ''}${attachedProgramSteps.length ? ` Attached program steps: ${attachedProgramSteps.join(', ')}.` : ''}`
         : 'Could not delete the interval.'
       throw cause
     }
@@ -218,6 +228,7 @@ export const useIntervalStore = defineStore('intervals', () => {
     cues: IntervalCueSettings
     template?: string
     task?: string
+    programStep?: string
   }) {
     if (activeSession.value) return activeSession.value
     const activeRecords = await api.collection('interval_sessions').getList(1, 1, {
@@ -235,6 +246,7 @@ export const useIntervalStore = defineStore('intervals', () => {
       owner: api.authStore.record!.id,
       template: input.template || '',
       task: input.task || '',
+      program_step: input.programStep || '',
       source: input.source,
       status: 'running',
       snapshot_name: input.name,

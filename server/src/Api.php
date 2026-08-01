@@ -1265,7 +1265,11 @@ final class Api
         $existing = $this->ownedRecord($collection['name'], $id, (string) $user['id']);
         $body = $this->jsonBody();
         if ($collection['name'] === 'interval_sessions') {
-            if (array_key_exists('task', $body) || array_key_exists('task_date', $body)) {
+            if (
+                array_key_exists('task', $body)
+                || array_key_exists('program_step', $body)
+                || array_key_exists('task_date', $body)
+            ) {
                 throw new ApiException(422, 'Interval task attribution cannot be changed after the session starts.');
             }
             if (($body['status'] ?? null) === 'completed') {
@@ -1384,6 +1388,7 @@ final class Api
         string $completedAt,
     ): ?array {
         $taskId = (string) ($session['task'] ?? '');
+        $programStepId = (string) ($session['program_step'] ?? '');
         $taskDate = (string) ($session['task_date'] ?? '');
         if ($taskId === '' || $taskDate === '') {
             return null;
@@ -1398,14 +1403,32 @@ final class Api
             return null;
         }
 
+        $programStep = null;
+        if ($programStepId !== '') {
+            $statement = $this->database->pdo->prepare(
+                'SELECT * FROM program_steps
+                 WHERE id = :id AND task = :task AND owner = :owner LIMIT 1',
+            );
+            $statement->execute([
+                'id' => $programStepId,
+                'task' => $taskId,
+                'owner' => $owner,
+            ]);
+            $programStep = $statement->fetch();
+            if (!is_array($programStep)) {
+                return null;
+            }
+        }
+
         $statement = $this->database->pdo->prepare(
             "SELECT * FROM occurrences
-             WHERE task = :task AND program_step = '' AND scheduled_date = :scheduled_date
+             WHERE task = :task AND program_step = :program_step AND scheduled_date = :scheduled_date
                AND owner = :owner
              LIMIT 1",
         );
         $statement->execute([
             'task' => $taskId,
+            'program_step' => $programStepId,
             'scheduled_date' => $taskDate,
             'owner' => $owner,
         ]);
@@ -1430,7 +1453,7 @@ final class Api
                     id, owner, task, program_step, scheduled_date, status, sealed,
                     completed_at, snapshot_name, snapshot_target, snapshot_unit
                  ) VALUES (
-                    :id, :owner, :task, '', :scheduled_date, 'completed', FALSE,
+                    :id, :owner, :task, :program_step, :scheduled_date, 'completed', FALSE,
                     :completed_at, :snapshot_name, 1, ''
                  )",
             );
@@ -1438,9 +1461,10 @@ final class Api
                 'id' => $occurrenceId,
                 'owner' => $owner,
                 'task' => $taskId,
+                'program_step' => $programStepId,
                 'scheduled_date' => $taskDate,
                 'completed_at' => $completedAt,
-                'snapshot_name' => (string) $task['name'],
+                'snapshot_name' => (string) ($programStep['name'] ?? $task['name']),
             ]);
             $occurrence = $this->ownedRecord('occurrences', $occurrenceId, $owner);
         }
@@ -1478,7 +1502,8 @@ final class Api
     private function deleteTask(string $id, string $owner): void
     {
         $statement = $this->database->pdo->prepare(
-            "UPDATE interval_sessions SET task = '' WHERE task = :id AND owner = :owner",
+            "UPDATE interval_sessions SET task = '', program_step = ''
+             WHERE task = :id AND owner = :owner",
         );
         $statement->execute(['id' => $id, 'owner' => $owner]);
         foreach (['entries', 'occurrences', 'program_steps'] as $table) {
@@ -1492,6 +1517,11 @@ final class Api
 
     private function deleteProgramStep(string $id, string $owner): void
     {
+        $statement = $this->database->pdo->prepare(
+            "UPDATE interval_sessions SET program_step = ''
+             WHERE program_step = :id AND owner = :owner",
+        );
+        $statement->execute(['id' => $id, 'owner' => $owner]);
         foreach (['entries', 'occurrences'] as $table) {
             $statement = $this->database->pdo->prepare(
                 "DELETE FROM {$table} WHERE program_step = :id AND owner = :owner",
@@ -1543,17 +1573,30 @@ final class Api
         );
         $statement->execute(['id' => $id, 'owner' => $owner]);
         $attachedTasks = $statement->fetchAll();
-        if ($attachedTasks !== []) {
+        $statement = $this->database->pdo->prepare(
+            'SELECT program_steps.id, program_steps.name, tasks.name AS task_name
+             FROM program_steps
+             JOIN tasks ON tasks.id = program_steps.task AND tasks.owner = program_steps.owner
+             WHERE program_steps.interval_template = :id AND program_steps.owner = :owner
+             ORDER BY tasks.sort_order, program_steps.sort_order, program_steps.name',
+        );
+        $statement->execute(['id' => $id, 'owner' => $owner]);
+        $attachedProgramSteps = $statement->fetchAll();
+        if ($attachedTasks !== [] || $attachedProgramSteps !== []) {
             throw new ApiException(
                 409,
-                'This interval is attached to one or more tasks. Reassign or delete those tasks first.',
-                ['tasks' => array_map(
-                    static fn (array $task): array => [
+                'This interval is attached to one or more tasks or program steps. Reassign them first.',
+                [
+                    'tasks' => array_map(static fn (array $task): array => [
                         'id' => (string) $task['id'],
                         'name' => (string) $task['name'],
-                    ],
-                    $attachedTasks,
-                )],
+                    ], $attachedTasks),
+                    'programSteps' => array_map(static fn (array $step): array => [
+                        'id' => (string) $step['id'],
+                        'name' => (string) $step['name'],
+                        'taskName' => (string) $step['task_name'],
+                    ], $attachedProgramSteps),
+                ],
             );
         }
         $statement = $this->database->pdo->prepare(
@@ -1859,7 +1902,33 @@ final class Api
             return;
         }
 
-        if (in_array($collection, ['program_steps', 'occurrences', 'entries'], true)) {
+        if ($collection === 'program_steps') {
+            $task = (string) ($record['task'] ?? '');
+            if (!$this->relationExists('tasks', $task, $owner)) {
+                throw new ApiException(422, 'The selected task is invalid.');
+            }
+            $parentTask = $this->ownedRecord('tasks', $task, $owner);
+            if (($parentTask['type'] ?? '') !== 'program') {
+                throw new ApiException(422, 'Program steps may only belong to a program task.');
+            }
+
+            $completionType = (string) ($record['completion_type'] ?? '');
+            $intervalTemplate = (string) ($record['interval_template'] ?? '');
+            $active = (bool) ($record['active'] ?? false);
+            if ($completionType === 'interval') {
+                if ($active && !$this->relationExists('interval_templates', $intervalTemplate, $owner)) {
+                    throw new ApiException(422, 'Select a valid interval for this program step.');
+                }
+                if ($intervalTemplate !== '' && !$this->relationExists('interval_templates', $intervalTemplate, $owner)) {
+                    throw new ApiException(422, 'The selected interval is invalid.');
+                }
+            } elseif ($intervalTemplate !== '') {
+                throw new ApiException(422, 'Only interval program steps may have an attached interval.');
+            }
+            return;
+        }
+
+        if (in_array($collection, ['occurrences', 'entries'], true)) {
             $task = (string) ($record['task'] ?? '');
             if (!$this->relationExists('tasks', $task, $owner)) {
                 throw new ApiException(422, 'The selected task is invalid.');
@@ -1883,8 +1952,20 @@ final class Api
                 throw new ApiException(422, 'The selected interval template is invalid.');
             }
             $task = (string) ($record['task'] ?? '');
-            if ($task !== '' && !$this->intervalTaskMatchesTemplate($task, $template, $owner)) {
-                throw new ApiException(422, 'The selected task is not attached to this interval.');
+            $programStep = (string) ($record['program_step'] ?? '');
+            if ($task === '' && $programStep !== '') {
+                throw new ApiException(422, 'A program step interval must include its task.');
+            }
+            if (
+                $task !== ''
+                && !$this->intervalAttributionMatchesTemplate(
+                    $task,
+                    $programStep,
+                    $template,
+                    $owner,
+                )
+            ) {
+                throw new ApiException(422, 'The selected task or program step is not attached to this interval.');
             }
             return;
         }
@@ -1962,17 +2043,21 @@ final class Api
         $source = (string) ($record['source'] ?? '');
         $template = (string) ($record['template'] ?? '');
         $taskId = (string) ($record['task'] ?? '');
+        $programStepId = (string) ($record['program_step'] ?? '');
         if ($source === 'template' && $template === '') {
             throw new ApiException(422, 'A saved interval session requires a template.');
         }
-        if ($source === 'quick' && ($template !== '' || $taskId !== '')) {
+        if ($source === 'quick' && ($template !== '' || $taskId !== '' || $programStepId !== '')) {
             throw new ApiException(422, 'Quick intervals must run standalone.');
         }
         if ($taskId === '') {
+            if ($programStepId !== '') {
+                throw new ApiException(422, 'A program step interval must include its task.');
+            }
             return;
         }
-        if (!$this->intervalTaskMatchesTemplate($taskId, $template, $owner)) {
-            throw new ApiException(422, 'The selected task is not attached to this interval.');
+        if (!$this->intervalAttributionMatchesTemplate($taskId, $programStepId, $template, $owner)) {
+            throw new ApiException(422, 'The selected task or program step is not attached to this interval.');
         }
 
         $statement = $this->database->pdo->prepare(
@@ -1983,41 +2068,79 @@ final class Api
         if (
             !is_array($task)
             || !(bool) $task['active']
-            || !$this->intervalTaskIsOpenOnDate($task, (string) $record['task_date'], $owner)
+            || !$this->intervalAttributionIsOpenOnDate(
+                $task,
+                $programStepId,
+                (string) $record['task_date'],
+                $owner,
+            )
         ) {
-            throw new ApiException(409, 'The selected task is not open for this date.');
+            throw new ApiException(409, 'The selected task or program step is not open for this date.');
         }
     }
 
-    private function intervalTaskMatchesTemplate(string $taskId, string $templateId, string $owner): bool
+    private function intervalAttributionMatchesTemplate(
+        string $taskId,
+        string $programStepId,
+        string $templateId,
+        string $owner,
+    ): bool
     {
         if ($taskId === '' || $templateId === '') {
             return false;
         }
+        if ($programStepId === '') {
+            $statement = $this->database->pdo->prepare(
+                "SELECT 1 FROM tasks
+                 WHERE id = :id AND owner = :owner AND type = 'interval'
+                   AND interval_template = :template
+                 LIMIT 1",
+            );
+            $statement->execute([
+                'id' => $taskId,
+                'owner' => $owner,
+                'template' => $templateId,
+            ]);
+            return $statement->fetchColumn() !== false;
+        }
+
         $statement = $this->database->pdo->prepare(
-            "SELECT 1 FROM tasks
-             WHERE id = :id AND owner = :owner AND type = 'interval'
-               AND interval_template = :template
+            "SELECT 1 FROM program_steps
+             JOIN tasks ON tasks.id = program_steps.task AND tasks.owner = program_steps.owner
+             WHERE program_steps.id = :program_step
+               AND program_steps.task = :task
+               AND program_steps.owner = :owner
+               AND program_steps.active = TRUE
+               AND program_steps.completion_type = 'interval'
+               AND program_steps.interval_template = :template
+               AND tasks.type = 'program'
              LIMIT 1",
         );
         $statement->execute([
-            'id' => $taskId,
+            'program_step' => $programStepId,
+            'task' => $taskId,
             'owner' => $owner,
             'template' => $templateId,
         ]);
         return $statement->fetchColumn() !== false;
     }
 
-    private function intervalTaskIsOpenOnDate(array $task, string $dateKey, string $owner): bool
+    private function intervalAttributionIsOpenOnDate(
+        array $task,
+        string $programStepId,
+        string $dateKey,
+        string $owner,
+    ): bool
     {
         $statement = $this->database->pdo->prepare(
             "SELECT status FROM occurrences
-             WHERE task = :task AND program_step = '' AND scheduled_date = :scheduled_date
+             WHERE task = :task AND program_step = :program_step AND scheduled_date = :scheduled_date
                AND owner = :owner
              LIMIT 1",
         );
         $statement->execute([
             'task' => $task['id'],
+            'program_step' => $programStepId,
             'scheduled_date' => $dateKey,
             'owner' => $owner,
         ]);
@@ -2025,7 +2148,46 @@ final class Api
         if ($status !== false) {
             return $status === 'pending';
         }
+        if ($programStepId !== '') {
+            $statement = $this->database->pdo->prepare(
+                'SELECT * FROM program_steps
+                 WHERE id = :id AND task = :task AND owner = :owner AND active = TRUE
+                 LIMIT 1',
+            );
+            $statement->execute([
+                'id' => $programStepId,
+                'task' => $task['id'],
+                'owner' => $owner,
+            ]);
+            $programStep = $statement->fetch();
+            return is_array($programStep)
+                && $this->programStepScheduledOnDate($task, $programStep, $dateKey);
+        }
         return $this->taskScheduledOnDate($task, $dateKey);
+    }
+
+    private function programStepScheduledOnDate(array $task, array $step, string $dateKey): bool
+    {
+        $startDate = (string) ($task['start_date'] ?? '');
+        $endDate = (string) ($task['end_date'] ?? '');
+        if ($startDate === '' || $dateKey < $startDate || ($endDate !== '' && $dateKey > $endDate)) {
+            return false;
+        }
+
+        $cycleLength = max(1, (int) ($task['cycle_length'] ?? 0));
+        $start = new DateTimeImmutable($startDate . 'T12:00:00');
+        $date = new DateTimeImmutable($dateKey . 'T12:00:00');
+        $elapsed = (int) $start->diff($date)->format('%r%a');
+        if ($elapsed < 0 || (!(bool) ($task['program_repeat'] ?? false) && $elapsed >= $cycleLength)) {
+            return false;
+        }
+
+        $cycleDays = $this->decodeJsonColumn($step['cycle_days'] ?? '[]');
+        if (!is_array($cycleDays)) {
+            return false;
+        }
+        $cycleDay = ($elapsed % $cycleLength) + 1;
+        return in_array($cycleDay, array_map('intval', $cycleDays), true);
     }
 
     private function taskScheduledOnDate(array $task, string $dateKey): bool

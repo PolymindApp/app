@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { goalState } from '@/services/schedule'
 import type { TaskProgress } from '@/types/domain'
 
 const props = defineProps<{
   progress: TaskProgress
   busy?: boolean
+  valuePulse?: number
   interval?: { name: string; duration: string }
   canStartInterval?: boolean
   intervalActive?: boolean
@@ -23,9 +24,13 @@ const emit = defineEmits<{
 const task = computed(() => props.progress.task)
 const step = computed(() => props.progress.programStep)
 const optimisticComplete = ref<boolean>()
+const valueAnimating = ref(false)
+let valueAnimationVersion = 0
 const displayedComplete = computed(() => optimisticComplete.value ?? props.progress.complete)
 const isCheck = computed(() => (step.value ? step.value.completionType === 'check' : task.value.type === 'check'))
-const isInterval = computed(() => !step.value && task.value.type === 'interval')
+const isInterval = computed(() =>
+  (!step.value && task.value.type === 'interval') || step.value?.completionType === 'interval',
+)
 const isDailyTotal = computed(() => !step.value && task.value.type === 'daily_total')
 const canLogTime = computed(() => !step.value && task.value.type === 'duration')
 const canToggleFromCard = computed(() => isCheck.value && !props.busy && !props.progress.locked)
@@ -72,12 +77,21 @@ function toggleFromCard() {
 watch(() => props.busy, (busy) => {
   if (!busy) optimisticComplete.value = undefined
 })
+
+watch(() => props.valuePulse, async (pulse, previousPulse) => {
+  if (!pulse || pulse === previousPulse) return
+  const version = ++valueAnimationVersion
+  valueAnimating.value = false
+  await nextTick()
+  if (version === valueAnimationVersion) valueAnimating.value = true
+})
 </script>
 
 <template>
   <v-card
     class="task-card surface-card pa-4"
     :class="{ 'task-card--done': displayedComplete, 'task-card--clickable': canToggleFromCard, 'task-card--sealed': progress.sealed }"
+    :style="{ '--task-color': taskColor }"
     :ripple="canToggleFromCard"
     v-on="canToggleFromCard ? { click: toggleFromCard } : {}"
   >
@@ -160,7 +174,11 @@ watch(() => props.busy, (busy) => {
     <template v-else-if="!isCheck">
       <div class="metric-row mt-4">
         <div>
-          <span class="metric-value">{{ formatValue(progress.value) }}</span>
+          <span
+            class="metric-value"
+            :class="{ 'metric-value--updated': valueAnimating }"
+            @animationend="valueAnimating = false"
+          >{{ formatValue(progress.value) }}</span>
           <span class="metric-target"> / {{ operator }} {{ formatValue(target) }}</span>
         </div>
         <span v-if="task.goalPeriod === 'week' && !step" class="period-pill">This week</span>
@@ -335,8 +353,31 @@ watch(() => props.busy, (busy) => {
 }
 
 .metric-value {
+  display: inline-block;
+  border-radius: .35rem;
   font-size: 1.12rem;
   font-weight: 900;
+  transform-origin: left center;
+}
+
+.metric-value--updated {
+  animation: metric-value-pulse 560ms cubic-bezier(.22, 1, .36, 1);
+}
+
+@keyframes metric-value-pulse {
+  0%, 100% {
+    background: transparent;
+    box-shadow: 0 0 0 0 transparent;
+    color: inherit;
+    transform: scale(1);
+  }
+
+  38% {
+    background: color-mix(in srgb, var(--task-color) 24%, transparent);
+    box-shadow: 0 0 0 .3rem color-mix(in srgb, var(--task-color) 16%, transparent);
+    color: var(--task-color);
+    transform: scale(1.28);
+  }
 }
 
 .metric-target {

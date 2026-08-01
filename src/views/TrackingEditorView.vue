@@ -166,28 +166,28 @@ async function remove() {
 </script>
 
 <template>
-  <main class="app-page app-page--editor">
+  <main class="app-page">
     <v-alert v-if="error" type="error" variant="tonal" class="mb-4">{{ error }}</v-alert>
     <v-alert v-if="measurementLocked" type="info" variant="tonal" density="compact" class="mb-4">
       Measurement type, unit, scale, and daily calculation are locked because this tracker has logs.
     </v-alert>
 
     <v-form ref="form" validate-on="lazy" @submit.prevent="save">
-      <v-card class="surface-card pa-5 mb-4">
+      <v-card class="tracker-form-section surface-card pa-5 mb-4">
         <h2 class="section-title">Basics</h2>
-        <v-text-field v-model="draft.name" label="Name" :rules="[(value: string) => Boolean(value?.trim()) || 'Name is required']" maxlength="160" variant="outlined" class="mt-4" />
+        <v-text-field v-model="draft.name" label="Name" :rules="[(value: string) => Boolean(value?.trim()) || 'Name is required']" maxlength="160" variant="outlined" />
         <v-textarea v-model="draft.description" label="What are you tracking? (optional)" maxlength="2000" rows="2" auto-grow variant="outlined" />
         <v-select v-model="draft.category" label="Category" :items="categoryOptions" variant="outlined" />
         <ColorSwatchPicker v-model="draft.color" />
       </v-card>
 
-      <v-card class="surface-card pa-5 mb-4">
+      <v-card class="tracker-form-section surface-card pa-5 mb-4">
         <h2 class="section-title">Purpose</h2>
-        <v-btn-toggle v-model="draft.role" mandatory color="secondary" class="purpose-toggle mt-4">
+        <v-btn-toggle v-model="draft.role" mandatory color="secondary" class="purpose-toggle">
           <v-btn value="factor" prepend-icon="mdi-flask-outline">Thing I did</v-btn>
           <v-btn value="outcome" prepend-icon="mdi-chart-line">How I felt</v-btn>
         </v-btn-toggle>
-        <p class="field-help mt-3">
+        <p class="field-help">
           {{ draft.role === 'factor' ? 'A factor you may compare with an outcome later.' : 'A result you want to observe over time.' }}
         </p>
         <v-select
@@ -200,13 +200,12 @@ async function remove() {
             { title: 'No favorable direction', value: 'neutral' },
           ]"
           variant="outlined"
-          class="mt-4"
         />
       </v-card>
 
-      <v-card class="surface-card pa-5 mb-4">
+      <v-card class="tracker-form-section surface-card pa-5 mb-4">
         <h2 class="section-title">Measurement</h2>
-        <v-radio-group v-model="draft.kind" :disabled="measurementLocked" class="kind-list mt-3" hide-details>
+        <v-radio-group v-model="draft.kind" :disabled="measurementLocked" class="kind-list" hide-details>
           <v-radio v-for="kind in kindOptions" :key="kind.value" :value="kind.value" color="secondary">
             <template #label>
               <div class="kind-option"><v-icon :icon="kind.icon" /><div><strong>{{ kind.title }}</strong><span>{{ kind.subtitle }}</span></div></div>
@@ -214,7 +213,7 @@ async function remove() {
           </v-radio>
         </v-radio-group>
 
-        <div v-if="draft.kind === 'rating'" class="scale-grid mt-4">
+        <div v-if="draft.kind === 'rating'" class="scale-grid">
           <v-number-input v-model="draft.scaleMin" label="Scale minimum" :disabled="measurementLocked" variant="outlined" />
           <v-number-input v-model="draft.scaleMax" label="Scale maximum" :disabled="measurementLocked" variant="outlined" />
         </div>
@@ -241,18 +240,18 @@ async function remove() {
         <p class="field-help">Missing data stays missing. Use an explicit “No” or “None” log when that is what happened.</p>
       </v-card>
 
-      <v-card class="surface-card pa-5 mb-4">
+      <v-card class="tracker-form-section surface-card pa-5 mb-4">
         <div class="setting-row">
           <div><h2 class="section-title">Daily reminder</h2><p class="field-help mt-1">One inexact local reminder each day.</p></div>
           <v-switch v-model="draft.reminderEnabled" color="secondary" hide-details :disabled="!reminderAvailable" />
         </div>
-        <v-alert v-if="!reminderAvailable" type="info" variant="tonal" density="compact" class="mt-4">Reminders are available in the Android app.</v-alert>
+        <v-alert v-if="!reminderAvailable" type="info" variant="tonal" density="compact">Reminders are available in the Android app.</v-alert>
         <template v-if="draft.reminderEnabled">
-          <v-text-field v-model="draft.reminderTime" type="time" label="Reminder time" variant="outlined" class="mt-4" />
+          <v-text-field v-model="draft.reminderTime" type="time" label="Reminder time" variant="outlined" />
           <v-switch v-model="draft.reminderShowName" color="secondary" label="Show tracker name on the lock screen" hide-details />
-          <p class="field-help mt-2">Off by default for privacy. The generic reminder does not reveal what you track.</p>
+          <p class="field-help">Off by default for privacy. The generic reminder does not reveal what you track.</p>
         </template>
-        <v-switch v-if="editing" v-model="draft.active" color="secondary" label="Active tracker" hide-details class="mt-4" />
+        <v-switch v-if="editing" v-model="draft.active" color="secondary" label="Active tracker" hide-details />
       </v-card>
 
       <div class="editor-actions">
@@ -271,6 +270,7 @@ async function remove() {
 
 <style scoped>
 .section-title { font-size: .78rem; font-weight: 900; letter-spacing: .09em; text-transform: uppercase; }
+.tracker-form-section { display: grid; gap: 1rem; }
 .field-help { color: rgb(var(--v-theme-on-surface) / .58); font-size: .75rem; line-height: 1.5; }
 .purpose-toggle { display: grid; width: 100%; grid-template-columns: 1fr 1fr; }
 .purpose-toggle :deep(.v-btn) { min-width: 0; }

@@ -163,14 +163,11 @@ async function factorDailyValues(sourceId: string, start: string, end: string): 
 
 <template>
   <main class="app-page insights-page">
-    <v-alert type="info" variant="tonal" class="mb-4">
-      Comparisons run only when you ask. They describe associations in your logs—not causes, diagnoses, or treatment advice.
-    </v-alert>
     <v-alert v-if="error" type="error" variant="tonal" class="mb-4">{{ error }}</v-alert>
 
-    <v-card class="surface-card pa-5 mb-4">
+    <v-card class="comparison-form surface-card pa-5 mb-4">
       <h2 class="section-title">Comparison</h2>
-      <v-btn-toggle v-model="mode" mandatory color="secondary" class="mode-toggle mt-4" @update:model-value="result = undefined">
+      <v-btn-toggle v-model="mode" mandatory color="secondary" class="mode-toggle" @update:model-value="result = undefined">
         <v-btn value="present_absent">Present vs absent</v-btn>
         <v-btn value="ranges">Before vs after</v-btn>
       </v-btn-toggle>
@@ -181,24 +178,23 @@ async function factorDailyValues(sourceId: string, start: string, end: string): 
           label="Factor"
           :items="factorSources.map(source => ({ title: source.name, value: source.id }))"
           variant="outlined"
-          class="mt-5"
           no-data-text="Create a factor, task, or interval first"
         />
         <div class="date-grid">
           <DatePickerField v-model="rangeStart" label="From" />
           <DatePickerField v-model="rangeEnd" label="To" />
         </div>
-        <p class="field-help mt-1">For custom factors, only explicit logs count; missing days are not treated as “No.” Scheduled Tasks and saved Intervals use completion history.</p>
+        <p class="field-help">For custom factors, only explicit logs count; missing days are not treated as “No.” Scheduled Tasks and saved Intervals use completion history.</p>
       </template>
 
       <template v-else>
-        <h3 class="range-title mt-5">First range</h3>
-        <div class="date-grid mt-2">
+        <h3 class="range-title">First range</h3>
+        <div class="date-grid">
           <DatePickerField v-model="firstStart" label="From" />
           <DatePickerField v-model="firstEnd" label="To" />
         </div>
-        <h3 class="range-title mt-2">Second range</h3>
-        <div class="date-grid mt-2">
+        <h3 class="range-title">Second range</h3>
+        <div class="date-grid">
           <DatePickerField v-model="secondStart" label="From" />
           <DatePickerField v-model="secondEnd" label="To" />
         </div>
@@ -209,7 +205,6 @@ async function factorDailyValues(sourceId: string, start: string, end: string): 
         label="Outcome"
         :items="outcomeSources.map(source => ({ title: source.name, value: source.id }))"
         variant="outlined"
-        class="mt-4"
         no-data-text="Create an outcome tracker first"
       />
       <v-btn block color="secondary" size="large" prepend-icon="mdi-chart-box-outline" :loading="loading" @click="analyze">Analyze my logs</v-btn>
@@ -250,9 +245,10 @@ async function factorDailyValues(sourceId: string, start: string, end: string): 
 
 <style scoped>
 .section-title { font-size: .78rem; font-weight: 900; letter-spacing: .09em; text-transform: uppercase; }
+.comparison-form { display: grid; gap: 1rem; }
 .mode-toggle { display: grid; width: 100%; grid-template-columns: 1fr 1fr; }
 .mode-toggle :deep(.v-btn) { min-width: 0; }
-.date-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; }
+.date-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
 .range-title { font-size: .78rem; font-weight: 850; }
 .field-help { color: rgb(var(--v-theme-on-surface) / .58); font-size: .72rem; line-height: 1.5; }
 .result-heading { display: grid; grid-template-columns: 48px 1fr; align-items: center; gap: 1rem; }
@@ -271,5 +267,5 @@ async function factorDailyValues(sourceId: string, start: string, end: string): 
 .difference { display: flex; align-items: center; justify-content: space-between; padding: .9rem 1rem; border-radius: 14px; background: rgb(var(--v-theme-secondary) / .1); }
 .difference span { font-size: .75rem; }.difference strong { font-size: 1.2rem; }
 .caution { display: flex; align-items: flex-start; gap: .5rem; color: rgb(var(--v-theme-on-surface) / .58); font-size: .72rem; line-height: 1.5; }
-@media (max-width: 480px) { .date-grid { grid-template-columns: 1fr; gap: 0; } }
+@media (max-width: 480px) { .date-grid { grid-template-columns: 1fr; } }
 </style>

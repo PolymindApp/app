@@ -87,6 +87,16 @@ const intervalItems = computed(() => intervalStore.templates.map((item) => ({
   },
 })))
 
+function intervalForStep(step: ProgramStepDraft) {
+  return intervalStore.templates.find((item) => item.id === step.intervalTemplate)
+}
+
+function intervalSummaryForStep(step: ProgramStepDraft) {
+  const interval = intervalForStep(step)
+  if (!interval) return ''
+  return `${formatIntervalDuration(intervalDuration(interval.definition))} · ${intervalStepCount(interval.definition)} intervals`
+}
+
 watch(() => draft.type, (type) => {
   if (typeLocked.value) return
   if (type === 'duration') {
@@ -130,6 +140,7 @@ async function addStep(focusName = true) {
     customUnit: '',
     quickAmounts: [1, 5, 10],
     active: true,
+    intervalTemplate: undefined,
   })
   openStep.value = draft.steps.length - 1
   if (focusName && allowAutomaticFocus) {
@@ -199,6 +210,14 @@ async function save() {
   }
   if (draft.type === 'interval' && !draft.intervalTemplate) {
     error.value = 'Select an interval for this task.'
+    return
+  }
+  const incompleteIntervalStep = draft.type === 'program'
+    ? draft.steps.findIndex(step => step.completionType === 'interval' && !step.intervalTemplate)
+    : -1
+  if (incompleteIntervalStep >= 0) {
+    openStep.value = incompleteIntervalStep
+    error.value = 'Select an interval for every interval program step.'
     return
   }
   saving.value = true
@@ -432,7 +451,11 @@ async function removeTask() {
                 <v-select
                   v-model="step.completionType"
                   label="Completion style"
-                  :items="[{ title: 'Check-off', value: 'check' }, { title: 'Quantity target', value: 'quantity' }]"
+                  :items="[
+                    { title: 'Check-off', value: 'check' },
+                    { title: 'Quantity target', value: 'quantity' },
+                    { title: 'Complete a saved interval', value: 'interval' },
+                  ]"
                 />
               </div>
               <div v-if="step.completionType === 'quantity'" class="target-grid mb-4">
@@ -452,6 +475,31 @@ async function removeTask() {
                 :unit="step.customUnit || step.unit || ''"
                 class="mb-4"
               />
+              <div v-if="step.completionType === 'interval'" class="field-stack mb-4">
+                <template v-if="intervalStore.templates.length">
+                  <v-select
+                    v-model="step.intervalTemplate"
+                    label="Attached interval"
+                    :items="intervalItems"
+                    :rules="[v => Boolean(v) || 'Select an interval']"
+                  />
+                  <div v-if="intervalForStep(step)" class="interval-attachment-summary">
+                    <div
+                      class="interval-attachment-icon"
+                      :style="{ background: intervalForStep(step)?.color }"
+                    >
+                      <v-icon icon="mdi-timer-play-outline" />
+                    </div>
+                    <div class="min-width-0">
+                      <strong class="d-block text-truncate">{{ intervalForStep(step)?.name }}</strong>
+                      <p class="text-caption muted">{{ intervalSummaryForStep(step) }}</p>
+                    </div>
+                  </div>
+                </template>
+                <v-alert v-else type="warning" variant="tonal" density="compact">
+                  Create a saved interval before using this completion style.
+                </v-alert>
+              </div>
               <label class="field-label">Place on cycle days</label>
               <v-chip-group
                 v-model="step.cycleDays"

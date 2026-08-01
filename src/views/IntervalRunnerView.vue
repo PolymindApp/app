@@ -20,7 +20,7 @@ import {
   resolveIntervalStep,
   intervalStepDurationSeconds,
 } from '@/services/intervals'
-import { isTaskScheduled, toDateKey } from '@/services/schedule'
+import { isTaskScheduled, stepsForDate, toDateKey } from '@/services/schedule'
 import { useIntervalStore } from '@/stores/intervals'
 import { useTaskStore } from '@/stores/tasks'
 import type { IntervalRuntimeState, IntervalSession } from '@/types/domain'
@@ -95,22 +95,43 @@ const hasStarted = computed(() => {
 const playActionLabel = computed(() => hasStarted.value ? 'Resume' : 'Start')
 const returnTo = computed(() => route.query.from === 'tasks' ? '/tasks' : '/intervals')
 const originTaskId = computed(() => typeof route.query.task === 'string' ? route.query.task : '')
-const attachedTasks = computed(() => {
+const originProgramStepId = computed(() => typeof route.query.step === 'string' ? route.query.step : '')
+const attachedProgressCandidates = computed(() => {
   const templateId = typeof route.params.templateId === 'string' ? route.params.templateId : session.value?.template
-  return taskStore.tasks.filter((task) => task.type === 'interval' && task.intervalTemplate === templateId)
+  if (!templateId) return []
+  const taskProgress = taskStore.tasks
+    .filter((task) => task.type === 'interval' && task.intervalTemplate === templateId)
+    .map((task) => taskStore.makeProgress(task, new Date()))
+  const stepProgress = taskStore.steps
+    .filter((step) => step.active
+      && step.completionType === 'interval'
+      && step.intervalTemplate === templateId)
+    .flatMap((step) => {
+      const task = taskStore.tasks.find((item) => item.id === step.task && item.type === 'program')
+      return task ? [taskStore.makeProgress(task, new Date(), step)] : []
+    })
+  return [...taskProgress, ...stepProgress]
 })
 const eligibleTaskProgress = computed(() => {
   const today = new Date()
-  return attachedTasks.value
-    .filter((task) => task.active)
-    .map((task) => taskStore.makeProgress(task, today))
+  return attachedProgressCandidates.value
     .filter((item) => item.status === 'pending'
       && !item.complete
-      && (Boolean(item.occurrence) || isTaskScheduled(item.task, today)))
+      && !item.locked
+      && item.task.active
+      && (Boolean(item.occurrence)
+        || (item.programStep
+          ? stepsForDate(item.task, taskStore.steps, today).some((step) => step.id === item.programStep?.id)
+          : isTaskScheduled(item.task, today))))
 })
 const attributedTaskName = computed(() => {
   const taskId = session.value?.task
-  return taskId ? taskStore.tasks.find((task) => task.id === taskId)?.name : undefined
+  if (!taskId) return undefined
+  const task = taskStore.tasks.find((item) => item.id === taskId)
+  const programStep = session.value?.programStep
+    ? taskStore.steps.find((step) => step.id === session.value?.programStep)
+    : undefined
+  return programStep ? `${task?.name || 'Program'} · ${programStep.name}` : task?.name
 })
 
 onMounted(async () => {
@@ -133,6 +154,7 @@ onMounted(async () => {
         id: `template-preview-${template.id}`,
         template: template.id,
         task: originTaskId.value || undefined,
+        programStep: originProgramStepId.value || undefined,
         taskDate: toDateKey(now),
         source: 'template',
         status: 'paused',
@@ -145,8 +167,11 @@ onMounted(async () => {
         runtime,
         updated: now.toISOString(),
       }
-      if (originTaskId.value && !eligibleTaskProgress.value.some((item) => item.task.id === originTaskId.value)) {
-        error.value = 'This interval task is not open today.'
+      if (originTaskId.value && !eligibleTaskProgress.value.some((item) =>
+        item.task.id === originTaskId.value
+        && (item.programStep?.id || '') === originProgramStepId.value,
+      )) {
+        error.value = 'This interval task or program step is not open today.'
         return
       }
     }
@@ -345,7 +370,11 @@ async function resume() {
 async function requestStartTemplate() {
   const active = store.activeSession
   if (active) {
-    if (originTaskId.value && active.task === originTaskId.value) {
+    if (
+      originTaskId.value
+      && active.task === originTaskId.value
+      && (active.programStep || '') === originProgramStepId.value
+    ) {
       await router.replace({
         name: 'interval-runner',
         params: { sessionId: active.id },
@@ -356,14 +385,14 @@ async function requestStartTemplate() {
     }
     return
   }
-  if (!originTaskId.value && attachedTasks.value.length) {
+  if (!originTaskId.value && attachedProgressCandidates.value.length) {
     attributionSheet.value = true
     return
   }
-  await startTemplate(originTaskId.value || undefined)
+  await startTemplate(originTaskId.value || undefined, originProgramStepId.value || undefined)
 }
 
-async function startTemplate(taskId?: string) {
+async function startTemplate(taskId?: string, programStepId?: string) {
   const item = previewSession.value
   if (!item || starting.value) return
   starting.value = true
@@ -377,8 +406,9 @@ async function startTemplate(taskId?: string) {
       cues: item.cues,
       template: item.template,
       task: taskId,
+      programStep: programStepId,
     })
-    if (started.task !== taskId) {
+    if (started.task !== taskId || started.programStep !== programStepId) {
       activeSessionSheet.value = true
       return
     }
@@ -728,12 +758,12 @@ async function runAgain() {
       <p v-if="!eligibleTaskProgress.length" class="text-caption muted px-4 pb-2">No attached tasks are open today.</p>
       <v-list-item
         v-for="item in eligibleTaskProgress"
-        :key="item.task.id"
+        :key="`${item.task.id}-${item.programStep?.id || ''}`"
         prepend-icon="mdi-format-list-checks"
-        :title="item.task.name"
-        subtitle="Complete this task when the interval finishes"
+        :title="item.programStep?.name || item.task.name"
+        :subtitle="item.programStep ? `${item.task.name} · Complete this step when the interval finishes` : 'Complete this task when the interval finishes'"
         rounded="lg"
-        @click="startTemplate(item.task.id)"
+        @click="startTemplate(item.task.id, item.programStep?.id)"
       />
       <v-list-item
         prepend-icon="mdi-timer-outline"

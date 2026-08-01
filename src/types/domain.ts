@@ -43,13 +43,14 @@ export interface ProgramStep {
   description: string
   sortOrder: number
   cycleDays: number[]
-  completionType: 'check' | 'quantity'
+  completionType: 'check' | 'quantity' | 'interval'
   targetValue?: number
   targetOperator?: TargetOperator
   unit?: string
   customUnit?: string
   quickAmounts: number[]
   active: boolean
+  intervalTemplate?: string
 }
 
 export interface Occurrence {
@@ -157,6 +158,7 @@ export interface IntervalSession {
   id: string
   template?: string
   task?: string
+  programStep?: string
   taskDate: string
   source: 'template' | 'quick'
   status: IntervalSessionStatus

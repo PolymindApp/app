@@ -52,6 +52,7 @@ function mapStep(record: Record<string, any>): ProgramStep {
     customUnit: record.custom_unit || undefined,
     quickAmounts: asNumberArray(record.quick_amounts, [1]),
     active: record.active !== false,
+    intervalTemplate: record.interval_template || undefined,
   }
 }
 
@@ -125,7 +126,7 @@ export const useTaskStore = defineStore('tasks', () => {
     const operator = step?.targetOperator || task.targetOperator || 'gte'
     const targetReached = meetsTarget(value, target, operator)
     const occurrenceComplete = occurrence?.status === 'completed'
-    const isOccurrenceDriven = (step && step.completionType === 'check')
+    const isOccurrenceDriven = (step && (step.completionType === 'check' || step.completionType === 'interval'))
       || (!step && (task.type === 'check' || task.type === 'interval'))
     const isDailyTotal = !step && task.type === 'daily_total'
     const sealed = isDailyTotal && Boolean(occurrence?.sealed)
@@ -341,7 +342,7 @@ export const useTaskStore = defineStore('tasks', () => {
       const existing = steps.value.filter((step) => step.task === taskId)
       const retainedIds = new Set(draft.steps.map((step) => step.id).filter(Boolean))
       await Promise.all(existing.filter((step) => !retainedIds.has(step.id)).map((step) =>
-        api.collection('program_steps').update(step.id, { active: false }),
+        api.collection('program_steps').update(step.id, { active: false, interval_template: '' }),
       ))
       await Promise.all(
         draft.steps.map((step, index) => {
@@ -359,6 +360,7 @@ export const useTaskStore = defineStore('tasks', () => {
             custom_unit: step.customUnit || '',
             quick_amounts: step.quickAmounts,
             active: true,
+            interval_template: step.completionType === 'interval' ? step.intervalTemplate || '' : '',
           }
           return step.id
             ? api.collection('program_steps').update(step.id, stepPayload)

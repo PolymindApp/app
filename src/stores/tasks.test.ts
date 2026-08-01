@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
-import type { Entry, Occurrence, Task } from '@/types/domain'
+import type { Entry, Occurrence, ProgramStep, Task } from '@/types/domain'
 
 const apiMocks = vi.hoisted(() => ({
   createEntry: vi.fn(),
@@ -178,6 +178,52 @@ describe('interval task completion', () => {
     }]
 
     expect(store.makeProgress(intervalTask, selectedDate)).toMatchObject({
+      percent: 100,
+      complete: true,
+      status: 'completed',
+    })
+  })
+
+  it('uses the program-step occurrence for an attached interval', () => {
+    const store = useTaskStore()
+    const programTask: Task = {
+      ...task,
+      id: 'program-task',
+      name: 'Training program',
+      type: 'program',
+      cycleLength: 7,
+      programRepeat: true,
+    }
+    const intervalStep: ProgramStep = {
+      id: 'interval-step',
+      task: programTask.id,
+      name: 'Conditioning',
+      description: '',
+      sortOrder: 0,
+      cycleDays: [3],
+      completionType: 'interval',
+      quickAmounts: [],
+      active: true,
+      intervalTemplate: 'template-1',
+    }
+
+    expect(store.makeProgress(programTask, selectedDate, intervalStep)).toMatchObject({
+      percent: 0,
+      complete: false,
+      status: 'pending',
+    })
+
+    store.occurrences = [{
+      ...completedOccurrence,
+      id: 'program-interval-occurrence',
+      task: programTask.id,
+      programStep: intervalStep.id,
+      snapshotName: intervalStep.name,
+      snapshotTarget: 1,
+      snapshotUnit: '',
+    }]
+
+    expect(store.makeProgress(programTask, selectedDate, intervalStep)).toMatchObject({
       percent: 100,
       complete: true,
       status: 'completed',

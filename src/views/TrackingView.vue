@@ -252,22 +252,22 @@ onMounted(async () => {
     </template>
 
     <template v-else-if="store.loaded">
-      <v-card class="tracking-intro surface-card pa-6 mb-5">
-        <div class="tracking-intro__icon"><v-icon icon="mdi-chart-timeline-variant" size="32" /></div>
-        <h2 class="text-h5 font-weight-black mt-4">Notice what changes</h2>
-        <p class="muted mt-2">Log things you do and how you feel. Over time, compare your own observations for useful associations.</p>
-        <v-alert type="info" variant="tonal" density="compact" class="mt-4">Tracking can reveal patterns, but it cannot prove cause or replace medical care.</v-alert>
-      </v-card>
       <div class="section-heading"><h2>Start with a tracker</h2></div>
       <div class="preset-grid">
         <v-card v-for="preset in TRACKING_PRESETS" :key="preset.id" class="preset-card surface-card pa-4">
-          <v-icon :icon="preset.icon" :color="preset.color" size="26" />
-          <strong>{{ preset.name }}</strong>
-          <span>{{ preset.description }}</span>
-          <v-btn size="small" variant="tonal" :loading="addingPreset === preset.id" @click="addPreset(preset.id)">Add</v-btn>
+          <div class="preset-card__content">
+            <div class="preset-card__icon" :style="{ color: preset.color }">
+              <v-icon :icon="preset.icon" size="26" />
+            </div>
+            <div class="min-width-0">
+              <strong class="d-block">{{ preset.name }}</strong>
+              <span>{{ preset.description }}</span>
+            </div>
+          </div>
+          <v-btn block size="large" variant="tonal" :loading="addingPreset === preset.id" @click="addPreset(preset.id)">Add</v-btn>
         </v-card>
       </div>
-      <v-btn block class="mt-4" color="secondary" prepend-icon="mdi-tune-variant" to="/tracking/new">Create a custom tracker</v-btn>
+      <v-btn block size="large" class="mt-4" color="secondary" prepend-icon="mdi-tune-variant" to="/tracking/new">Create a custom tracker</v-btn>
     </template>
 
     <ActionBottomSheet v-model="sheetOpen" :title="editingEntry ? `Edit ${sheetTracker?.name || 'log'}` : `Log ${sheetTracker?.name || ''}`">
@@ -328,11 +328,12 @@ onMounted(async () => {
 .tracker-card span { color: rgb(var(--v-theme-on-surface) / .48); font-size: .72rem; }
 .tracker-card .tracker-card__logged { color: rgb(var(--v-theme-secondary)); font-weight: 800; }
 .tracking-actions { display: flex; justify-content: center; }
-.tracking-intro { text-align: center; }
-.tracking-intro__icon { display: grid; width: 64px; height: 64px; margin: 0 auto; place-items: center; border-radius: 20px; background: rgb(var(--v-theme-secondary)); color: rgb(var(--v-theme-on-secondary)); }
 .preset-grid { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); }
-.preset-card { display: grid; min-height: 175px; grid-template-rows: auto auto 1fr auto; align-items: start; gap: .55rem; }
-.preset-card span { color: rgb(var(--v-theme-on-surface) / .58); font-size: .72rem; line-height: 1.45; }
+.preset-card { display: grid; min-height: 150px; grid-template-rows: 1fr auto; align-items: start; gap: 1rem; }
+.preset-card__content { display: flex; align-items: flex-start; gap: .8rem; }
+.preset-card__icon { display: grid; width: 38px; height: 38px; flex: 0 0 38px; place-items: center; border-radius: 12px; background: currentColor; }
+.preset-card__icon :deep(.v-icon) { color: rgb(var(--v-theme-background)); }
+.preset-card span { display: block; margin-top: .25rem; color: rgb(var(--v-theme-on-surface) / .58); font-size: .72rem; line-height: 1.45; }
 .rating-value { padding: .25rem 0; font-size: 2rem; font-weight: 900; text-align: center; }
 .rating-value small { color: rgb(var(--v-theme-on-surface) / .56); font-size: .8rem; }
 .sheet-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; }

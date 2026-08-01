@@ -56,7 +56,7 @@ suffix="$(php -r 'echo bin2hex(random_bytes(5));')"
 password="correct-horse-battery"
 
 migration_count="$(sqlite3 "$test_db" 'SELECT COUNT(*) FROM mom_schema_migrations;')"
-[[ "$migration_count" == 6 ]] || {
+[[ "$migration_count" == 7 ]] || {
   echo "The API did not apply the complete database migration sequence." >&2
   exit 1
 }
@@ -477,6 +477,70 @@ second_task_completion_count="$(sqlite3 "$test_db" \
   "SELECT COUNT(*) FROM occurrences WHERE task = '$interval_task_two_id';")"
 [[ "$first_task_completion_count" == 1 && "$second_task_completion_count" == 0 ]] || {
   echo "An attributed interval did not complete exactly one selected task." >&2
+  exit 1
+}
+
+program_task_payload="$(php -r '
+  echo json_encode([
+    "name" => "Interval program", "description" => "", "type" => "program",
+    "mandatory" => true, "review_when_missed" => false, "active" => true,
+    "start_date" => "2026-07-29", "end_date" => "", "recurrence_type" => "daily",
+    "weekdays" => [], "interval_weeks" => 1, "target_value" => 1,
+    "target_operator" => "gte", "unit" => "", "custom_unit" => "",
+    "goal_period" => "occurrence", "quick_amounts" => [], "cycle_length" => 3,
+    "program_repeat" => true, "program_strict" => false, "sort_order" => 3,
+    "color" => "#C7F464", "interval_template" => "",
+  ], JSON_THROW_ON_ERROR);
+')"
+program_task_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "$program_task_payload" \
+  "$api_url/collections/tasks/records")"
+program_task_id="$(json_field id <<<"$program_task_response")"
+
+program_step_payload="$(php -r '
+  echo json_encode([
+    "task" => $argv[1], "name" => "Conditioning", "description" => "",
+    "sort_order" => 0, "cycle_days" => [1], "completion_type" => "interval",
+    "target_value" => 1, "target_operator" => "gte", "unit" => "",
+    "custom_unit" => "", "quick_amounts" => [], "active" => true,
+    "interval_template" => $argv[2],
+  ], JSON_THROW_ON_ERROR);
+' "$program_task_id" "$interval_template_id")"
+program_step_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "$program_step_payload" \
+  "$api_url/collections/program_steps/records")"
+program_step_id="$(json_field id <<<"$program_step_response")"
+
+program_session_payload="$(php -r '
+  $payload = json_decode($argv[1], true, 512, JSON_THROW_ON_ERROR);
+  $payload["task"] = $argv[2];
+  $payload["program_step"] = $argv[3];
+  $payload["started_at"] = "2026-08-01T15:00:00Z";
+  $payload["runtime_state"]["stepStartedAt"] = "2026-08-01T15:00:00Z";
+  $payload["runtime_state"]["updatedAt"] = "2026-08-01T15:00:00Z";
+  echo json_encode($payload, JSON_THROW_ON_ERROR);
+' "$session_payload" "$program_task_id" "$program_step_id")"
+program_session_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "$program_session_payload" \
+  "$api_url/collections/interval_sessions/records")"
+program_session_id="$(json_field id <<<"$program_session_response")"
+program_completion_payload='{"runtime_state":{"stepIndex":1,"remainingMs":0,"accumulatedMs":1000,"updatedAt":"2026-08-01T15:00:01Z"},"elapsed_seconds":1,"ended_at":"2026-08-01T15:00:01Z"}'
+curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "$program_completion_payload" \
+  "$api_url/interval-sessions/$program_session_id/complete" >/dev/null
+
+program_step_completion_count="$(sqlite3 "$test_db" \
+  "SELECT COUNT(*) FROM occurrences WHERE task = '$program_task_id' AND program_step = '$program_step_id' AND scheduled_date = '2026-08-01' AND status = 'completed';")"
+[[ "$program_step_completion_count" == 1 ]] || {
+  echo "An attached interval did not complete its selected program step." >&2
   exit 1
 }
 

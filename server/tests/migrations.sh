@@ -33,7 +33,7 @@ run_migrations() {
 
 sqlite3 "$empty_db" 'VACUUM'
 first_run="$(run_migrations "$empty_db")"
-[[ "$first_run" == "202607290001,202607290002,202607290003,202607300001,202607310001,202607310002" ]] || {
+[[ "$first_run" == "202607290001,202607290002,202607290003,202607300001,202607310001,202607310002,202607310003" ]] || {
   echo "An empty database did not apply the complete migration sequence." >&2
   exit 1
 }
@@ -64,7 +64,7 @@ for table in "${expected_tables[@]}"; do
 done
 
 migration_count="$(sqlite3 "$empty_db" 'SELECT COUNT(*) FROM mom_schema_migrations;')"
-[[ "$migration_count" == 6 ]] || {
+[[ "$migration_count" == 7 ]] || {
   echo "Migration history does not contain all migrations." >&2
   exit 1
 }
@@ -88,7 +88,7 @@ cli_output="$(
   MOM_API_SECRET="mom-migration-test-secret-at-least-32-characters" \
     php server/migrate.php
 )"
-[[ "$cli_output" == *"Applied 6 migrations"* && "$cli_output" == *"202607310002"* ]] || {
+[[ "$cli_output" == *"Applied 7 migrations"* && "$cli_output" == *"202607310003"* ]] || {
   echo "The migration CLI did not initialize and report a new database." >&2
   exit 1
 }
@@ -105,7 +105,7 @@ before_counts="$(sqlite3 "$existing_db" \
 existing_run="$(run_migrations "$existing_db")"
 after_counts="$(sqlite3 "$existing_db" \
   "SELECT (SELECT COUNT(*) FROM tasks) || ':' || (SELECT COUNT(*) FROM entries);")"
-[[ "$existing_run" == "202607290001,202607290002,202607290003,202607300001,202607310001,202607310002" ]] || {
+[[ "$existing_run" == "202607290001,202607290002,202607290003,202607300001,202607310001,202607310002,202607310003" ]] || {
   echo "An existing PHP database was not baselined correctly." >&2
   exit 1
 }

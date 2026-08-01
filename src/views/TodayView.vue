@@ -31,6 +31,7 @@ const activeIntervalSheet = ref(false)
 const intervalStartError = ref('')
 const weekDirection = ref<'previous' | 'next'>('next')
 const visibleWeekStart = ref(startOfWeek(selectedDate.value, { weekStartsOn: 1 }))
+const valuePulseVersions = ref<Record<string, number>>({})
 let weekTouchStart: { x: number; y: number } | undefined
 let suppressDateClick = false
 let suppressDateClickTimer: number | undefined
@@ -81,6 +82,18 @@ function progressIsBusy(progress: TaskProgress) {
   return busy.value || busyProgressKeys.value.has(progressKey(progress))
 }
 
+function valuePulseFor(progress: TaskProgress) {
+  return valuePulseVersions.value[progressKey(progress)] || 0
+}
+
+function pulseProgressValue(progress: TaskProgress) {
+  const key = progressKey(progress)
+  valuePulseVersions.value = {
+    ...valuePulseVersions.value,
+    [key]: (valuePulseVersions.value[key] || 0) + 1,
+  }
+}
+
 async function runForProgress(progress: TaskProgress, action: () => Promise<void>) {
   const key = progressKey(progress)
   if (busyProgressKeys.value.has(key)) return
@@ -90,6 +103,11 @@ async function runForProgress(progress: TaskProgress, action: () => Promise<void
   } finally {
     busyProgressKeys.value.delete(key)
   }
+}
+
+async function addProgressEntry(progress: TaskProgress, amount: number) {
+  await runForProgress(progress, () => store.addEntry(progress, amount))
+  pulseProgressValue(progress)
 }
 
 async function resolveReview(item: TaskProgress, status: 'missed' | 'carried') {
@@ -144,7 +162,8 @@ function openTimeLogger(progress: TaskProgress) {
 }
 
 function intervalMeta(progress: TaskProgress) {
-  const template = intervalStore.templates.find((item) => item.id === progress.task.intervalTemplate)
+  const templateId = progress.programStep?.intervalTemplate || progress.task.intervalTemplate
+  const template = intervalStore.templates.find((item) => item.id === templateId)
   if (!template) return undefined
   return {
     name: template.name,
@@ -152,11 +171,17 @@ function intervalMeta(progress: TaskProgress) {
   }
 }
 
+function sessionMatchesProgress(progress: TaskProgress) {
+  const active = intervalStore.activeSession
+  return active?.task === progress.task.id
+    && (active.programStep || '') === (progress.programStep?.id || '')
+}
+
 async function startIntervalTask(progress: TaskProgress) {
   intervalStartError.value = ''
   const active = intervalStore.activeSession
   if (active) {
-    if (active.task === progress.task.id) {
+    if (sessionMatchesProgress(progress)) {
       await router.push({
         name: 'interval-runner',
         params: { sessionId: active.id },
@@ -167,14 +192,19 @@ async function startIntervalTask(progress: TaskProgress) {
     }
     return
   }
-  if (!progress.task.intervalTemplate) {
-    intervalStartError.value = 'This task does not have an attached interval.'
+  const templateId = progress.programStep?.intervalTemplate || progress.task.intervalTemplate
+  if (!templateId) {
+    intervalStartError.value = 'This task or program step does not have an attached interval.'
     return
   }
   await router.push({
     name: 'interval-template-runner',
-    params: { templateId: progress.task.intervalTemplate },
-    query: { task: progress.task.id, from: 'tasks' },
+    params: { templateId },
+    query: {
+      task: progress.task.id,
+      ...(progress.programStep ? { step: progress.programStep.id } : {}),
+      from: 'tasks',
+    },
   })
 }
 
@@ -204,14 +234,16 @@ function pressKeypad(key: typeof keypadKeys[number]) {
 
 async function submitExact(mode: 'add' | 'subtract' | 'set') {
   if (!exactProgress.value || exactAmount.value === null) return
+  const progress = exactProgress.value
   exactAction.value = mode
   const amount = mode === 'set'
-    ? exactAmount.value - exactProgress.value.value
+    ? exactAmount.value - progress.value
     : mode === 'subtract'
       ? -exactAmount.value
       : exactAmount.value
   try {
-    await run(() => store.addEntry(exactProgress.value!, amount, mode === 'add' ? undefined : 'adjustment'))
+    await run(() => store.addEntry(progress, amount, mode === 'add' ? undefined : 'adjustment'))
+    pulseProgressValue(progress)
     exactDialog.value = false
   } finally {
     exactAction.value = undefined
@@ -301,12 +333,13 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
             :key="`${item.task.id}-${item.programStep?.id || ''}`"
             :progress="item"
             :busy="progressIsBusy(item)"
+            :value-pulse="valuePulseFor(item)"
             :interval="intervalMeta(item)"
             :can-start-interval="selectedDateIsToday && item.status === 'pending'"
-            :interval-active="intervalStore.activeSession?.task === item.task.id"
+            :interval-active="sessionMatchesProgress(item)"
             @toggle="progress => runForProgress(progress, () => store.toggleComplete(progress))"
             @seal="progress => runForProgress(progress, () => store.setDailyTotalSealed(progress))"
-            @add="(progress, amount) => runForProgress(progress, () => store.addEntry(progress, amount))"
+            @add="addProgressEntry"
             @exact="openExact"
             @log-time="openTimeLogger"
             @start-interval="startIntervalTask"
@@ -322,12 +355,13 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
             :key="`${item.task.id}-${item.programStep?.id || ''}`"
             :progress="item"
             :busy="progressIsBusy(item)"
+            :value-pulse="valuePulseFor(item)"
             :interval="intervalMeta(item)"
             :can-start-interval="selectedDateIsToday && item.status === 'pending'"
-            :interval-active="intervalStore.activeSession?.task === item.task.id"
+            :interval-active="sessionMatchesProgress(item)"
             @toggle="progress => runForProgress(progress, () => store.toggleComplete(progress))"
             @seal="progress => runForProgress(progress, () => store.setDailyTotalSealed(progress))"
-            @add="(progress, amount) => runForProgress(progress, () => store.addEntry(progress, amount))"
+            @add="addProgressEntry"
             @exact="openExact"
             @log-time="openTimeLogger"
             @start-interval="startIntervalTask"
@@ -358,7 +392,7 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
     <v-dialog
       v-model="exactDialog"
       max-width="440"
-      :transition="smAndUp ? 'dialog-transition' : 'scale-transition'"
+      :transition="smAndUp ? 'dialog-transition' : 'digit-pad-scale-transition'"
     >
       <v-card class="pa-5">
         <div class="d-flex align-center justify-space-between mb-5">

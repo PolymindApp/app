@@ -146,6 +146,24 @@ html.platform-android .app-page {
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2) !important;
 }
 
+.digit-pad-scale-transition-enter-active {
+  transition:
+    transform 220ms cubic-bezier(.22, 1, .36, 1),
+    opacity 180ms ease !important;
+}
+
+.digit-pad-scale-transition-leave-active {
+  transition:
+    transform 180ms cubic-bezier(.4, 0, 1, 1),
+    opacity 160ms ease !important;
+}
+
+.digit-pad-scale-transition-enter-from,
+.digit-pad-scale-transition-leave-to {
+  opacity: 0;
+  transform: scale(.82);
+}
+
 .long-press-drag-item {
   -webkit-touch-callout: none;
 }

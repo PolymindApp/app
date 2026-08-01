@@ -51,7 +51,7 @@ final class Database
             'program_steps' => [
                 'id', 'owner', 'task', 'name', 'description', 'sort_order',
                 'cycle_days', 'completion_type', 'target_value', 'target_operator',
-                'unit', 'custom_unit', 'quick_amounts', 'active',
+                'unit', 'custom_unit', 'quick_amounts', 'active', 'interval_template',
             ],
             'occurrences' => [
                 'id', 'owner', 'task', 'program_step', 'scheduled_date', 'status',
@@ -70,7 +70,7 @@ final class Database
                 'id', 'owner', 'template', 'source', 'status', 'snapshot_name',
                 'definition_snapshot', 'cue_snapshot', 'started_at', 'ended_at',
                 'planned_seconds', 'elapsed_seconds', 'runtime_state', 'task',
-                'task_date',
+                'program_step', 'task_date',
             ],
             'tracking_trackers' => [
                 'id', 'owner', 'name', 'description', 'role', 'kind', 'category',

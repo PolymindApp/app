@@ -54,10 +54,13 @@ CREATE TABLE tasks (
     program_repeat BOOLEAN NOT NULL DEFAULT FALSE,
     program_strict BOOLEAN NOT NULL DEFAULT FALSE,
     sort_order NUMERIC NOT NULL DEFAULT 0,
-    color TEXT NOT NULL DEFAULT ''
+    color TEXT NOT NULL DEFAULT '',
+    interval_template TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX idx_tasks_owner_active ON tasks (owner, active);
+CREATE INDEX idx_tasks_owner_interval_template
+    ON tasks (owner, interval_template);
 
 CREATE TABLE program_steps (
     id TEXT PRIMARY KEY NOT NULL DEFAULT ('r' || lower(hex(randomblob(7)))),
@@ -73,10 +76,13 @@ CREATE TABLE program_steps (
     unit TEXT NOT NULL DEFAULT '',
     custom_unit TEXT NOT NULL DEFAULT '',
     quick_amounts JSON DEFAULT NULL,
-    active BOOLEAN NOT NULL DEFAULT FALSE
+    active BOOLEAN NOT NULL DEFAULT FALSE,
+    interval_template TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX idx_program_steps_task_order ON program_steps (task, sort_order);
+CREATE INDEX idx_program_steps_owner_interval_template
+    ON program_steps (owner, interval_template);
 
 CREATE TABLE occurrences (
     id TEXT PRIMARY KEY NOT NULL DEFAULT ('r' || lower(hex(randomblob(7)))),
@@ -141,13 +147,20 @@ CREATE TABLE interval_sessions (
     ended_at TEXT NOT NULL DEFAULT '',
     planned_seconds NUMERIC NOT NULL DEFAULT 0,
     elapsed_seconds NUMERIC NOT NULL DEFAULT 0,
-    runtime_state JSON DEFAULT NULL
+    runtime_state JSON DEFAULT NULL,
+    task TEXT NOT NULL DEFAULT '',
+    program_step TEXT NOT NULL DEFAULT '',
+    task_date TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX idx_interval_sessions_owner_started
     ON interval_sessions (owner, started_at);
 CREATE INDEX idx_interval_sessions_owner_status
     ON interval_sessions (owner, status);
+CREATE INDEX idx_interval_sessions_owner_task_date
+    ON interval_sessions (owner, task, task_date);
+CREATE INDEX idx_interval_sessions_owner_program_step_date
+    ON interval_sessions (owner, program_step, task_date);
 
 CREATE TABLE tracking_trackers (
     id TEXT PRIMARY KEY NOT NULL DEFAULT ('r' || lower(hex(randomblob(7)))),

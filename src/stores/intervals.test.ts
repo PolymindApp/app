@@ -86,6 +86,7 @@ describe('interval task attribution', () => {
         id: 'session-1',
         template: 'template-1',
         task: 'task-1',
+        program_step: 'step-1',
         task_date: '2026-07-31',
         source: 'template',
         status: 'completed',
@@ -106,7 +107,7 @@ describe('interval task attribution', () => {
       occurrence: {
         id: 'occurrence-1',
         task: 'task-1',
-        program_step: '',
+        program_step: 'step-1',
         scheduled_date: '2026-07-31',
         status: 'completed',
         sealed: false,
@@ -133,6 +134,7 @@ describe('interval task attribution', () => {
     expect(completed).toMatchObject({
       id: 'session-1',
       task: 'task-1',
+      programStep: 'step-1',
       taskDate: '2026-07-31',
       status: 'completed',
     })
@@ -141,6 +143,7 @@ describe('interval task attribution', () => {
       expect.objectContaining({
         id: 'occurrence-1',
         task: 'task-1',
+        programStep: 'step-1',
         scheduledDate: '2026-07-31',
         status: 'completed',
       }),

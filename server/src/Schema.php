@@ -69,13 +69,14 @@ final class Schema
                     'description' => self::text(2000),
                     'sort_order' => self::integer(0),
                     'cycle_days' => self::numberArray(2000, true),
-                    'completion_type' => self::choice(['check', 'quantity'], true),
+                    'completion_type' => self::choice(['check', 'quantity', 'interval'], true),
                     'target_value' => self::number(0),
                     'target_operator' => self::choice(['gte', 'lte', 'eq'], false, true),
                     'unit' => self::text(30),
                     'custom_unit' => self::text(30),
                     'quick_amounts' => self::numberArray(1000),
                     'active' => self::boolean(),
+                    'interval_template' => self::relation(false, true),
                 ],
                 'required' => ['task', 'name', 'sort_order', 'cycle_days', 'completion_type'],
                 'sort' => ['name', 'sort_order'],
@@ -144,6 +145,7 @@ final class Schema
                     'elapsed_seconds' => self::number(0),
                     'runtime_state' => self::json(20000, true),
                     'task' => self::relation(false, true),
+                    'program_step' => self::relation(false, true),
                     'task_date' => self::dateKey(false, true),
                 ],
                 'required' => [
@@ -156,7 +158,9 @@ final class Schema
                     'runtime_state',
                 ],
                 'sort' => ['started_at', 'ended_at', 'status'],
-                'filter' => ['template', 'task', 'task_date', 'source', 'status', 'started_at'],
+                'filter' => [
+                    'template', 'task', 'program_step', 'task_date', 'source', 'status', 'started_at',
+                ],
             ],
             'tracking_trackers' => [
                 'fields' => [
