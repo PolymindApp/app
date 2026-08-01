@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { onBeforeUnmount, useId, watch } from 'vue'
 
 withDefaults(defineProps<{
   title: string
@@ -10,10 +10,10 @@ withDefaults(defineProps<{
 })
 
 const model = defineModel<boolean>({ default: false })
-const drawer = ref<HTMLElement | { $el?: unknown }>()
+const sheetId = useId()
 
-interface SheetTouch {
-  identifier: number
+interface SheetDrag {
+  pointerId: number
   startX: number
   startY: number
   lastY: number
@@ -23,21 +23,11 @@ interface SheetTouch {
   dragging: boolean
 }
 
-let touch: SheetTouch | undefined
+let drag: SheetDrag | undefined
 let settleTimer: number | undefined
 
 function sheetElement(): HTMLElement | undefined {
-  const value = drawer.value
-  if (value instanceof HTMLElement) return value
-  return value?.$el instanceof HTMLElement ? value.$el : undefined
-}
-
-function touchWithId(touches: TouchList, identifier: number) {
-  for (let index = 0; index < touches.length; index += 1) {
-    const candidate = touches.item(index)
-    if (candidate?.identifier === identifier) return candidate
-  }
-  return undefined
+  return document.getElementById(sheetId) || undefined
 }
 
 function clearSettleTimer() {
@@ -53,17 +43,18 @@ function clearInlineGestureStyles() {
   sheet?.classList.remove('action-bottom-sheet--dragging')
 }
 
-function clearTouchListeners() {
-  window.removeEventListener('touchmove', onTouchMove, true)
-  window.removeEventListener('touchend', onTouchEnd, true)
-  window.removeEventListener('touchcancel', onTouchCancel, true)
+function clearPointerListeners() {
+  window.removeEventListener('pointermove', onPointerMove, true)
+  window.removeEventListener('pointerup', onPointerUp, true)
+  window.removeEventListener('pointercancel', onPointerCancel, true)
+  window.removeEventListener('blur', onWindowBlur)
 }
 
-function finishTouch(cancelled = false) {
-  const current = touch
+function finishDrag(cancelled = false) {
+  const current = drag
   if (!current) return
-  touch = undefined
-  clearTouchListeners()
+  drag = undefined
+  clearPointerListeners()
 
   const sheet = sheetElement()
   if (!sheet || !current.dragging) {
@@ -81,11 +72,7 @@ function finishTouch(cancelled = false) {
 
   if (shouldClose) {
     sheet.style.transform = 'translateY(100%)'
-    settleTimer = window.setTimeout(() => {
-      settleTimer = undefined
-      model.value = false
-      void nextTick().then(clearInlineGestureStyles)
-    }, 180)
+    model.value = false
     return
   }
 
@@ -96,39 +83,41 @@ function finishTouch(cancelled = false) {
   }, 180)
 }
 
-function onTouchStart(event: TouchEvent) {
-  if (!model.value || touch || event.touches.length !== 1) return
-  const initial = event.touches.item(0)
-  if (!initial) return
+function onPointerDown(event: PointerEvent) {
+  if (
+    !model.value
+    || drag
+    || !event.isPrimary
+    || (event.pointerType === 'mouse' && event.button !== 0)
+  ) return
 
   clearSettleTimer()
   clearInlineGestureStyles()
-  touch = {
-    identifier: initial.identifier,
-    startX: initial.clientX,
-    startY: initial.clientY,
-    lastY: initial.clientY,
+  drag = {
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    startY: event.clientY,
+    lastY: event.clientY,
     lastAt: event.timeStamp,
     offset: 0,
     velocity: 0,
     dragging: false,
   }
-  window.addEventListener('touchmove', onTouchMove, { capture: true, passive: false })
-  window.addEventListener('touchend', onTouchEnd, true)
-  window.addEventListener('touchcancel', onTouchCancel, true)
+  window.addEventListener('pointermove', onPointerMove, { capture: true, passive: false })
+  window.addEventListener('pointerup', onPointerUp, true)
+  window.addEventListener('pointercancel', onPointerCancel, true)
+  window.addEventListener('blur', onWindowBlur)
 }
 
-function onTouchMove(event: TouchEvent) {
-  const current = touch
-  if (!current) return
-  const active = touchWithId(event.touches, current.identifier)
-  if (!active) return
+function onPointerMove(event: PointerEvent) {
+  const current = drag
+  if (!current || event.pointerId !== current.pointerId) return
 
-  const deltaX = active.clientX - current.startX
-  const deltaY = active.clientY - current.startY
+  const deltaX = event.clientX - current.startX
+  const deltaY = event.clientY - current.startY
   if (!current.dragging) {
     if (Math.abs(deltaX) > 6 && Math.abs(deltaX) > Math.abs(deltaY)) {
-      finishTouch(true)
+      finishDrag(true)
       return
     }
     if (deltaY <= 4 || Math.abs(deltaY) <= Math.abs(deltaX)) return
@@ -139,8 +128,8 @@ function onTouchMove(event: TouchEvent) {
   }
 
   const elapsed = Math.max(1, event.timeStamp - current.lastAt)
-  current.velocity = (active.clientY - current.lastY) / elapsed
-  current.lastY = active.clientY
+  current.velocity = (event.clientY - current.lastY) / elapsed
+  current.lastY = event.clientY
   current.lastAt = event.timeStamp
   current.offset = Math.max(0, deltaY)
   if (event.cancelable) event.preventDefault()
@@ -148,31 +137,29 @@ function onTouchMove(event: TouchEvent) {
   if (sheet) sheet.style.transform = `translateY(${current.offset}px)`
 }
 
-function onTouchEnd(event: TouchEvent) {
-  if (touch && touchWithId(event.changedTouches, touch.identifier)) finishTouch()
+function onPointerUp(event: PointerEvent) {
+  if (drag?.pointerId === event.pointerId) finishDrag()
 }
 
-function onTouchCancel(event: TouchEvent) {
-  if (
-    touch
-    && (
-      event.changedTouches.length === 0
-      || touchWithId(event.changedTouches, touch.identifier)
-    )
-  ) finishTouch(true)
+function onPointerCancel(event: PointerEvent) {
+  if (drag?.pointerId === event.pointerId) finishDrag(true)
+}
+
+function onWindowBlur() {
+  finishDrag(true)
 }
 
 watch(model, (open) => {
   if (open) return
-  touch = undefined
-  clearTouchListeners()
+  drag = undefined
+  clearPointerListeners()
   clearSettleTimer()
   clearInlineGestureStyles()
 })
 
 onBeforeUnmount(() => {
-  touch = undefined
-  clearTouchListeners()
+  drag = undefined
+  clearPointerListeners()
   clearSettleTimer()
   clearInlineGestureStyles()
 })
@@ -180,7 +167,7 @@ onBeforeUnmount(() => {
 
 <template>
   <v-navigation-drawer
-    ref="drawer"
+    :id="sheetId"
     v-model="model"
     temporary
     location="bottom"
@@ -189,7 +176,7 @@ onBeforeUnmount(() => {
     class="action-bottom-sheet"
     :aria-label="ariaLabel"
   >
-    <div class="action-bottom-sheet__header" @touchstart.passive="onTouchStart">
+    <div class="action-bottom-sheet__header" @pointerdown="onPointerDown">
       <div class="action-bottom-sheet__handle" aria-hidden="true" />
       <div class="px-4 pt-2 pb-2">
         <strong class="d-block text-truncate">{{ title }}</strong>
@@ -229,6 +216,13 @@ onBeforeUnmount(() => {
 }
 
 .action-bottom-sheet--dragging .action-bottom-sheet__header { cursor: grabbing; }
+
+/* The drawer scrim is a sibling rendered by Vuetify and remains in the DOM
+   while fading out. Once it is leaving, it must no longer consume a quick
+   follow-up tap meant for the page beneath the sheet. */
+:global(.action-bottom-sheet + .v-navigation-drawer__scrim.fade-transition-leave-active) {
+  pointer-events: none;
+}
 
 .action-bottom-sheet__description {
   color: rgb(var(--v-theme-on-surface) / .56);
