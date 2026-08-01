@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import ColorSwatchPicker from '@/components/ColorSwatchPicker.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import FormActionBar from '@/components/FormActionBar.vue'
 import IntervalNodeEditor from '@/components/IntervalNodeEditor.vue'
 import type { LongPressDragResult } from '@/directives/longPressDrag'
 import {
@@ -291,13 +292,6 @@ async function removeTemplate() {
       </v-card>
 
       <v-card class="surface-card pa-5">
-        <div class="summary-grid">
-          <div><span>Duration</span><strong>{{ formatIntervalDuration(totalDuration) }}</strong></div>
-          <div><span>Intervals</span><strong>{{ totalSteps }}</strong></div>
-        </div>
-      </v-card>
-
-      <v-card class="surface-card pa-5">
         <div class="setting-row">
           <div><strong>Sound cues</strong><p>Count down the final three seconds and signal each interval</p></div>
           <v-switch v-model="draft.cues.soundEnabled" color="secondary" hide-details inset />
@@ -306,6 +300,13 @@ async function removeTemplate() {
         <div class="setting-row">
           <div><strong>Vibration</strong><p>Vibrate on supported devices</p></div>
           <v-switch v-model="draft.cues.vibrationEnabled" color="secondary" hide-details inset />
+        </div>
+      </v-card>
+
+      <v-card class="surface-card pa-5">
+        <div class="summary-grid">
+          <div><span>Duration</span><strong>{{ formatIntervalDuration(totalDuration) }}</strong></div>
+          <div><span>Intervals</span><strong>{{ totalSteps }}</strong></div>
         </div>
       </v-card>
       </div>
@@ -403,21 +404,16 @@ async function removeTemplate() {
       </template>
     </ActionBottomSheet>
 
-    <div class="editor-save-bar page-action-area">
-      <div class="editor-save-bar__inner">
-        <v-btn class="editor-save-bar__save" color="secondary" :loading="saving" @click="save">Save</v-btn>
-        <v-btn class="editor-save-bar__cancel" variant="text" @click="router.back()">Cancel</v-btn>
-        <v-btn
-          v-if="isEditing"
-          class="editor-save-bar__delete"
-          icon="mdi-delete-outline"
-          color="error"
-          variant="text"
-          aria-label="Delete interval"
-          @click="deleteDialog = true"
-        />
-      </div>
-    </div>
+    <FormActionBar
+      :primary-text="isEditing ? 'Save' : 'Create'"
+      :loading="saving"
+      :show-delete="isEditing"
+      delete-label="Delete interval"
+      :delete-disabled="deleting"
+      @submit="save"
+      @cancel="router.back()"
+      @delete="deleteDialog = true"
+    />
 
     <ConfirmDialog
       :model-value="Boolean(pendingNodeDelete)"
@@ -444,7 +440,7 @@ async function removeTemplate() {
 </template>
 
 <style scoped>
-.interval-editor { max-width: 760px; padding-bottom: 6rem; }
+.interval-editor { max-width: 47.5rem; padding-bottom: 6rem; }
 .interval-form-cards { display: grid; gap: 1rem; }
 .field-stack, .sequence-tree { display: grid; gap: 1rem; }
 .sequence-empty { display: grid; justify-items: center; gap: 1rem; padding: 2rem 1.25rem; border: 1px dashed rgb(var(--v-theme-on-surface) / .22); border-radius: 20px; background: rgb(var(--v-theme-surface-variant) / .28); text-align: center; }
@@ -460,19 +456,4 @@ async function removeTemplate() {
 .setting-row { display: grid; min-height: 64px; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 1rem; }
 .setting-row > div { min-width: 0; }
 .setting-row p { margin-top: .15rem; color: rgb(var(--v-theme-on-surface) / .5); font-size: .7rem; }
-.editor-save-bar { position: fixed; z-index: 20; right: 0; bottom: calc(72px + env(safe-area-inset-bottom)); left: 0; padding: .75rem 1rem; border-top: 1px solid rgba(255,255,255,.08); background: rgb(var(--v-theme-background) / .94); backdrop-filter: blur(14px); }
-.editor-save-bar__inner { display: flex; width: 100%; max-width: 760px; margin: 0 auto; align-items: center; gap: .5rem; }
-.editor-save-bar__inner > .v-btn { height: 48px; }
-.editor-save-bar__save,
-.editor-save-bar__cancel { min-width: 0; flex: 1 1 0; }
-.editor-save-bar__delete { order: 1; width: 48px; min-width: 48px; flex: 0 0 48px; }
-.editor-save-bar__cancel { order: 2; margin-left: auto; }
-.editor-save-bar__save { order: 3; }
-@media (min-width: 960px) {
-  .interval-editor { padding-bottom: 6rem; }
-  .editor-save-bar { left: 224px; bottom: 0; }
-  .editor-save-bar__inner { justify-content: flex-end; }
-  .editor-save-bar__save,
-  .editor-save-bar__cancel { max-width: 160px; }
-}
 </style>

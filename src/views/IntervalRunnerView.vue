@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import IntervalTypeIcon from '@/components/IntervalTypeIcon.vue'
 import { stopBackgroundInterval, syncBackgroundInterval } from '@/services/backgroundInterval'
 import {
   notifyIntervalTransition,
@@ -610,6 +611,13 @@ async function runAgain() {
       </header>
 
       <div class="runner-stage">
+        <IntervalTypeIcon
+          v-if="current.step.kind"
+          class="runner-type-backdrop"
+          :kind="current.step.kind"
+          size="clamp(8rem, 44vw, 28rem)"
+          :animated="session.status === 'running'"
+        />
         <section class="runner-main">
           <div class="runner-details">
             <p class="runner-session">{{ session.name }}</p>
@@ -821,7 +829,25 @@ async function runAgain() {
 }
 .runner-header { display: grid; grid-template-columns: 48px minmax(0, 1fr) 48px; align-items: center; }
 .runner-label { color: rgb(var(--v-theme-on-surface) / .52); font-size: .68rem; font-weight: 850; letter-spacing: .1em; text-transform: uppercase; }
-.runner-stage { display: flex; min-height: 0; flex: 1; flex-direction: column; }
+.runner-stage { position: relative; display: flex; min-height: 0; flex: 1; flex-direction: column; isolation: isolate; }
+.runner-type-backdrop {
+  position: absolute;
+  z-index: 0;
+  top: 50%;
+  left: 50%;
+  opacity: .1;
+  pointer-events: none;
+  filter: drop-shadow(0 0 2.75rem currentColor);
+  transform-origin: center center;
+  transform: translate(-50%, -50%) rotate(-8deg);
+  -webkit-mask-image: radial-gradient(circle, #000 32%, rgba(0, 0, 0, .82) 56%, transparent 82%);
+  mask-image: radial-gradient(circle, #000 32%, rgba(0, 0, 0, .82) 56%, transparent 82%);
+}
+.runner-main,
+.runner-controls,
+.runner-details,
+.runner-progress,
+.next-copy { position: relative; z-index: 1; }
 .runner-main { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
 .runner-details { display: contents; }
 .runner-session { display: none; }
@@ -829,7 +855,7 @@ async function runAgain() {
 .runner-position { display: none; }
 .group-breadcrumb { display: flex; flex-wrap: wrap; justify-content: center; gap: .35rem; margin-bottom: 1.25rem; }
 .group-breadcrumb span { padding: 4px 8px; border-radius: 999px; background: rgb(var(--v-theme-surface-variant)); color: rgb(var(--v-theme-on-surface) / .7); font-size: .65rem; }
-.runner-step { max-width: 640px; margin-top: .5rem; font-size: clamp(2rem, 10vw, 4.5rem); font-weight: 900; line-height: 1; }
+.runner-step { min-width: 0; max-width: 40rem; margin-top: .5rem; font-size: clamp(2rem, 10vw, 4.5rem); font-weight: 900; line-height: 1; }
 .runner-progress {
   display: flex;
   width: 100%;
@@ -993,7 +1019,6 @@ async function runAgain() {
   }
 
   .runner-step {
-    max-width: none;
     margin-top: 0;
     overflow-wrap: anywhere;
     font-size: clamp(1.65rem, 4.5vw, 3.6rem);

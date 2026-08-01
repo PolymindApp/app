@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
   aggregateTrackingEntries,
+  buildTrackingInsight,
   compareDateRanges,
   comparePresentAbsent,
+  linearTrend,
   trackerDraftFromPreset,
   TRACKING_PRESETS,
 } from './tracking'
@@ -68,6 +70,68 @@ describe('tracking analysis', () => {
     expect(result.ready).toBe(true)
     expect(result.first.mean).toBe(3)
     expect(result.second.mean).toBe(7)
+  })
+
+  it('aligns insight series without turning missing tracker logs into zeroes', () => {
+    const result = buildTrackingInsight(
+      [{ date: '2026-07-01', value: 1 }, { date: '2026-07-03', value: 0 }],
+      [{ date: '2026-07-01', value: 8 }, { date: '2026-07-02', value: 6 }],
+      { start: '2026-07-01', end: '2026-07-03' },
+      'presence',
+      'higher',
+      { factor: 'Meditation', outcome: 'Mood' },
+    )
+
+    expect(result.points).toEqual([
+      { date: '2026-07-01', factorValue: 1, outcomeValue: 8 },
+      { date: '2026-07-02', factorValue: null, outcomeValue: 6 },
+      { date: '2026-07-03', factorValue: 0, outcomeValue: null },
+    ])
+    expect(result.matched).toEqual([
+      { date: '2026-07-01', factorValue: 1, outcomeValue: 8 },
+    ])
+  })
+
+  it('uses actual factor amounts for quantitative trends', () => {
+    const matched = Array.from({ length: 6 }, (_, index) => ({
+      date: `2026-07-${String(index + 1).padStart(2, '0')}`,
+      factorValue: index + 1,
+      outcomeValue: (index + 1) * 2,
+    }))
+    const trend = linearTrend(matched)
+    expect(trend.slope).toBe(2)
+    expect(trend.intercept).toBe(0)
+    expect(trend.correlation).toBeCloseTo(1)
+
+    const result = buildTrackingInsight(
+      matched.map(({ date, factorValue }) => ({ date, value: factorValue })),
+      matched.map(({ date, outcomeValue }) => ({ date, value: outcomeValue })),
+      { start: '2026-07-01', end: '2026-07-06' },
+      'quantity',
+      'higher',
+      { factor: 'Exercise minutes', outcome: 'Energy' },
+    )
+    expect(result.ready).toBe(true)
+    expect(result.direction).toBe('better')
+    expect(result.summary).toContain('tended to be higher')
+  })
+
+  it('does not infer a quantitative trend when the factor does not vary', () => {
+    const factor = Array.from({ length: 5 }, (_, index) => ({
+      date: `2026-07-0${index + 1}`,
+      value: 3,
+    }))
+    const outcome = factor.map((item, index) => ({ date: item.date, value: index + 1 }))
+    const result = buildTrackingInsight(
+      factor,
+      outcome,
+      { start: '2026-07-01', end: '2026-07-05' },
+      'quantity',
+      'higher',
+      { factor: 'Medication dose', outcome: 'Pain' },
+    )
+    expect(result.ready).toBe(false)
+    expect(result.summary).toContain('did not vary enough')
   })
 
   it('creates safe editable drafts from starter presets', () => {

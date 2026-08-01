@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { Capacitor } from '@capacitor/core'
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { addDays, addWeeks, format, isSameDay, startOfWeek } from 'date-fns'
+import { computed, onMounted, ref } from 'vue'
+import { isSameDay } from 'date-fns'
 import { storeToRefs } from 'pinia'
 import { useDisplay } from 'vuetify'
 import { useRouter } from 'vue-router'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import TaskCard from '@/components/TaskCard.vue'
-import WeekNavigator from '@/components/WeekNavigator.vue'
+import WeekDateNavigator from '@/components/WeekDateNavigator.vue'
 import { formatIntervalDuration, intervalDuration } from '@/services/intervals'
 import { toDateKey } from '@/services/schedule'
 import { useIntervalStore } from '@/stores/intervals'
@@ -25,16 +25,12 @@ const busyProgressKeys = ref(new Set<string>())
 const exactDialog = ref(false)
 const exactProgress = ref<TaskProgress>()
 const exactAmountInput = ref('')
+const exactNote = ref('')
 const exactAction = ref<'add' | 'subtract' | 'set'>()
 const reviewSheet = ref(false)
 const activeIntervalSheet = ref(false)
 const intervalStartError = ref('')
-const weekDirection = ref<'previous' | 'next'>('next')
-const visibleWeekStart = ref(startOfWeek(selectedDate.value, { weekStartsOn: 1 }))
 const valuePulseVersions = ref<Record<string, number>>({})
-let weekTouchStart: { x: number; y: number } | undefined
-let suppressDateClick = false
-let suppressDateClickTimer: number | undefined
 const exactAmount = computed(() => {
   if (!exactAmountInput.value || exactAmountInput.value === '.') return null
   const value = Number(exactAmountInput.value)
@@ -48,11 +44,6 @@ const exactDesktopAmount = computed<number | null>({
 })
 const keypadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'backspace'] as const
 
-const days = computed(() => Array.from({ length: 7 }, (_, index) => {
-  const date = addDays(visibleWeekStart.value, index)
-  return { date, day: format(date, 'EEE').slice(0, 2), number: format(date, 'd') }
-}))
-
 const required = computed(() => selectedProgress.value.filter((item) => item.task.mandatory))
 const optional = computed(() => selectedProgress.value.filter((item) => !item.task.mandatory))
 const reviewItems = computed(() =>
@@ -65,10 +56,6 @@ onMounted(async () => {
     await Promise.all([store.load(), intervalStore.load()])
   } catch { /* Store error states are displayed in the view. */ }
 })
-onBeforeUnmount(() => {
-  if (suppressDateClickTimer) window.clearTimeout(suppressDateClickTimer)
-})
-
 async function run(action: () => Promise<void>) {
   busy.value = true
   try { await action() } finally { busy.value = false }
@@ -105,50 +92,15 @@ async function runForProgress(progress: TaskProgress, action: () => Promise<void
   }
 }
 
-async function addProgressEntry(progress: TaskProgress, amount: number) {
-  await runForProgress(progress, () => store.addEntry(progress, amount))
-  pulseProgressValue(progress)
-}
-
 async function resolveReview(item: TaskProgress, status: 'missed' | 'carried') {
   await run(() => store.setStatus(item, status))
   reviewSheet.value = false
 }
 
-function moveWeek(amount: number) {
-  weekDirection.value = amount < 0 ? 'previous' : 'next'
-  visibleWeekStart.value = addWeeks(visibleWeekStart.value, amount)
-}
-
-function beginWeekSwipe(event: TouchEvent) {
-  const touch = event.changedTouches[0]
-  if (touch) weekTouchStart = { x: touch.clientX, y: touch.clientY }
-}
-
-function endWeekSwipe(event: TouchEvent) {
-  const touch = event.changedTouches[0]
-  if (!weekTouchStart || !touch) return
-  const horizontalDistance = touch.clientX - weekTouchStart.x
-  const verticalDistance = touch.clientY - weekTouchStart.y
-  weekTouchStart = undefined
-  if (Math.abs(horizontalDistance) < 50 || Math.abs(horizontalDistance) <= Math.abs(verticalDistance) * 1.2) return
-
-  suppressDateClick = true
-  if (suppressDateClickTimer) window.clearTimeout(suppressDateClickTimer)
-  suppressDateClickTimer = window.setTimeout(() => {
-    suppressDateClick = false
-    suppressDateClickTimer = undefined
-  }, 350)
-  moveWeek(horizontalDistance < 0 ? 1 : -1)
-}
-
-function selectDate(date: Date) {
-  if (!suppressDateClick) selectedDate.value = date
-}
-
 function openExact(progress: TaskProgress) {
   exactProgress.value = progress
   exactAmountInput.value = ''
+  exactNote.value = ''
   exactAction.value = undefined
   exactDialog.value = true
 }
@@ -242,7 +194,12 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
       ? -exactAmount.value
       : exactAmount.value
   try {
-    await run(() => store.addEntry(progress, amount, mode === 'add' ? undefined : 'adjustment'))
+    await run(() => store.addEntry(
+      progress,
+      amount,
+      mode === 'add' ? undefined : 'adjustment',
+      exactNote.value.trim(),
+    ))
     pulseProgressValue(progress)
     exactDialog.value = false
   } finally {
@@ -253,34 +210,7 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
 
 <template>
   <main class="app-page today-page">
-    <WeekNavigator
-      v-model="visibleWeekStart"
-      class="mb-3"
-      @navigate="weekDirection = $event"
-    />
-
-    <div
-      class="date-strip-window mb-5"
-      @touchstart.passive="beginWeekSwipe"
-      @touchend.passive="endWeekSwipe"
-      @touchcancel="weekTouchStart = undefined"
-    >
-      <transition :name="`week-${weekDirection}`">
-        <div :key="visibleWeekStart.toISOString()" class="date-strip" role="list" aria-label="Choose a date">
-          <button
-            v-for="day in days"
-            :key="day.date.toISOString()"
-            class="date-chip"
-            :class="{ 'date-chip--active': isSameDay(selectedDate, day.date) }"
-            @click="selectDate(day.date)"
-          >
-            <span>{{ day.day }}</span>
-            <strong>{{ day.number }}</strong>
-            <i v-if="isSameDay(new Date(), day.date)" />
-          </button>
-        </div>
-      </transition>
-    </div>
+    <WeekDateNavigator v-model="selectedDate" class="mb-5" />
 
     <v-card class="score-card pa-5" color="surface">
       <div class="score-pattern" />
@@ -339,8 +269,7 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
             :interval-active="sessionMatchesProgress(item)"
             @toggle="progress => runForProgress(progress, () => store.toggleComplete(progress))"
             @seal="progress => runForProgress(progress, () => store.setDailyTotalSealed(progress))"
-            @add="addProgressEntry"
-            @exact="openExact"
+            @log-amount="openExact"
             @log-time="openTimeLogger"
             @start-interval="startIntervalTask"
           />
@@ -361,8 +290,7 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
             :interval-active="sessionMatchesProgress(item)"
             @toggle="progress => runForProgress(progress, () => store.toggleComplete(progress))"
             @seal="progress => runForProgress(progress, () => store.setDailyTotalSealed(progress))"
-            @add="addProgressEntry"
-            @exact="openExact"
+            @log-amount="openExact"
             @log-time="openTimeLogger"
             @start-interval="startIntervalTask"
           />
@@ -396,8 +324,11 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
     >
       <v-card class="pa-5">
         <div class="d-flex align-center justify-space-between mb-5">
-          <h2 class="text-h6 font-weight-black">{{ exactProgress?.programStep?.name || exactProgress?.task.name }}</h2>
-          <v-btn icon="mdi-close" variant="text" @click="exactDialog = false" />
+          <div class="min-width-0">
+            <h2 class="text-h6 font-weight-black">Log amount</h2>
+            <p class="text-body-2 muted text-truncate mt-1">{{ exactProgress?.programStep?.name || exactProgress?.task.name }}</p>
+          </div>
+          <v-btn icon="mdi-close" variant="text" aria-label="Close amount logger" @click="exactDialog = false" />
         </div>
         <div class="amount-entry mb-4">
           <v-number-input
@@ -427,6 +358,14 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
             </div>
           </div>
         </div>
+        <v-textarea
+          v-model="exactNote"
+          label="Note (optional)"
+          rows="2"
+          auto-grow
+          maxlength="1000"
+          class="mb-4"
+        />
         <div class="exact-actions">
           <v-btn
             block
@@ -528,62 +467,6 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
 </template>
 
 <style scoped>
-.date-strip {
-  display: grid;
-  grid-template-columns: repeat(7, minmax(42px, 1fr));
-  gap: .35rem;
-}
-
-.date-strip-window {
-  position: relative;
-  min-height: 62px;
-  overflow-x: hidden;
-  touch-action: pan-y;
-}
-
-.week-next-enter-active,
-.week-next-leave-active,
-.week-previous-enter-active,
-.week-previous-leave-active {
-  transition: transform 180ms cubic-bezier(.22, 1, .36, 1);
-}
-
-.week-next-leave-active,
-.week-previous-leave-active {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-}
-
-.week-next-enter-from,
-.week-previous-leave-to {
-  transform: translateX(100%);
-}
-
-.week-next-leave-to,
-.week-previous-enter-from {
-  transform: translateX(-100%);
-}
-
-.date-chip {
-  position: relative;
-  display: flex;
-  min-height: 62px;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  border: 0;
-  border-radius: 16px;
-  background: transparent;
-  color: #737872;
-  cursor: pointer;
-}
-
-.date-chip span { font-size: .64rem; font-weight: 800; text-transform: uppercase; }
-.date-chip strong { margin-top: 2px; font-size: 1rem; }
-.date-chip i { position: absolute; bottom: 5px; width: 4px; height: 4px; border-radius: 50%; background: #c7f464; }
-.date-chip--active { background: #c7f464; color: #17200f; box-shadow: 0 8px 20px rgba(199,244,100,.16); }
-
 .score-card { position: relative; overflow: hidden; }
 .score-pattern { position: absolute; top: -70px; right: -40px; width: 220px; height: 220px; border: 35px solid rgba(199,244,100,.07); border-radius: 50%; }
 .score-number { font-family: Impact, "Arial Narrow", sans-serif; font-size: 3.2rem; line-height: .9; letter-spacing: -.03em; }
@@ -616,12 +499,4 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
   .review-actions { grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .week-next-enter-from,
-  .week-next-leave-to,
-  .week-previous-enter-from,
-  .week-previous-leave-to {
-    transform: none;
-  }
-}
 </style>

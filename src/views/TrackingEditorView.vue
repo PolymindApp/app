@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ColorSwatchPicker from '@/components/ColorSwatchPicker.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import FormActionBar from '@/components/FormActionBar.vue'
 import { defaultAggregation, TRACKING_PRESETS, trackerDraftFromPreset } from '@/services/tracking'
 import {
   reconcileTrackingReminders,
@@ -18,7 +19,6 @@ const store = useTrackingStore()
 const form = ref()
 const saving = ref(false)
 const deleting = ref(false)
-const archiveDialog = ref(false)
 const deleteDialog = ref(false)
 const error = ref('')
 const reminderAvailable = trackingRemindersAvailable()
@@ -62,9 +62,9 @@ const draft = reactive<TrackingTrackerDraft>({
   reminderShowName: false,
 })
 
-const editing = computed(() => Boolean(draft.id))
+const isEditing = computed(() => Boolean(route.params.id))
 const hasEntries = computed(() => Boolean(draft.id && store.entries.some((entry) => entry.tracker === draft.id)))
-const measurementLocked = computed(() => editing.value && hasEntries.value)
+const measurementLocked = computed(() => isEditing.value && hasEntries.value)
 
 watch(() => draft.kind, (kind) => {
   if (measurementLocked.value) return
@@ -134,21 +134,6 @@ async function save() {
   }
 }
 
-async function archive() {
-  if (!draft.id) return
-  deleting.value = true
-  try {
-    await store.archiveTracker(draft.id)
-    await reconcileTrackingReminders(store.trackers)
-    await router.replace('/tracking')
-  } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : 'Could not archive this tracker.'
-  } finally {
-    deleting.value = false
-    archiveDialog.value = false
-  }
-}
-
 async function remove() {
   if (!draft.id) return
   deleting.value = true
@@ -166,7 +151,7 @@ async function remove() {
 </script>
 
 <template>
-  <main class="app-page">
+  <main class="app-page app-page--editor tracking-editor">
     <v-alert v-if="error" type="error" variant="tonal" class="mb-4">{{ error }}</v-alert>
     <v-alert v-if="measurementLocked" type="info" variant="tonal" density="compact" class="mb-4">
       Measurement type, unit, scale, and daily calculation are locked because this tracker has logs.
@@ -251,19 +236,22 @@ async function remove() {
           <v-switch v-model="draft.reminderShowName" color="secondary" label="Show tracker name on the lock screen" hide-details />
           <p class="field-help">Off by default for privacy. The generic reminder does not reveal what you track.</p>
         </template>
-        <v-switch v-if="editing" v-model="draft.active" color="secondary" label="Active tracker" hide-details />
+        <v-switch v-if="isEditing" v-model="draft.active" color="secondary" label="Active tracker" hide-details />
       </v-card>
 
-      <div class="editor-actions">
-        <v-btn type="submit" color="secondary" size="large" :loading="saving">Save tracker</v-btn>
-        <template v-if="editing">
-          <v-btn v-if="draft.active" variant="tonal" color="warning" :disabled="saving" @click="archiveDialog = true">Archive</v-btn>
-          <v-btn variant="text" color="error" :disabled="saving" @click="deleteDialog = true">Delete permanently</v-btn>
-        </template>
-      </div>
     </v-form>
 
-    <ConfirmDialog v-model="archiveDialog" title="Archive tracker?" message="Its history stays available, but it will no longer appear in daily tracking." confirm-text="Archive" icon="mdi-archive-outline" :loading="deleting" @confirm="archive" />
+    <FormActionBar
+      :primary-text="isEditing ? 'Save' : 'Create'"
+      :loading="saving"
+      :show-delete="isEditing"
+      delete-label="Delete tracker"
+      :delete-disabled="deleting"
+      @submit="save"
+      @cancel="router.back()"
+      @delete="deleteDialog = true"
+    />
+
     <ConfirmDialog v-model="deleteDialog" title="Delete tracker permanently?" message="This also deletes every log for this tracker. This cannot be undone." confirm-text="Delete" icon="mdi-delete-outline" :loading="deleting" @confirm="remove" />
   </main>
 </template>
@@ -280,5 +268,5 @@ async function remove() {
 .kind-option span { color: rgb(var(--v-theme-on-surface) / .52); font-size: .7rem; }
 .scale-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; }
 .setting-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
-.editor-actions { display: grid; gap: .75rem; }
+.tracking-editor { max-width: 47.5rem; padding-bottom: 6rem; }
 </style>

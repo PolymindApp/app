@@ -14,8 +14,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   toggle: [progress: TaskProgress]
   seal: [progress: TaskProgress]
-  add: [progress: TaskProgress, amount: number]
-  exact: [progress: TaskProgress]
+  logAmount: [progress: TaskProgress]
   logTime: [progress: TaskProgress]
   review: [progress: TaskProgress]
   startInterval: [progress: TaskProgress]
@@ -36,9 +35,6 @@ const canLogTime = computed(() => !step.value && task.value.type === 'duration')
 const canToggleFromCard = computed(() => isCheck.value && !props.busy && !props.progress.locked)
 const target = computed(() => step.value?.targetValue || task.value.targetValue || 0)
 const unit = computed(() => step.value?.customUnit || step.value?.unit || task.value.customUnit || task.value.unit || '')
-const quickAmounts = computed(() =>
-  [...(step.value ? step.value.quickAmounts : task.value.quickAmounts)].sort((left, right) => left - right),
-)
 const operator = computed(() => ({ gte: 'at least', lte: 'at most', eq: 'exactly' })[step.value?.targetOperator || task.value.targetOperator || 'gte'])
 const targetOperator = computed(() => step.value?.targetOperator || task.value.targetOperator || 'gte')
 const currentGoalState = computed(() => isCheck.value || isInterval.value ? 'neutral' : goalState(props.progress.value, target.value, targetOperator.value))
@@ -192,29 +188,17 @@ watch(() => props.valuePulse, async (pulse, previousPulse) => {
         class="mt-2"
       />
 
-      <div v-if="quickAmounts.length" class="quick-actions mt-4">
-        <v-btn
-          v-for="amount in quickAmounts"
-          :key="amount"
-          size="small"
-          variant="tonal"
-          :disabled="busy || progress.locked || progress.sealed"
-          @click="emit('add', progress, amount)"
-        >
-          +{{ task.type === 'duration' && !step ? `${amount}h` : `${amount}${unit ? ` ${unit}` : ''}` }}
-        </v-btn>
-      </div>
-
       <div class="task-action-stack mt-4">
         <v-btn
           block
           size="small"
           variant="tonal"
-          prepend-icon="mdi-pencil-plus-outline"
+          prepend-icon="mdi-plus-minus-variant"
           :disabled="busy || progress.locked || progress.sealed"
-          @click="emit('exact', progress)"
+          @touchstart.stop
+          @click.stop="emit('logAmount', progress)"
         >
-          Custom
+          Log amount
         </v-btn>
         <v-btn
           v-if="canLogTime"
@@ -383,13 +367,6 @@ watch(() => props.valuePulse, async (pulse, previousPulse) => {
 .metric-target {
   color: rgb(var(--v-theme-on-surface) / .52);
   font-size: .72rem;
-}
-
-.quick-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: .35rem;
 }
 
 .task-action-stack {

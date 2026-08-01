@@ -28,7 +28,6 @@ function mapTask(record: Record<string, any>): Task {
     unit: record.unit || undefined,
     customUnit: record.custom_unit || undefined,
     goalPeriod: record.goal_period || undefined,
-    quickAmounts: asNumberArray(record.quick_amounts, [1]),
     cycleLength: record.cycle_length || undefined,
     programRepeat: record.program_repeat,
     programStrict: record.program_strict,
@@ -50,7 +49,6 @@ function mapStep(record: Record<string, any>): ProgramStep {
     targetOperator: record.target_operator || undefined,
     unit: record.unit || undefined,
     customUnit: record.custom_unit || undefined,
-    quickAmounts: asNumberArray(record.quick_amounts, [1]),
     active: record.active !== false,
     intervalTemplate: record.interval_template || undefined,
   }
@@ -326,7 +324,6 @@ export const useTaskStore = defineStore('tasks', () => {
       unit: draft.unit || '',
       custom_unit: draft.customUnit || '',
       goal_period: draft.goalPeriod || 'occurrence',
-      quick_amounts: draft.quickAmounts,
       cycle_length: draft.cycleLength || 0,
       program_repeat: draft.programRepeat ?? true,
       program_strict: draft.programStrict ?? false,
@@ -358,7 +355,6 @@ export const useTaskStore = defineStore('tasks', () => {
             target_operator: step.targetOperator || 'gte',
             unit: step.unit || '',
             custom_unit: step.customUnit || '',
-            quick_amounts: step.quickAmounts,
             active: true,
             interval_template: step.completionType === 'interval' ? step.intervalTemplate || '' : '',
           }

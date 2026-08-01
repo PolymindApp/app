@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useDisplay } from 'vuetify'
+import IntervalTypeIcon from '@/components/IntervalTypeIcon.vue'
 import LabeledSlider from '@/components/LabeledSlider.vue'
 import TimerWheelPicker from '@/components/TimerWheelPicker.vue'
 import {
@@ -9,6 +10,7 @@ import {
   startSelectionFeedback,
 } from '@/services/haptics'
 import type { LongPressDragResult } from '@/directives/longPressDrag'
+import { INTERVAL_STEP_TYPES, INTERVAL_TYPE_PRESENTATION } from '@/services/intervalTypes'
 import type { IntervalGroupNode, IntervalNode, IntervalStepKind } from '@/types/domain'
 
 const props = defineProps<{
@@ -37,30 +39,13 @@ const props = defineProps<{
 const { smAndDown } = useDisplay()
 const sequenceDropTypes = ['interval-step', 'interval-group']
 
-const kinds: Array<{ title: string; value: IntervalStepKind }> = [
-  { title: 'Work', value: 'work' },
-  { title: 'Rest', value: 'rest' },
-  { title: 'Prepare', value: 'prepare' },
-  { title: 'Meditation', value: 'meditation' },
-  { title: 'Confirmation', value: 'confirmation' },
-  { title: 'Custom', value: 'custom' },
-]
-
-const kindPresentation: Record<IntervalStepKind, { icon: string; color: string }> = {
-  work: { icon: 'mdi-lightning-bolt', color: '#FFB86B' },
-  rest: { icon: 'mdi-coffee-outline', color: '#8FB8FF' },
-  prepare: { icon: 'mdi-timer-sand', color: '#C7F464' },
-  meditation: { icon: 'mdi-meditation', color: '#D4A5FF' },
-  confirmation: { icon: 'mdi-check-circle-outline', color: '#69D7C5' },
-  custom: { icon: 'mdi-tune-variant', color: '#79C174' },
-}
 const emptyKindPresentation = { icon: 'mdi-timer-outline', color: '#A9B0A7' }
 
 const presentation = computed(() =>
   props.node.type === 'group'
     ? { icon: 'mdi-folder-outline', color: '#C7F464' }
     : props.node.kind
-      ? kindPresentation[props.node.kind]
+      ? INTERVAL_TYPE_PRESENTATION[props.node.kind]
       : emptyKindPresentation,
 )
 const isExpanded = computed(() => props.expandedNodeId === props.node.id)
@@ -88,15 +73,15 @@ const durationSeconds = computed({
   },
 })
 
-function selectKind(kind: IntervalStepKind) {
-  if (props.node.type !== 'step') return
+function selectKind(kind: IntervalStepKind | null) {
+  if (props.node.type !== 'step' || !kind) return
   const currentName = props.node.name.trim()
-  const hasTypeName = kinds.some((option) =>
+  const hasTypeName = INTERVAL_STEP_TYPES.some((option) =>
     option.title.localeCompare(currentName, undefined, { sensitivity: 'accent' }) === 0,
   )
   props.node.kind = kind
   if (!currentName || hasTypeName) {
-    props.node.name = kinds.find((option) => option.value === kind)?.title || kind
+    props.node.name = INTERVAL_STEP_TYPES.find((option) => option.value === kind)?.title || kind
   }
 }
 </script>
@@ -133,6 +118,7 @@ function selectKind(kind: IntervalStepKind) {
         @click="actions.toggle(node.id)"
       >
         <span class="node-index">{{ index + 1 }}</span>
+        <IntervalTypeIcon v-if="node.kind" :kind="node.kind" size="1.25rem" />
         <strong class="node-title text-body-2 text-truncate">{{ nodeTitle }}</strong>
         <v-icon
           class="node-toggle-icon"
@@ -171,27 +157,29 @@ function selectKind(kind: IntervalStepKind) {
     <v-expand-transition v-if="node.type === 'step'">
       <div v-show="isExpanded" :id="editorPanelId" class="node-fields mt-4">
         <v-text-field v-model="node.name" label="Interval name" />
-        <fieldset class="kind-field">
-          <legend>Type</legend>
-          <div class="kind-selector-scroll">
-            <div class="kind-selector" role="radiogroup" aria-label="Interval type">
-              <button
-                v-for="option in kinds"
-                :key="option.value"
-                type="button"
-                class="kind-selector__button"
-                :class="{ 'kind-selector__button--selected': node.kind === option.value }"
-                :style="{ '--kind-color': kindPresentation[option.value].color }"
-                role="radio"
-                :aria-checked="node.kind === option.value"
-                @click="selectKind(option.value)"
-              >
-                <v-icon :icon="kindPresentation[option.value].icon" size="18" />
-                <span>{{ option.title }}</span>
-              </button>
+        <v-select
+          :model-value="node.kind"
+          label="Type"
+          :items="INTERVAL_STEP_TYPES"
+          item-title="title"
+          item-value="value"
+          :menu-props="{ transition: 'slide-y-transition' }"
+          @update:model-value="selectKind"
+        >
+          <template #selection="{ item }">
+            <div class="type-select-option">
+              <IntervalTypeIcon :kind="item.raw.value" size="1.25rem" />
+              <span>{{ item.raw.title }}</span>
             </div>
-          </div>
-        </fieldset>
+          </template>
+          <template #item="{ props: optionProps, item }">
+            <v-list-item v-bind="optionProps">
+              <template #prepend>
+                <IntervalTypeIcon :kind="item.raw.value" size="1.25rem" class="mr-3" />
+              </template>
+            </v-list-item>
+          </template>
+        </v-select>
         <fieldset v-if="node.kind !== 'confirmation'" class="duration-wheel">
           <legend>Duration</legend>
           <TimerWheelPicker v-model="durationSeconds" />
@@ -294,18 +282,9 @@ function selectKind(kind: IntervalStepKind) {
 .node-fields, .nested-nodes { display: grid; gap: 1rem; }
 .nested-nodes { border-left: 3px solid rgb(var(--v-theme-secondary) / .62); }
 .nested-nodes--empty { min-height: 3.5rem; align-items: center; }
-.kind-field, .duration-wheel { min-width: 0; margin: 0; padding: 0; border: 0; }
-.duration-wheel > legend,
-.kind-field > legend { margin-bottom: .5rem; color: rgb(var(--v-theme-on-surface) / .68); font-size: .75rem; font-weight: 800; }
-.kind-selector-scroll { width: 100%; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; }
-.kind-selector-scroll::-webkit-scrollbar { display: none; }
-.kind-selector { display: grid; width: max-content; min-width: 100%; grid-template-columns: repeat(6, minmax(5.5rem, 1fr)); border: 1px solid rgb(var(--v-theme-on-surface) / .2); border-radius: 14px; overflow: hidden; }
-.kind-selector__button { display: flex; min-height: 48px; align-items: center; justify-content: center; gap: .35rem; padding: .5rem .7rem; border: 0; border-right: 1px solid rgb(var(--v-theme-on-surface) / .14); background: rgb(var(--v-theme-surface-variant) / .46); color: rgb(var(--v-theme-on-surface) / .72); font: inherit; font-size: .72rem; font-weight: 750; cursor: pointer; }
-.kind-selector__button:last-child { border-right: 0; }
-.kind-selector__button .v-icon { color: var(--kind-color); }
-.kind-selector__button--selected { background: var(--kind-color); color: #17200f; }
-.kind-selector__button--selected .v-icon { color: #17200f; }
-.kind-selector__button:focus-visible { position: relative; z-index: 1; outline: 3px solid rgb(var(--v-theme-primary) / .55); outline-offset: -3px; }
+.duration-wheel { min-width: 0; margin: 0; padding: 0; border: 0; }
+.duration-wheel > legend { margin-bottom: .5rem; color: rgb(var(--v-theme-on-surface) / .68); font-size: .75rem; font-weight: 800; }
+.type-select-option { display: flex; min-width: 0; align-items: center; gap: .625rem; }
 .group-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
 .group-actions .v-btn { width: 100%; }
 .empty-group { padding: 1rem; border: 1px dashed rgb(var(--v-theme-on-surface) / .18); border-radius: 14px; text-align: center; font-size: .75rem; }

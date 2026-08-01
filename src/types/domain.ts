@@ -28,7 +28,6 @@ export interface Task {
   unit?: string
   customUnit?: string
   goalPeriod?: GoalPeriod
-  quickAmounts: number[]
   cycleLength?: number
   programRepeat?: boolean
   programStrict?: boolean
@@ -48,7 +47,6 @@ export interface ProgramStep {
   targetOperator?: TargetOperator
   unit?: string
   customUnit?: string
-  quickAmounts: number[]
   active: boolean
   intervalTemplate?: string
 }
@@ -99,7 +97,7 @@ export interface TaskDraft extends Omit<Task, 'id'> {
   steps: ProgramStepDraft[]
 }
 
-export type IntervalStepKind = 'work' | 'rest' | 'prepare' | 'meditation' | 'confirmation' | 'custom'
+export type IntervalStepKind = 'train' | 'work' | 'rest' | 'prepare' | 'meditation' | 'confirmation' | 'custom'
 export type IntervalSessionStatus = 'running' | 'paused' | 'completed' | 'ended'
 
 export interface IntervalStepNode {
@@ -240,6 +238,7 @@ export interface TrackingEntryDraft extends Omit<TrackingEntry, 'id'> {
 }
 
 export type TrackingSourceKind = 'tracker' | 'task' | 'interval'
+export type TrackingFactorMode = 'presence' | 'quantity'
 
 export interface TrackingAnalysisSource {
   id: string
@@ -248,9 +247,25 @@ export interface TrackingAnalysisSource {
   role: TrackerRole
   favorableDirection: FavorableDirection
   unit: string
+  color: string
+  factorMode: TrackingFactorMode
+  scaleMin?: number
+  scaleMax?: number
 }
 
 export interface TrackingDailyValue {
   date: string
   value: number
+}
+
+export interface TrackingInsightPoint {
+  date: string
+  factorValue: number | null
+  outcomeValue: number | null
+}
+
+export interface TrackingRelationshipPoint {
+  date: string
+  factorValue: number
+  outcomeValue: number
 }

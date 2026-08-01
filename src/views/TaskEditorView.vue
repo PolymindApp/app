@@ -6,7 +6,7 @@ import { useRoute, useRouter } from 'vue-router'
 import ColorSwatchPicker from '@/components/ColorSwatchPicker.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import DatePickerField from '@/components/DatePickerField.vue'
-import QuickAmountsEditor from '@/components/QuickAmountsEditor.vue'
+import FormActionBar from '@/components/FormActionBar.vue'
 import type { LongPressDragResult } from '@/directives/longPressDrag'
 import { formatIntervalDuration, intervalDuration, intervalStepCount } from '@/services/intervals'
 import { useIntervalStore } from '@/stores/intervals'
@@ -67,7 +67,6 @@ const draft = reactive<TaskDraft>({
   unit: 'count',
   customUnit: '',
   goalPeriod: 'occurrence',
-  quickAmounts: [1, 5, 10],
   cycleLength: 7,
   programRepeat: true,
   programStrict: false,
@@ -100,9 +99,9 @@ function intervalSummaryForStep(step: ProgramStepDraft) {
 watch(() => draft.type, (type) => {
   if (typeLocked.value) return
   if (type === 'duration') {
-    draft.unit = 'hours'; draft.targetValue = 5; draft.quickAmounts = [.25, .5, 1]
+    draft.unit = 'hours'; draft.targetValue = 5
   } else if (type === 'daily_total') {
-    draft.unit = 'g'; draft.targetValue = 150; draft.quickAmounts = [10, 25, 50]
+    draft.unit = 'g'; draft.targetValue = 150
   } else if (type === 'program' && !draft.steps.length) addStep(false)
 })
 
@@ -138,7 +137,6 @@ async function addStep(focusName = true) {
     targetOperator: 'gte',
     unit: 'count',
     customUnit: '',
-    quickAmounts: [1, 5, 10],
     active: true,
     intervalTemplate: undefined,
   })
@@ -386,10 +384,6 @@ async function removeTask() {
           label="Tracking window"
           :items="[{ title: 'Each scheduled day', value: 'occurrence' }, { title: 'Monday–Sunday total', value: 'week' }]"
         />
-        <QuickAmountsEditor
-          v-model="draft.quickAmounts"
-          :unit="draft.customUnit || draft.unit || ''"
-        />
       </v-card>
 
       <template v-if="draft.type === 'program'">
@@ -469,12 +463,6 @@ async function removeTask() {
                 <v-select v-model="step.unit" label="Unit" :items="units" />
                 <v-text-field v-if="step.unit === 'custom'" v-model="step.customUnit" label="Custom unit" />
               </div>
-              <QuickAmountsEditor
-                v-if="step.completionType === 'quantity'"
-                v-model="step.quickAmounts"
-                :unit="step.customUnit || step.unit || ''"
-                class="mb-4"
-              />
               <div v-if="step.completionType === 'interval'" class="field-stack mb-4">
                 <template v-if="intervalStore.templates.length">
                   <v-select
@@ -543,34 +531,16 @@ async function removeTask() {
       </template>
     </v-form>
 
-    <div class="save-bar page-action-area">
-      <div class="save-bar__inner">
-        <v-btn
-          class="save-bar__save"
-          color="secondary"
-          :loading="saving"
-          @click="save"
-        >
-          Save
-        </v-btn>
-        <v-btn
-          class="save-bar__cancel"
-          variant="text"
-          @click="router.back()"
-        >
-          Cancel
-        </v-btn>
-        <v-btn
-          v-if="isEditing"
-          class="save-bar__delete"
-          icon="mdi-delete-outline"
-          variant="text"
-          color="error"
-          aria-label="Delete routine"
-          @click="deleteDialog = true"
-        />
-      </div>
-    </div>
+    <FormActionBar
+      :primary-text="isEditing ? 'Save' : 'Create'"
+      :loading="saving"
+      :show-delete="isEditing"
+      delete-label="Delete routine"
+      :delete-disabled="deleting"
+      @submit="save"
+      @cancel="router.back()"
+      @delete="deleteDialog = true"
+    />
 
     <ConfirmDialog
       v-model="deleteDialog"
@@ -625,24 +595,12 @@ async function removeTask() {
 .step-actions { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
 .editor-page,
 .editor-page--editing { padding-bottom: 6rem; }
-.save-bar { position: fixed; z-index: 20; right: 0; bottom: calc(72px + env(safe-area-inset-bottom)); left: 0; padding: .75rem 1rem; border-top: 1px solid rgba(255,255,255,.08); background: rgba(16,19,16,.9); backdrop-filter: blur(14px); }
-.save-bar__inner { display: flex; width: 100%; max-width: 760px; margin: 0 auto; align-items: center; gap: .5rem; }
-.save-bar__inner > .v-btn { height: 48px; }
-.save-bar__save,
-.save-bar__cancel { min-width: 0; flex: 1 1 0; }
-.save-bar__delete { order: 1; width: 48px; min-width: 48px; flex: 0 0 48px; }
-.save-bar__cancel { order: 2; margin-left: auto; }
-.save-bar__save { order: 3; }
-@media (min-width: 960px) {
+@media (min-width: 60rem) {
   .editor-type { padding: 2rem; }
-  .save-bar { left: 224px; bottom: 0; }
   .editor-page,
-  .editor-page--editing { max-width: 760px; padding-bottom: 6rem; }
-  .save-bar__inner { justify-content: flex-end; }
-  .save-bar__save,
-  .save-bar__cancel { max-width: 160px; }
+  .editor-page--editing { max-width: 47.5rem; padding-bottom: 6rem; }
 }
-@media (min-width: 600px) {
+@media (min-width: 37.5rem) {
   .type-selector { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .weekday-picker { display: flex; width: 100%; }
   .weekday-picker :deep(.v-btn) { width: auto; min-width: 0; flex: 1 1 0; }

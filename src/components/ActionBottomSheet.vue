@@ -5,8 +5,10 @@ withDefaults(defineProps<{
   title: string
   description?: string
   ariaLabel?: string
+  hideTitle?: boolean
 }>(), {
   ariaLabel: 'Actions',
+  hideTitle: false,
 })
 
 const model = defineModel<boolean>({ default: false })
@@ -176,9 +178,13 @@ onBeforeUnmount(() => {
     class="action-bottom-sheet"
     :aria-label="ariaLabel"
   >
-    <div class="action-bottom-sheet__header" @pointerdown="onPointerDown">
+    <div
+      class="action-bottom-sheet__header"
+      :class="{ 'action-bottom-sheet__header--handle-only': hideTitle }"
+      @pointerdown="onPointerDown"
+    >
       <div class="action-bottom-sheet__handle" aria-hidden="true" />
-      <div class="px-4 pt-2 pb-2">
+      <div v-if="!hideTitle" class="px-4 pt-2 pb-2">
         <strong class="d-block text-truncate">{{ title }}</strong>
         <p v-if="description" class="action-bottom-sheet__description mt-1 mb-0">
           {{ description }}
@@ -216,6 +222,7 @@ onBeforeUnmount(() => {
 }
 
 .action-bottom-sheet--dragging .action-bottom-sheet__header { cursor: grabbing; }
+.action-bottom-sheet__header--handle-only { padding-bottom: .5rem; }
 
 /* The drawer scrim is a sibling rendered by Vuetify and remains in the DOM
    while fading out. Once it is leaving, it must no longer consume a quick

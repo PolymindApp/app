@@ -14,7 +14,8 @@ const router = useRouter()
 const { smAndDown } = useDisplay()
 const pendingDelete = ref<IntervalTemplate>()
 const selectedTemplate = ref<IntervalTemplate>()
-const actionsDrawer = ref(false)
+const primaryActionsDrawer = ref(false)
+const overflowActionsDrawer = ref(false)
 const deleting = ref(false)
 const reordering = ref(false)
 
@@ -69,32 +70,41 @@ async function reorderByDrag(result: LongPressDragResult) {
 }
 
 function startTemplate(template: IntervalTemplate) {
-  actionsDrawer.value = false
+  primaryActionsDrawer.value = false
+  overflowActionsDrawer.value = false
   return router.push(`/intervals/run/template/${template.id}`)
 }
 
 function editTemplate(template: IntervalTemplate) {
-  actionsDrawer.value = false
+  primaryActionsDrawer.value = false
+  overflowActionsDrawer.value = false
   return router.push(`/intervals/${template.id}/edit`)
 }
 
-function openActions(template: IntervalTemplate) {
+function openPrimaryActions(template: IntervalTemplate) {
+  overflowActionsDrawer.value = false
   selectedTemplate.value = template
-  actionsDrawer.value = true
+  primaryActionsDrawer.value = true
+}
+
+function openOverflowActions(template: IntervalTemplate) {
+  primaryActionsDrawer.value = false
+  selectedTemplate.value = template
+  overflowActionsDrawer.value = true
 }
 
 async function duplicateTemplate(template: IntervalTemplate) {
-  actionsDrawer.value = false
+  overflowActionsDrawer.value = false
   await store.duplicateTemplate(template)
 }
 
 async function moveTemplate(template: IntervalTemplate, direction: -1 | 1) {
-  actionsDrawer.value = false
+  overflowActionsDrawer.value = false
   await move(template, direction)
 }
 
 function requestDelete(template: IntervalTemplate) {
-  actionsDrawer.value = false
+  overflowActionsDrawer.value = false
   pendingDelete.value = template
 }
 </script>
@@ -113,10 +123,10 @@ function requestDelete(template: IntervalTemplate) {
       class="surface-card pa-4 interval-plan-card"
       role="button"
       tabindex="0"
-      :aria-label="`Start ${template.name}`"
-      @click="startTemplate(template)"
-      @keydown.enter="startTemplate(template)"
-      @keydown.space.prevent="startTemplate(template)"
+      :aria-label="`Open ${template.name} actions`"
+      @click="openPrimaryActions(template)"
+      @keydown.enter="openPrimaryActions(template)"
+      @keydown.space.prevent="openPrimaryActions(template)"
     >
       <div class="d-flex align-start ga-3">
         <div class="interval-template-icon" :style="{ background: template.color }">
@@ -142,8 +152,8 @@ function requestDelete(template: IntervalTemplate) {
             icon="mdi-dots-horizontal"
             variant="text"
             size="small"
-            :aria-label="`${template.name} actions`"
-            @click="openActions(template)"
+            :aria-label="`${template.name} more actions`"
+            @click="openOverflowActions(template)"
           />
           <v-menu v-else location="bottom end">
             <template #activator="{ props: menuProps }">
@@ -152,12 +162,10 @@ function requestDelete(template: IntervalTemplate) {
                 icon="mdi-dots-horizontal"
                 variant="text"
                 size="small"
-                aria-label="Interval template actions"
+                :aria-label="`${template.name} more actions`"
               />
             </template>
             <v-list density="compact">
-              <v-list-item prepend-icon="mdi-play" title="Start" @click="startTemplate(template)" />
-              <v-list-item prepend-icon="mdi-pencil-outline" title="Edit" @click="editTemplate(template)" />
               <v-list-item prepend-icon="mdi-content-copy" title="Duplicate" @click="duplicateTemplate(template)" />
               <v-list-item prepend-icon="mdi-arrow-up" title="Move up" :disabled="index === 0" @click="moveTemplate(template, -1)" />
               <v-list-item prepend-icon="mdi-arrow-down" title="Move down" :disabled="index === store.templates.length - 1" @click="moveTemplate(template, 1)" />
@@ -177,14 +185,25 @@ function requestDelete(template: IntervalTemplate) {
   </v-card>
 
   <ActionBottomSheet
-    v-if="smAndDown"
-    v-model="actionsDrawer"
+    v-model="primaryActionsDrawer"
     :title="selectedTemplate?.name || 'Interval actions'"
-    :aria-label="selectedTemplate ? `${selectedTemplate.name} actions` : 'Interval actions'"
+    hide-title
+    :aria-label="selectedTemplate ? `${selectedTemplate.name} play or edit actions` : 'Interval actions'"
   >
     <template v-if="selectedTemplate">
-      <v-list-item prepend-icon="mdi-play" title="Start" rounded="lg" @click="startTemplate(selectedTemplate)" />
+      <v-list-item prepend-icon="mdi-play" title="Play" rounded="lg" @click="startTemplate(selectedTemplate)" />
       <v-list-item prepend-icon="mdi-pencil-outline" title="Edit" rounded="lg" @click="editTemplate(selectedTemplate)" />
+    </template>
+  </ActionBottomSheet>
+
+  <ActionBottomSheet
+    v-if="smAndDown"
+    v-model="overflowActionsDrawer"
+    :title="selectedTemplate?.name || 'Interval actions'"
+    hide-title
+    :aria-label="selectedTemplate ? `${selectedTemplate.name} more actions` : 'Interval actions'"
+  >
+    <template v-if="selectedTemplate">
       <v-list-item prepend-icon="mdi-content-copy" title="Duplicate" rounded="lg" @click="duplicateTemplate(selectedTemplate)" />
       <v-list-item
         prepend-icon="mdi-arrow-up"

@@ -1,10 +1,14 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
-import { addDays, format, isToday, parseISO } from 'date-fns'
+import { addDays, format, isToday, parseISO, startOfWeek } from 'date-fns'
 import { useRoute, useRouter } from 'vue-router'
+import { Ripple } from 'vuetify/directives'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import DateTimePickerField from '@/components/DateTimePickerField.vue'
 import LabeledSlider from '@/components/LabeledSlider.vue'
+import TrackingRatingValue from '@/components/TrackingRatingValue.vue'
+import TrackingWeeklyBarChart from '@/components/TrackingWeeklyBarChart.vue'
+import WeekDateNavigator from '@/components/WeekDateNavigator.vue'
 import { formatTrackingValue, TRACKING_PRESETS, trackerDraftFromPreset } from '@/services/tracking'
 import { reconcileTrackingReminders } from '@/services/trackingReminders'
 import { useTrackingStore } from '@/stores/tracking'
@@ -14,6 +18,9 @@ const route = useRoute()
 const router = useRouter()
 const store = useTrackingStore()
 const selectedDate = ref(new Date())
+const visibleWeekStart = ref(startOfWeek(selectedDate.value, { weekStartsOn: 1 }))
+const trackerActionsOpen = ref(false)
+const actionTracker = ref<TrackingTracker>()
 const sheetOpen = ref(false)
 const sheetTracker = ref<TrackingTracker>()
 const editingEntry = ref<TrackingEntry>()
@@ -23,24 +30,44 @@ const note = ref('')
 const saving = ref(false)
 const addingPreset = ref('')
 const error = ref('')
+const weeklyChartLoading = ref(false)
+const weeklyChartError = ref('')
+let weeklyLoadRequest = 0
+const vRipple = Ripple
 
 const dateKey = computed(() => format(selectedDate.value, 'yyyy-MM-dd'))
-const dateTitle = computed(() => isToday(selectedDate.value) ? 'Today' : format(selectedDate.value, 'EEEE, MMM d'))
+const visibleWeekLabel = computed(() =>
+  `${format(visibleWeekStart.value, 'MMM d')}–${format(addDays(visibleWeekStart.value, 6), 'MMM d')}`,
+)
 const dayEntries = computed(() => store.entries
   .filter((entry) => entry.localDate === dateKey.value)
   .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt)))
 const outcomes = computed(() => store.activeTrackers.filter((tracker) => tracker.role === 'outcome'))
 const factors = computed(() => store.activeTrackers.filter((tracker) => tracker.role === 'factor'))
-const canGoForward = computed(() => dateKey.value < format(new Date(), 'yyyy-MM-dd'))
 const archivedTrackers = computed(() => store.trackers.filter((tracker) => !tracker.active))
 
-function trackerEntries(tracker: TrackingTracker) {
-  return store.entriesFor(tracker.id, dateKey.value)
+function trackerForEntry(entry: TrackingEntry) {
+  return store.trackers.find((tracker) => tracker.id === entry.tracker)
 }
 
-function trackerSummary(tracker: TrackingTracker) {
-  const daily = store.dailyValues(tracker.id).find((item) => item.date === dateKey.value)
-  return daily ? formatTrackingValue(tracker, daily.value) : 'Not logged'
+function openTrackerActions(tracker: TrackingTracker) {
+  actionTracker.value = tracker
+  trackerActionsOpen.value = true
+}
+
+async function logActionTracker() {
+  const tracker = actionTracker.value
+  if (!tracker) return
+  trackerActionsOpen.value = false
+  await nextTick()
+  startLog(tracker)
+}
+
+function editActionTracker() {
+  const tracker = actionTracker.value
+  if (!tracker) return
+  trackerActionsOpen.value = false
+  void router.push(`/tracking/${tracker.id}/edit`)
 }
 
 function startLog(tracker: TrackingTracker, entry?: TrackingEntry) {
@@ -127,12 +154,34 @@ function openRequestedTracker() {
 }
 
 watch(() => route.query.log, () => nextTick(openRequestedTracker))
+watch(visibleWeekStart, () => {
+  if (store.loaded) void loadVisibleWeekEntries()
+})
 
 onMounted(async () => {
   await store.load().catch(() => undefined)
+  if (store.loaded) await loadVisibleWeekEntries()
   await reconcileTrackingReminders(store.trackers).catch(() => undefined)
   openRequestedTracker()
 })
+
+async function loadVisibleWeekEntries() {
+  const request = ++weeklyLoadRequest
+  weeklyChartLoading.value = true
+  weeklyChartError.value = ''
+  try {
+    await store.loadRange(
+      format(visibleWeekStart.value, 'yyyy-MM-dd'),
+      format(addDays(visibleWeekStart.value, 6), 'yyyy-MM-dd'),
+    )
+  } catch (cause) {
+    if (request === weeklyLoadRequest) {
+      weeklyChartError.value = cause instanceof Error ? cause.message : 'Could not load this week’s entries.'
+    }
+  } finally {
+    if (request === weeklyLoadRequest) weeklyChartLoading.value = false
+  }
+}
 </script>
 
 <template>
@@ -141,29 +190,17 @@ onMounted(async () => {
       {{ error || store.error }}
     </v-alert>
 
-    <div class="tracking-toolbar mb-5">
-      <v-btn icon="mdi-chevron-left" variant="tonal" aria-label="Previous day" @click="selectedDate = addDays(selectedDate, -1)" />
-      <button class="date-heading" type="button" @click="selectedDate = new Date()">
-        <strong>{{ dateTitle }}</strong>
-        <span>{{ format(selectedDate, 'MMMM d, yyyy') }}</span>
-      </button>
-      <v-btn icon="mdi-chevron-right" variant="tonal" :disabled="!canGoForward" aria-label="Next day" @click="selectedDate = addDays(selectedDate, 1)" />
-    </div>
+    <WeekDateNavigator
+      v-model="selectedDate"
+      v-model:week-start="visibleWeekStart"
+      class="mb-5"
+    />
 
     <div v-if="store.loading && !store.loaded" class="d-flex justify-center py-12">
       <v-progress-circular indeterminate color="secondary" />
     </div>
 
     <template v-else-if="store.trackers.length">
-      <v-card class="insight-card surface-card pa-5 mb-6" to="/tracking/insights/compare">
-        <div class="insight-card__icon"><v-icon icon="mdi-chart-box-outline" /></div>
-        <div>
-          <strong>Explore your patterns</strong>
-          <p>Compare logged factors with outcomes across dates.</p>
-        </div>
-        <v-icon icon="mdi-chevron-right" />
-      </v-card>
-
       <section v-if="factors.length">
         <div class="section-heading"><h2>Things you did</h2><span class="muted text-caption">{{ factors.length }}</span></div>
         <div class="tracker-grid">
@@ -171,16 +208,22 @@ onMounted(async () => {
             v-for="tracker in factors"
             :key="tracker.id"
             class="tracker-card surface-card"
-            @click="startLog(tracker)"
+            role="button"
+            tabindex="0"
+            :aria-label="`Open ${tracker.name} actions`"
+            @click="openTrackerActions(tracker)"
+            @keydown.enter="openTrackerActions(tracker)"
+            @keydown.space.prevent="openTrackerActions(tracker)"
           >
             <div class="tracker-card__accent" :style="{ background: tracker.color }" />
             <div class="tracker-card__body">
               <div class="tracker-card__icon" :style="{ color: tracker.color }"><v-icon :icon="tracker.icon" /></div>
               <div class="min-width-0 flex-grow-1">
                 <strong class="d-block text-truncate">{{ tracker.name }}</strong>
-                <span :class="{ 'tracker-card__logged': trackerEntries(tracker).length }">{{ trackerSummary(tracker) }}</span>
+                <p class="tracker-card__description">
+                  {{ tracker.description || 'No description added.' }}
+                </p>
               </div>
-              <v-btn icon="mdi-pencil-outline" variant="text" size="small" :to="`/tracking/${tracker.id}/edit`" @click.stop />
             </div>
           </v-card>
         </div>
@@ -193,37 +236,61 @@ onMounted(async () => {
             v-for="tracker in outcomes"
             :key="tracker.id"
             class="tracker-card surface-card"
-            @click="startLog(tracker)"
+            role="button"
+            tabindex="0"
+            :aria-label="`Open ${tracker.name} actions`"
+            @click="openTrackerActions(tracker)"
+            @keydown.enter="openTrackerActions(tracker)"
+            @keydown.space.prevent="openTrackerActions(tracker)"
           >
             <div class="tracker-card__accent" :style="{ background: tracker.color }" />
             <div class="tracker-card__body">
               <div class="tracker-card__icon" :style="{ color: tracker.color }"><v-icon :icon="tracker.icon" /></div>
               <div class="min-width-0 flex-grow-1">
                 <strong class="d-block text-truncate">{{ tracker.name }}</strong>
-                <span :class="{ 'tracker-card__logged': trackerEntries(tracker).length }">{{ trackerSummary(tracker) }}</span>
+                <p class="tracker-card__description">
+                  {{ tracker.description || 'No description added.' }}
+                </p>
               </div>
-              <v-btn icon="mdi-pencil-outline" variant="text" size="small" :to="`/tracking/${tracker.id}/edit`" @click.stop />
             </div>
           </v-card>
         </div>
       </section>
 
+      <v-btn
+        block
+        size="large"
+        class="mt-6"
+        color="secondary"
+        prepend-icon="mdi-plus"
+        to="/tracking/new"
+      >
+        New tracker
+      </v-btn>
+
       <section>
         <div class="section-heading"><h2>Timeline</h2><span class="muted text-caption">{{ dayEntries.length }}</span></div>
         <v-card v-if="dayEntries.length" class="surface-card pa-2">
-          <v-list bg-color="transparent">
+          <v-list bg-color="transparent" class="overflow-x-hidden">
             <v-list-item
               v-for="entry in dayEntries"
               :key="entry.id"
-              :title="store.trackers.find(item => item.id === entry.tracker)?.name || 'Archived tracker'"
+              :title="trackerForEntry(entry)?.name || 'Archived tracker'"
               :subtitle="`${format(new Date(entry.occurredAt), 'h:mm a')}${entry.note ? ` · ${entry.note}` : ''}`"
-              @click="store.trackers.find(item => item.id === entry.tracker) && startLog(store.trackers.find(item => item.id === entry.tracker)!, entry)"
+              @click="trackerForEntry(entry) && startLog(trackerForEntry(entry)!, entry)"
             >
               <template #prepend>
-                <v-icon :icon="store.trackers.find(item => item.id === entry.tracker)?.icon || 'mdi-circle-outline'" />
+                <v-icon :icon="trackerForEntry(entry)?.icon || 'mdi-circle-outline'" />
               </template>
               <template #append>
-                <strong>{{ store.trackers.find(item => item.id === entry.tracker) ? formatTrackingValue(store.trackers.find(item => item.id === entry.tracker)!, entry.value) : entry.value }}</strong>
+                <TrackingRatingValue
+                  v-if="trackerForEntry(entry)?.kind === 'rating'"
+                  :value="entry.value"
+                  :max="trackerForEntry(entry)?.scaleMax"
+                  :color="trackerForEntry(entry)?.color"
+                  :label="trackerForEntry(entry)?.name"
+                />
+                <strong v-else>{{ trackerForEntry(entry) ? formatTrackingValue(trackerForEntry(entry)!, entry.value) : entry.value }}</strong>
               </template>
             </v-list-item>
           </v-list>
@@ -231,9 +298,45 @@ onMounted(async () => {
         <v-card v-else class="surface-card pa-7 text-center"><p class="muted text-body-2">No logs for this day yet.</p></v-card>
       </section>
 
-      <div class="tracking-actions mt-6">
-        <v-btn variant="tonal" prepend-icon="mdi-plus" to="/tracking/new">New tracker</v-btn>
-      </div>
+      <v-card class="insight-card surface-card pa-5 mt-6">
+        <router-link
+          v-ripple
+          class="insight-card__header"
+          to="/tracking/insights/compare"
+          aria-label="Open tracking insights"
+        >
+          <div class="insight-card__icon"><v-icon icon="mdi-chart-box-outline" /></div>
+          <div class="min-width-0">
+            <strong>Explore your patterns</strong>
+            <p>See how every tracker changed across the week.</p>
+          </div>
+          <span class="insight-card__chevron" aria-hidden="true">
+            <v-icon icon="mdi-chevron-right" />
+          </span>
+        </router-link>
+
+        <div class="weekly-hint mt-4">
+          <v-icon icon="mdi-calendar-week-outline" size="18" />
+          <span><strong>{{ visibleWeekLabel }}</strong> · This chart shows the full visible week, not only the selected day.</span>
+        </div>
+
+        <v-progress-linear
+          v-if="weeklyChartLoading"
+          indeterminate
+          color="secondary"
+          class="mt-4"
+          aria-label="Loading weekly tracking entries"
+        />
+        <v-alert v-if="weeklyChartError" type="error" variant="tonal" class="mt-4">
+          {{ weeklyChartError }}
+        </v-alert>
+        <TrackingWeeklyBarChart
+          :trackers="store.trackers"
+          :entries="store.entries"
+          :week-start="visibleWeekStart"
+          class="mt-4"
+        />
+      </v-card>
 
       <section v-if="archivedTrackers.length">
         <div class="section-heading"><h2>Archived</h2><span class="muted text-caption">{{ archivedTrackers.length }}</span></div>
@@ -273,13 +376,34 @@ onMounted(async () => {
     </template>
 
     <ActionBottomSheet
+      v-model="trackerActionsOpen"
+      :title="actionTracker?.name || 'Tracker actions'"
+      hide-title
+      :aria-label="actionTracker ? `${actionTracker.name} log or edit actions` : 'Tracker actions'"
+    >
+      <template v-if="actionTracker">
+        <v-list-item
+          prepend-icon="mdi-plus-circle-outline"
+          title="Log"
+          rounded="lg"
+          @click="logActionTracker"
+        />
+        <v-list-item
+          prepend-icon="mdi-pencil-outline"
+          title="Edit"
+          rounded="lg"
+          @click="editActionTracker"
+        />
+      </template>
+    </ActionBottomSheet>
+
+    <ActionBottomSheet
       v-model="sheetOpen"
       :title="editingEntry ? `Edit ${sheetTracker?.name || 'log'}` : `Log ${sheetTracker?.name || ''}`"
       :description="sheetTracker?.description"
     >
       <template #content>
         <div v-if="sheetTracker" class="d-flex flex-column ga-4">
-          <DateTimePickerField v-model="occurredLocal" label="When" />
           <LabeledSlider
             v-if="sheetTracker.kind === 'rating'"
             v-model="value"
@@ -293,6 +417,7 @@ onMounted(async () => {
           <v-number-input v-else-if="sheetTracker.kind === 'number'" v-model="value" :label="sheetTracker.unit ? `Value (${sheetTracker.unit})` : 'Value'" variant="outlined" hide-details />
           <v-number-input v-else-if="sheetTracker.kind === 'duration'" v-model="value" label="Minutes" :min="0" variant="outlined" hide-details />
           <v-textarea v-model="note" label="Note (optional)" rows="2" auto-grow variant="outlined" hide-details />
+          <DateTimePickerField v-model="occurredLocal" label="When" />
           <div v-if="sheetTracker.kind === 'yes_no'" class="sheet-buttons">
             <v-btn color="secondary" :loading="saving" @click="saveLog(1)">Yes</v-btn>
             <v-btn variant="tonal" :disabled="saving" @click="saveLog(0)">No</v-btn>
@@ -310,22 +435,23 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.tracking-toolbar { display: grid; grid-template-columns: 44px 1fr 44px; align-items: center; gap: .75rem; }
-.date-heading { display: flex; min-width: 0; flex-direction: column; align-items: center; border: 0; background: none; color: inherit; }
-.date-heading strong { font-size: 1rem; }
-.date-heading span { color: rgb(var(--v-theme-on-surface) / .56); font-size: .72rem; }
-.insight-card { display: grid; grid-template-columns: 44px 1fr auto; align-items: center; gap: 1rem; background: linear-gradient(135deg, rgb(var(--v-theme-surface)), rgb(var(--v-theme-secondary) / .08)); }
-.insight-card__icon { display: grid; width: 44px; height: 44px; place-items: center; border-radius: 14px; background: rgb(var(--v-theme-secondary)); color: rgb(var(--v-theme-on-secondary)); }
+.insight-card { background: linear-gradient(135deg, rgb(var(--v-theme-surface)), rgba(var(--v-theme-secondary), .08)); }
+.insight-card__header { position: relative; display: grid; grid-template-columns: 2.75rem minmax(0, 1fr) 2.75rem; align-items: center; gap: 1rem; overflow: hidden; border-radius: .75rem; color: inherit; outline: none; text-decoration: none; }
+.insight-card__header:focus-visible { outline: .125rem solid rgba(var(--v-theme-secondary), .72); outline-offset: .1875rem; }
+.insight-card__icon { display: grid; width: 2.75rem; height: 2.75rem; place-items: center; border-radius: .875rem; background: rgb(var(--v-theme-secondary)); color: rgb(var(--v-theme-on-secondary)); }
+.insight-card__chevron { display: grid; width: 2.75rem; height: 2.75rem; place-items: center; }
 .insight-card p { margin-top: .2rem; color: rgb(var(--v-theme-on-surface) / .58); font-size: .75rem; }
+.weekly-hint { display: flex; align-items: flex-start; gap: .5rem; padding: .75rem; border-radius: .75rem; background: rgba(var(--v-theme-secondary), .08); color: rgba(var(--v-theme-on-surface), .66); font-size: .72rem; line-height: 1.45; }
+.weekly-hint .v-icon { flex: 0 0 auto; color: rgb(var(--v-theme-secondary)); }
+.weekly-hint strong { color: rgb(var(--v-theme-on-surface)); }
 .tracker-grid { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 270px), 1fr)); }
 .tracker-card { position: relative; overflow: hidden; cursor: pointer; }
+.tracker-card:focus-visible { outline: .125rem solid rgba(var(--v-theme-secondary), .72); outline-offset: .1875rem; }
 .tracker-card__accent { position: absolute; top: 0; bottom: 0; left: 0; width: 4px; }
 .tracker-card__body { display: flex; align-items: center; gap: .85rem; padding: 1rem 1rem 1rem 1.2rem; }
 .tracker-card__icon { display: grid; width: 38px; height: 38px; flex: 0 0 auto; place-items: center; border-radius: 12px; background: currentColor; }
 .tracker-card__icon :deep(.v-icon) { color: rgb(var(--v-theme-background)); }
-.tracker-card span { color: rgb(var(--v-theme-on-surface) / .48); font-size: .72rem; }
-.tracker-card .tracker-card__logged { color: rgb(var(--v-theme-secondary)); font-weight: 800; }
-.tracking-actions { display: flex; justify-content: center; }
+.tracker-card__description { margin-top: .2rem; color: rgba(var(--v-theme-on-surface), .58); font-size: .72rem; line-height: 1.45; }
 .preset-grid { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); }
 .preset-card { display: grid; min-height: 150px; grid-template-rows: 1fr auto; align-items: start; gap: 1rem; }
 .preset-card__content { display: flex; align-items: flex-start; gap: .8rem; }

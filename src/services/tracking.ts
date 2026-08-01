@@ -7,6 +7,9 @@ import type {
   TrackerRole,
   TrackingDailyValue,
   TrackingEntry,
+  TrackingFactorMode,
+  TrackingInsightPoint,
+  TrackingRelationshipPoint,
   TrackingTracker,
   TrackingTrackerDraft,
 } from '@/types/domain'
@@ -42,6 +45,27 @@ export interface TrackingComparisonResult {
   direction: 'better' | 'worse' | 'mixed'
   summary: string
   caution: string
+}
+
+export interface TrackingTrendResult {
+  count: number
+  slope: number
+  intercept: number
+  correlation: number
+  hasVariation: boolean
+}
+
+export interface TrackingInsightResult {
+  points: TrackingInsightPoint[]
+  matched: TrackingRelationshipPoint[]
+  mode: TrackingFactorMode
+  ready: boolean
+  earlySignal: boolean
+  direction: 'better' | 'worse' | 'mixed'
+  summary: string
+  caution: string
+  comparison?: TrackingComparisonResult
+  trend?: TrackingTrendResult
 }
 
 export const TRACKING_PRESETS: TrackingPreset[] = [
@@ -151,6 +175,115 @@ export function compareDateRanges(
     outcome.filter((item) => inRange(item, secondRange)).map((item) => item.value),
     favorableDirection,
   )
+}
+
+export function buildTrackingInsight(
+  factor: TrackingDailyValue[],
+  outcome: TrackingDailyValue[],
+  range: { start: string; end: string },
+  mode: TrackingFactorMode,
+  favorableDirection: FavorableDirection,
+  labels: { factor: string; outcome: string },
+): TrackingInsightResult {
+  const factorByDate = new Map(factor.map((item) => [item.date, item.value]))
+  const outcomeByDate = new Map(outcome.map((item) => [item.date, item.value]))
+  const points = dateRangeKeys(range.start, range.end).map((date) => ({
+    date,
+    factorValue: factorByDate.get(date) ?? null,
+    outcomeValue: outcomeByDate.get(date) ?? null,
+  }))
+  const matched = points.flatMap<TrackingRelationshipPoint>((point) =>
+    point.factorValue === null || point.outcomeValue === null
+      ? []
+      : [{
+          date: point.date,
+          factorValue: point.factorValue,
+          outcomeValue: point.outcomeValue,
+        }],
+  )
+  const caution = 'This shows an association in your logs, not proof that the factor caused the outcome.'
+
+  if (mode === 'presence') {
+    const comparison = comparePresentAbsent(factor, outcome, favorableDirection)
+    const ready = comparison.ready
+    const presentMean = comparison.first.mean
+    const absentMean = comparison.second.mean
+    const difference = Math.abs(presentMean - absentMean)
+    const summary = !ready
+      ? `Log ${labels.factor} both when it happens and when it does not. Each group needs at least 5 ${labels.outcome} observations.`
+      : `${labels.outcome} averaged ${formatNumber(presentMean)} when ${labels.factor} was present and ${formatNumber(absentMean)} when it was absent—a difference of ${formatNumber(difference)}.`
+    return {
+      points,
+      matched,
+      mode,
+      ready,
+      earlySignal: comparison.earlySignal,
+      direction: comparison.direction,
+      summary,
+      caution,
+      comparison,
+    }
+  }
+
+  const trend = linearTrend(matched)
+  const ready = trend.count >= 5 && trend.hasVariation
+  const earlySignal = ready && trend.count < 14
+  const direction = trendDirection(trend, favorableDirection)
+  const summary = !trend.count
+    ? `No dates in this range contain both ${labels.factor} and ${labels.outcome}.`
+    : trend.count < 5
+      ? `Only ${trend.count} paired ${trend.count === 1 ? 'day is' : 'days are'} available. At least 5 are needed to describe a trend.`
+      : !trend.hasVariation
+        ? `${labels.factor} did not vary enough in this range to show a relationship.`
+        : Math.abs(trend.correlation) < .1
+          ? `There is no clear linear pattern between ${labels.factor} and ${labels.outcome} in these logs.`
+          : `When ${labels.factor} was higher, ${labels.outcome} tended to be ${trend.slope > 0 ? 'higher' : 'lower'} across ${trend.count} paired days.`
+  return {
+    points,
+    matched,
+    mode,
+    ready,
+    earlySignal,
+    direction,
+    summary,
+    caution,
+    trend,
+  }
+}
+
+export function linearTrend(points: TrackingRelationshipPoint[]): TrackingTrendResult {
+  const count = points.length
+  if (!count) return { count: 0, slope: 0, intercept: 0, correlation: 0, hasVariation: false }
+  const meanX = points.reduce((sum, point) => sum + point.factorValue, 0) / count
+  const meanY = points.reduce((sum, point) => sum + point.outcomeValue, 0) / count
+  const varianceX = points.reduce((sum, point) => sum + (point.factorValue - meanX) ** 2, 0)
+  const varianceY = points.reduce((sum, point) => sum + (point.outcomeValue - meanY) ** 2, 0)
+  const covariance = points.reduce(
+    (sum, point) => sum + (point.factorValue - meanX) * (point.outcomeValue - meanY),
+    0,
+  )
+  const hasVariation = varianceX > Number.EPSILON && varianceY > Number.EPSILON
+  const slope = varianceX > Number.EPSILON ? covariance / varianceX : 0
+  return {
+    count,
+    slope,
+    intercept: meanY - slope * meanX,
+    correlation: hasVariation ? covariance / Math.sqrt(varianceX * varianceY) : 0,
+    hasVariation,
+  }
+}
+
+function trendDirection(
+  trend: TrackingTrendResult,
+  favorableDirection: FavorableDirection,
+): 'better' | 'worse' | 'mixed' {
+  if (
+    !trend.hasVariation
+    || Math.abs(trend.correlation) < .1
+    || favorableDirection === 'neutral'
+  ) return 'mixed'
+  if (favorableDirection === 'higher') return trend.slope > 0 ? 'better' : 'worse'
+  return trend.slope < 0 ? 'better' : 'worse'
 }
 
 export function dateRangeKeys(start: string, end: string): string[] {

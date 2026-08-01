@@ -38,7 +38,6 @@ const task: Task = {
   targetValue: 4,
   targetOperator: 'gte',
   goalPeriod: 'occurrence',
-  quickAmounts: [0.5, 1],
   sortOrder: 0,
 }
 const completedOccurrence: Occurrence = {
@@ -143,6 +142,32 @@ describe('quantitative task completion', () => {
       status: 'pending',
     })
   })
+
+  it('persists an optional note with an amount entry', async () => {
+    const store = useTaskStore()
+    store.selectedDate = selectedDate
+    store.occurrences = [{
+      ...completedOccurrence,
+      status: 'pending',
+      completedAt: undefined,
+    }]
+    apiMocks.createEntry.mockResolvedValue({
+      id: 'entry-note',
+      task: task.id,
+      occurrence: completedOccurrence.id,
+      program_step: '',
+      entry_date: '2026-07-29',
+      value: 1,
+      kind: 'duration',
+      unit: 'hours',
+      note: 'Steady pace',
+    })
+
+    await store.addEntry(store.makeProgress(task, selectedDate), 1, undefined, 'Steady pace')
+
+    expect(apiMocks.createEntry).toHaveBeenCalledWith(expect.objectContaining({ note: 'Steady pace' }))
+    expect(store.entries[0]?.note).toBe('Steady pace')
+  })
 })
 
 describe('interval task completion', () => {
@@ -159,7 +184,6 @@ describe('interval task completion', () => {
       type: 'interval',
       intervalTemplate: 'template-1',
       targetValue: 1,
-      quickAmounts: [],
     }
 
     expect(store.makeProgress(intervalTask, selectedDate)).toMatchObject({
@@ -202,7 +226,6 @@ describe('interval task completion', () => {
       sortOrder: 0,
       cycleDays: [3],
       completionType: 'interval',
-      quickAmounts: [],
       active: true,
       intervalTemplate: 'template-1',
     }

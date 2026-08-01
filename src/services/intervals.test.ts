@@ -118,6 +118,14 @@ describe('interval definitions', () => {
       .toContain('Item 1 needs a type.')
   })
 
+  it('supports Train intervals as timed steps', () => {
+    const train = createIntervalStep('Cardio', 'train', 90)
+    const definition: IntervalDefinition = { version: 1, children: [train] }
+
+    expect(validateIntervalDefinition(definition)).toEqual([])
+    expect(intervalDuration(definition)).toBe(90)
+  })
+
   it('allows confirmation intervals without a duration', () => {
     const confirmation = createIntervalStep('Drink water', 'confirmation', 0)
     const definition: IntervalDefinition = { version: 1, children: [confirmation] }

@@ -14,7 +14,6 @@ const task = (overrides: Partial<Task> = {}): Task => ({
   recurrenceType: 'daily',
   weekdays: [1, 3, 5],
   intervalWeeks: 1,
-  quickAmounts: [1],
   sortOrder: 0,
   ...overrides,
 })
@@ -43,8 +42,8 @@ describe('task schedules', () => {
 describe('program cycles', () => {
   const program = task({ type: 'program', cycleLength: 10, programRepeat: true })
   const steps: ProgramStep[] = [
-    { id: 'a', task: 'task-1', name: 'Upper', description: '', sortOrder: 0, cycleDays: [1, 8], completionType: 'check', quickAmounts: [1], active: true },
-    { id: 'b', task: 'task-1', name: 'Lower', description: '', sortOrder: 1, cycleDays: [3], completionType: 'check', quickAmounts: [1], active: true },
+    { id: 'a', task: 'task-1', name: 'Upper', description: '', sortOrder: 0, cycleDays: [1, 8], completionType: 'check', active: true },
+    { id: 'b', task: 'task-1', name: 'Lower', description: '', sortOrder: 1, cycleDays: [3], completionType: 'check', active: true },
   ]
 
   it('supports cycles longer than a week and repeats them', () => {

@@ -55,6 +55,7 @@ description: Preserve and extend the Mom application's established UI direction.
 
 - Use Vuetify components and the configured outlined, comfortable, rounded form defaults.
 - Make primary actions lime and bold. Use tonal or outlined variants for secondary actions and text variants for low-emphasis actions.
+- Use the shared `FormActionBar` for create and edit forms. Match the interval editor pattern: show an inline error-colored delete icon first on edit forms only, then Cancel, then a lime Create or Save action. Keep the bar above the mobile bottom navigation and native safe area, and aligned beside desktop navigation.
 - Keep touch targets at least 2.75rem in both dimensions.
 - Show progress directly with linear or circular indicators and pair it with a readable numeric value when useful.
 - Make loading, empty, disabled, completed, missed, warning, and error states visually explicit.

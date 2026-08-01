@@ -18,8 +18,10 @@ const emit = defineEmits<{ 'update:modelValue': [value: number] }>()
 
 const pickerId = useId()
 const itemHeight = 52
+const wheelElement = ref<HTMLElement>()
 const minuteScroller = ref<HTMLElement>()
 const secondScroller = ref<HTMLElement>()
+const wheelFocused = ref(false)
 const minutes = ref(0)
 const seconds = ref(0)
 const minutePosition = ref(0)
@@ -27,6 +29,38 @@ const secondPosition = ref(0)
 const scrollFrames: Partial<Record<'minutes' | 'seconds', number>> = {}
 let selectionActive = false
 let selectionEndTimer: number | undefined
+
+function activateWheel() {
+  if (wheelFocused.value) return
+  wheelFocused.value = true
+  nextTick(syncScrollers)
+}
+
+function focusWheel() {
+  activateWheel()
+  wheelElement.value?.focus({ preventScroll: true })
+}
+
+function deactivateWheel() {
+  if (!wheelFocused.value) return
+  wheelFocused.value = false
+  finishSelection()
+  const activeElement = document.activeElement
+  if (activeElement instanceof HTMLElement && wheelElement.value?.contains(activeElement)) {
+    activeElement.blur()
+  }
+}
+
+function handleWheelFocusOut(event: FocusEvent) {
+  const nextTarget = event.relatedTarget
+  if (nextTarget instanceof Node && wheelElement.value?.contains(nextTarget)) return
+  if (nextTarget) deactivateWheel()
+}
+
+function handleOutsidePointerDown(event: PointerEvent) {
+  if (!wheelFocused.value || wheelElement.value?.contains(event.target as Node)) return
+  deactivateWheel()
+}
 
 function beginSelection() {
   if (selectionActive) return
@@ -116,6 +150,7 @@ function activateCenteredValue(part: 'minutes' | 'seconds') {
 }
 
 function handleScroll(part: 'minutes' | 'seconds') {
+  if (!wheelFocused.value) return
   if (scrollFrames[part]) cancelAnimationFrame(scrollFrames[part])
   scrollFrames[part] = requestAnimationFrame(() => {
     const element = part === 'minutes' ? minuteScroller.value : secondScroller.value
@@ -158,11 +193,13 @@ watch(() => props.active, (active) => {
 })
 
 onMounted(() => {
+  document.addEventListener('pointerdown', handleOutsidePointerDown, true)
   setLocalValue(props.modelValue)
   if (props.active) nextTick(syncScrollers)
 })
 
 onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', handleOutsidePointerDown, true)
   Object.values(scrollFrames).forEach((frame) => frame && cancelAnimationFrame(frame))
   finishSelection()
 })
@@ -197,7 +234,25 @@ onBeforeUnmount(() => {
       />
     </div>
 
-    <div class="timer-wheel">
+    <div
+      ref="wheelElement"
+      class="timer-wheel"
+      :class="{ 'timer-wheel--focused': wheelFocused }"
+      role="group"
+      aria-label="Duration wheel"
+      tabindex="0"
+      @focusin="activateWheel"
+      @focusout="handleWheelFocusOut"
+      @keydown.esc.stop="deactivateWheel"
+    >
+      <div
+        v-if="!wheelFocused"
+        class="timer-wheel__focus-guard"
+        aria-label="Focus duration wheel to adjust"
+        @click="focusWheel"
+      >
+        <span>Tap to adjust</span>
+      </div>
       <div class="timer-wheel__selection" aria-hidden="true" />
       <div
         ref="minuteScroller"
@@ -276,6 +331,32 @@ onBeforeUnmount(() => {
   overflow: hidden;
   border-radius: 20px;
   background: transparent;
+  outline: .125rem solid transparent;
+  outline-offset: .125rem;
+  transition: outline-color 180ms ease;
+}
+.timer-wheel--focused {
+  outline-color: rgba(var(--v-theme-secondary), .9);
+}
+.timer-wheel__focus-guard {
+  position: absolute;
+  z-index: 4;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: .35rem;
+  cursor: pointer;
+  touch-action: pan-y;
+}
+.timer-wheel__focus-guard span {
+  padding: .2rem .5rem;
+  border-radius: 999rem;
+  background: rgba(var(--v-theme-background), .82);
+  color: rgba(var(--v-theme-on-surface), .62);
+  font-size: .625rem;
+  font-weight: 800;
+  letter-spacing: .04em;
 }
 .timer-wheel__selection {
   position: absolute;
@@ -293,11 +374,15 @@ onBeforeUnmount(() => {
   z-index: 1;
   height: 156px;
   overflow-x: hidden;
-  overflow-y: auto;
+  overflow-y: hidden;
   overscroll-behavior: contain;
   perspective: 260px;
   scrollbar-width: none;
   scroll-snap-type: y mandatory;
+  touch-action: none;
+}
+.timer-wheel--focused .timer-wheel__column {
+  overflow-y: auto;
   touch-action: pan-y;
 }
 .timer-wheel__column::-webkit-scrollbar { display: none; }
@@ -347,6 +432,10 @@ onBeforeUnmount(() => {
   font-size: 1.5rem;
   font-weight: 900;
   pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .timer-wheel { transition: none; }
 }
 
 @media (min-width: 960px) {
