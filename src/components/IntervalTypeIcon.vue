@@ -116,10 +116,10 @@ const presentation = computed(() => INTERVAL_TYPE_PRESENTATION[props.kind])
 }
 
 @keyframes interval-heart-pulse {
-  0%, 36%, 100% { transform: scale(1); }
-  12% { transform: scale(1.18); }
-  22% { transform: scale(.98); }
-  29% { transform: scale(1.1); }
+  0%, 36%, 100% { transform: scale(1) translateY(0.5rem); }
+  12% { transform: scale(1.18) translateY(0.5rem); }
+  22% { transform: scale(.98) translateY(0.5rem); }
+  29% { transform: scale(1.1) translateY(0.5rem); }
 }
 
 @keyframes interval-charge {

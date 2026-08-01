@@ -835,7 +835,7 @@ async function runAgain() {
   z-index: 0;
   top: 50%;
   left: 50%;
-  opacity: .1;
+  opacity: .3;
   pointer-events: none;
   filter: drop-shadow(0 0 2.75rem currentColor);
   transform-origin: center center;
