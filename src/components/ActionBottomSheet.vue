@@ -3,13 +3,14 @@ import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
 
 withDefaults(defineProps<{
   title: string
+  description?: string
   ariaLabel?: string
 }>(), {
   ariaLabel: 'Actions',
 })
 
 const model = defineModel<boolean>({ default: false })
-const drawer = ref<HTMLElement | { $el?: HTMLElement }>()
+const drawer = ref<HTMLElement | { $el?: unknown }>()
 
 interface SheetTouch {
   identifier: number
@@ -25,10 +26,10 @@ interface SheetTouch {
 let touch: SheetTouch | undefined
 let settleTimer: number | undefined
 
-function sheetElement() {
+function sheetElement(): HTMLElement | undefined {
   const value = drawer.value
   if (value instanceof HTMLElement) return value
-  return value?.$el
+  return value?.$el instanceof HTMLElement ? value.$el : undefined
 }
 
 function touchWithId(touches: TouchList, identifier: number) {
@@ -47,8 +48,8 @@ function clearSettleTimer() {
 
 function clearInlineGestureStyles() {
   const sheet = sheetElement()
-  sheet?.style.removeProperty('transition')
-  sheet?.style.removeProperty('transform')
+  sheet?.style?.removeProperty('transition')
+  sheet?.style?.removeProperty('transform')
   sheet?.classList.remove('action-bottom-sheet--dragging')
 }
 
@@ -143,7 +144,8 @@ function onTouchMove(event: TouchEvent) {
   current.lastAt = event.timeStamp
   current.offset = Math.max(0, deltaY)
   if (event.cancelable) event.preventDefault()
-  if (sheetElement()) sheetElement()!.style.transform = `translateY(${current.offset}px)`
+  const sheet = sheetElement()
+  if (sheet) sheet.style.transform = `translateY(${current.offset}px)`
 }
 
 function onTouchEnd(event: TouchEvent) {
@@ -191,9 +193,15 @@ onBeforeUnmount(() => {
       <div class="action-bottom-sheet__handle" aria-hidden="true" />
       <div class="px-4 pt-2 pb-2">
         <strong class="d-block text-truncate">{{ title }}</strong>
+        <p v-if="description" class="action-bottom-sheet__description mt-1 mb-0">
+          {{ description }}
+        </p>
       </div>
     </div>
-    <v-list class="px-2 pb-4">
+    <div v-if="$slots.content" class="px-4 pt-2 pb-4">
+      <slot name="content" />
+    </div>
+    <v-list v-if="$slots.default" class="px-2 pb-4">
       <slot />
     </v-list>
   </v-navigation-drawer>
@@ -221,6 +229,12 @@ onBeforeUnmount(() => {
 }
 
 .action-bottom-sheet--dragging .action-bottom-sheet__header { cursor: grabbing; }
+
+.action-bottom-sheet__description {
+  color: rgb(var(--v-theme-on-surface) / .56);
+  font-size: .75rem;
+  line-height: 1.4;
+}
 
 .action-bottom-sheet__handle {
   width: 42px;

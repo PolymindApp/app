@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useDisplay } from 'vuetify'
+import LabeledSlider from '@/components/LabeledSlider.vue'
 import TimerWheelPicker from '@/components/TimerWheelPicker.vue'
 import {
   changeSelectionFeedback,
@@ -211,28 +212,17 @@ function selectKind(kind: IntervalStepKind) {
         <div class="group-editor-panel">
           <div class="node-fields mt-4">
             <v-text-field v-model="node.name" label="Group name" />
-            <div class="repeat-control">
-              <div class="repeat-control__heading">
-                <span>Repeat</span>
-                <strong>{{ repeatCount }}</strong>
-              </div>
-              <v-slider
-                v-model="repeatCount"
-                :min="1"
-                :max="15"
-                :step="1"
-                color="secondary"
-                hide-details
-                aria-label="Repeat count"
-                @start="startSelectionFeedback"
-                @update:model-value="changeSelectionFeedback"
-                @end="endSelectionFeedback"
-              />
-              <div class="repeat-control__range" aria-hidden="true">
-                <span>1</span>
-                <span>15</span>
-              </div>
-            </div>
+            <LabeledSlider
+              v-model="repeatCount"
+              title="Repeat"
+              :min="1"
+              :max="15"
+              :step="1"
+              aria-label="Repeat count"
+              @start="startSelectionFeedback"
+              @update:model-value="changeSelectionFeedback"
+              @end="endSelectionFeedback"
+            />
           </div>
           <div class="group-actions mt-4">
             <v-btn size="small" variant="tonal" prepend-icon="mdi-timer-plus-outline" @click="actions.add(node.id, 'step')">Add interval</v-btn>
@@ -316,9 +306,6 @@ function selectKind(kind: IntervalStepKind) {
 .kind-selector__button--selected { background: var(--kind-color); color: #17200f; }
 .kind-selector__button--selected .v-icon { color: #17200f; }
 .kind-selector__button:focus-visible { position: relative; z-index: 1; outline: 3px solid rgb(var(--v-theme-primary) / .55); outline-offset: -3px; }
-.repeat-control__heading { display: flex; margin-bottom: .25rem; align-items: center; justify-content: space-between; gap: 1rem; color: rgb(var(--v-theme-on-surface) / .68); font-size: .75rem; font-weight: 800; }
-.repeat-control__heading strong { display: grid; min-width: 2rem; height: 2rem; padding: 0 .5rem; place-items: center; border-radius: 10px; background: rgb(var(--v-theme-secondary)); color: rgb(var(--v-theme-on-secondary)); font-size: .8rem; }
-.repeat-control__range { display: flex; margin-top: -.2rem; padding: 0 .5rem; justify-content: space-between; color: rgb(var(--v-theme-on-surface) / .5); font-size: .7rem; font-weight: 700; }
 .group-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
 .group-actions .v-btn { width: 100%; }
 .empty-group { padding: 1rem; border: 1px dashed rgb(var(--v-theme-on-surface) / .18); border-radius: 14px; text-align: center; font-size: .75rem; }

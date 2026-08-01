@@ -3,6 +3,8 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { addDays, format, isToday, parseISO } from 'date-fns'
 import { useRoute, useRouter } from 'vue-router'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
+import DateTimePickerField from '@/components/DateTimePickerField.vue'
+import LabeledSlider from '@/components/LabeledSlider.vue'
 import { formatTrackingValue, TRACKING_PRESETS, trackerDraftFromPreset } from '@/services/tracking'
 import { reconcileTrackingReminders } from '@/services/trackingReminders'
 import { useTrackingStore } from '@/stores/tracking'
@@ -270,42 +272,38 @@ onMounted(async () => {
       <v-btn block size="large" class="mt-4" color="secondary" prepend-icon="mdi-tune-variant" to="/tracking/new">Create a custom tracker</v-btn>
     </template>
 
-    <ActionBottomSheet v-model="sheetOpen" :title="editingEntry ? `Edit ${sheetTracker?.name || 'log'}` : `Log ${sheetTracker?.name || ''}`">
-      <template v-if="sheetTracker">
-        <v-list-item class="py-2">
-          <v-text-field v-model="occurredLocal" type="datetime-local" label="When" variant="outlined" hide-details />
-        </v-list-item>
-        <v-list-item v-if="sheetTracker.kind === 'rating'" class="py-2">
-          <div class="rating-value">{{ value }} <small>{{ sheetTracker.unit }}</small></div>
-          <v-slider v-model="value" :min="sheetTracker.scaleMin" :max="sheetTracker.scaleMax" :step="1" color="secondary" thumb-label hide-details />
-        </v-list-item>
-        <v-list-item v-else-if="sheetTracker.kind === 'number'" class="py-2">
-          <v-number-input v-model="value" :label="sheetTracker.unit ? `Value (${sheetTracker.unit})` : 'Value'" variant="outlined" hide-details />
-        </v-list-item>
-        <v-list-item v-else-if="sheetTracker.kind === 'duration'" class="py-2">
-          <v-number-input v-model="value" label="Minutes" :min="0" variant="outlined" hide-details />
-        </v-list-item>
-        <v-list-item class="py-2">
+    <ActionBottomSheet
+      v-model="sheetOpen"
+      :title="editingEntry ? `Edit ${sheetTracker?.name || 'log'}` : `Log ${sheetTracker?.name || ''}`"
+      :description="sheetTracker?.description"
+    >
+      <template #content>
+        <div v-if="sheetTracker" class="d-flex flex-column ga-4">
+          <DateTimePickerField v-model="occurredLocal" label="When" />
+          <LabeledSlider
+            v-if="sheetTracker.kind === 'rating'"
+            v-model="value"
+            title="Rating"
+            :value-label="`${value}${sheetTracker.unit ? ` ${sheetTracker.unit}` : ''}`"
+            :min="sheetTracker.scaleMin"
+            :max="sheetTracker.scaleMax"
+            :step="1"
+            :aria-label="`${sheetTracker.name} rating`"
+          />
+          <v-number-input v-else-if="sheetTracker.kind === 'number'" v-model="value" :label="sheetTracker.unit ? `Value (${sheetTracker.unit})` : 'Value'" variant="outlined" hide-details />
+          <v-number-input v-else-if="sheetTracker.kind === 'duration'" v-model="value" label="Minutes" :min="0" variant="outlined" hide-details />
           <v-textarea v-model="note" label="Note (optional)" rows="2" auto-grow variant="outlined" hide-details />
-        </v-list-item>
-        <v-list-item v-if="sheetTracker.kind === 'yes_no'" class="py-2">
-          <div class="sheet-buttons">
+          <div v-if="sheetTracker.kind === 'yes_no'" class="sheet-buttons">
             <v-btn color="secondary" :loading="saving" @click="saveLog(1)">Yes</v-btn>
             <v-btn variant="tonal" :disabled="saving" @click="saveLog(0)">No</v-btn>
           </div>
-        </v-list-item>
-        <v-list-item v-else-if="sheetTracker.kind === 'event'" class="py-2">
-          <div class="sheet-buttons">
+          <div v-else-if="sheetTracker.kind === 'event'" class="sheet-buttons">
             <v-btn color="secondary" :loading="saving" @click="saveLog(1)">Log occurrence</v-btn>
             <v-btn variant="tonal" :disabled="saving" @click="saveLog(0)">None today</v-btn>
           </div>
-        </v-list-item>
-        <v-list-item v-else class="py-2">
-          <v-btn block color="secondary" :loading="saving" @click="saveLog()">Save log</v-btn>
-        </v-list-item>
-        <v-list-item v-if="editingEntry" class="py-1">
-          <v-btn block color="error" variant="text" :disabled="saving" @click="removeEntry">Delete log</v-btn>
-        </v-list-item>
+          <v-btn v-else block color="secondary" :loading="saving" @click="saveLog()">Save log</v-btn>
+          <v-btn v-if="editingEntry" block color="error" variant="text" :disabled="saving" @click="removeEntry">Delete log</v-btn>
+        </div>
       </template>
     </ActionBottomSheet>
   </main>
@@ -334,8 +332,6 @@ onMounted(async () => {
 .preset-card__icon { display: grid; width: 38px; height: 38px; flex: 0 0 38px; place-items: center; border-radius: 12px; background: currentColor; }
 .preset-card__icon :deep(.v-icon) { color: rgb(var(--v-theme-background)); }
 .preset-card span { display: block; margin-top: .25rem; color: rgb(var(--v-theme-on-surface) / .58); font-size: .72rem; line-height: 1.45; }
-.rating-value { padding: .25rem 0; font-size: 2rem; font-weight: 900; text-align: center; }
-.rating-value small { color: rgb(var(--v-theme-on-surface) / .56); font-size: .8rem; }
 .sheet-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; }
 .min-width-0 { min-width: 0; }
 </style>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import LabeledSlider from '@/components/LabeledSlider.vue'
 import TimerWheelPicker from '@/components/TimerWheelPicker.vue'
 import {
   changeSelectionFeedback,
@@ -177,28 +178,16 @@ async function saveAsTemplate() {
             </div>
           </v-expand-transition>
         </div>
-        <div class="rounds-control">
-          <div class="rounds-control__heading">
-            <span>Rounds</span>
-            <strong>{{ draft.rounds }}</strong>
-          </div>
-          <v-slider
-            v-model="draft.rounds"
-            :min="1"
-            :max="15"
-            :step="1"
-            color="secondary"
-            hide-details
-            aria-label="Rounds"
-            @start="startSelectionFeedback"
-            @update:model-value="changeSelectionFeedback"
-            @end="endSelectionFeedback"
-          />
-          <div class="rounds-control__range" aria-hidden="true">
-            <span>1</span>
-            <span>15</span>
-          </div>
-        </div>
+        <LabeledSlider
+          v-model="draft.rounds"
+          title="Rounds"
+          :min="1"
+          :max="15"
+          :step="1"
+          @start="startSelectionFeedback"
+          @update:model-value="changeSelectionFeedback"
+          @end="endSelectionFeedback"
+        />
       </div>
     </v-card>
 
@@ -247,9 +236,6 @@ async function saveAsTemplate() {
 .duration-wheel > legend { margin-bottom: .5rem; color: rgb(var(--v-theme-on-surface) / .68); font-size: .75rem; font-weight: 800; }
 .rest-control__expand { overflow: hidden; }
 .rest-control__content { padding-top: 1rem; }
-.rounds-control__heading { display: flex; margin-bottom: .25rem; align-items: center; justify-content: space-between; gap: 1rem; color: rgb(var(--v-theme-on-surface) / .68); font-size: .75rem; font-weight: 800; }
-.rounds-control__heading strong { display: grid; min-width: 2rem; height: 2rem; padding: 0 .5rem; place-items: center; border-radius: 10px; background: rgb(var(--v-theme-secondary)); color: rgb(var(--v-theme-on-secondary)); font-size: .8rem; }
-.rounds-control__range { display: flex; margin-top: -.2rem; padding: 0 .5rem; justify-content: space-between; color: rgb(var(--v-theme-on-surface) / .5); font-size: .7rem; font-weight: 700; }
 .setting-row { display: grid; min-height: 64px; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 1rem; }
 .setting-row > div { min-width: 0; }
 .setting-row p { margin-top: .15rem; color: rgb(var(--v-theme-on-surface) / .5); font-size: .7rem; }

@@ -7,7 +7,7 @@ defineOptions({
 
 const props = withDefaults(defineProps<{
   modelValue: string
-  label: string
+  label?: string
   customLabel?: string
 }>(), {
   customLabel: 'Choose a custom color',
@@ -56,7 +56,7 @@ function applyCustomColor() {
 
 <template>
   <fieldset class="color-picker" v-bind="$attrs">
-    <legend>{{ label }}</legend>
+    <legend v-if="label">{{ label }}</legend>
     <div class="color-picker__options">
       <button
         v-for="color in colors"
@@ -136,10 +136,13 @@ function applyCustomColor() {
 
 .color-picker__options {
   display: flex;
-  margin-top: .5rem;
   flex-wrap: wrap;
   align-items: center;
   gap: .55rem;
+}
+
+.color-picker > legend + .color-picker__options {
+  margin-top: .5rem;
 }
 
 .color-picker__swatch,
