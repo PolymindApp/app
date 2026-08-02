@@ -120,9 +120,15 @@ export interface IntervalGroupNode {
 
 export type IntervalNode = IntervalStepNode | IntervalGroupNode
 
+export interface IntervalGlobalRepetitionSettings {
+  enabled: boolean
+  defaultCount: number
+}
+
 export interface IntervalDefinition {
   version: 1
   children: IntervalNode[]
+  globalRepetition?: IntervalGlobalRepetitionSettings
 }
 
 export interface IntervalCueSettings {
@@ -165,6 +171,7 @@ export interface IntervalSession {
   cues: IntervalCueSettings
   startedAt: string
   endedAt?: string
+  note?: string
   plannedSeconds: number
   elapsedSeconds: number
   runtime: IntervalRuntimeState

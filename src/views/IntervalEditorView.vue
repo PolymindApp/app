@@ -6,6 +6,7 @@ import ColorSwatchPicker from '@/components/ColorSwatchPicker.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import FormActionBar from '@/components/FormActionBar.vue'
 import IntervalNodeEditor from '@/components/IntervalNodeEditor.vue'
+import LabeledSlider from '@/components/LabeledSlider.vue'
 import type { LongPressDragResult } from '@/directives/longPressDrag'
 import {
   cloneIntervalTemplateDraft,
@@ -14,7 +15,10 @@ import {
   duplicateIntervalNode,
   formatIntervalDuration,
   intervalDuration,
+  intervalGlobalRepetitionSettings,
   intervalStepCount,
+  MAX_GLOBAL_REPETITIONS,
+  MIN_GLOBAL_REPETITIONS,
   moveIntervalNodeToGroup,
   validateIntervalDefinition,
 } from '@/services/intervals'
@@ -40,13 +44,35 @@ const draft = reactive<IntervalTemplateDraft>({
   name: '',
   description: '',
   color: '#C7F464',
-  definition: { version: 1, children: [] },
+  definition: {
+    version: 1,
+    children: [],
+    globalRepetition: { enabled: false, defaultCount: MIN_GLOBAL_REPETITIONS },
+  },
   cues: { soundEnabled: true, vibrationEnabled: true },
   sortOrder: 0,
 })
 
 const totalDuration = computed(() => intervalDuration(draft.definition))
 const totalSteps = computed(() => intervalStepCount(draft.definition))
+const globalRepetitionEnabled = computed({
+  get: () => intervalGlobalRepetitionSettings(draft.definition).enabled,
+  set: (enabled: boolean) => {
+    draft.definition.globalRepetition = {
+      ...intervalGlobalRepetitionSettings(draft.definition),
+      enabled,
+    }
+  },
+})
+const globalRepetitionDefault = computed({
+  get: () => intervalGlobalRepetitionSettings(draft.definition).defaultCount,
+  set: (defaultCount: number) => {
+    draft.definition.globalRepetition = {
+      enabled: globalRepetitionEnabled.value,
+      defaultCount,
+    }
+  },
+})
 
 interface NodeLocation {
   nodes: IntervalNode[]
@@ -301,6 +327,23 @@ async function removeTemplate() {
           <div><strong>Vibration</strong><p>Vibrate on supported devices</p></div>
           <v-switch v-model="draft.cues.vibrationEnabled" color="secondary" hide-details inset />
         </div>
+        <v-divider class="my-3" />
+        <div class="setting-row">
+          <div><strong>Global repetition</strong><p>Choose how many times to repeat the full sequence before starting</p></div>
+          <v-checkbox-btn v-model="globalRepetitionEnabled" color="secondary" aria-label="Enable global repetition" />
+        </div>
+        <v-expand-transition>
+          <div v-if="globalRepetitionEnabled" class="global-repetition-default mt-4">
+            <LabeledSlider
+              v-model="globalRepetitionDefault"
+              title="Default repetitions"
+              :min="MIN_GLOBAL_REPETITIONS"
+              :max="MAX_GLOBAL_REPETITIONS"
+              :step="1"
+              aria-label="Default global repetitions"
+            />
+          </div>
+        </v-expand-transition>
       </v-card>
 
       <v-card class="surface-card pa-5">
@@ -456,4 +499,5 @@ async function removeTemplate() {
 .setting-row { display: grid; min-height: 64px; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 1rem; }
 .setting-row > div { min-width: 0; }
 .setting-row p { margin-top: .15rem; color: rgb(var(--v-theme-on-surface) / .5); font-size: .7rem; }
+.global-repetition-default { padding-top: 1rem; border-top: 1px solid rgb(var(--v-theme-on-surface) / .08); }
 </style>

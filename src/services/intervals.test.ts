@@ -6,7 +6,9 @@ import {
   createIntervalStep,
   createRuntimeState,
   duplicateIntervalNode,
+  intervalDefinitionWithRepetitions,
   intervalDuration,
+  intervalGlobalRepetitionSettings,
   intervalRunProgress,
   intervalStepCount,
   moveIntervalNodeToGroup,
@@ -48,7 +50,10 @@ describe('interval definitions', () => {
       name: 'Morning rounds',
       description: 'Start the day',
       color: '#C7F464',
-      definition: nestedDefinition(),
+      definition: {
+        ...nestedDefinition(),
+        globalRepetition: { enabled: true, defaultCount: 3 },
+      },
       cues: { soundEnabled: true, vibrationEnabled: false },
       sortOrder: 2,
     })
@@ -66,6 +71,45 @@ describe('interval definitions', () => {
     expect(draft.definition).toEqual(template.definition)
     expect(draft.definition).not.toBe(template.definition)
     expect(draft.definition.children[1]).not.toBe(template.definition.children[1])
+  })
+
+  it('repeats the full definition and supports a per-run repetition count', () => {
+    const definition: IntervalDefinition = {
+      version: 1,
+      children: [
+        createIntervalStep('Work', 'work', 30),
+        createIntervalStep('Rest', 'rest', 10),
+      ],
+      globalRepetition: { enabled: true, defaultCount: 3 },
+    }
+
+    expect(intervalGlobalRepetitionSettings(definition)).toEqual({
+      enabled: true,
+      defaultCount: 3,
+    })
+    expect(intervalStepCount(definition)).toBe(6)
+    expect(intervalDuration(definition)).toBe(120)
+    expect(resolveIntervalStep(definition, 4)?.groups[0]).toEqual({
+      name: 'Repetitions',
+      iteration: 3,
+      total: 3,
+    })
+
+    const fiveRepetitions = intervalDefinitionWithRepetitions(definition, 5)
+    expect(intervalStepCount(fiveRepetitions)).toBe(10)
+    expect(intervalDuration(fiveRepetitions)).toBe(200)
+    expect(definition.globalRepetition?.defaultCount).toBe(3)
+  })
+
+  it('validates the global repetition default', () => {
+    const definition: IntervalDefinition = {
+      version: 1,
+      children: [createIntervalStep('Work', 'work', 30)],
+      globalRepetition: { enabled: true, defaultCount: 1 },
+    }
+
+    expect(validateIntervalDefinition(definition))
+      .toContain('Global repetition needs a default from 2 to 15.')
   })
 
   it('duplicates a reactive interval group with fresh IDs for every nested node', () => {

@@ -147,6 +147,7 @@ final class Schema
                     'task' => self::relation(false, true),
                     'program_step' => self::relation(false, true),
                     'task_date' => self::dateKey(false, true),
+                    'note' => self::text(2000),
                 ],
                 'required' => [
                     'source',

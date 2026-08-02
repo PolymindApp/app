@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mom-shell-v3'
+const CACHE_NAME = 'mom-shell-v4'
 const APP_SHELL = [
   '/',
   '/manifest.webmanifest',
@@ -24,6 +24,18 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url)
   if (event.request.method !== 'GET' || url.origin !== self.location.origin || url.pathname.startsWith('/api/')) return
+
+  if (url.pathname.startsWith('/sounds/')) {
+    event.respondWith(
+      caches.match(event.request).then((cached) => cached || fetch(event.request).then((response) => {
+        const copy = response.clone()
+        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy))
+        return response
+      })),
+    )
+    return
+  }
+
   event.respondWith(
     fetch(event.request)
       .then((response) => {

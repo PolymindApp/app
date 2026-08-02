@@ -6,21 +6,60 @@ const cueUrls = {
   count: '/sounds/count.mp3',
   go: '/sounds/go.mp3',
 } as const
-const cueBuffers: Partial<Record<keyof typeof cueUrls, AudioBuffer>> = {}
+type CueName = keyof typeof cueUrls
 
-async function loadCue(name: keyof typeof cueUrls) {
-  audioContext ||= new AudioContext()
-  if (audioContext.state === 'suspended') await audioContext.resume()
+const cueData: Partial<Record<CueName, ArrayBuffer>> = {}
+const cueDataLoads: Partial<Record<CueName, Promise<ArrayBuffer>>> = {}
+const cueBuffers: Partial<Record<CueName, AudioBuffer>> = {}
+const cueBufferLoads: Partial<Record<CueName, Promise<AudioBuffer>>> = {}
+
+function fetchCue(name: CueName) {
+  if (cueData[name]) return Promise.resolve(cueData[name])
+  if (cueDataLoads[name]) return cueDataLoads[name]
+
+  const load = fetch(cueUrls[name])
+    .then(async (response) => {
+      if (!response.ok) throw new Error(`Could not load ${name} interval cue.`)
+      const data = await response.arrayBuffer()
+      cueData[name] = data
+      return data
+    })
+    .catch((error) => {
+      delete cueDataLoads[name]
+      throw error
+    })
+  cueDataLoads[name] = load
+  return load
+}
+
+function loadCue(name: CueName) {
   if (cueBuffers[name]) return cueBuffers[name]
-  const response = await fetch(cueUrls[name])
-  if (!response.ok) throw new Error(`Could not load ${name} interval cue.`)
-  const buffer = await audioContext.decodeAudioData(await response.arrayBuffer())
-  cueBuffers[name] = buffer
-  return buffer
+  if (cueBufferLoads[name]) return cueBufferLoads[name]
+
+  const load = fetchCue(name)
+    .then((data) => {
+      audioContext ||= new AudioContext()
+      return audioContext.decodeAudioData(data.slice(0))
+    })
+    .then((buffer) => {
+      cueBuffers[name] = buffer
+      return buffer
+    })
+    .catch((error) => {
+      delete cueBufferLoads[name]
+      throw error
+    })
+  cueBufferLoads[name] = load
+  return load
+}
+
+export async function preloadIntervalCueAudio() {
+  await Promise.all([loadCue('count'), loadCue('go')])
 }
 
 async function prepareIntervalAudio() {
-  await Promise.all([loadCue('count'), loadCue('go')])
+  await preloadIntervalCueAudio()
+  if (audioContext?.state === 'suspended') await audioContext.resume()
 }
 
 export async function prepareIntervalCues(cues: IntervalCueSettings) {
@@ -38,10 +77,10 @@ export async function prepareIntervalCues(cues: IntervalCueSettings) {
   }
 }
 
-function playCue(name: keyof typeof cueUrls, cues: IntervalCueSettings) {
+function playCue(name: CueName, cues: IntervalCueSettings) {
   if (!cues.soundEnabled || nativeBackgroundIntervalOwnsCues()) return
-  void loadCue(name)
-    .then((buffer) => {
+  void Promise.all([loadCue(name), prepareIntervalAudio()])
+    .then(([buffer]) => {
       if (!audioContext) return
       const source = audioContext.createBufferSource()
       source.buffer = buffer

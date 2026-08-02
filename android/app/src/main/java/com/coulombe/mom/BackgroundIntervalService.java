@@ -8,7 +8,6 @@ import android.app.Service;
 import android.content.Intent;
 import android.content.pm.ServiceInfo;
 import android.media.AudioAttributes;
-import android.media.MediaPlayer;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
@@ -49,7 +48,6 @@ public class BackgroundIntervalService extends Service {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final List<IntervalStep> steps = new ArrayList<>();
     private PowerManager.WakeLock wakeLock;
-    private MediaPlayer activeAudio;
     private String sessionName = "Interval";
     private int stepIndex;
     private int lastCountdownSecond = -1;
@@ -184,7 +182,6 @@ public class BackgroundIntervalService extends Service {
         running = false;
         handler.removeCallbacks(ticker);
         releaseWakeLock();
-        releaseAudio();
         stopForeground(STOP_FOREGROUND_REMOVE);
         stopSelf();
     }
@@ -199,32 +196,15 @@ public class BackgroundIntervalService extends Service {
         int remainingSeconds = (int) Math.ceil(remainingMs / 1000d);
         if (remainingSeconds >= 1 && remainingSeconds <= 3 && remainingSeconds != lastCountdownSecond) {
             lastCountdownSecond = remainingSeconds;
-            playSound(R.raw.count);
+            IntervalCuePlayer.playCount(this);
         } else if (remainingSeconds > 3) {
             lastCountdownSecond = -1;
         }
     }
 
     private void playGoCue() {
-        if (soundEnabled) playSound(R.raw.go);
+        if (soundEnabled) IntervalCuePlayer.playGo(this);
         if (vibrationEnabled) vibrate();
-    }
-
-    private void playSound(int soundResource) {
-        releaseAudio();
-        MediaPlayer player = MediaPlayer.create(this, soundResource);
-        if (player == null) return;
-        activeAudio = player;
-        player.setOnCompletionListener(completed -> {
-            if (activeAudio == completed) activeAudio = null;
-            completed.release();
-        });
-        player.setOnErrorListener((failed, what, extra) -> {
-            if (activeAudio == failed) activeAudio = null;
-            failed.release();
-            return true;
-        });
-        player.start();
     }
 
     private void vibrate() {
@@ -317,24 +297,11 @@ public class BackgroundIntervalService extends Service {
         wakeLock = null;
     }
 
-    private void releaseAudio() {
-        if (activeAudio == null) return;
-        MediaPlayer audio = activeAudio;
-        activeAudio = null;
-        try {
-            audio.stop();
-        } catch (IllegalStateException ignored) {
-            // The short cue may already have completed.
-        }
-        audio.release();
-    }
-
     @Override
     public void onDestroy() {
         running = false;
         handler.removeCallbacksAndMessages(null);
         releaseWakeLock();
-        releaseAudio();
         super.onDestroy();
     }
 

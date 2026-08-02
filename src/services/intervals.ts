@@ -13,6 +13,51 @@ import type {
 
 const safeAdd = (left: number, right: number) => Math.min(Number.MAX_SAFE_INTEGER, left + right)
 const safeMultiply = (left: number, right: number) => Math.min(Number.MAX_SAFE_INTEGER, left * right)
+const GLOBAL_REPETITION_GROUP_ID = 'interval-global-repetition'
+export const MIN_GLOBAL_REPETITIONS = 2
+export const MAX_GLOBAL_REPETITIONS = 15
+
+function clampGlobalRepetitions(value: number) {
+  return Math.min(
+    MAX_GLOBAL_REPETITIONS,
+    Math.max(MIN_GLOBAL_REPETITIONS, Math.round(Number(value) || MIN_GLOBAL_REPETITIONS)),
+  )
+}
+
+export function intervalGlobalRepetitionSettings(definition: IntervalDefinition) {
+  return {
+    enabled: definition.globalRepetition?.enabled === true,
+    defaultCount: clampGlobalRepetitions(
+      definition.globalRepetition?.defaultCount ?? MIN_GLOBAL_REPETITIONS,
+    ),
+  }
+}
+
+export function intervalDefinitionWithRepetitions(
+  definition: IntervalDefinition,
+  repetitions: number,
+): IntervalDefinition {
+  const settings = intervalGlobalRepetitionSettings(definition)
+  return {
+    ...definition,
+    globalRepetition: {
+      enabled: settings.enabled,
+      defaultCount: clampGlobalRepetitions(repetitions),
+    },
+  }
+}
+
+function intervalRootNodes(definition: IntervalDefinition): IntervalNode[] {
+  const settings = intervalGlobalRepetitionSettings(definition)
+  if (!settings.enabled) return definition.children
+  return [{
+    id: GLOBAL_REPETITION_GROUP_ID,
+    type: 'group',
+    name: 'Repetitions',
+    repeatCount: settings.defaultCount,
+    children: definition.children,
+  }]
+}
 
 export function intervalStepDurationSeconds(step: IntervalStepNode) {
   if (step.kind === 'confirmation') return 0
@@ -175,6 +220,7 @@ export function cloneIntervalTemplateDraft(template: IntervalTemplate): Interval
     definition: {
       version: template.definition.version,
       children: template.definition.children.map(cloneIntervalNode),
+      globalRepetition: intervalGlobalRepetitionSettings(template.definition),
     },
     cues: { ...template.cues },
     sortOrder: template.sortOrder,
@@ -197,7 +243,8 @@ export function intervalNodeStepCount(node: IntervalNode): number {
 }
 
 export function intervalStepCount(definition: IntervalDefinition): number {
-  return definition.children.reduce((sum, node) => safeAdd(sum, intervalNodeStepCount(node)), 0)
+  return intervalRootNodes(definition)
+    .reduce((sum, node) => safeAdd(sum, intervalNodeStepCount(node)), 0)
 }
 
 export function intervalNodeDuration(node: IntervalNode): number {
@@ -209,7 +256,8 @@ export function intervalNodeDuration(node: IntervalNode): number {
 }
 
 export function intervalDuration(definition: IntervalDefinition): number {
-  return definition.children.reduce((sum, node) => safeAdd(sum, intervalNodeDuration(node)), 0)
+  return intervalRootNodes(definition)
+    .reduce((sum, node) => safeAdd(sum, intervalNodeDuration(node)), 0)
 }
 
 function resolveInNodes(
@@ -253,7 +301,7 @@ export function resolveIntervalStep(
 ): ResolvedIntervalStep | undefined {
   const totalSteps = intervalStepCount(definition)
   if (!Number.isInteger(index) || index < 0 || index >= totalSteps) return undefined
-  const resolved = resolveInNodes(definition.children, index, [])
+  const resolved = resolveInNodes(intervalRootNodes(definition), index, [])
   return resolved ? { ...resolved, index, totalSteps } : undefined
 }
 
@@ -363,7 +411,7 @@ export function intervalRunProgress(
   remainingMs: number,
 ): IntervalRunProgress {
   const totalSteps = intervalStepCount(definition)
-  const context = resolveIntervalProgressContext(definition.children, stepIndex, 0, [])
+  const context = resolveIntervalProgressContext(intervalRootNodes(definition), stepIndex, 0, [])
   if (!context) {
     return {
       total: stepIndex >= totalSteps && totalSteps > 0 ? 100 : 0,
@@ -410,6 +458,19 @@ export function intervalRunProgress(
 export function validateIntervalDefinition(definition: IntervalDefinition): string[] {
   const errors: string[] = []
   let steps = 0
+
+  if (
+    definition.globalRepetition?.enabled
+    && (
+      !Number.isInteger(definition.globalRepetition.defaultCount)
+      || definition.globalRepetition.defaultCount < MIN_GLOBAL_REPETITIONS
+      || definition.globalRepetition.defaultCount > MAX_GLOBAL_REPETITIONS
+    )
+  ) {
+    errors.push(
+      `Global repetition needs a default from ${MIN_GLOBAL_REPETITIONS} to ${MAX_GLOBAL_REPETITIONS}.`,
+    )
+  }
 
   function visit(nodes: IntervalNode[], location: string) {
     nodes.forEach((node, index) => {

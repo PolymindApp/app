@@ -4,7 +4,8 @@ set -euo pipefail
 source_db="${MOM_TEST_SOURCE_DB:-private/data.db}"
 test_port="${MOM_TEST_PORT:-$((18100 + RANDOM % 800))}"
 test_secret="mom-api-integration-secret-at-least-32-characters"
-test_dir="$(mktemp -d /tmp/mom-api-test.XXXXXX)"
+test_root="${TMPDIR:-/tmp}"
+test_dir="$(mktemp -d "$test_root/mom-api-test.XXXXXX")"
 test_db="$test_dir/data.db"
 test_log="$test_dir/server.log"
 server_pid=""
@@ -15,7 +16,7 @@ cleanup() {
     wait "$server_pid" >/dev/null 2>&1 || true
   fi
   case "$test_dir" in
-    /tmp/mom-api-test.*) rm -rf -- "$test_dir" ;;
+    "$test_root"/mom-api-test.*) rm -rf -- "$test_dir" ;;
   esac
 }
 trap cleanup EXIT
@@ -56,7 +57,7 @@ suffix="$(php -r 'echo bin2hex(random_bytes(5));')"
 password="correct-horse-battery"
 
 migration_count="$(sqlite3 "$test_db" 'SELECT COUNT(*) FROM mom_schema_migrations;')"
-[[ "$migration_count" == 7 ]] || {
+[[ "$migration_count" == 8 ]] || {
   echo "The API did not apply the complete database migration sequence." >&2
   exit 1
 }
@@ -470,6 +471,17 @@ curl --silent --show-error --fail \
   -H "Authorization: Bearer $alice_token" \
   --data "$completion_payload" \
   "$api_url/interval-sessions/$attributed_session_id/complete" >/dev/null
+
+interval_note_response="$(curl --silent --show-error --fail \
+  -X PATCH -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"note":"Strong finish after a difficult middle round."}' \
+  "$api_url/collections/interval_sessions/records/$attributed_session_id")"
+interval_note="$(json_field note <<<"$interval_note_response")"
+[[ "$interval_note" == "Strong finish after a difficult middle round." ]] || {
+  echo "A completed interval note was not persisted." >&2
+  exit 1
+}
 
 first_task_completion_count="$(sqlite3 "$test_db" \
   "SELECT COUNT(*) FROM occurrences WHERE task = '$interval_task_one_id' AND scheduled_date = '2026-07-31' AND status = 'completed';")"
