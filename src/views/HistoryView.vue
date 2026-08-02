@@ -45,7 +45,7 @@ onMounted(() => { if (!tasks.value.length) store.load().catch(() => undefined) }
 function statusIcon(item: TaskProgress) {
   const isQuantitative = item.programStep
     ? item.programStep.completionType === 'quantity'
-    : item.task.type === 'duration' || item.task.type === 'daily_total'
+    : item.task.type === 'duration' || item.task.type === 'daily_total' || item.task.type === 'step_counter'
   if (isQuantitative) {
     const target = item.programStep?.targetValue || item.task.targetValue || 0
     const operator = item.programStep?.targetOperator || item.task.targetOperator || 'gte'

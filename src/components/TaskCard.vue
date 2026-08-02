@@ -10,6 +10,7 @@ const props = defineProps<{
   interval?: { name: string; duration: string }
   canStartInterval?: boolean
   intervalActive?: boolean
+  syncing?: boolean
 }>()
 const emit = defineEmits<{
   toggle: [progress: TaskProgress]
@@ -32,6 +33,7 @@ const isInterval = computed(() =>
   (!step.value && task.value.type === 'interval') || step.value?.completionType === 'interval',
 )
 const isDailyTotal = computed(() => !step.value && task.value.type === 'daily_total')
+const isStepCounter = computed(() => !step.value && task.value.type === 'step_counter')
 const canLogTime = computed(() => !step.value && task.value.type === 'duration')
 const canToggleFromCard = computed(() => isCheck.value && !props.busy && !props.progress.locked)
 const target = computed(() => step.value?.targetValue || task.value.targetValue || 0)
@@ -52,6 +54,7 @@ const stateIcon = computed(() => {
   if (props.progress.sealed) return 'mdi-lock-check'
   if (displayedComplete.value) return 'mdi-check-bold'
   if (isInterval.value) return 'mdi-timer-play-outline'
+  if (isStepCounter.value) return 'mdi-shoe-print'
   return isCheck.value ? 'mdi-circle-outline' : 'mdi-lightning-bolt'
 })
 const stateIconColor = computed(() => {
@@ -62,6 +65,7 @@ const subtitle = computed(() => step.value ? `${task.value.name} · Program step
 
 function formatValue(value: number) {
   if (task.value.type === 'duration' && !step.value) return `${value % 1 === 0 ? value : value.toFixed(2)}h`
+  if (isStepCounter.value) return `${Math.round(value).toLocaleString()} steps`
   return `${Number(value.toFixed(2))}${unit.value ? ` ${unit.value}` : ''}`
 }
 
@@ -198,7 +202,13 @@ watch(() => props.valuePulse, async (pulse, previousPulse) => {
         class="mt-2"
       />
 
-      <div class="task-action-stack mt-4">
+      <div v-if="isStepCounter" class="step-source mt-3">
+        <v-progress-circular v-if="syncing" indeterminate color="secondary" :size="16" :width="2" />
+        <v-icon v-else icon="mdi-heart-pulse" color="secondary" size="17" />
+        <span>{{ syncing ? 'Syncing steps…' : 'Health Connect' }}</span>
+      </div>
+
+      <div v-if="!isStepCounter" class="task-action-stack mt-4">
         <v-btn
           block
           size="small"
@@ -356,6 +366,16 @@ watch(() => props.valuePulse, async (pulse, previousPulse) => {
 
 .metric-value--updated {
   animation: metric-value-pulse 560ms cubic-bezier(.22, 1, .36, 1);
+}
+
+.step-source {
+  display: flex;
+  min-height: 24px;
+  align-items: center;
+  gap: .45rem;
+  color: rgb(var(--v-theme-on-surface) / .56);
+  font-size: .7rem;
+  font-weight: 800;
 }
 
 @keyframes metric-value-pulse {

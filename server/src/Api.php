@@ -497,14 +497,28 @@ final class Api
         }
 
         $body = $this->jsonBody();
-        if (!array_key_exists('quickInterval', $body)) {
+        if (
+            !array_key_exists('quickInterval', $body)
+            && !array_key_exists('stepSource', $body)
+        ) {
             throw new ApiException(422, 'At least one supported setting is required.', [
                 'quickInterval' => 'required',
+                'stepSource' => 'required',
             ]);
         }
-        $settings['quickInterval'] = $this->validateQuickIntervalSettings(
-            $body['quickInterval'],
-        );
+        if (array_key_exists('quickInterval', $body)) {
+            $settings['quickInterval'] = $this->validateQuickIntervalSettings(
+                $body['quickInterval'],
+            );
+        }
+        if (array_key_exists('stepSource', $body)) {
+            if ($body['stepSource'] !== 'health_connect') {
+                throw new ApiException(422, 'The step source setting is invalid.', [
+                    'stepSource' => 'health_connect',
+                ]);
+            }
+            $settings['stepSource'] = 'health_connect';
+        }
         $encoded = json_encode(
             $settings,
             JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,

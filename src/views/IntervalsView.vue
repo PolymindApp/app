@@ -26,6 +26,7 @@ const recentWeekIsCurrent = computed(() =>
 
 function recentRunColor(session: IntervalSession) {
   if (session.status !== 'completed') return 'warning'
+  if (session.source === 'quick') return 'secondary'
   return session.template
     ? intervalColors.value.get(session.template) || 'success'
     : 'success'

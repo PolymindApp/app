@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Capacitor } from '@capacitor/core'
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { App } from '@capacitor/app'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { isSameDay } from 'date-fns'
 import { storeToRefs } from 'pinia'
 import { useDisplay } from 'vuetify'
@@ -25,7 +26,15 @@ const store = useTaskStore()
 const intervalStore = useIntervalStore()
 const router = useRouter()
 const { smAndUp } = useDisplay()
-const { selectedDate, selectedProgress, completionRate, loading, error } = storeToRefs(store)
+const {
+  selectedDate,
+  selectedProgress,
+  completionRate,
+  loading,
+  error,
+  stepCountLoading,
+  stepCountError,
+} = storeToRefs(store)
 const busy = ref(false)
 const busyProgressKeys = ref(new Set<string>())
 const exactDialog = ref(false)
@@ -68,10 +77,28 @@ const reviewItems = computed(() =>
 )
 const doneCount = computed(() => selectedProgress.value.filter((item) => item.complete).length)
 const selectedDateIsToday = computed(() => isSameDay(selectedDate.value, new Date()))
+const hasStepCounter = computed(() => selectedProgress.value.some(item => item.task.type === 'step_counter'))
+let appStateListener: Awaited<ReturnType<typeof App.addListener>> | undefined
+
 onMounted(async () => {
   try {
     await Promise.all([store.load(), intervalStore.load()])
   } catch { /* Store error states are displayed in the view. */ }
+  await store.refreshStepCount(selectedDate.value)
+
+  if (Capacitor.isNativePlatform()) {
+    appStateListener = await App.addListener('appStateChange', ({ isActive }) => {
+      if (isActive) void store.refreshStepCount(selectedDate.value)
+    })
+  }
+})
+
+onBeforeUnmount(() => {
+  void appStateListener?.remove()
+})
+
+watch(selectedDate, date => {
+  void store.refreshStepCount(date)
 })
 async function run(action: () => Promise<void>) {
   busy.value = true
@@ -336,6 +363,17 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
     <v-alert v-if="intervalStartError" type="error" variant="tonal" class="mt-4">
       {{ intervalStartError }}
     </v-alert>
+    <v-alert
+      v-if="hasStepCounter && stepCountError"
+      type="warning"
+      variant="tonal"
+      class="mt-4"
+    >
+      {{ stepCountError }}
+      <template #append>
+        <v-btn size="small" variant="text" to="/settings">Settings</v-btn>
+      </template>
+    </v-alert>
 
     <template v-if="selectedProgress.length">
       <section v-if="required.length">
@@ -347,6 +385,7 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
             :progress="item"
             :busy="progressIsBusy(item)"
             :value-pulse="valuePulseFor(item)"
+            :syncing="item.task.type === 'step_counter' && stepCountLoading"
             :interval="intervalMeta(item)"
             :can-start-interval="selectedDateIsToday && item.status === 'pending'"
             :interval-active="sessionMatchesProgress(item)"
@@ -369,6 +408,7 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
             :progress="item"
             :busy="progressIsBusy(item)"
             :value-pulse="valuePulseFor(item)"
+            :syncing="item.task.type === 'step_counter' && stepCountLoading"
             :interval="intervalMeta(item)"
             :can-start-interval="selectedDateIsToday && item.status === 'pending'"
             :interval-active="sessionMatchesProgress(item)"

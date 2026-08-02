@@ -61,6 +61,38 @@ describe('TaskCard amount actions', () => {
     expect(wrapper.emitted('logAmount')).toEqual([[progress]])
   })
 
+  it('shows Health Connect progress without manual amount actions for step counters', () => {
+    const stepProgress: TaskProgress = {
+      ...progress,
+      task: {
+        ...progress.task,
+        id: 'steps',
+        name: 'Daily steps',
+        type: 'step_counter',
+        targetValue: 10000,
+        unit: 'steps',
+      },
+      value: 4200,
+      percent: 42,
+    }
+    const wrapper = mount(TaskCard, {
+      props: { progress: stepProgress },
+      global: {
+        stubs: {
+          VBtn: VBtnStub,
+          VCard: { template: '<div><slot /></div>' },
+          VIcon: true,
+          VProgressCircular: { template: '<div><slot /></div>' },
+          VProgressLinear: true,
+        },
+      },
+    })
+
+    expect(wrapper.text()).toContain('4,200 steps')
+    expect(wrapper.text()).toContain('Health Connect')
+    expect(wrapper.text()).not.toContain('Log amount')
+  })
+
   it('opens journal actions without toggling the task card', async () => {
     const wrapper = mount(TaskCard, {
       props: { progress },

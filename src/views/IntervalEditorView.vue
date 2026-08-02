@@ -389,7 +389,7 @@ async function removeTemplate() {
             :depth="0"
             :can-indent="index > 0 && draft.definition.children[index - 1]?.type === 'group'"
             :can-outdent="false"
-            :can-skip-on-last-round="false"
+            :can-skip-on-last-round="globalRepetitionEnabled && index === draft.definition.children.length - 1 && node.type === 'step'"
             :expanded-node-id="expandedNodeId"
             :actions="actions"
           />

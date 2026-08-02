@@ -33,7 +33,7 @@ final class Schema
                     'name' => self::text(160, true),
                     'description' => self::text(2000),
                     'type' => self::choice(
-                        ['check', 'duration', 'daily_total', 'program', 'interval'],
+                        ['check', 'duration', 'daily_total', 'step_counter', 'program', 'interval'],
                         true,
                     ),
                     'tags' => self::jsonArray(1000),

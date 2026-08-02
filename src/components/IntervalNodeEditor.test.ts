@@ -18,6 +18,11 @@ const VListItemStub = defineComponent({
   template: '<div class="stub-list-item"><slot name="prepend" /><span>{{ title }}</span></div>',
 })
 
+const VCheckboxStub = defineComponent({
+  props: { label: String, modelValue: Boolean },
+  template: '<label class="stub-checkbox">{{ label }}</label>',
+})
+
 const VSelectStub = defineComponent({
   props: {
     items: { type: Array, default: () => [] },
@@ -46,7 +51,7 @@ const VSelectStub = defineComponent({
   `,
 })
 
-function editorProps(node: IntervalStepNode) {
+function editorProps(node: IntervalStepNode, overrides: Record<string, unknown> = {}) {
   return {
     node,
     index: 0,
@@ -67,6 +72,7 @@ function editorProps(node: IntervalStepNode) {
       toggle: vi.fn(),
       reorder: vi.fn(),
     },
+    ...overrides,
   }
 }
 
@@ -137,5 +143,37 @@ describe('IntervalNodeEditor interval type select', () => {
     expect(node.kind).toBe('train')
     expect(node.name).toBe('Train')
     expect(wrapper.find('.stub-selection [data-icon="mdi-heart"]').exists()).toBe(true)
+  })
+
+  it('shows the final-round skip option when the parent sequence allows it', async () => {
+    const node: IntervalStepNode = {
+      id: 'step-final',
+      type: 'step',
+      name: 'Rest',
+      kind: 'rest',
+      durationSeconds: 10,
+    }
+    const wrapper = mount(IntervalNodeEditor, {
+      props: editorProps(node, { canSkipOnLastRound: true }),
+      global: {
+        directives: { longPressDrag: {}, longPressDrop: {} },
+        stubs: {
+          ExpandTransition: { template: '<div><slot /></div>' },
+          VBtn: true,
+          VCard: { template: '<div><slot /></div>' },
+          VCheckbox: VCheckboxStub,
+          VIcon: VIconStub,
+          VListItem: VListItemStub,
+          VSelect: VSelectStub,
+          VTextField: true,
+          TimerWheelPicker: true,
+        },
+      },
+    })
+
+    expect(wrapper.find('.stub-checkbox').text()).toBe('Skip this step on the final round')
+
+    await wrapper.setProps({ canSkipOnLastRound: false })
+    expect(wrapper.find('.stub-checkbox').exists()).toBe(false)
   })
 })

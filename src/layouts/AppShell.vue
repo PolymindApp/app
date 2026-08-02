@@ -148,6 +148,7 @@ function releaseLeavingPage(element: Element) {
             :account-initials="accountInitials"
             :account-avatar="accountAvatar"
             @open-account="router.push('/account')"
+            @open-settings="router.push('/settings')"
             @sign-out="logoutDialog = true"
           />
         </div>

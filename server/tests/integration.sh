@@ -248,6 +248,26 @@ invalid_settings_status="$(curl --silent --output /dev/null --write-out '%{http_
   exit 1
 }
 
+step_source_response="$(curl --silent --show-error --fail \
+  -X PATCH -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"stepSource":"health_connect"}' \
+  "$api_url/auth/settings")"
+step_source="$(php -r '$data=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); echo $data["settings"]["stepSource"] ?? "";' <<<"$step_source_response")"
+[[ "$step_source" == "health_connect" ]] || {
+  echo "The Health Connect step source was not persisted."
+  exit 1
+}
+invalid_step_source_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  -X PATCH -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"stepSource":"phone"}' \
+  "$api_url/auth/settings")"
+[[ "$invalid_step_source_status" == 422 ]] || {
+  echo "An unsupported step source was not rejected." >&2
+  exit 1
+}
+
 passkey_status="$(curl --silent --show-error --fail \
   -H "Authorization: Bearer $alice_token" \
   "$api_url/auth/passkeys/status")"

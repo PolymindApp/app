@@ -12,6 +12,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   openAccount: []
+  openSettings: []
   signOut: []
 }>()
 
@@ -66,6 +67,11 @@ function requestSignOut() {
 function requestOpenAccount() {
   closeMenu()
   emit('openAccount')
+}
+
+function requestOpenSettings() {
+  closeMenu()
+  emit('openSettings')
 }
 
 function positionMenu() {
@@ -177,6 +183,14 @@ onBeforeUnmount(unbindListeners)
           </button>
           <v-divider />
           <v-list role="presentation" density="compact" class="pa-2">
+            <v-list-item
+              role="menuitem"
+              title="Settings"
+              prepend-icon="mdi-cog-outline"
+              rounded="lg"
+              @click="requestOpenSettings"
+            />
+            <v-divider class="my-2" />
             <v-list-item
               role="menuitem"
               title="Sign out"

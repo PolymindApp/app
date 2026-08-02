@@ -2,6 +2,7 @@ import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { addDays, endOfWeek, format, parseISO, startOfWeek, subDays } from 'date-fns'
 import { api } from '@/lib/api'
+import { readHealthConnectSteps } from '@/services/healthConnect'
 import { isTaskScheduled, meetsTarget, programCycleDay, progressPercent, stepsForDate, toDateKey } from '@/services/schedule'
 import { sanitizeTaskEntryNote } from '@/services/taskEntryNotes'
 import type { Entry, Occurrence, ProgramStep, Task, TaskDraft, TaskProgress } from '@/types/domain'
@@ -95,6 +96,10 @@ export const useTaskStore = defineStore('tasks', () => {
   const selectedDate = ref(new Date())
   const loading = ref(false)
   const error = ref('')
+  const stepCounts = ref<Record<string, number>>({})
+  const stepCountLoading = ref(false)
+  const stepCountError = ref('')
+  let stepCountRequest = 0
 
   const activeTasks = computed(() => tasks.value.filter((task) => task.active))
 
@@ -123,7 +128,9 @@ export const useTaskStore = defineStore('tasks', () => {
 
   function makeProgress(task: Task, date: Date, step?: ProgramStep): TaskProgress {
     const occurrence = occurrenceFor(task, date, step)
-    const value = entriesFor(task, date, step).reduce((sum, entry) => sum + entry.value, 0)
+    const value = !step && task.type === 'step_counter'
+      ? stepCounts.value[toDateKey(date)] || 0
+      : entriesFor(task, date, step).reduce((sum, entry) => sum + entry.value, 0)
     const target = step?.targetValue || task.targetValue || 1
     const operator = step?.targetOperator || task.targetOperator || 'gte'
     const targetReached = meetsTarget(value, target, operator)
@@ -216,6 +223,40 @@ export const useTaskStore = defineStore('tasks', () => {
       throw cause
     } finally {
       loading.value = false
+    }
+  }
+
+  async function refreshStepCount(date = selectedDate.value) {
+    const request = ++stepCountRequest
+    const hasScheduledStepCounter = activeTasks.value.some(
+      task => task.type === 'step_counter' && isTaskScheduled(task, date),
+    )
+    if (!hasScheduledStepCounter) {
+      stepCountLoading.value = false
+      stepCountError.value = ''
+      return
+    }
+
+    stepCountLoading.value = true
+    stepCountError.value = ''
+    try {
+      const steps = await readHealthConnectSteps(date)
+      if (request !== stepCountRequest) return
+      stepCounts.value = {
+        ...stepCounts.value,
+        [toDateKey(date)]: steps,
+      }
+    } catch (cause) {
+      if (request !== stepCountRequest) return
+      const key = toDateKey(date)
+      const nextStepCounts = { ...stepCounts.value }
+      delete nextStepCounts[key]
+      stepCounts.value = nextStepCounts
+      stepCountError.value = cause instanceof Error
+        ? cause.message
+        : 'Your Health Connect steps could not be loaded.'
+    } finally {
+      if (request === stepCountRequest) stepCountLoading.value = false
     }
   }
 
@@ -333,8 +374,8 @@ export const useTaskStore = defineStore('tasks', () => {
       interval_weeks: draft.intervalWeeks,
       target_value: draft.targetValue || 0,
       target_operator: draft.targetOperator || 'gte',
-      unit: draft.unit || '',
-      custom_unit: draft.customUnit || '',
+      unit: draft.type === 'step_counter' ? 'steps' : draft.unit || '',
+      custom_unit: draft.type === 'step_counter' ? '' : draft.customUnit || '',
       goal_period: draft.goalPeriod || 'occurrence',
       cycle_length: draft.cycleLength || 0,
       program_repeat: draft.programRepeat ?? true,
@@ -472,10 +513,14 @@ export const useTaskStore = defineStore('tasks', () => {
     selectedDate,
     loading,
     error,
+    stepCounts,
+    stepCountLoading,
+    stepCountError,
     activeTasks,
     selectedProgress,
     completionRate,
     load,
+    refreshStepCount,
     makeProgress,
     entriesFor,
     toggleComplete,

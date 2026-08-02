@@ -33,6 +33,7 @@ const typeOptions: Array<{ type: TaskType; title: string; subtitle: string; icon
   { type: 'check', title: 'Check-off', subtitle: 'One action, one tap', icon: 'mdi-check-bold', color: '#8FB8FF' },
   { type: 'duration', title: 'Duration', subtitle: 'Track time toward a goal', icon: 'mdi-timer-outline', color: '#D4A5FF' },
   { type: 'daily_total', title: 'Daily total', subtitle: 'Protein, calories, water…', icon: 'mdi-chart-donut', color: '#FFB86B' },
+  { type: 'step_counter', title: 'Step counter', subtitle: 'Sync progress from Health Connect', icon: 'mdi-shoe-print', color: '#7ED6A5' },
   { type: 'program', title: 'Program', subtitle: 'A flexible sequence', icon: 'mdi-repeat-variant', color: '#C7F464' },
   { type: 'interval', title: 'Interval', subtitle: 'Complete a saved interval', icon: 'mdi-timer-play-outline', color: '#66D9C8' },
 ]
@@ -78,7 +79,9 @@ const draft = reactive<TaskDraft>({
 })
 
 const cycleDays = computed(() => Array.from({ length: Math.max(1, draft.cycleLength || 1) }, (_, index) => index + 1))
-const showTarget = computed(() => draft.type === 'duration' || draft.type === 'daily_total')
+const showTarget = computed(() =>
+  draft.type === 'duration' || draft.type === 'daily_total' || draft.type === 'step_counter',
+)
 const showEntryNoteSettings = computed(() =>
   draft.type === 'duration' || draft.type === 'daily_total' || draft.type === 'program',
 )
@@ -107,8 +110,10 @@ watch(() => draft.type, (type) => {
     draft.unit = 'hours'; draft.targetValue = 5
   } else if (type === 'daily_total') {
     draft.unit = 'g'; draft.targetValue = 150
+  } else if (type === 'step_counter') {
+    draft.unit = 'steps'; draft.customUnit = ''; draft.targetValue = 10000; draft.targetOperator = 'gte'
   } else if (type === 'program' && !draft.steps.length) addStep(false)
-})
+}, { immediate: true })
 
 onMounted(async () => {
   await Promise.all([
@@ -385,7 +390,7 @@ async function removeTask() {
       <v-card v-if="showTarget" class="surface-card field-stack pa-5 mb-4">
         <div class="target-grid">
           <v-select
-            v-if="draft.type === 'daily_total'"
+            v-if="draft.type === 'daily_total' || draft.type === 'step_counter'"
             v-model="draft.targetOperator"
             label="Goal"
             :items="[{ title: 'At least', value: 'gte' }, { title: 'At most', value: 'lte' }, { title: 'Exactly', value: 'eq' }]"
@@ -396,8 +401,13 @@ async function removeTask() {
             :min="0"
             :precision="null"
           />
-          <v-select v-model="draft.unit" label="Unit" :items="units" />
-          <v-text-field v-if="draft.unit === 'custom'" v-model="draft.customUnit" label="Custom unit" />
+          <v-select v-if="draft.type !== 'step_counter'" v-model="draft.unit" label="Unit" :items="units" />
+          <v-text-field v-else model-value="Steps" label="Unit" readonly />
+          <v-text-field v-if="draft.type !== 'step_counter' && draft.unit === 'custom'" v-model="draft.customUnit" label="Custom unit" />
+        </div>
+        <div v-if="draft.type === 'step_counter'" class="step-source-note">
+          <v-icon icon="mdi-heart-pulse" color="secondary" size="20" />
+          <p>Progress updates automatically from the Health Connect source configured in Settings.</p>
         </div>
         <v-select
           v-if="draft.type === 'duration'"
@@ -605,6 +615,8 @@ async function removeTask() {
 .field-stack { display: grid; gap: 1rem; }
 .date-grid, .target-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
 .date-range-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); }
+.step-source-note { display: flex; align-items: flex-start; gap: .65rem; padding: .8rem; border-radius: 16px; background: rgb(var(--v-theme-surface-variant)); }
+.step-source-note p { color: rgb(var(--v-theme-on-surface) / .58); font-size: .72rem; line-height: 1.45; }
 .step-panels :deep(.v-expansion-panel) { border: 1px solid rgb(var(--v-theme-on-surface) / .08); }
 .step-panels :deep(.program-step-panel--draggable .program-step__drag-handle) { cursor: grab; }
 .interval-attachment-summary { display: flex; align-items: center; gap: .75rem; padding: .85rem; border-radius: 16px; background: rgb(var(--v-theme-surface-variant)); }

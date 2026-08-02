@@ -7,6 +7,9 @@ const apiMocks = vi.hoisted(() => ({
   updateOccurrence: vi.fn(),
   updateTask: vi.fn(),
 }))
+const healthMocks = vi.hoisted(() => ({
+  readHealthConnectSteps: vi.fn(),
+}))
 
 vi.mock('@/lib/api', () => ({
   api: {
@@ -18,6 +21,10 @@ vi.mock('@/lib/api', () => ({
       throw new Error(`Unexpected collection: ${name}`)
     },
   },
+}))
+
+vi.mock('@/services/healthConnect', () => ({
+  readHealthConnectSteps: healthMocks.readHealthConnectSteps,
 }))
 
 import { useTaskStore } from './tasks'
@@ -72,6 +79,7 @@ describe('quantitative task completion', () => {
     setActivePinia(createPinia())
     apiMocks.createEntry.mockReset()
     apiMocks.updateOccurrence.mockReset()
+    healthMocks.readHealthConnectSteps.mockReset()
   })
 
   it('does not remain complete when adjustments reduce a four-hour task to zero', () => {
@@ -194,6 +202,38 @@ describe('quantitative task completion', () => {
     expect(apiMocks.createEntry).toHaveBeenCalledWith(expect.objectContaining({
       note: `First line ${'x'.repeat(244)}`,
     }))
+  })
+})
+
+describe('step-counter task progress', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    healthMocks.readHealthConnectSteps.mockReset()
+  })
+
+  it('uses the Health Connect daily aggregate as its value', async () => {
+    const store = useTaskStore()
+    const stepTask: Task = {
+      ...task,
+      id: 'step-task',
+      name: 'Daily steps',
+      type: 'step_counter',
+      targetValue: 8000,
+      targetOperator: 'gte',
+      unit: 'steps',
+    }
+    store.tasks = [stepTask]
+    store.selectedDate = selectedDate
+    healthMocks.readHealthConnectSteps.mockResolvedValue(9234)
+
+    await store.refreshStepCount(selectedDate)
+
+    expect(healthMocks.readHealthConnectSteps).toHaveBeenCalledWith(selectedDate)
+    expect(store.makeProgress(stepTask, selectedDate)).toMatchObject({
+      value: 9234,
+      percent: 100,
+      complete: true,
+    })
   })
 })
 

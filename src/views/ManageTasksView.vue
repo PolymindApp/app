@@ -33,6 +33,7 @@ const typeInfo: Record<TaskType, { label: string; icon: string; color: string }>
   check: { label: 'Check-off', icon: 'mdi-check-bold', color: '#8FB8FF' },
   duration: { label: 'Duration', icon: 'mdi-timer-outline', color: '#D4A5FF' },
   daily_total: { label: 'Daily total', icon: 'mdi-chart-donut', color: '#FFB86B' },
+  step_counter: { label: 'Step counter', icon: 'mdi-shoe-print', color: '#7ED6A5' },
   program: { label: 'Program', icon: 'mdi-repeat-variant', color: '#C7F464' },
   interval: { label: 'Interval', icon: 'mdi-timer-play-outline', color: '#66D9C8' },
 }

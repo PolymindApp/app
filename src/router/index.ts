@@ -26,6 +26,7 @@ const router = createRouter({
         { path: 'tracking/insights/compare', name: 'tracking-insights', component: () => import('@/views/TrackingInsightsView.vue'), meta: { title: 'Tracking insights', pageDepth: 1, pageOrder: 2, backTo: '/tracking' } },
         { path: 'tasks/manage', name: 'task-manage', component: () => import('@/views/ManageTasksView.vue'), meta: { title: 'Manage tasks', pageDepth: 1, pageOrder: 0, backTo: '/tasks' } },
         { path: 'account', name: 'account', component: () => import('@/views/AccountView.vue'), meta: { title: 'Account', pageDepth: 1, pageOrder: 2, backTo: '/tasks' } },
+        { path: 'settings', name: 'settings', component: () => import('@/views/SettingsView.vue'), meta: { title: 'Settings', pageDepth: 1, pageOrder: 2, backTo: '/tasks' } },
         { path: 'intervals/quick', name: 'interval-quick', component: () => import('@/views/QuickIntervalView.vue'), meta: { title: 'Quick interval', pageDepth: 1, pageOrder: 1, backTo: '/intervals' } },
         { path: 'intervals/new', name: 'interval-new', component: () => import('@/views/IntervalEditorView.vue'), meta: { title: 'New interval', pageDepth: 1, pageOrder: 1, backTo: '/intervals' } },
         { path: 'intervals/:id/edit', name: 'interval-edit', component: () => import('@/views/IntervalEditorView.vue'), meta: { title: 'Edit interval', pageDepth: 1, pageOrder: 1, backTo: '/intervals' } },

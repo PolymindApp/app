@@ -1,4 +1,5 @@
-export type TaskType = 'check' | 'duration' | 'daily_total' | 'program' | 'interval'
+export type TaskType = 'check' | 'duration' | 'daily_total' | 'step_counter' | 'program' | 'interval'
+export type StepSource = 'health_connect'
 export type RecurrenceType = 'daily' | 'weekdays' | 'interval_weeks'
 export type GoalPeriod = 'occurrence' | 'week'
 export type TargetOperator = 'gte' | 'lte' | 'eq'

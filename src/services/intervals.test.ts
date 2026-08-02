@@ -101,6 +101,22 @@ describe('interval definitions', () => {
     expect(definition.globalRepetition?.defaultCount).toBe(3)
   })
 
+  it('skips the final root step on the last global repetition', () => {
+    const work = createIntervalStep('Work', 'work', 30)
+    const rest = createIntervalStep('Rest', 'rest', 10)
+    rest.skipOnLastRound = true
+    const definition: IntervalDefinition = {
+      version: 1,
+      children: [work, rest],
+      globalRepetition: { enabled: true, defaultCount: 3 },
+    }
+
+    expect(intervalStepCount(definition)).toBe(5)
+    expect(intervalDuration(definition)).toBe(110)
+    expect(Array.from({ length: 5 }, (_, index) => resolveIntervalStep(definition, index)?.step.name))
+      .toEqual(['Work', 'Rest', 'Work', 'Rest', 'Work'])
+  })
+
   it('validates the global repetition default', () => {
     const definition: IntervalDefinition = {
       version: 1,
