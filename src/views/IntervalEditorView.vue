@@ -440,7 +440,7 @@ async function removeTemplate() {
 </template>
 
 <style scoped>
-.interval-editor { max-width: 47.5rem; padding-bottom: 6rem; }
+.interval-editor { padding-bottom: 6rem; }
 .interval-form-cards { display: grid; gap: 1rem; }
 .field-stack, .sequence-tree { display: grid; gap: 1rem; }
 .sequence-empty { display: grid; justify-items: center; gap: 1rem; padding: 2rem 1.25rem; border: 1px dashed rgb(var(--v-theme-on-surface) / .22); border-radius: 20px; background: rgb(var(--v-theme-surface-variant) / .28); text-align: center; }

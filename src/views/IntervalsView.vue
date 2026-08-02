@@ -129,7 +129,7 @@ onBeforeUnmount(() => {
                 />
               </div>
               <template #append>
-                <strong class="text-caption">{{ formatIntervalDuration(session.elapsedSeconds) }}</strong>
+                <strong class="recent-run-time text-caption">{{ formatIntervalDuration(session.elapsedSeconds) }}</strong>
               </template>
             </v-list-item>
           </v-list>
@@ -188,6 +188,7 @@ onBeforeUnmount(() => {
 .recent-run-group__heading span { color: rgba(var(--v-theme-on-surface), .54); font-size: .68rem; font-weight: 800; }
 .recent-run-progress { margin-top: .45rem; }
 .recent-run-meta { display: block; margin-top: .25rem; overflow: hidden; color: rgba(var(--v-theme-on-surface), .62); font-size: .875rem; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
+.recent-run-time { display: block; width: 3.5rem; font-variant-numeric: tabular-nums; text-align: end; }
 @media (min-width: 700px) {
   .quick-card__content { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
   .quick-card__intro { grid-column: 1; }

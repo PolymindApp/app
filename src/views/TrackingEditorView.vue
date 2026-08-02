@@ -268,5 +268,5 @@ async function remove() {
 .kind-option span { color: rgb(var(--v-theme-on-surface) / .52); font-size: .7rem; }
 .scale-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; }
 .setting-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
-.tracking-editor { max-width: 47.5rem; padding-bottom: 6rem; }
+.tracking-editor { padding-bottom: 6rem; }
 </style>

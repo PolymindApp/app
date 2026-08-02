@@ -334,7 +334,7 @@ async function removeTask() {
         />
         <div v-if="draft.recurrenceType !== 'daily'" class="scheduled-days">
           <label class="field-label">Scheduled days</label>
-          <div class="weekday-scroll mt-2">
+          <div class="weekday-wrap mt-2">
             <v-btn-toggle
               v-model="draft.weekdays"
               multiple
@@ -342,7 +342,7 @@ async function removeTask() {
               color="secondary"
               selected-class="day-picker--selected"
             >
-              <v-btn v-for="day in weekdays" :key="day.value" :value="day.value" size="small">{{ day.label }}</v-btn>
+              <v-btn v-for="day in weekdays" :key="day.value" :value="day.value" size="small" class="px-0">{{ day.label }}</v-btn>
             </v-btn-toggle>
           </div>
         </div>
@@ -568,11 +568,9 @@ async function removeTask() {
 .setting-row strong { font-size: .83rem; }
 .setting-row p { margin-top: .15rem; color: rgb(var(--v-theme-on-surface) / .5); font-size: .7rem; }
 .field-label { color: rgb(var(--v-theme-on-surface) / .68); font-size: .75rem; font-weight: 750; }
-.scheduled-days { min-width: 0; max-width: 100%; overflow: hidden; }
-.weekday-scroll { width: 100%; min-width: 0; max-width: 100%; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scrollbar-width: none; touch-action: pan-x; }
-.weekday-scroll::-webkit-scrollbar { display: none; }
-.weekday-picker { display: inline-flex; width: max-content; min-width: 100%; max-width: none; flex-wrap: nowrap; justify-content: flex-start; gap: 1rem; }
-.weekday-picker :deep(.v-btn) { width: 44px; min-width: 44px; flex: 0 0 44px; }
+.scheduled-days, .weekday-wrap { width: 100%; min-width: 0; max-width: 100%; }
+.weekday-picker { display: flex; width: 100%; min-width: 0; max-width: 100%; flex-wrap: wrap; justify-content: flex-start; gap: .5rem; height: auto }
+.weekday-picker :deep(.v-btn) { width: auto; min-width: 2.75rem; flex: 1 1 calc(25% - .5rem); height: 2rem !important; }
 .weekday-picker :deep(.day-picker--selected) {
   background: rgb(var(--v-theme-secondary)) !important;
   color: rgb(var(--v-theme-on-secondary)) !important;
@@ -598,11 +596,10 @@ async function removeTask() {
 @media (min-width: 60rem) {
   .editor-type { padding: 2rem; }
   .editor-page,
-  .editor-page--editing { max-width: 47.5rem; padding-bottom: 6rem; }
+  .editor-page--editing { padding-bottom: 6rem; }
 }
 @media (min-width: 37.5rem) {
   .type-selector { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .weekday-picker { display: flex; width: 100%; }
   .weekday-picker :deep(.v-btn) { width: auto; min-width: 0; flex: 1 1 0; }
 }
 </style>
