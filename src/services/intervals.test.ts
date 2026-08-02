@@ -109,7 +109,7 @@ describe('interval definitions', () => {
     }
 
     expect(validateIntervalDefinition(definition))
-      .toContain('Global repetition needs a default from 2 to 15.')
+      .toContain('Default repetitions must be from 2 to 15.')
   })
 
   it('duplicates a reactive interval group with fresh IDs for every nested node', () => {

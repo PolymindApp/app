@@ -329,18 +329,19 @@ async function removeTemplate() {
         </div>
         <v-divider class="my-3" />
         <div class="setting-row">
-          <div><strong>Global repetition</strong><p>Choose how many times to repeat the full sequence before starting</p></div>
-          <v-checkbox-btn v-model="globalRepetitionEnabled" color="secondary" aria-label="Enable global repetition" />
+          <div><strong>Flexible repeats</strong><p>Choose how many times to repeat the sequence whenever you start the timer</p></div>
+          <v-switch v-model="globalRepetitionEnabled" color="secondary" hide-details inset aria-label="Enable flexible repeats" />
         </div>
         <v-expand-transition>
-          <div v-if="globalRepetitionEnabled" class="global-repetition-default mt-4">
+          <div v-if="globalRepetitionEnabled" class="global-repetition-default">
             <LabeledSlider
               v-model="globalRepetitionDefault"
               title="Default repetitions"
               :min="MIN_GLOBAL_REPETITIONS"
               :max="MAX_GLOBAL_REPETITIONS"
               :step="1"
-              aria-label="Default global repetitions"
+              class="mt-4"
+              aria-label="Default repetitions for flexible repeats"
             />
           </div>
         </v-expand-transition>
@@ -499,5 +500,5 @@ async function removeTemplate() {
 .setting-row { display: grid; min-height: 64px; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 1rem; }
 .setting-row > div { min-width: 0; }
 .setting-row p { margin-top: .15rem; color: rgb(var(--v-theme-on-surface) / .5); font-size: .7rem; }
-.global-repetition-default { padding-top: 1rem; border-top: 1px solid rgb(var(--v-theme-on-surface) / .08); }
+.global-repetition-default { border-top: 1px solid rgb(var(--v-theme-on-surface) / .08); }
 </style>

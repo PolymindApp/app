@@ -468,7 +468,7 @@ export function validateIntervalDefinition(definition: IntervalDefinition): stri
     )
   ) {
     errors.push(
-      `Global repetition needs a default from ${MIN_GLOBAL_REPETITIONS} to ${MAX_GLOBAL_REPETITIONS}.`,
+      `Default repetitions must be from ${MIN_GLOBAL_REPETITIONS} to ${MAX_GLOBAL_REPETITIONS}.`,
     )
   }
 
