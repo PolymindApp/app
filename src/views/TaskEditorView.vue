@@ -70,6 +70,8 @@ const draft = reactive<TaskDraft>({
   cycleLength: 7,
   programRepeat: true,
   programStrict: false,
+  entryNotesEnabled: false,
+  entryNoteSuggestionsEnabled: false,
   sortOrder: 0,
   intervalTemplate: undefined,
   steps: [],
@@ -77,6 +79,9 @@ const draft = reactive<TaskDraft>({
 
 const cycleDays = computed(() => Array.from({ length: Math.max(1, draft.cycleLength || 1) }, (_, index) => index + 1))
 const showTarget = computed(() => draft.type === 'duration' || draft.type === 'daily_total')
+const showEntryNoteSettings = computed(() =>
+  draft.type === 'duration' || draft.type === 'daily_total' || draft.type === 'program',
+)
 const selectedInterval = computed(() => intervalStore.templates.find((item) => item.id === draft.intervalTemplate))
 const intervalItems = computed(() => intervalStore.templates.map((item) => ({
   title: item.name,
@@ -291,6 +296,22 @@ async function removeTask() {
           <div><strong>Review if unfinished</strong><p>Ask whether to miss, carry, or reschedule</p></div>
           <v-switch v-model="draft.reviewWhenMissed" color="secondary" hide-details inset />
         </div>
+        <template v-if="showEntryNoteSettings">
+          <v-divider />
+          <div class="setting-row">
+            <div><strong>Notes when logging</strong><p>Add an optional note to each amount entry</p></div>
+            <v-switch v-model="draft.entryNotesEnabled" color="secondary" hide-details="auto" inset />
+          </div>
+          <v-expand-transition>
+            <div v-if="draft.entryNotesEnabled">
+              <v-divider />
+              <div class="setting-row">
+                <div><strong>Match notes by amount</strong><p>Prefill the latest note previously used for the same amount</p></div>
+                <v-switch v-model="draft.entryNoteSuggestionsEnabled" color="secondary" hide-details="auto" inset />
+              </div>
+            </div>
+          </v-expand-transition>
+        </template>
       </v-card>
 
       <v-card v-if="draft.type === 'interval'" class="surface-card field-stack pa-5 mb-4">

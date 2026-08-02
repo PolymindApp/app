@@ -3,6 +3,7 @@ import { defineStore } from 'pinia'
 import { addDays, endOfWeek, format, parseISO, startOfWeek, subDays } from 'date-fns'
 import { api } from '@/lib/api'
 import { isTaskScheduled, meetsTarget, programCycleDay, progressPercent, stepsForDate, toDateKey } from '@/services/schedule'
+import { sanitizeTaskEntryNote } from '@/services/taskEntryNotes'
 import type { Entry, Occurrence, ProgramStep, Task, TaskDraft, TaskProgress } from '@/types/domain'
 
 const asNumberArray = (value: unknown, fallback: number[] = []) =>
@@ -31,6 +32,8 @@ function mapTask(record: Record<string, any>): Task {
     cycleLength: record.cycle_length || undefined,
     programRepeat: record.program_repeat,
     programStrict: record.program_strict,
+    entryNotesEnabled: record.entry_notes_enabled === true,
+    entryNoteSuggestionsEnabled: record.entry_note_suggestions_enabled === true,
     sortOrder: record.sort_order || 0,
     intervalTemplate: record.interval_template || undefined,
   }
@@ -76,6 +79,7 @@ function mapEntry(record: Record<string, any>): Entry {
     occurrence: record.occurrence || undefined,
     programStep: record.program_step || undefined,
     entryDate: record.entry_date,
+    createdAt: record.created_at || `${record.entry_date}T00:00:00Z`,
     value: Number(record.value),
     kind: record.kind,
     unit: record.unit || '',
@@ -201,7 +205,7 @@ export const useTaskStore = defineStore('tasks', () => {
         api.collection('tasks').getFullList({ sort: 'sort_order' }),
         api.collection('program_steps').getFullList({ sort: 'sort_order' }),
         api.collection('occurrences').getFullList({ filter: `scheduled_date >= "${since}"`, sort: '-scheduled_date' }),
-        api.collection('entries').getFullList({ filter: `entry_date >= "${since}"`, sort: '-entry_date' }),
+        api.collection('entries').getFullList({ filter: `entry_date >= "${since}"`, sort: '-created_at' }),
       ])
       tasks.value = taskRecords.map(mapTask)
       steps.value = stepRecords.map(mapStep)
@@ -269,7 +273,7 @@ export const useTaskStore = defineStore('tasks', () => {
       value: amount,
       kind: kind || (progress.task.type === 'duration' ? 'duration' : 'quantity'),
       unit,
-      note,
+      note: sanitizeTaskEntryNote(note).trim(),
     })
     entries.value.unshift(mapEntry(record))
     const updated = makeProgress(progress.task, selectedDate.value, progress.programStep)
@@ -286,6 +290,14 @@ export const useTaskStore = defineStore('tasks', () => {
         Object.assign(occurrence, mapOccurrence(updatedOccurrence))
       }
     }
+  }
+
+  async function loadEntryNoteHistory(taskId: string) {
+    const records = await api.collection('entries').getFullList({
+      filter: `task = "${taskId}"`,
+      sort: '-created_at',
+    })
+    return records.map(mapEntry)
   }
 
   async function setStatus(progress: TaskProgress, status: Occurrence['status']) {
@@ -327,6 +339,8 @@ export const useTaskStore = defineStore('tasks', () => {
       cycle_length: draft.cycleLength || 0,
       program_repeat: draft.programRepeat ?? true,
       program_strict: draft.programStrict ?? false,
+      entry_notes_enabled: draft.entryNotesEnabled,
+      entry_note_suggestions_enabled: draft.entryNoteSuggestionsEnabled,
       sort_order: sortOrder,
       interval_template: draft.type === 'interval' ? draft.intervalTemplate || '' : '',
     }
@@ -467,6 +481,7 @@ export const useTaskStore = defineStore('tasks', () => {
     toggleComplete,
     setDailyTotalSealed,
     addEntry,
+    loadEntryNoteHistory,
     setStatus,
     shiftProgram,
     saveTask,

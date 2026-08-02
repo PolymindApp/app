@@ -57,7 +57,7 @@ suffix="$(php -r 'echo bin2hex(random_bytes(5));')"
 password="correct-horse-battery"
 
 migration_count="$(sqlite3 "$test_db" 'SELECT COUNT(*) FROM mom_schema_migrations;')"
-[[ "$migration_count" == 8 ]] || {
+[[ "$migration_count" == 11 ]] || {
   echo "The API did not apply the complete database migration sequence." >&2
   exit 1
 }
@@ -361,8 +361,65 @@ task_response="$(curl --silent --show-error --fail \
   "$api_url/collections/tasks/records")"
 task_id="$(json_field id <<<"$task_response")"
 task_owner="$(json_field owner <<<"$task_response")"
+task_notes_enabled="$(json_field entry_notes_enabled <<<"$task_response")"
+task_note_suggestions_enabled="$(json_field entry_note_suggestions_enabled <<<"$task_response")"
 [[ "$task_owner" == "$alice_id" ]] || {
   echo "The API accepted a forged owner." >&2
+  exit 1
+}
+[[ -z "$task_notes_enabled" && -z "$task_note_suggestions_enabled" ]] || {
+  echo "New tasks did not default to disabled entry note options." >&2
+  exit 1
+}
+
+task_note_settings_response="$(curl --silent --show-error --fail \
+  -X PATCH -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"entry_notes_enabled":true,"entry_note_suggestions_enabled":true}' \
+  "$api_url/collections/tasks/records/$task_id")"
+task_notes_enabled="$(json_field entry_notes_enabled <<<"$task_note_settings_response")"
+task_note_suggestions_enabled="$(json_field entry_note_suggestions_enabled <<<"$task_note_settings_response")"
+[[ "$task_notes_enabled" == 1 && "$task_note_suggestions_enabled" == 1 ]] || {
+  echo "Task entry note settings were not persisted." >&2
+  exit 1
+}
+
+entry_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "{\"task\":\"$task_id\",\"occurrence\":\"\",\"program_step\":\"\",\"entry_date\":\"2026-08-02\",\"value\":12,\"kind\":\"quantity\",\"unit\":\"reps\",\"note\":\"Track run\"}" \
+  "$api_url/collections/entries/records")"
+entry_note="$(json_field note <<<"$entry_response")"
+entry_created_at="$(json_field created_at <<<"$entry_response")"
+[[ "$entry_note" == "Track run" && "$entry_created_at" =~ ^2026-[0-9]{2}-[0-9]{2}T ]] || {
+  echo "A task entry did not persist its note and creation timestamp." >&2
+  exit 1
+}
+
+long_entry_note="$(php -r 'echo str_repeat("x", 256);')"
+long_entry_note_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "{\"task\":\"$task_id\",\"entry_date\":\"2026-08-02\",\"value\":12,\"kind\":\"quantity\",\"unit\":\"reps\",\"note\":\"$long_entry_note\"}" \
+  "$api_url/collections/entries/records")"
+[[ "$long_entry_note_status" == 422 ]] || {
+  echo "The API accepted a task entry note longer than 255 characters." >&2
+  exit 1
+}
+
+multiline_entry_payload="$(php -r '
+  echo json_encode([
+    "task" => $argv[1], "entry_date" => "2026-08-02", "value" => 12,
+    "kind" => "quantity", "unit" => "reps", "note" => "Track\nrun",
+  ], JSON_THROW_ON_ERROR);
+' "$task_id")"
+multiline_entry_note_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "$multiline_entry_payload" \
+  "$api_url/collections/entries/records")"
+[[ "$multiline_entry_note_status" == 422 ]] || {
+  echo "The API accepted a multiline task entry note." >&2
   exit 1
 }
 

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Capacitor } from '@capacitor/core'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { isSameDay } from 'date-fns'
 import { storeToRefs } from 'pinia'
 import { useDisplay } from 'vuetify'
@@ -10,9 +10,15 @@ import TaskCard from '@/components/TaskCard.vue'
 import WeekDateNavigator from '@/components/WeekDateNavigator.vue'
 import { formatIntervalDuration, intervalDuration } from '@/services/intervals'
 import { toDateKey } from '@/services/schedule'
+import {
+  TASK_ENTRY_NOTE_MAX_LENGTH,
+  sanitizeTaskEntryNote,
+  taskEntryNoteForAmount,
+  taskEntryNoteOptions,
+} from '@/services/taskEntryNotes'
 import { useIntervalStore } from '@/stores/intervals'
 import { useTaskStore } from '@/stores/tasks'
-import type { TaskProgress } from '@/types/domain'
+import type { Entry, TaskProgress } from '@/types/domain'
 
 const allowAutomaticFocus = Capacitor.getPlatform() !== 'android'
 const store = useTaskStore()
@@ -26,6 +32,10 @@ const exactDialog = ref(false)
 const exactProgress = ref<TaskProgress>()
 const exactAmountInput = ref('')
 const exactNote = ref('')
+const exactNoteHistory = ref<Entry[]>([])
+const exactNoteLoading = ref(false)
+const exactNoteAutoFilled = ref(false)
+let exactNoteHistoryRequest = 0
 const exactAction = ref<'add' | 'subtract' | 'set'>()
 const reviewSheet = ref(false)
 const activeIntervalSheet = ref(false)
@@ -43,6 +53,11 @@ const exactDesktopAmount = computed<number | null>({
   },
 })
 const keypadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'backspace'] as const
+const exactNoteOptions = computed(() =>
+  exactProgress.value?.task.entryNotesEnabled
+    ? taskEntryNoteOptions(exactNoteHistory.value, exactProgress.value.task.id)
+    : [],
+)
 
 const required = computed(() => selectedProgress.value.filter((item) => item.task.mandatory))
 const optional = computed(() => selectedProgress.value.filter((item) => !item.task.mandatory))
@@ -97,12 +112,51 @@ async function resolveReview(item: TaskProgress, status: 'missed' | 'carried') {
   reviewSheet.value = false
 }
 
-function openExact(progress: TaskProgress) {
+async function openExact(progress: TaskProgress) {
   exactProgress.value = progress
   exactAmountInput.value = ''
   exactNote.value = ''
+  exactNoteAutoFilled.value = false
+  exactNoteHistory.value = store.entries.filter((entry) => entry.task === progress.task.id)
   exactAction.value = undefined
   exactDialog.value = true
+
+  if (!progress.task.entryNotesEnabled) return
+
+  const request = ++exactNoteHistoryRequest
+  exactNoteLoading.value = true
+  try {
+    const history = await store.loadEntryNoteHistory(progress.task.id)
+    if (request === exactNoteHistoryRequest && exactProgress.value?.task.id === progress.task.id) {
+      exactNoteHistory.value = history
+    }
+  } catch {
+    // Recent entries already provide useful suggestions if full history cannot load.
+  } finally {
+    if (request === exactNoteHistoryRequest) exactNoteLoading.value = false
+  }
+}
+
+watch([exactAmount, exactNoteHistory], ([amount]) => {
+  if (!exactProgress.value?.task.entryNoteSuggestionsEnabled) return
+  if (amount === null) {
+    if (exactNoteAutoFilled.value) exactNote.value = ''
+    exactNoteAutoFilled.value = false
+    return
+  }
+  if (exactNote.value && !exactNoteAutoFilled.value) return
+  const note = taskEntryNoteForAmount(
+    exactNoteHistory.value,
+    exactProgress.value?.task.id || '',
+    amount,
+  )
+  exactNote.value = note
+  exactNoteAutoFilled.value = Boolean(note)
+})
+
+function updateExactNote(value: unknown) {
+  exactNoteAutoFilled.value = false
+  exactNote.value = sanitizeTaskEntryNote(value)
 }
 
 function openTimeLogger(progress: TaskProgress) {
@@ -198,7 +252,7 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
       progress,
       amount,
       mode === 'add' ? undefined : 'adjustment',
-      exactNote.value.trim(),
+      progress.task.entryNotesEnabled ? exactNote.value.trim() : '',
     ))
     pulseProgressValue(progress)
     exactDialog.value = false
@@ -358,13 +412,18 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
             </div>
           </div>
         </div>
-        <v-textarea
-          v-model="exactNote"
+        <v-combobox
+          v-if="exactProgress?.task.entryNotesEnabled"
+          :model-value="exactNote"
+          :items="exactNoteOptions"
+          :loading="exactNoteLoading"
           label="Note (optional)"
-          rows="2"
-          auto-grow
-          maxlength="1000"
+          clearable
+          :maxlength="TASK_ENTRY_NOTE_MAX_LENGTH"
+          hint="Choose a previous note or type a new one"
+          persistent-hint
           class="mb-4"
+          @update:model-value="updateExactNote"
         />
         <div class="exact-actions">
           <v-btn

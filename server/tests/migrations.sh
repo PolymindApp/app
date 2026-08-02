@@ -34,7 +34,7 @@ run_migrations() {
 
 sqlite3 "$empty_db" 'VACUUM'
 first_run="$(run_migrations "$empty_db")"
-[[ "$first_run" == "202607290001,202607290002,202607290003,202607300001,202607310001,202607310002,202607310003,202608010001" ]] || {
+[[ "$first_run" == "202607290001,202607290002,202607290003,202607300001,202607310001,202607310002,202607310003,202608010001,202608020001,202608020002,202608020003" ]] || {
   echo "An empty database did not apply the complete migration sequence." >&2
   exit 1
 }
@@ -65,7 +65,7 @@ for table in "${expected_tables[@]}"; do
 done
 
 migration_count="$(sqlite3 "$empty_db" 'SELECT COUNT(*) FROM mom_schema_migrations;')"
-[[ "$migration_count" == 8 ]] || {
+[[ "$migration_count" == 11 ]] || {
   echo "Migration history does not contain all migrations." >&2
   exit 1
 }
@@ -89,7 +89,7 @@ cli_output="$(
   MOM_API_SECRET="mom-migration-test-secret-at-least-32-characters" \
     php server/migrate.php
 )"
-[[ "$cli_output" == *"Applied 8 migrations"* && "$cli_output" == *"202608010001"* ]] || {
+[[ "$cli_output" == *"Applied 11 migrations"* && "$cli_output" == *"202608020003"* ]] || {
   echo "The migration CLI did not initialize and report a new database." >&2
   exit 1
 }
@@ -106,12 +106,34 @@ before_counts="$(sqlite3 "$existing_db" \
 existing_run="$(run_migrations "$existing_db")"
 after_counts="$(sqlite3 "$existing_db" \
   "SELECT (SELECT COUNT(*) FROM tasks) || ':' || (SELECT COUNT(*) FROM entries);")"
-[[ "$existing_run" == "202607290001,202607290002,202607290003,202607300001,202607310001,202607310002,202607310003,202608010001" ]] || {
+[[ "$existing_run" == "202607290001,202607290002,202607290003,202607300001,202607310001,202607310002,202607310003,202608010001,202608020001,202608020002,202608020003" ]] || {
   echo "An existing PHP database was not baselined correctly." >&2
   exit 1
 }
 [[ "$before_counts" == "$after_counts" ]] || {
   echo "Baselining an existing database changed application rows." >&2
+  exit 1
+}
+
+entry_note_type="$(sqlite3 "$existing_db" \
+  "SELECT type FROM pragma_table_info('entries') WHERE name = 'note';")"
+entry_created_column="$(sqlite3 "$existing_db" \
+  "SELECT COUNT(*) FROM pragma_table_info('entries') WHERE name = 'created_at';")"
+[[ "$entry_note_type" == "VARCHAR(255)" && "$entry_created_column" == 1 ]] || {
+  echo "The entry note reference migration did not install the expected schema." >&2
+  exit 1
+}
+
+task_note_settings="$(sqlite3 "$existing_db" \
+  "SELECT COUNT(*) FROM pragma_table_info('tasks') WHERE name IN ('entry_notes_enabled', 'entry_note_suggestions_enabled');")"
+[[ "$task_note_settings" == 2 ]] || {
+  echo "The task entry note settings migration did not install both columns." >&2
+  exit 1
+}
+enabled_task_note_settings="$(sqlite3 "$existing_db" \
+  'SELECT COUNT(*) FROM tasks WHERE entry_notes_enabled != 0 OR entry_note_suggestions_enabled != 0;')"
+[[ "$enabled_task_note_settings" == 0 ]] || {
+  echo "Existing task entry note settings were not disabled by default." >&2
   exit 1
 }
 

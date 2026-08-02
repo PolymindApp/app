@@ -315,11 +315,6 @@ async function loadVisibleWeekEntries() {
           </span>
         </router-link>
 
-        <div class="weekly-hint mt-4">
-          <v-icon icon="mdi-calendar-week-outline" size="18" />
-          <span><strong>{{ visibleWeekLabel }}</strong> · This chart shows the full visible week, not only the selected day.</span>
-        </div>
-
         <v-progress-linear
           v-if="weeklyChartLoading"
           indeterminate
@@ -336,6 +331,10 @@ async function loadVisibleWeekEntries() {
           :week-start="visibleWeekStart"
           class="mt-4"
         />
+        <div class="weekly-hint mt-4">
+          <v-icon icon="mdi-calendar-week-outline" size="18" />
+          <span><strong>{{ visibleWeekLabel }}</strong> · This chart shows the full visible week, not only the selected day.</span>
+        </div>
       </v-card>
 
       <section v-if="archivedTrackers.length">

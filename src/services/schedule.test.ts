@@ -14,6 +14,8 @@ const task = (overrides: Partial<Task> = {}): Task => ({
   recurrenceType: 'daily',
   weekdays: [1, 3, 5],
   intervalWeeks: 1,
+  entryNotesEnabled: true,
+  entryNoteSuggestionsEnabled: true,
   sortOrder: 0,
   ...overrides,
 })

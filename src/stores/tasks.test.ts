@@ -38,6 +38,8 @@ const task: Task = {
   targetValue: 4,
   targetOperator: 'gte',
   goalPeriod: 'occurrence',
+  entryNotesEnabled: true,
+  entryNoteSuggestionsEnabled: true,
   sortOrder: 0,
 }
 const completedOccurrence: Occurrence = {
@@ -58,6 +60,7 @@ function entry(id: string, value: number): Entry {
     task: task.id,
     occurrence: completedOccurrence.id,
     entryDate: '2026-07-29',
+    createdAt: '2026-07-29T12:00:00.000Z',
     value,
     kind: value < 0 ? 'adjustment' : 'duration',
     unit: 'hours',
@@ -115,6 +118,7 @@ describe('quantitative task completion', () => {
       kind: 'adjustment',
       unit: 'hours',
       note: '',
+      created_at: '2026-07-29T13:00:00.000Z',
     })
     apiMocks.updateOccurrence.mockResolvedValue({
       id: completedOccurrence.id,
@@ -161,12 +165,35 @@ describe('quantitative task completion', () => {
       kind: 'duration',
       unit: 'hours',
       note: 'Steady pace',
+      created_at: '2026-07-29T13:00:00.000Z',
     })
 
     await store.addEntry(store.makeProgress(task, selectedDate), 1, undefined, 'Steady pace')
 
     expect(apiMocks.createEntry).toHaveBeenCalledWith(expect.objectContaining({ note: 'Steady pace' }))
     expect(store.entries[0]?.note).toBe('Steady pace')
+  })
+
+  it('stores notes as a single line limited to 255 characters', async () => {
+    const store = useTaskStore()
+    store.selectedDate = selectedDate
+    store.occurrences = [{ ...completedOccurrence, status: 'pending' }]
+    apiMocks.createEntry.mockImplementation(async (payload) => ({
+      id: 'entry-sanitized-note',
+      ...payload,
+      created_at: '2026-07-29T13:00:00.000Z',
+    }))
+
+    await store.addEntry(
+      store.makeProgress(task, selectedDate),
+      1,
+      undefined,
+      `First line\n${'x'.repeat(300)}`,
+    )
+
+    expect(apiMocks.createEntry).toHaveBeenCalledWith(expect.objectContaining({
+      note: `First line ${'x'.repeat(244)}`,
+    }))
   })
 })
 

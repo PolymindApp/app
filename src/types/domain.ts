@@ -31,6 +31,8 @@ export interface Task {
   cycleLength?: number
   programRepeat?: boolean
   programStrict?: boolean
+  entryNotesEnabled: boolean
+  entryNoteSuggestionsEnabled: boolean
   sortOrder: number
   intervalTemplate?: string
 }
@@ -70,6 +72,7 @@ export interface Entry {
   occurrence?: string
   programStep?: string
   entryDate: string
+  createdAt: string
   value: number
   kind: 'duration' | 'quantity' | 'adjustment'
   unit: string

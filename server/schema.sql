@@ -53,6 +53,8 @@ CREATE TABLE tasks (
     cycle_length NUMERIC NOT NULL DEFAULT 0,
     program_repeat BOOLEAN NOT NULL DEFAULT FALSE,
     program_strict BOOLEAN NOT NULL DEFAULT FALSE,
+    entry_notes_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    entry_note_suggestions_enabled BOOLEAN NOT NULL DEFAULT FALSE,
     sort_order NUMERIC NOT NULL DEFAULT 0,
     color TEXT NOT NULL DEFAULT '',
     interval_template TEXT NOT NULL DEFAULT ''
@@ -110,13 +112,16 @@ CREATE TABLE entries (
     occurrence TEXT NOT NULL DEFAULT '',
     program_step TEXT NOT NULL DEFAULT '',
     entry_date TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT '',
     value NUMERIC NOT NULL DEFAULT 0,
     kind TEXT NOT NULL DEFAULT '',
     unit TEXT NOT NULL DEFAULT '',
-    note TEXT NOT NULL DEFAULT ''
+    note VARCHAR(255) NOT NULL DEFAULT ''
+        CHECK (length(note) <= 255 AND instr(note, char(10)) = 0 AND instr(note, char(13)) = 0)
 );
 
 CREATE INDEX idx_entries_owner_date ON entries (owner, entry_date);
+CREATE INDEX idx_entries_task_created ON entries (task, created_at DESC);
 
 CREATE TABLE interval_templates (
     id TEXT PRIMARY KEY NOT NULL DEFAULT ('r' || lower(hex(randomblob(7)))),

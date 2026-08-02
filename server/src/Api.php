@@ -1225,6 +1225,12 @@ final class Api
     private function createRecord(array $collection, array $user): never
     {
         $body = $this->jsonBody();
+        if ($collection['name'] === 'tasks') {
+            $body += [
+                'entry_notes_enabled' => false,
+                'entry_note_suggestions_enabled' => false,
+            ];
+        }
         $values = $this->validateRecordInput($collection, $body, true);
         $values['id'] = $this->newId();
         $values['owner'] = $user['id'];
@@ -1234,6 +1240,9 @@ final class Api
                 (string) $user['timezone'],
             );
             $this->validateNewIntervalSession($values, $user);
+        }
+        if ($collection['name'] === 'entries') {
+            $values['created_at'] = (new DateTimeImmutable('now'))->format('Y-m-d\TH:i:s.v\Z');
         }
         $this->validateRelations($collection['name'], $values, (string) $user['id']);
 
@@ -1929,6 +1938,15 @@ final class Api
         }
 
         if (in_array($collection, ['occurrences', 'entries'], true)) {
+            if (
+                $collection === 'entries'
+                && preg_match('/[\r\n]/', (string) ($record['note'] ?? '')) === 1
+            ) {
+                throw new ApiException(422, 'Entry notes must be a single line.', [
+                    'note' => 'single_line',
+                ]);
+            }
+
             $task = (string) ($record['task'] ?? '');
             if (!$this->relationExists('tasks', $task, $owner)) {
                 throw new ApiException(422, 'The selected task is invalid.');
