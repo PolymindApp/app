@@ -54,6 +54,7 @@ function mapSession(record: Record<string, any>): IntervalSession {
     },
     startedAt: record.started_at,
     endedAt: record.ended_at || undefined,
+    note: record.note || undefined,
     plannedSeconds: Number(record.planned_seconds || 0),
     elapsedSeconds: Number(record.elapsed_seconds || 0),
     runtime: record.runtime_state,
@@ -270,6 +271,7 @@ export const useIntervalStore = defineStore('intervals', () => {
       runtime?: IntervalRuntimeState
       elapsedSeconds?: number
       endedAt?: string
+      note?: string
     },
   ) {
     const payload: Record<string, unknown> = {}
@@ -277,6 +279,7 @@ export const useIntervalStore = defineStore('intervals', () => {
     if (changes.runtime) payload.runtime_state = changes.runtime
     if (changes.elapsedSeconds !== undefined) payload.elapsed_seconds = changes.elapsedSeconds
     if (changes.endedAt !== undefined) payload.ended_at = changes.endedAt
+    if (changes.note !== undefined) payload.note = changes.note
     const record = await api.collection('interval_sessions').update(sessionId, payload)
     const mapped = mapSession(record)
     const index = sessions.value.findIndex((session) => session.id === sessionId)

@@ -20,6 +20,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(BackgroundIntervalPlugin.class);
         registerPlugin(PasskeyPlugin.class);
         super.onCreate(savedInstanceState);
+        IntervalCuePlayer.preload(this);
 
         WindowCompat.enableEdgeToEdge(getWindow());
         getWindow().getDecorView().setBackgroundColor(APP_BACKGROUND);

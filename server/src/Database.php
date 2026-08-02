@@ -70,7 +70,7 @@ final class Database
                 'id', 'owner', 'template', 'source', 'status', 'snapshot_name',
                 'definition_snapshot', 'cue_snapshot', 'started_at', 'ended_at',
                 'planned_seconds', 'elapsed_seconds', 'runtime_state', 'task',
-                'program_step', 'task_date',
+                'program_step', 'task_date', 'note',
             ],
             'tracking_trackers' => [
                 'id', 'owner', 'name', 'description', 'role', 'kind', 'category',

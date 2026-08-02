@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import IntervalTypeIcon from '@/components/IntervalTypeIcon.vue'
+import LabeledSlider from '@/components/LabeledSlider.vue'
 import { stopBackgroundInterval, syncBackgroundInterval } from '@/services/backgroundInterval'
 import {
   notifyIntervalTransition,
@@ -15,16 +16,20 @@ import {
 import {
   createRuntimeState,
   formatIntervalDuration,
+  intervalDefinitionWithRepetitions,
   intervalDuration,
+  intervalGlobalRepetitionSettings,
   intervalRunProgress,
   reconcileIntervalRuntime,
   resolveIntervalStep,
   intervalStepDurationSeconds,
+  MAX_GLOBAL_REPETITIONS,
+  MIN_GLOBAL_REPETITIONS,
 } from '@/services/intervals'
 import { isTaskScheduled, stepsForDate, toDateKey } from '@/services/schedule'
 import { useIntervalStore } from '@/stores/intervals'
 import { useTaskStore } from '@/stores/tasks'
-import type { IntervalRuntimeState, IntervalSession } from '@/types/domain'
+import type { IntervalDefinition, IntervalRuntimeState, IntervalSession } from '@/types/domain'
 
 const route = useRoute()
 const router = useRouter()
@@ -34,6 +39,18 @@ const displayRemainingMs = ref(0)
 const syncing = ref(false)
 const starting = ref(false)
 const endDialog = ref(false)
+const noteDialog = ref(false)
+const noteDraft = ref('')
+const noteSaving = ref(false)
+const noteError = ref('')
+const repetitionDialog = ref(false)
+const selectedRepetitions = ref(MIN_GLOBAL_REPETITIONS)
+const repetitionDefinition = ref<IntervalDefinition>()
+const pendingRepetitionStart = ref<
+  | { kind: 'template'; taskId?: string; programStepId?: string }
+  | { kind: 'run-again' }
+>()
+const repetitionError = ref('')
 const attributionSheet = ref(false)
 const activeSessionSheet = ref(false)
 const error = ref('')
@@ -134,6 +151,13 @@ const attributedTaskName = computed(() => {
     : undefined
   return programStep ? `${task?.name || 'Program'} · ${programStep.name}` : task?.name
 })
+const noteChanged = computed(() => noteDraft.value.trim() !== (session.value?.note || ''))
+const selectedRepetitionDuration = computed(() => repetitionDefinition.value
+  ? intervalDuration(intervalDefinitionWithRepetitions(
+      repetitionDefinition.value,
+      selectedRepetitions.value,
+    ))
+  : 0)
 
 onMounted(async () => {
   runnerMounted = true
@@ -335,6 +359,27 @@ async function retryCompletion() {
   }
 }
 
+function openNoteDialog() {
+  noteDraft.value = session.value?.note || ''
+  noteError.value = ''
+  noteDialog.value = true
+}
+
+async function saveSessionNote() {
+  const item = session.value
+  if (!item || noteSaving.value || !noteChanged.value) return
+  noteSaving.value = true
+  noteError.value = ''
+  try {
+    await store.updateSession(item.id, { note: noteDraft.value.trim() })
+    noteDialog.value = false
+  } catch (cause) {
+    noteError.value = cause instanceof Error ? cause.message : 'Could not save the interval note.'
+  } finally {
+    noteSaving.value = false
+  }
+}
+
 async function pause() {
   const item = session.value
   if (!item || item.status !== 'running') return
@@ -393,27 +438,48 @@ async function requestStartTemplate() {
   await startTemplate(originTaskId.value || undefined, originProgramStepId.value || undefined)
 }
 
-async function startTemplate(taskId?: string, programStepId?: string) {
+async function startTemplate(taskId?: string, programStepId?: string, repetitions?: number) {
   const item = previewSession.value
   if (!item || starting.value) return
+  const repetitionSettings = intervalGlobalRepetitionSettings(item.definition)
+  if (repetitionSettings.enabled && repetitions === undefined) {
+    selectedRepetitions.value = repetitionSettings.defaultCount
+    repetitionDefinition.value = item.definition
+    pendingRepetitionStart.value = { kind: 'template', taskId, programStepId }
+    repetitionError.value = ''
+    attributionSheet.value = false
+    repetitionDialog.value = true
+    return
+  }
+
   starting.value = true
   error.value = ''
+  repetitionError.value = ''
   try {
+    const definition = repetitionSettings.enabled
+      ? intervalDefinitionWithRepetitions(item.definition, repetitions ?? repetitionSettings.defaultCount)
+      : item.definition
     await prepareIntervalCues(item.cues)
     const started = await store.startSession({
       name: item.name,
       source: 'template',
-      definition: item.definition,
+      definition,
       cues: item.cues,
       template: item.template,
       task: taskId,
       programStep: programStepId,
     })
     if (started.task !== taskId || started.programStep !== programStepId) {
+      repetitionDialog.value = false
+      repetitionDefinition.value = undefined
+      pendingRepetitionStart.value = undefined
       activeSessionSheet.value = true
       return
     }
     attributionSheet.value = false
+    repetitionDialog.value = false
+    repetitionDefinition.value = undefined
+    pendingRepetitionStart.value = undefined
     previewSession.value = undefined
     await router.replace({
       name: 'interval-runner',
@@ -426,10 +492,34 @@ async function startTemplate(taskId?: string, programStepId?: string) {
       wakeLock = await requestIntervalWakeLock()
     }
   } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : 'Could not start the interval.'
+    const message = cause instanceof Error ? cause.message : 'Could not start the interval.'
+    if (repetitionDialog.value) repetitionError.value = message
+    else error.value = message
   } finally {
     starting.value = false
   }
+}
+
+async function confirmRepetitionStart() {
+  const pending = pendingRepetitionStart.value
+  if (!pending) return
+  if (pending.kind === 'run-again') {
+    await runAgain(selectedRepetitions.value)
+    return
+  }
+  await startTemplate(
+    pending.taskId,
+    pending.programStepId,
+    selectedRepetitions.value,
+  )
+}
+
+function cancelRepetitionStart() {
+  if (starting.value) return
+  repetitionDialog.value = false
+  repetitionDefinition.value = undefined
+  pendingRepetitionStart.value = undefined
+  repetitionError.value = ''
 }
 
 async function resumeActiveSession() {
@@ -550,25 +640,51 @@ async function endEarly() {
   wakeLock = undefined
 }
 
-async function runAgain() {
+async function runAgain(repetitions?: number) {
   const item = session.value
-  if (!item) return
-  await prepareIntervalCues(item.cues)
-  const nextSession = await store.startSession({
-    name: item.name,
-    source: item.source,
-    definition: item.definition,
-    cues: item.cues,
-    template: item.template,
-  })
-  await router.replace({
-    name: 'interval-runner',
-    params: { sessionId: nextSession.id },
-    query: route.query.from === 'tasks' ? { from: 'tasks' } : {},
-  })
-  displayRemainingMs.value = nextSession.runtime.remainingMs
-  await syncNativeTimer(nextSession)
-  wakeLock = await requestIntervalWakeLock()
+  if (!item || starting.value) return
+  const repetitionSettings = intervalGlobalRepetitionSettings(item.definition)
+  if (repetitionSettings.enabled && repetitions === undefined) {
+    selectedRepetitions.value = repetitionSettings.defaultCount
+    repetitionDefinition.value = item.definition
+    pendingRepetitionStart.value = { kind: 'run-again' }
+    repetitionError.value = ''
+    repetitionDialog.value = true
+    return
+  }
+
+  starting.value = true
+  repetitionError.value = ''
+  try {
+    const definition = repetitionSettings.enabled
+      ? intervalDefinitionWithRepetitions(item.definition, repetitions ?? repetitionSettings.defaultCount)
+      : item.definition
+    await prepareIntervalCues(item.cues)
+    const nextSession = await store.startSession({
+      name: item.name,
+      source: item.source,
+      definition,
+      cues: item.cues,
+      template: item.template,
+    })
+    repetitionDialog.value = false
+    repetitionDefinition.value = undefined
+    pendingRepetitionStart.value = undefined
+    await router.replace({
+      name: 'interval-runner',
+      params: { sessionId: nextSession.id },
+      query: route.query.from === 'tasks' ? { from: 'tasks' } : {},
+    })
+    displayRemainingMs.value = nextSession.runtime.remainingMs
+    await syncNativeTimer(nextSession)
+    wakeLock = await requestIntervalWakeLock()
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : 'Could not start the interval again.'
+    if (repetitionDialog.value) repetitionError.value = message
+    else error.value = message
+  } finally {
+    starting.value = false
+  }
 }
 </script>
 
@@ -593,8 +709,15 @@ async function runAgain() {
           <div><span>Elapsed</span><strong>{{ formatIntervalDuration(session.elapsedSeconds) }}</strong></div>
           <div><span>Intervals</span><strong>{{ Math.min(session.runtime.stepIndex, current?.totalSteps || session.runtime.stepIndex) }}</strong></div>
         </div>
+        <div v-if="session.note" class="finish-note">
+          <v-icon icon="mdi-note-text-outline" size="22" />
+          <p>{{ session.note }}</p>
+        </div>
         <div class="finish-actions">
-          <v-btn color="secondary" size="large" prepend-icon="mdi-replay" @click="runAgain">Run again</v-btn>
+          <v-btn color="secondary" size="large" prepend-icon="mdi-replay" :loading="starting" @click="runAgain()">Run again</v-btn>
+          <v-btn variant="tonal" size="large" prepend-icon="mdi-note-plus-outline" @click="openNoteDialog">
+            {{ session.note ? 'Edit note' : 'Add note' }}
+          </v-btn>
           <v-btn variant="outlined" size="large" :to="returnTo">Done</v-btn>
         </div>
       </section>
@@ -757,6 +880,72 @@ async function runAgain() {
       @confirm="endEarly"
     />
 
+    <v-dialog v-model="noteDialog" max-width="480" :persistent="noteSaving">
+      <v-card class="pa-5">
+        <div class="note-dialog-heading">
+          <div class="note-dialog-icon">
+            <v-icon icon="mdi-note-edit-outline" size="24" />
+          </div>
+          <div class="min-width-0">
+            <h2 class="text-h6 font-weight-black">Interval note</h2>
+            <p class="text-body-2 muted mt-1">Capture how the session felt or anything worth remembering.</p>
+          </div>
+        </div>
+        <v-alert v-if="noteError" type="error" variant="tonal" class="mt-4">{{ noteError }}</v-alert>
+        <v-textarea
+          v-model="noteDraft"
+          label="Note"
+          maxlength="2000"
+          counter
+          rows="4"
+          auto-grow
+          class="mt-5"
+          @keydown.ctrl.enter="saveSessionNote"
+          @keydown.meta.enter="saveSessionNote"
+        />
+        <div class="note-dialog-actions mt-5">
+          <v-btn variant="text" :disabled="noteSaving" @click="noteDialog = false">Cancel</v-btn>
+          <v-btn color="secondary" :loading="noteSaving" :disabled="!noteChanged" @click="saveSessionNote">Save note</v-btn>
+        </div>
+      </v-card>
+    </v-dialog>
+
+    <v-dialog
+      :model-value="repetitionDialog"
+      max-width="440"
+      :persistent="starting"
+      @update:model-value="!$event && cancelRepetitionStart()"
+    >
+      <v-card class="pa-5">
+        <div class="note-dialog-heading">
+          <div class="note-dialog-icon">
+            <v-icon icon="mdi-repeat" size="24" />
+          </div>
+          <div class="min-width-0">
+            <h2 class="text-h6 font-weight-black">Choose repetitions</h2>
+            <p class="text-body-2 muted mt-1">Repeat the entire interval sequence.</p>
+          </div>
+        </div>
+        <v-alert v-if="repetitionError" type="error" variant="tonal" class="mt-4">{{ repetitionError }}</v-alert>
+        <LabeledSlider
+          v-model="selectedRepetitions"
+          title="Repetitions"
+          :min="MIN_GLOBAL_REPETITIONS"
+          :max="MAX_GLOBAL_REPETITIONS"
+          :step="1"
+          aria-label="Repetitions for this interval run"
+          class="mt-6"
+        />
+        <p class="repetition-summary mt-4">
+          {{ selectedRepetitions }} repetitions · {{ formatIntervalDuration(selectedRepetitionDuration) }} total
+        </p>
+        <div class="note-dialog-actions mt-5">
+          <v-btn variant="text" :disabled="starting" @click="cancelRepetitionStart">Cancel</v-btn>
+          <v-btn color="secondary" prepend-icon="mdi-play" :loading="starting" @click="confirmRepetitionStart">Start</v-btn>
+        </div>
+      </v-card>
+    </v-dialog>
+
     <ActionBottomSheet
       v-model="attributionSheet"
       title="Choose what this run completes"
@@ -867,6 +1056,7 @@ async function runAgain() {
   position: relative;
   width: min(292px, calc(100vw - 2rem));
   aspect-ratio: 1;
+  container-type: inline-size;
   isolation: isolate;
 }
 .progress-ring {
@@ -879,14 +1069,17 @@ async function runAgain() {
 .progress-ring--total {
   width: 100% !important;
   height: 100% !important;
+  opacity: .5;
 }
 .progress-ring--round {
   width: calc(100% - 16px) !important;
   height: calc(100% - 16px) !important;
+  opacity: .75;
 }
 .progress-ring--item {
   width: calc(100% - 32px) !important;
   height: calc(100% - 32px) !important;
+  opacity: 1;
 }
 .progress-rings__content {
   position: absolute;
@@ -918,8 +1111,40 @@ async function runAgain() {
 .finish-stats div { display: flex; padding: 1rem .5rem; flex-direction: column; border-radius: 16px; background: rgb(var(--v-theme-surface)); }
 .finish-stats span { color: rgb(var(--v-theme-on-surface) / .52); font-size: .6rem; text-transform: uppercase; }
 .finish-stats strong { margin-top: .25rem; font-size: 1rem; }
+.finish-note {
+  display: flex;
+  margin: -1rem 0 1.5rem;
+  padding: 1rem;
+  align-items: flex-start;
+  gap: .75rem;
+  border: 1px solid rgb(var(--v-theme-on-surface) / .08);
+  border-radius: 16px;
+  background: rgb(var(--v-theme-surface));
+  color: rgb(var(--v-theme-on-surface) / .76);
+  text-align: left;
+}
+.finish-note :deep(.v-icon) { flex: 0 0 auto; color: rgb(var(--v-theme-secondary)); }
+.finish-note p { overflow-wrap: anywhere; white-space: pre-wrap; }
 .finish-actions { display: grid; gap: .75rem; }
-@media (min-width: 700px) { .finish-actions { grid-template-columns: 1fr 1fr; } }
+.note-dialog-heading { display: flex; align-items: center; gap: 12px; }
+.note-dialog-icon {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 15px;
+  background: rgb(var(--v-theme-secondary) / .16);
+  color: rgb(var(--v-theme-secondary));
+}
+.note-dialog-actions { display: flex; justify-content: flex-end; gap: .5rem; }
+.repetition-summary {
+  color: rgb(var(--v-theme-on-surface) / .62);
+  font-size: .75rem;
+  font-weight: 750;
+  text-align: center;
+}
+@media (min-width: 700px) { .finish-actions { grid-template-columns: repeat(3, 1fr); } }
 
 @media (orientation: portrait) {
   .runner-page {
@@ -1056,6 +1281,10 @@ async function runAgain() {
         - var(--runner-progress-inset)
       )
     );
+  }
+
+  .runner-type-backdrop {
+    --interval-type-size: 75cqi !important;
   }
 
   .timer-value {

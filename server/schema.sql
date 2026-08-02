@@ -150,7 +150,8 @@ CREATE TABLE interval_sessions (
     runtime_state JSON DEFAULT NULL,
     task TEXT NOT NULL DEFAULT '',
     program_step TEXT NOT NULL DEFAULT '',
-    task_date TEXT NOT NULL DEFAULT ''
+    task_date TEXT NOT NULL DEFAULT '',
+    note TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX idx_interval_sessions_owner_started

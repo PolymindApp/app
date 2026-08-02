@@ -8,6 +8,7 @@ import { api } from './lib/api'
 import router from './router'
 import { vuetify } from './plugins/vuetify'
 import { installAndroidFocusAutoScroll } from './services/androidFocusAutoScroll'
+import { preloadIntervalCueAudio } from './services/intervalCues'
 import { installTrackingNotificationRouting } from './services/trackingReminders'
 import {
   readAndroidRoute,
@@ -16,6 +17,10 @@ import {
 import './styles/main.scss'
 
 const nativePlatform = Capacitor.getPlatform()
+
+void preloadIntervalCueAudio().catch(() => {
+  // Cue audio is best-effort and can retry when an interval starts.
+})
 
 if (nativePlatform === 'android') {
   document.documentElement.classList.add('platform-android')

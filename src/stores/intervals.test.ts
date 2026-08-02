@@ -4,6 +4,7 @@ import type { IntervalTemplate } from '@/types/domain'
 
 const apiMocks = vi.hoisted(() => ({
   updateTemplate: vi.fn(),
+  updateIntervalSession: vi.fn(),
   completeIntervalSession: vi.fn(),
 }))
 
@@ -13,6 +14,7 @@ vi.mock('@/lib/api', () => ({
     completeIntervalSession: apiMocks.completeIntervalSession,
     collection: (name: string) => {
       if (name === 'interval_templates') return { update: apiMocks.updateTemplate }
+      if (name === 'interval_sessions') return { update: apiMocks.updateIntervalSession }
       throw new Error(`Unexpected collection: ${name}`)
     },
   },
@@ -77,6 +79,7 @@ describe('interval task attribution', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     localStorage.clear()
+    apiMocks.updateIntervalSession.mockReset()
     apiMocks.completeIntervalSession.mockReset()
   })
 
@@ -148,5 +151,36 @@ describe('interval task attribution', () => {
         status: 'completed',
       }),
     ])
+  })
+
+  it('persists a note on a finished interval session', async () => {
+    apiMocks.updateIntervalSession.mockResolvedValue({
+      id: 'session-1',
+      template: 'template-1',
+      source: 'template',
+      status: 'completed',
+      snapshot_name: 'Intervals',
+      definition_snapshot: { version: 1, children: [] },
+      cue_snapshot: { soundEnabled: true, vibrationEnabled: true },
+      started_at: '2026-08-01T14:00:00.000Z',
+      ended_at: '2026-08-01T14:10:00.000Z',
+      note: 'Felt strong throughout.',
+      planned_seconds: 600,
+      elapsed_seconds: 600,
+      runtime_state: {
+        stepIndex: 4,
+        remainingMs: 0,
+        accumulatedMs: 600000,
+        updatedAt: '2026-08-01T14:10:00.000Z',
+      },
+    })
+
+    const store = useIntervalStore()
+    const updated = await store.updateSession('session-1', { note: 'Felt strong throughout.' })
+
+    expect(apiMocks.updateIntervalSession).toHaveBeenCalledWith('session-1', {
+      note: 'Felt strong throughout.',
+    })
+    expect(updated.note).toBe('Felt strong throughout.')
   })
 })
