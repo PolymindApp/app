@@ -1245,6 +1245,14 @@ final class Api
             $values['created_at'] = (new DateTimeImmutable('now'))->format('Y-m-d\TH:i:s.v\Z');
         }
         $this->validateRelations($collection['name'], $values, (string) $user['id']);
+        if ($collection['name'] === 'journal_entries') {
+            $now = (new DateTimeImmutable('now'))->format('Y-m-d\TH:i:s.v\Z');
+            $values = array_merge(
+                $values,
+                $this->journalContextSnapshots($values, (string) $user['id']),
+                ['created_at' => $now, 'updated_at' => $now],
+            );
+        }
 
         $columns = array_keys($values);
         $placeholders = array_map(static fn (string $column): string => ':' . $column, $columns);
@@ -1295,6 +1303,23 @@ final class Api
 
         $combined = array_merge($this->normalizeRecord($collection, $existing), $values);
         $this->validateRelations($collection['name'], $combined, (string) $user['id']);
+        if ($collection['name'] === 'journal_entries') {
+            if (array_key_exists('task', $values)) {
+                $values['task_snapshot'] = $this->journalContextName(
+                    'tasks',
+                    (string) $values['task'],
+                    (string) $user['id'],
+                );
+            }
+            if (array_key_exists('tracker', $values)) {
+                $values['tracker_snapshot'] = $this->journalContextName(
+                    'tracking_trackers',
+                    (string) $values['tracker'],
+                    (string) $user['id'],
+                );
+            }
+            $values['updated_at'] = (new DateTimeImmutable('now'))->format('Y-m-d\TH:i:s.v\Z');
+        }
         $assignments = array_map(
             static fn (string $column): string => $column . ' = :' . $column,
             array_keys($values),
@@ -1511,6 +1536,10 @@ final class Api
     private function deleteTask(string $id, string $owner): void
     {
         $statement = $this->database->pdo->prepare(
+            "UPDATE journal_entries SET task = '' WHERE task = :id AND owner = :owner",
+        );
+        $statement->execute(['id' => $id, 'owner' => $owner]);
+        $statement = $this->database->pdo->prepare(
             "UPDATE interval_sessions SET task = '', program_step = ''
              WHERE task = :id AND owner = :owner",
         );
@@ -1617,6 +1646,10 @@ final class Api
 
     private function deleteTrackingTracker(string $id, string $owner): void
     {
+        $statement = $this->database->pdo->prepare(
+            "UPDATE journal_entries SET tracker = '' WHERE tracker = :id AND owner = :owner",
+        );
+        $statement->execute(['id' => $id, 'owner' => $owner]);
         $statement = $this->database->pdo->prepare(
             'DELETE FROM tracking_entries WHERE tracker = :id AND owner = :owner',
         );
@@ -2008,7 +2041,45 @@ final class Api
             ) {
                 throw new ApiException(422, 'The rating is outside this tracker’s scale.');
             }
+            return;
         }
+
+        if ($collection === 'journal_entries') {
+            $task = (string) ($record['task'] ?? '');
+            if ($task !== '' && !$this->relationExists('tasks', $task, $owner)) {
+                throw new ApiException(422, 'The selected journal task is invalid.');
+            }
+            $tracker = (string) ($record['tracker'] ?? '');
+            if ($tracker !== '' && !$this->relationExists('tracking_trackers', $tracker, $owner)) {
+                throw new ApiException(422, 'The selected journal tracker is invalid.');
+            }
+        }
+    }
+
+    /** @return array{task_snapshot: string, tracker_snapshot: string} */
+    private function journalContextSnapshots(array $record, string $owner): array
+    {
+        return [
+            'task_snapshot' => $this->journalContextName(
+                'tasks',
+                (string) ($record['task'] ?? ''),
+                $owner,
+            ),
+            'tracker_snapshot' => $this->journalContextName(
+                'tracking_trackers',
+                (string) ($record['tracker'] ?? ''),
+                $owner,
+            ),
+        ];
+    }
+
+    private function journalContextName(string $table, string $id, string $owner): string
+    {
+        if ($id === '') {
+            return '';
+        }
+        $record = $this->ownedRecord($table, $id, $owner);
+        return (string) $record['name'];
     }
 
     private function validateTrackerDefinitionUpdate(array $existing, array $body, string $owner): void

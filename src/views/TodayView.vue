@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Capacitor } from '@capacitor/core'
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { isSameDay } from 'date-fns'
 import { storeToRefs } from 'pinia'
 import { useDisplay } from 'vuetify'
@@ -38,6 +38,8 @@ const exactNoteAutoFilled = ref(false)
 let exactNoteHistoryRequest = 0
 const exactAction = ref<'add' | 'subtract' | 'set'>()
 const reviewSheet = ref(false)
+const journalSheet = ref(false)
+const journalProgress = ref<TaskProgress>()
 const activeIntervalSheet = ref(false)
 const intervalStartError = ref('')
 const valuePulseVersions = ref<Record<string, number>>({})
@@ -110,6 +112,33 @@ async function runForProgress(progress: TaskProgress, action: () => Promise<void
 async function resolveReview(item: TaskProgress, status: 'missed' | 'carried') {
   await run(() => store.setStatus(item, status))
   reviewSheet.value = false
+}
+
+function openJournalActions(progress: TaskProgress) {
+  journalProgress.value = progress
+  journalSheet.value = true
+}
+
+async function writeTaskReflection() {
+  const progress = journalProgress.value
+  if (!progress) return
+  journalSheet.value = false
+  await nextTick()
+  await router.push({
+    name: 'journal-new',
+    query: { task: progress.task.id, date: toDateKey(selectedDate.value) },
+  })
+}
+
+async function viewTaskReflections() {
+  const progress = journalProgress.value
+  if (!progress) return
+  journalSheet.value = false
+  await nextTick()
+  await router.push({
+    name: 'journal',
+    query: { task: progress.task.id, date: toDateKey(selectedDate.value) },
+  })
 }
 
 async function openExact(progress: TaskProgress) {
@@ -326,6 +355,7 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
             @log-amount="openExact"
             @log-time="openTimeLogger"
             @start-interval="startIntervalTask"
+            @journal-actions="openJournalActions"
           />
         </div>
       </section>
@@ -347,6 +377,7 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
             @log-amount="openExact"
             @log-time="openTimeLogger"
             @start-interval="startIntervalTask"
+            @journal-actions="openJournalActions"
           />
         </div>
       </section>
@@ -466,6 +497,28 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
         </div>
       </v-card>
     </v-dialog>
+
+    <ActionBottomSheet
+      v-model="journalSheet"
+      :title="journalProgress?.programStep?.name || journalProgress?.task.name || 'Task journal'"
+      hide-title
+      :aria-label="journalProgress ? `${journalProgress.programStep?.name || journalProgress.task.name} journal actions` : 'Task journal actions'"
+    >
+      <template v-if="journalProgress">
+        <v-list-item
+          prepend-icon="mdi-notebook-plus-outline"
+          title="Write reflection"
+          rounded="lg"
+          @click="writeTaskReflection"
+        />
+        <v-list-item
+          prepend-icon="mdi-notebook-outline"
+          title="View reflections"
+          rounded="lg"
+          @click="viewTaskReflections"
+        />
+      </template>
+    </ActionBottomSheet>
 
     <ActionBottomSheet
       v-model="reviewSheet"

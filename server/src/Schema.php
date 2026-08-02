@@ -208,6 +208,20 @@ final class Schema
                 'sort' => ['occurred_at', 'local_date'],
                 'filter' => ['tracker', 'occurred_at', 'local_date'],
             ],
+            'journal_entries' => [
+                'fields' => [
+                    'title' => self::text(160),
+                    'body' => self::text(20000, true),
+                    'occurred_at' => self::timestamp(true),
+                    'local_date' => self::dateKey(true),
+                    'timezone_offset' => self::integer(-840, 840),
+                    'task' => self::relation(false, true),
+                    'tracker' => self::relation(false, true),
+                ],
+                'required' => ['body', 'occurred_at', 'local_date', 'timezone_offset'],
+                'sort' => ['occurred_at', 'local_date', 'created_at', 'updated_at'],
+                'filter' => ['task', 'tracker', 'occurred_at', 'local_date'],
+            ],
         ];
 
         return self::$collections;

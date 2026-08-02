@@ -18,6 +18,7 @@ const emit = defineEmits<{
   logTime: [progress: TaskProgress]
   review: [progress: TaskProgress]
   startInterval: [progress: TaskProgress]
+  journalActions: [progress: TaskProgress]
 }>()
 
 const task = computed(() => props.progress.task)
@@ -129,6 +130,15 @@ watch(() => props.valuePulse, async (pulse, previousPulse) => {
         </div>
         <p class="task-subtitle text-truncate mt-1">{{ subtitle || 'Personal' }}</p>
       </div>
+
+      <v-btn
+        icon="mdi-notebook-edit-outline"
+        variant="text"
+        size="default"
+        :aria-label="`Journal actions for ${title}`"
+        @touchstart.stop
+        @click.stop="emit('journalActions', progress)"
+      />
 
       <v-progress-circular
         v-if="!isCheck"

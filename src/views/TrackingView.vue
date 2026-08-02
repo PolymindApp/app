@@ -70,6 +70,28 @@ function editActionTracker() {
   void router.push(`/tracking/${tracker.id}/edit`)
 }
 
+async function writeTrackerReflection() {
+  const tracker = actionTracker.value
+  if (!tracker) return
+  trackerActionsOpen.value = false
+  await nextTick()
+  await router.push({
+    name: 'journal-new',
+    query: { tracker: tracker.id, date: dateKey.value },
+  })
+}
+
+async function viewTrackerReflections() {
+  const tracker = actionTracker.value
+  if (!tracker) return
+  trackerActionsOpen.value = false
+  await nextTick()
+  await router.push({
+    name: 'journal',
+    query: { tracker: tracker.id, date: dateKey.value },
+  })
+}
+
 function startLog(tracker: TrackingTracker, entry?: TrackingEntry) {
   sheetTracker.value = tracker
   editingEntry.value = entry
@@ -378,7 +400,7 @@ async function loadVisibleWeekEntries() {
       v-model="trackerActionsOpen"
       :title="actionTracker?.name || 'Tracker actions'"
       hide-title
-      :aria-label="actionTracker ? `${actionTracker.name} log or edit actions` : 'Tracker actions'"
+      :aria-label="actionTracker ? `${actionTracker.name} log, journal, or edit actions` : 'Tracker actions'"
     >
       <template v-if="actionTracker">
         <v-list-item
@@ -392,6 +414,18 @@ async function loadVisibleWeekEntries() {
           title="Edit"
           rounded="lg"
           @click="editActionTracker"
+        />
+        <v-list-item
+          prepend-icon="mdi-notebook-plus-outline"
+          title="Write reflection"
+          rounded="lg"
+          @click="writeTrackerReflection"
+        />
+        <v-list-item
+          prepend-icon="mdi-notebook-outline"
+          title="View reflections"
+          rounded="lg"
+          @click="viewTrackerReflections"
         />
       </template>
     </ActionBottomSheet>

@@ -83,6 +83,11 @@ final class Database
                 'id', 'owner', 'tracker', 'occurred_at', 'local_date',
                 'timezone_offset', 'value', 'note',
             ],
+            'journal_entries' => [
+                'id', 'owner', 'title', 'body', 'occurred_at', 'local_date',
+                'timezone_offset', 'task', 'tracker', 'task_snapshot',
+                'tracker_snapshot', 'created_at', 'updated_at',
+            ],
             'mom_rate_limits' => ['rate_key', 'window_start', 'hits'],
             'mom_passkey_challenges' => [
                 'id', 'purpose', 'user_id', 'user_handle', 'challenge',

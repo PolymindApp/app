@@ -247,6 +247,32 @@ export interface TrackingEntryDraft extends Omit<TrackingEntry, 'id'> {
   id?: string
 }
 
+export interface JournalEntry {
+  id: string
+  title: string
+  body: string
+  occurredAt: string
+  localDate: string
+  timezoneOffset: number
+  task?: string
+  tracker?: string
+  taskSnapshot: string
+  trackerSnapshot: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface JournalEntryDraft {
+  id?: string
+  title: string
+  body: string
+  occurredAt: string
+  localDate: string
+  timezoneOffset: number
+  task?: string
+  tracker?: string
+}
+
 export type TrackingSourceKind = 'tracker' | 'task' | 'interval'
 export type TrackingFactorMode = 'presence' | 'quantity'
 

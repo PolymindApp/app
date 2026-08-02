@@ -5,6 +5,7 @@ import { useDisplay } from 'vuetify'
 import { useRouter } from 'vue-router'
 import AccountMenu from '@/components/AccountMenu.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import { MAIN_NAV_ITEMS } from '@/services/navigation'
 import { useAuthStore } from '@/stores/auth'
 
 const { mdAndUp } = useDisplay()
@@ -14,11 +15,7 @@ const logoutDialog = ref(false)
 const pageTransition = ref('page-level-forward')
 const isIos = Capacitor.getPlatform() === 'ios'
 
-const items = [
-  { title: 'Tasks', icon: 'mdi-lightning-bolt', to: '/tasks' },
-  { title: 'Intervals', icon: 'mdi-timer-outline', to: '/intervals' },
-  { title: 'Tracking', icon: 'mdi-chart-timeline-variant', to: '/tracking' },
-]
+const items = MAIN_NAV_ITEMS
 
 const immersive = computed(() => Boolean(router.currentRoute.value.meta.immersive))
 const pageTitle = computed(() => String(router.currentRoute.value.meta.title || 'Mom'))
@@ -40,6 +37,7 @@ const current = computed({
     const path = router.currentRoute.value.path
     if (path.startsWith('/intervals')) return '/intervals'
     if (path.startsWith('/tracking')) return '/tracking'
+    if (path.startsWith('/journal')) return '/journal'
     if (path.startsWith('/tasks')) return '/tasks'
     return path
   },

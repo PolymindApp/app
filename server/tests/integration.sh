@@ -57,7 +57,7 @@ suffix="$(php -r 'echo bin2hex(random_bytes(5));')"
 password="correct-horse-battery"
 
 migration_count="$(sqlite3 "$test_db" 'SELECT COUNT(*) FROM mom_schema_migrations;')"
-[[ "$migration_count" == 11 ]] || {
+[[ "$migration_count" == 12 ]] || {
   echo "The API did not apply the complete database migration sequence." >&2
   exit 1
 }
@@ -666,6 +666,67 @@ tracker_response="$(curl --silent --show-error --fail \
   "$api_url/collections/tracking_trackers/records")"
 tracker_id="$(json_field id <<<"$tracker_response")"
 
+journal_payload="$(php -r '
+  echo json_encode([
+    "title" => "After training", "body" => "I felt calmer after the final round.\nKeep the slower pace.",
+    "occurred_at" => "2026-08-02T16:00:00Z", "local_date" => "2026-08-02",
+    "timezone_offset" => 240, "task" => $argv[1], "tracker" => $argv[2],
+  ], JSON_THROW_ON_ERROR);
+' "$task_id" "$tracker_id")"
+journal_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "$journal_payload" \
+  "$api_url/collections/journal_entries/records")"
+journal_id="$(json_field id <<<"$journal_response")"
+journal_task_snapshot="$(json_field task_snapshot <<<"$journal_response")"
+journal_tracker_snapshot="$(json_field tracker_snapshot <<<"$journal_response")"
+journal_created_at="$(json_field created_at <<<"$journal_response")"
+[[ "$journal_task_snapshot" == "Secure task" && "$journal_tracker_snapshot" == "Mood" && "$journal_created_at" =~ T ]] || {
+  echo "A journal entry did not retain its task and tracker context snapshots." >&2
+  exit 1
+}
+
+journal_update_response="$(curl --silent --show-error --fail \
+  -X PATCH -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"title":"Training reflection"}' \
+  "$api_url/collections/journal_entries/records/$journal_id")"
+journal_updated_title="$(json_field title <<<"$journal_update_response")"
+journal_updated_body="$(json_field body <<<"$journal_update_response")"
+[[ "$journal_updated_title" == "Training reflection" && "$journal_updated_body" == *"Keep the slower pace."* ]] || {
+  echo "Updating a journal entry did not preserve its unchanged reflection fields." >&2
+  exit 1
+}
+
+journal_list_count="$(curl --silent --show-error --fail -G \
+  -H "Authorization: Bearer $alice_token" \
+  --data-urlencode 'filter=local_date >= "2026-08-01" && local_date <= "2026-08-03"' \
+  "$api_url/collections/journal_entries/records" \
+  | php -r '$data=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); echo $data["totalItems"];')"
+[[ "$journal_list_count" == 1 ]] || {
+  echo "Journal week filtering did not return the expected entry." >&2
+  exit 1
+}
+
+long_journal_body="$(php -r 'echo str_repeat("x", 20001);')"
+long_journal_payload="$(php -r '
+  echo json_encode([
+    "title" => "Too long", "body" => $argv[1],
+    "occurred_at" => "2026-08-02T16:00:00Z", "local_date" => "2026-08-02",
+    "timezone_offset" => 240, "task" => "", "tracker" => "",
+  ], JSON_THROW_ON_ERROR);
+' "$long_journal_body")"
+long_journal_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "$long_journal_payload" \
+  "$api_url/collections/journal_entries/records")"
+[[ "$long_journal_status" == 422 ]] || {
+  echo "The API accepted a journal reflection longer than 20000 characters." >&2
+  exit 1
+}
+
 tracking_entry_response="$(curl --silent --show-error --fail \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $alice_token" \
@@ -716,6 +777,16 @@ cross_user_tracking_status="$(curl --silent --output /dev/null --write-out '%{ht
   exit 1
 }
 
+cross_user_journal_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $bob_token" \
+  --data "$journal_payload" \
+  "$api_url/collections/journal_entries/records")"
+[[ "$cross_user_journal_status" == 422 ]] || {
+  echo "Cross-user journal context isolation failed." >&2
+  exit 1
+}
+
 tracker_delete_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
   -X DELETE -H "Authorization: Bearer $alice_token" \
   "$api_url/collections/tracking_trackers/records/$tracker_id")"
@@ -725,12 +796,32 @@ remaining_tracking_entries="$(sqlite3 "$test_db" \
   echo "Permanent tracker deletion did not cascade to its entries." >&2
   exit 1
 }
+journal_after_tracker_delete="$(sqlite3 "$test_db" \
+  "SELECT tracker || ':' || tracker_snapshot FROM journal_entries WHERE id = '$journal_id';")"
+[[ "$journal_after_tracker_delete" == ":Mood" ]] || {
+  echo "Tracker deletion did not safely detach its journal context." >&2
+  exit 1
+}
 
 delete_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
   -X DELETE -H "Authorization: Bearer $alice_token" \
   "$api_url/collections/tasks/records/$task_id")"
 [[ "$delete_status" == 204 ]] || {
   echo "Task deletion failed." >&2
+  exit 1
+}
+journal_after_task_delete="$(sqlite3 "$test_db" \
+  "SELECT task || ':' || task_snapshot FROM journal_entries WHERE id = '$journal_id';")"
+[[ "$journal_after_task_delete" == ":Secure task" ]] || {
+  echo "Task deletion did not safely detach its journal context." >&2
+  exit 1
+}
+
+journal_delete_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  -X DELETE -H "Authorization: Bearer $alice_token" \
+  "$api_url/collections/journal_entries/records/$journal_id")"
+[[ "$journal_delete_status" == 204 ]] || {
+  echo "Journal entry deletion failed." >&2
   exit 1
 }
 

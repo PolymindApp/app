@@ -26,6 +26,8 @@ const progress: TaskProgress = {
     targetOperator: 'gte',
     unit: 'L',
     goalPeriod: 'occurrence',
+    entryNotesEnabled: false,
+    entryNoteSuggestionsEnabled: false,
     sortOrder: 0,
   },
   value: 0,
@@ -57,5 +59,25 @@ describe('TaskCard amount actions', () => {
 
     await logAmount!.trigger('click')
     expect(wrapper.emitted('logAmount')).toEqual([[progress]])
+  })
+
+  it('opens journal actions without toggling the task card', async () => {
+    const wrapper = mount(TaskCard, {
+      props: { progress },
+      global: {
+        stubs: {
+          VBtn: VBtnStub,
+          VCard: { template: '<div><slot /></div>' },
+          VIcon: true,
+          VProgressCircular: { template: '<div><slot /></div>' },
+          VProgressLinear: true,
+        },
+      },
+    })
+
+    await wrapper.get('[aria-label="Journal actions for Water"]').trigger('click')
+
+    expect(wrapper.emitted('journalActions')).toEqual([[progress]])
+    expect(wrapper.emitted('toggle')).toBeUndefined()
   })
 })
