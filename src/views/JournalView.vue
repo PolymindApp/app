@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { addDays, format, isToday, isValid, isYesterday, parseISO, startOfWeek } from 'date-fns'
+import { addDays, format, isValid, parseISO, startOfWeek } from 'date-fns'
 import { useRoute, useRouter } from 'vue-router'
 import { Ripple } from 'vuetify/directives'
 import WeekDateNavigator from '@/components/WeekDateNavigator.vue'
 import {
   filterJournalEntries,
-  groupJournalEntries,
+  groupJournalEntriesByContext,
   journalEntryHeading,
-  type JournalContextFilter,
+  type JournalContextGroup,
 } from '@/services/journal'
 import { useJournalStore } from '@/stores/journal'
 import { useTaskStore } from '@/stores/tasks'
@@ -22,26 +22,30 @@ const taskStore = useTaskStore()
 const trackingStore = useTrackingStore()
 const selectedDate = ref(initialDate())
 const visibleWeekStart = ref(startOfWeek(selectedDate.value, { weekStartsOn: 1 }))
-const contextFilter = ref<JournalContextFilter>('all')
 const vRipple = Ripple
 
 const taskId = computed(() => typeof route.query.task === 'string' ? route.query.task : '')
 const trackerId = computed(() => typeof route.query.tracker === 'string' ? route.query.tracker : '')
-const filteredEntries = computed(() => filterJournalEntries(
+const selectedDateKey = computed(() => format(selectedDate.value, 'yyyy-MM-dd'))
+const filteredWeekEntries = computed(() => filterJournalEntries(
   journalStore.entries,
-  contextFilter.value,
+  'all',
   taskId.value,
   trackerId.value,
 ))
-const groups = computed(() => groupJournalEntries(filteredEntries.value))
+const dateMarkers = computed(() => [...new Set(filteredWeekEntries.value.map((entry) => entry.localDate))]
+  .map((date) => ({ date, color: 'error', label: 'Has journal entries' })))
+const selectedEntries = computed(() => filteredWeekEntries.value.filter((entry) => entry.localDate === selectedDateKey.value))
+const groups = computed(() => groupJournalEntriesByContext(selectedEntries.value))
+const showEmptyState = computed(() => journalStore.loaded && !journalStore.loading && groups.value.length === 0)
 const filteredTask = computed(() => taskStore.tasks.find((task) => task.id === taskId.value))
 const filteredTracker = computed(() => trackingStore.trackers.find((tracker) => tracker.id === trackerId.value))
-const contextFilters: Array<{ title: string; value: JournalContextFilter; icon: string }> = [
-  { title: 'All', value: 'all', icon: 'mdi-view-list-outline' },
-  { title: 'Tasks', value: 'tasks', icon: 'mdi-lightning-bolt-outline' },
-  { title: 'Tracking', value: 'tracking', icon: 'mdi-chart-timeline-variant' },
-  { title: 'Unlinked', value: 'unlinked', icon: 'mdi-link-off' },
-]
+const groupTitles: Record<JournalContextGroup, string> = {
+  tasks: 'Task reflections',
+  tracking: 'Tracking reflections',
+  connected: 'Task & tracking reflections',
+  general: 'General reflections',
+}
 
 function initialDate() {
   const queryDate = typeof route.query.date === 'string' ? parseISO(route.query.date) : undefined
@@ -62,13 +66,6 @@ function taskName(entry: JournalEntry) {
 
 function trackerName(entry: JournalEntry) {
   return sourceTracker(entry)?.name || entry.trackerSnapshot
-}
-
-function dayLabel(dateKey: string) {
-  const date = parseISO(dateKey)
-  if (isToday(date)) return 'Today'
-  if (isYesterday(date)) return 'Yesterday'
-  return format(date, 'EEEE, MMM d')
 }
 
 function newEntryQuery() {
@@ -111,10 +108,12 @@ onMounted(async () => {
     <WeekDateNavigator
       v-model="selectedDate"
       v-model:week-start="visibleWeekStart"
+      :markers="dateMarkers"
       class="mb-5"
     />
 
     <v-btn
+      v-if="!showEmptyState"
       block
       size="large"
       color="secondary"
@@ -124,49 +123,28 @@ onMounted(async () => {
       New reflection
     </v-btn>
 
-    <section class="mt-5">
-      <div class="journal-filters">
-        <v-btn-toggle
-          v-model="contextFilter"
-          mandatory
-          color="secondary"
-          class="journal-filter-toggle"
-        >
-          <v-btn
-            v-for="filter in contextFilters"
-            :key="filter.value"
-            :value="filter.value"
-            :prepend-icon="filter.icon"
-            variant="tonal"
-          >
-            {{ filter.title }}
-          </v-btn>
-        </v-btn-toggle>
-      </div>
-
-      <div v-if="taskId || trackerId" class="d-flex flex-wrap ga-2 mt-3">
-        <v-chip
-          v-if="taskId"
-          closable
-          color="secondary"
-          variant="tonal"
-          prepend-icon="mdi-lightning-bolt-outline"
-          @click:close="clearSourceFilter('task')"
-        >
-          {{ filteredTask?.name || 'Task reflections' }}
-        </v-chip>
-        <v-chip
-          v-if="trackerId"
-          closable
-          :color="filteredTracker?.color || 'secondary'"
-          variant="tonal"
-          :prepend-icon="filteredTracker?.icon || 'mdi-chart-timeline-variant'"
-          @click:close="clearSourceFilter('tracker')"
-        >
-          {{ filteredTracker?.name || 'Tracker reflections' }}
-        </v-chip>
-      </div>
-    </section>
+    <div v-if="taskId || trackerId" class="d-flex flex-wrap ga-2 mt-3">
+      <v-chip
+        v-if="taskId"
+        closable
+        color="secondary"
+        variant="tonal"
+        prepend-icon="mdi-lightning-bolt-outline"
+        @click:close="clearSourceFilter('task')"
+      >
+        {{ filteredTask?.name || 'Task reflections' }}
+      </v-chip>
+      <v-chip
+        v-if="trackerId"
+        closable
+        :color="filteredTracker?.color || 'secondary'"
+        variant="tonal"
+        :prepend-icon="filteredTracker?.icon || 'mdi-chart-timeline-variant'"
+        @click:close="clearSourceFilter('tracker')"
+      >
+        {{ filteredTracker?.name || 'Tracker reflections' }}
+      </v-chip>
+    </div>
 
     <v-alert v-if="journalStore.error" type="error" variant="tonal" class="mt-5">
       {{ journalStore.error }}
@@ -187,9 +165,9 @@ onMounted(async () => {
     </div>
 
     <div v-else-if="groups.length" class="journal-groups mt-5">
-      <section v-for="group in groups" :key="group.date">
+      <section v-for="group in groups" :key="group.context">
         <div class="section-heading">
-          <h2>{{ dayLabel(group.date) }}</h2>
+          <h2>{{ groupTitles[group.context] }}</h2>
           <span class="muted text-caption">{{ group.entries.length }}</span>
         </div>
         <div class="journal-entry-list">
@@ -212,7 +190,9 @@ onMounted(async () => {
                 </h3>
                 <p v-if="entry.title" class="journal-entry__body mt-2">{{ entry.body }}</p>
               </div>
-              <span class="text-caption muted flex-shrink-0">{{ format(new Date(entry.occurredAt), 'h:mm a') }}</span>
+              <span class="text-caption muted flex-shrink-0">
+                {{ format(new Date(entry.occurredAt), 'h:mm a') }}
+              </span>
             </div>
             <div v-if="taskName(entry) || trackerName(entry)" class="d-flex flex-wrap ga-2 mt-3">
               <v-chip
@@ -239,12 +219,12 @@ onMounted(async () => {
       </section>
     </div>
 
-    <v-card v-else-if="journalStore.loaded" class="surface-card pa-8 mt-5 text-center">
+    <v-card v-else-if="showEmptyState" class="surface-card pa-8 mt-5 text-center">
       <v-icon icon="mdi-notebook-outline" size="42" color="secondary" class="mb-3" />
-      <h2 class="text-h6 font-weight-black">No reflections this week</h2>
+      <h2 class="text-h6 font-weight-black">No reflections for this day</h2>
       <p class="text-body-2 muted mt-2 mb-5">
-        {{ taskId || trackerId || contextFilter !== 'all'
-          ? 'Try another week or clear a filter.'
+        {{ taskId || trackerId
+          ? 'Choose another day or clear the filter.'
           : 'Capture what happened, what you noticed, or what you want to remember.' }}
       </p>
       <v-btn color="secondary" :to="{ name: 'journal-new', query: newEntryQuery() }">
@@ -256,9 +236,6 @@ onMounted(async () => {
 
 <style scoped>
 .journal-page { padding-bottom: 2rem; }
-.journal-filters { width: 100%; overflow: hidden; }
-.journal-filter-toggle { display: flex; width: 100%; flex-wrap: wrap; gap: .4rem; height: auto; }
-.journal-filter-toggle :deep(.v-btn) { min-width: 0; min-height: 2.75rem; flex: 1 1 calc(50% - .4rem); border: 0; }
 .journal-loading { display: flex; align-items: center; justify-content: center; gap: .75rem; }
 .journal-groups,
 .journal-entry-list { display: grid; gap: .75rem; }
@@ -270,8 +247,4 @@ onMounted(async () => {
 .journal-entry__title { -webkit-line-clamp: 2; }
 .journal-entry__body { color: rgb(var(--v-theme-on-surface) / .66); font-size: .8rem; line-height: 1.55; white-space: pre-line; -webkit-line-clamp: 3; }
 .min-width-0 { min-width: 0; }
-@media (min-width: 40rem) {
-  .journal-filter-toggle { flex-wrap: nowrap; }
-  .journal-filter-toggle :deep(.v-btn) { flex-basis: 0; }
-}
 </style>

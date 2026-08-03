@@ -2,15 +2,18 @@
 import { Capacitor } from '@capacitor/core'
 import { App } from '@capacitor/app'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { isSameDay } from 'date-fns'
+import { addDays, format, isAfter, isSameDay, startOfDay, startOfWeek } from 'date-fns'
 import { storeToRefs } from 'pinia'
 import { useDisplay } from 'vuetify'
 import { useRouter } from 'vue-router'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import TaskCard from '@/components/TaskCard.vue'
 import WeekDateNavigator from '@/components/WeekDateNavigator.vue'
+import { isNativeHealthConnectSupported } from '@/services/healthConnect'
 import { formatIntervalDuration, intervalDuration } from '@/services/intervals'
-import { toDateKey } from '@/services/schedule'
+import { taskCompletionMarkerColor, toDateKey } from '@/services/schedule'
+import { TASK_CARD_ACTION_ITEMS, taskCanLogAmounts } from '@/services/taskCardActions'
+import type { TaskCardActionId } from '@/services/taskCardActions'
 import {
   TASK_ENTRY_NOTE_MAX_LENGTH,
   sanitizeTaskEntryNote,
@@ -35,6 +38,7 @@ const {
   stepCountLoading,
   stepCountError,
 } = storeToRefs(store)
+const visibleWeekStart = ref(startOfWeek(selectedDate.value, { weekStartsOn: 1 }))
 const busy = ref(false)
 const busyProgressKeys = ref(new Set<string>())
 const exactDialog = ref(false)
@@ -47,8 +51,13 @@ const exactNoteAutoFilled = ref(false)
 let exactNoteHistoryRequest = 0
 const exactAction = ref<'add' | 'subtract' | 'set'>()
 const reviewSheet = ref(false)
-const journalSheet = ref(false)
-const journalProgress = ref<TaskProgress>()
+const taskSheet = ref(false)
+const taskSheetMode = ref<'actions' | 'history'>('actions')
+const taskActionProgress = ref<TaskProgress>()
+const taskLogEntries = ref<Entry[]>([])
+const taskLogLoading = ref(false)
+const taskLogError = ref('')
+let taskLogRequest = 0
 const activeIntervalSheet = ref(false)
 const intervalStartError = ref('')
 const valuePulseVersions = ref<Record<string, number>>({})
@@ -69,6 +78,31 @@ const exactNoteOptions = computed(() =>
     ? taskEntryNoteOptions(exactNoteHistory.value, exactProgress.value.task.id)
     : [],
 )
+const taskActionTitle = computed(() =>
+  taskActionProgress.value?.programStep?.name
+    || taskActionProgress.value?.task.name
+    || 'Task actions',
+)
+const taskSheetDescription = computed(() => taskSheetMode.value === 'history'
+  ? `${taskActionTitle.value} · ${format(selectedDate.value, 'EEEE, MMMM d')}`
+  : undefined)
+const taskCardActionItems = computed(() => TASK_CARD_ACTION_ITEMS.filter((action) =>
+  action.id !== 'view-log-history' || taskCanLogAmounts(taskActionProgress.value),
+))
+const visibleWeekDates = computed(() => Array.from(
+  { length: 7 },
+  (_, index) => addDays(visibleWeekStart.value, index),
+))
+const taskDateMarkers = computed(() => visibleWeekDates.value.flatMap((date) => {
+  if (isAfter(date, startOfDay(new Date()))) return []
+  const percent = store.completionRateForDate(date)
+  if (percent === undefined) return []
+  return [{
+    date: toDateKey(date),
+    color: taskCompletionMarkerColor(percent),
+    label: `${percent}% of tasks complete`,
+  }]
+}))
 
 const required = computed(() => selectedProgress.value.filter((item) => item.task.mandatory))
 const optional = computed(() => selectedProgress.value.filter((item) => !item.task.mandatory))
@@ -84,7 +118,8 @@ onMounted(async () => {
   try {
     await Promise.all([store.load(), intervalStore.load()])
   } catch { /* Store error states are displayed in the view. */ }
-  await store.refreshStepCount(selectedDate.value)
+  await loadVisibleTaskProgress()
+  if (!isNativeHealthConnectSupported()) await store.refreshStepCount(selectedDate.value)
 
   if (Capacitor.isNativePlatform()) {
     appStateListener = await App.addListener('appStateChange', ({ isActive }) => {
@@ -100,6 +135,20 @@ onBeforeUnmount(() => {
 watch(selectedDate, date => {
   void store.refreshStepCount(date)
 })
+
+watch(visibleWeekStart, () => {
+  if (store.tasks.length) void loadVisibleTaskProgress()
+})
+
+async function loadVisibleTaskProgress() {
+  const dates = visibleWeekDates.value
+  await store.loadProgressRange(toDateKey(dates[0]), toDateKey(dates[6])).catch(() => undefined)
+  if (!isNativeHealthConnectSupported()) return
+  for (const date of dates) {
+    if (isAfter(date, startOfDay(new Date()))) continue
+    await store.refreshStepCount(date)
+  }
+}
 async function run(action: () => Promise<void>) {
   busy.value = true
   try { await action() } finally { busy.value = false }
@@ -141,15 +190,20 @@ async function resolveReview(item: TaskProgress, status: 'missed' | 'carried') {
   reviewSheet.value = false
 }
 
-function openJournalActions(progress: TaskProgress) {
-  journalProgress.value = progress
-  journalSheet.value = true
+function openTaskActions(progress: TaskProgress) {
+  taskLogRequest += 1
+  taskActionProgress.value = progress
+  taskSheetMode.value = 'actions'
+  taskLogEntries.value = []
+  taskLogLoading.value = false
+  taskLogError.value = ''
+  taskSheet.value = true
 }
 
 async function writeTaskReflection() {
-  const progress = journalProgress.value
+  const progress = taskActionProgress.value
   if (!progress) return
-  journalSheet.value = false
+  taskSheet.value = false
   await nextTick()
   await router.push({
     name: 'journal-new',
@@ -158,14 +212,71 @@ async function writeTaskReflection() {
 }
 
 async function viewTaskReflections() {
-  const progress = journalProgress.value
+  const progress = taskActionProgress.value
   if (!progress) return
-  journalSheet.value = false
+  taskSheet.value = false
   await nextTick()
   await router.push({
     name: 'journal',
     query: { task: progress.task.id, date: toDateKey(selectedDate.value) },
   })
+}
+
+function taskEntryKindLabel(entry: Entry) {
+  if (entry.kind === 'duration') return 'Duration'
+  if (entry.kind === 'adjustment') return 'Adjustment'
+  return 'Quantity'
+}
+
+function taskEntryIcon(entry: Entry) {
+  if (entry.kind === 'duration') return 'mdi-timer-outline'
+  if (entry.kind === 'adjustment') return 'mdi-plus-minus-variant'
+  return 'mdi-chart-donut'
+}
+
+function taskEntryValue(entry: Entry) {
+  const value = Number(entry.value.toFixed(2))
+  return `${value}${entry.unit ? ` ${entry.unit}` : ''}`
+}
+
+function taskEntryTime(entry: Entry) {
+  const created = new Date(entry.createdAt)
+  return Number.isNaN(created.getTime()) ? 'Logged entry' : format(created, 'h:mm a')
+}
+
+async function openTaskLogHistory() {
+  const progress = taskActionProgress.value
+  if (!progress || taskLogLoading.value) return
+  const request = ++taskLogRequest
+  taskSheetMode.value = 'history'
+  taskLogLoading.value = true
+  taskLogError.value = ''
+  try {
+    const entries = await store.loadEntriesForDay(
+      progress.task.id,
+      toDateKey(selectedDate.value),
+      progress.programStep?.id,
+    )
+    if (request === taskLogRequest) taskLogEntries.value = entries
+  } catch (cause) {
+    if (request === taskLogRequest) {
+      taskLogError.value = cause instanceof Error ? cause.message : 'Could not load this log history.'
+    }
+  } finally {
+    if (request === taskLogRequest) taskLogLoading.value = false
+  }
+}
+
+function runTaskCardAction(action: TaskCardActionId) {
+  if (action === 'write-reflection') {
+    void writeTaskReflection()
+    return
+  }
+  if (action === 'view-reflections') {
+    void viewTaskReflections()
+    return
+  }
+  void openTaskLogHistory()
 }
 
 async function openExact(progress: TaskProgress) {
@@ -320,7 +431,12 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
 
 <template>
   <main class="app-page today-page">
-    <WeekDateNavigator v-model="selectedDate" class="mb-5" />
+    <WeekDateNavigator
+      v-model="selectedDate"
+      v-model:week-start="visibleWeekStart"
+      :markers="taskDateMarkers"
+      class="mb-5"
+    />
 
     <v-card class="score-card pa-5" color="surface">
       <div class="score-pattern" />
@@ -389,12 +505,12 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
             :interval="intervalMeta(item)"
             :can-start-interval="selectedDateIsToday && item.status === 'pending'"
             :interval-active="sessionMatchesProgress(item)"
-            @toggle="progress => runForProgress(progress, () => store.toggleComplete(progress))"
+            @toggle="(progress, complete) => runForProgress(progress, () => store.toggleComplete(progress, complete))"
             @seal="progress => runForProgress(progress, () => store.setDailyTotalSealed(progress))"
             @log-amount="openExact"
             @log-time="openTimeLogger"
             @start-interval="startIntervalTask"
-            @journal-actions="openJournalActions"
+            @actions="openTaskActions"
           />
         </div>
       </section>
@@ -412,12 +528,12 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
             :interval="intervalMeta(item)"
             :can-start-interval="selectedDateIsToday && item.status === 'pending'"
             :interval-active="sessionMatchesProgress(item)"
-            @toggle="progress => runForProgress(progress, () => store.toggleComplete(progress))"
+            @toggle="(progress, complete) => runForProgress(progress, () => store.toggleComplete(progress, complete))"
             @seal="progress => runForProgress(progress, () => store.setDailyTotalSealed(progress))"
             @log-amount="openExact"
             @log-time="openTimeLogger"
             @start-interval="startIntervalTask"
-            @journal-actions="openJournalActions"
+            @actions="openTaskActions"
           />
         </div>
       </section>
@@ -539,24 +655,55 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
     </v-dialog>
 
     <ActionBottomSheet
-      v-model="journalSheet"
-      :title="journalProgress?.programStep?.name || journalProgress?.task.name || 'Task journal'"
-      hide-title
-      :aria-label="journalProgress ? `${journalProgress.programStep?.name || journalProgress.task.name} journal actions` : 'Task journal actions'"
+      v-model="taskSheet"
+      :title="taskSheetMode === 'history' ? 'Log history' : taskActionTitle"
+      :description="taskSheetDescription"
+      :hide-title="taskSheetMode === 'actions'"
+      :aria-label="taskSheetMode === 'history' ? `${taskActionTitle} log history` : `${taskActionTitle} actions`"
     >
-      <template v-if="journalProgress">
+      <template v-if="taskActionProgress && taskSheetMode === 'actions'">
         <v-list-item
-          prepend-icon="mdi-notebook-plus-outline"
-          title="Write reflection"
+          v-for="action in taskCardActionItems"
+          :key="action.id"
+          :prepend-icon="action.icon"
+          :title="action.title"
           rounded="lg"
-          @click="writeTaskReflection"
+          @click="runTaskCardAction(action.id)"
         />
+      </template>
+      <template v-else-if="taskSheetMode === 'history'">
         <v-list-item
-          prepend-icon="mdi-notebook-outline"
-          title="View reflections"
-          rounded="lg"
-          @click="viewTaskReflections"
-        />
+          v-if="taskLogLoading"
+          prepend-icon="mdi-history"
+          title="Loading log history…"
+        >
+          <template #append><v-progress-circular indeterminate color="secondary" :size="22" :width="2" /></template>
+        </v-list-item>
+        <div v-else-if="taskLogError" class="px-2 py-2">
+          <v-alert type="error" variant="tonal" density="compact">
+            {{ taskLogError }}
+            <template #append>
+              <v-btn size="small" variant="text" @click="openTaskLogHistory">Retry</v-btn>
+            </template>
+          </v-alert>
+        </div>
+        <template v-else-if="taskLogEntries.length">
+          <v-list-item
+            v-for="entry in taskLogEntries"
+            :key="entry.id"
+            :prepend-icon="taskEntryIcon(entry)"
+            :title="entry.note || taskEntryKindLabel(entry)"
+            :subtitle="`${taskEntryTime(entry)} · ${taskEntryKindLabel(entry)}`"
+            rounded="lg"
+          >
+            <template #append><strong class="task-log-value">{{ taskEntryValue(entry) }}</strong></template>
+          </v-list-item>
+        </template>
+        <div v-else class="task-log-empty px-4 py-8 text-center">
+          <v-icon icon="mdi-history" size="34" color="medium-emphasis" />
+          <h3 class="text-body-1 font-weight-black mt-3">No entries logged</h3>
+          <p class="text-body-2 muted mt-1">This task has no log entries for the selected day.</p>
+        </div>
       </template>
     </ActionBottomSheet>
 
@@ -642,6 +789,8 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
 .exact-action--subtract { grid-area: subtract; }
 .exact-action--add { grid-area: add; }
 .exact-action--set { grid-area: set; }
+.task-log-value { max-width: 8rem; font-size: .78rem; text-align: right; white-space: nowrap; }
+.task-log-empty { min-height: 10rem; }
 .review-row { display: flex; flex-direction: column; align-items: stretch; gap: 1rem; border-top: 1px solid rgba(255,255,255,.08); }
 .review-actions { display: grid; gap: .5rem; }
 .review-actions .v-btn { width: 100%; }

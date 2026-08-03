@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { filterJournalEntries, groupJournalEntries, journalEntryHeading } from './journal'
+import { filterJournalEntries, groupJournalEntries, groupJournalEntriesByContext, journalEntryHeading } from './journal'
 import type { JournalEntry } from '@/types/domain'
 
 function entry(id: string, date: string, context: Partial<JournalEntry> = {}): JournalEntry {
@@ -41,6 +41,18 @@ describe('journal timeline helpers', () => {
       { date: '2026-08-03', entries: ['unlinked'] },
       { date: '2026-08-02', entries: ['both', 'tracker', 'detached-task'] },
       { date: '2026-08-01', entries: ['task'] },
+    ])
+  })
+
+  it('groups reflections by context without duplicating connected entries', () => {
+    expect(groupJournalEntriesByContext(entries).map(group => ({
+      context: group.context,
+      entries: group.entries.map(item => item.id),
+    }))).toEqual([
+      { context: 'tasks', entries: ['detached-task', 'task'] },
+      { context: 'tracking', entries: ['tracker'] },
+      { context: 'connected', entries: ['both'] },
+      { context: 'general', entries: ['unlinked'] },
     ])
   })
 

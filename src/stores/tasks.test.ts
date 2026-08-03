@@ -4,6 +4,7 @@ import type { Entry, Occurrence, ProgramStep, Task } from '@/types/domain'
 
 const apiMocks = vi.hoisted(() => ({
   createEntry: vi.fn(),
+  getEntries: vi.fn(),
   updateOccurrence: vi.fn(),
   updateTask: vi.fn(),
 }))
@@ -15,7 +16,10 @@ vi.mock('@/lib/api', () => ({
   api: {
     authStore: { record: { id: 'user-1' } },
     collection: (name: string) => {
-      if (name === 'entries') return { create: apiMocks.createEntry }
+      if (name === 'entries') return {
+        create: apiMocks.createEntry,
+        getFullList: apiMocks.getEntries,
+      }
       if (name === 'occurrences') return { update: apiMocks.updateOccurrence }
       if (name === 'tasks') return { update: apiMocks.updateTask }
       throw new Error(`Unexpected collection: ${name}`)
@@ -78,6 +82,7 @@ describe('quantitative task completion', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     apiMocks.createEntry.mockReset()
+    apiMocks.getEntries.mockReset()
     apiMocks.updateOccurrence.mockReset()
     healthMocks.readHealthConnectSteps.mockReset()
   })
@@ -109,6 +114,23 @@ describe('quantitative task completion', () => {
       complete: false,
     })
     expect(store.completionRate).toBe(50)
+  })
+
+  it('does not invert an explicit completion request from a stale task card', async () => {
+    const store = useTaskStore()
+    store.selectedDate = selectedDate
+    store.occurrences = [{ ...completedOccurrence }]
+    const staleProgress = {
+      ...store.makeProgress(task, selectedDate),
+      complete: false,
+      percent: 0,
+      status: 'pending' as const,
+    }
+
+    await store.toggleComplete(staleProgress, true)
+
+    expect(apiMocks.updateOccurrence).not.toHaveBeenCalled()
+    expect(store.occurrences[0]?.status).toBe('completed')
   })
 
   it('returns a completed occurrence to pending when an entry drops below its target', async () => {
@@ -202,6 +224,46 @@ describe('quantitative task completion', () => {
     expect(apiMocks.createEntry).toHaveBeenCalledWith(expect.objectContaining({
       note: `First line ${'x'.repeat(244)}`,
     }))
+  })
+
+  it('loads the complete log history for one task and program step on one day', async () => {
+    const store = useTaskStore()
+    apiMocks.getEntries.mockResolvedValue([{
+      id: 'entry-history',
+      task: task.id,
+      occurrence: completedOccurrence.id,
+      program_step: 'step-1',
+      entry_date: '2026-07-29',
+      value: 1.5,
+      kind: 'duration',
+      unit: 'hours',
+      note: 'Focused block',
+      created_at: '2026-07-29T14:30:00.000Z',
+    }])
+
+    const history = await store.loadEntriesForDay(task.id, '2026-07-29', 'step-1')
+
+    expect(apiMocks.getEntries).toHaveBeenCalledWith({
+      filter: `task = "${task.id}" && entry_date = "2026-07-29" && program_step = "step-1"`,
+      sort: '-created_at',
+    })
+    expect(history).toEqual([expect.objectContaining({
+      id: 'entry-history',
+      programStep: 'step-1',
+      note: 'Focused block',
+    })])
+  })
+
+  it('keeps parent task log history separate from program-step entries', async () => {
+    const store = useTaskStore()
+    apiMocks.getEntries.mockResolvedValue([])
+
+    await store.loadEntriesForDay(task.id, '2026-07-29')
+
+    expect(apiMocks.getEntries).toHaveBeenCalledWith({
+      filter: `task = "${task.id}" && entry_date = "2026-07-29" && program_step = ""`,
+      sort: '-created_at',
+    })
   })
 })
 

@@ -5,6 +5,7 @@ let audioContext: AudioContext | undefined
 const cueUrls = {
   count: '/sounds/count.mp3',
   go: '/sounds/go.mp3',
+  complete: '/sounds/complete.mp3',
 } as const
 type CueName = keyof typeof cueUrls
 
@@ -54,7 +55,7 @@ function loadCue(name: CueName) {
 }
 
 export async function preloadIntervalCueAudio() {
-  await Promise.all([loadCue('count'), loadCue('go')])
+  await Promise.all([loadCue('count'), loadCue('go'), loadCue('complete')])
 }
 
 async function prepareIntervalAudio() {
@@ -96,10 +97,18 @@ export function playIntervalCountCue(cues: IntervalCueSettings) {
   playCue('count', cues)
 }
 
-export function playIntervalGoCue(cues: IntervalCueSettings) {
+function playIntervalSignalCue(name: 'go' | 'complete', cues: IntervalCueSettings) {
   if (nativeBackgroundIntervalOwnsCues()) return
-  playCue('go', cues)
+  playCue(name, cues)
   if (cues.vibrationEnabled && 'vibrate' in navigator) navigator.vibrate([120, 60, 120])
+}
+
+export function playIntervalGoCue(cues: IntervalCueSettings) {
+  playIntervalSignalCue('go', cues)
+}
+
+export function playIntervalCompleteCue(cues: IntervalCueSettings) {
+  playIntervalSignalCue('complete', cues)
 }
 
 export async function notifyIntervalTransition(title: string, body: string) {

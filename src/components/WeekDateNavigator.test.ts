@@ -46,4 +46,35 @@ describe('WeekDateNavigator', () => {
     expect(visibleWeek.getMonth()).toBe(6)
     expect(visibleWeek.getDate()).toBe(20)
   })
+
+  it('marks dates that contain activity', () => {
+    const wrapper = mount(WeekDateNavigator, {
+      props: {
+        modelValue: new Date(2026, 7, 1, 12),
+        markers: [{ date: '2026-07-28', color: 'error', label: 'Has journal entries' }],
+      },
+      global: { stubs: { VBtn: VBtnStub } },
+    })
+    const markedDay = wrapper.findAll('.date-chip')[1]
+
+    expect(markedDay.attributes('aria-label')).toBe('Tuesday, July 28, 2026, Has journal entries')
+    expect(markedDay.find('.date-chip__dot').attributes('style')).toContain('--v-theme-error')
+  })
+
+  it('supports a different semantic color for each date', () => {
+    const wrapper = mount(WeekDateNavigator, {
+      props: {
+        modelValue: new Date(2026, 7, 1, 12),
+        markers: [
+          { date: '2026-07-27', color: 'success', label: '100% complete' },
+          { date: '2026-07-28', color: 'warning', label: '50% complete' },
+        ],
+      },
+      global: { stubs: { VBtn: VBtnStub } },
+    })
+    const days = wrapper.findAll('.date-chip')
+
+    expect(days[0].find('.date-chip__dot').attributes('style')).toContain('--v-theme-success')
+    expect(days[1].find('.date-chip__dot').attributes('style')).toContain('--v-theme-warning')
+  })
 })

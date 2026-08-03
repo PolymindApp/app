@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import IntervalTypeIcon from '@/components/IntervalTypeIcon.vue'
 import LabeledSlider from '@/components/LabeledSlider.vue'
 import { stopBackgroundInterval, syncBackgroundInterval } from '@/services/backgroundInterval'
+import { createIntervalCueHandoff } from '@/services/intervalCueHandoff'
 import {
   notifyIntervalTransition,
+  playIntervalCompleteCue,
   playIntervalCountCue,
   playIntervalGoCue,
   prepareIntervalCues,
@@ -41,6 +43,7 @@ const starting = ref(false)
 const endDialog = ref(false)
 const noteDialog = ref(false)
 const noteDraft = ref('')
+const noteField = ref<{ focus: () => void }>()
 const noteSaving = ref(false)
 const noteError = ref('')
 const repetitionDialog = ref(false)
@@ -69,6 +72,7 @@ let wakeLock: { release: () => Promise<void> } | undefined
 let runnerMounted = false
 let lastCountCue = ''
 let timerEffectTimeout: number | undefined
+const cueHandoff = createIntervalCueHandoff(document.visibilityState)
 
 const previewSession = ref<IntervalSession>()
 const isTemplatePreview = computed(() => Boolean(route.params.templateId))
@@ -208,7 +212,8 @@ onMounted(async () => {
     await tick()
     ticker = window.setInterval(tick, 250)
     document.addEventListener('visibilitychange', handleVisibility)
-    window.addEventListener('pagehide', mirrorCurrentRuntime)
+    cueHandoff.recordVisibility(document.visibilityState)
+    window.addEventListener('pagehide', handlePageHide)
 
     const active = session.value
     if (active?.status === 'running') {
@@ -232,7 +237,7 @@ onBeforeUnmount(() => {
   if (ticker) window.clearInterval(ticker)
   if (timerEffectTimeout) window.clearTimeout(timerEffectTimeout)
   document.removeEventListener('visibilitychange', handleVisibility)
-  window.removeEventListener('pagehide', mirrorCurrentRuntime)
+  window.removeEventListener('pagehide', handlePageHide)
   void wakeLock?.release()
 })
 
@@ -268,7 +273,13 @@ function mirrorCurrentRuntime() {
   store.mirrorRuntime(item.id, result.runtime)
 }
 
+function handlePageHide() {
+  cueHandoff.recordVisibility('hidden')
+  mirrorCurrentRuntime()
+}
+
 async function handleVisibility() {
+  cueHandoff.recordVisibility(document.visibilityState)
   if (document.visibilityState === 'visible' && session.value?.status === 'running') {
     wakeLock = await requestIntervalWakeLock()
     await tick()
@@ -278,6 +289,7 @@ async function handleVisibility() {
 async function tick() {
   const item = session.value
   if (!item || syncing.value || finished.value || pendingCompletion.value) return
+  const suppressCues = cueHandoff.consumeForegroundSuppression(document.visibilityState)
   if (item.status === 'paused') {
     displayRemainingMs.value = item.runtime.remainingMs
     return
@@ -290,8 +302,10 @@ async function tick() {
       const cue = `${result.runtime.stepIndex}:${remainingSeconds}`
       if (cue !== lastCountCue) {
         lastCountCue = cue
-        pulseTimer('count')
-        playIntervalCountCue(item.cues)
+        if (!suppressCues) {
+          pulseTimer('count')
+          playIntervalCountCue(item.cues)
+        }
       }
     }
   }
@@ -301,10 +315,10 @@ async function tick() {
   store.mirrorRuntime(item.id, result.runtime)
   try {
     if (result.completed) {
-      await completeSession(item, result.runtime)
+      await completeSession(item, result.runtime, !suppressCues)
       return
     }
-    playIntervalGoCue(item.cues)
+    if (!suppressCues) playIntervalGoCue(item.cues)
     const updated = await store.updateSession(item.id, {
       runtime: result.runtime,
       elapsedSeconds: Math.round(result.runtime.accumulatedMs / 1000),
@@ -318,8 +332,12 @@ async function tick() {
   }
 }
 
-async function completeSession(item: IntervalSession, runtime: IntervalRuntimeState) {
-  playIntervalGoCue(item.cues)
+async function completeSession(
+  item: IntervalSession,
+  runtime: IntervalRuntimeState,
+  playCompletionCue = true,
+) {
+  if (playCompletionCue) playIntervalCompleteCue(item.cues)
   await notifyIntervalTransition(`${item.name} complete`, 'Your interval session is finished.')
   await stopBackgroundInterval()
   const completion = {
@@ -359,10 +377,12 @@ async function retryCompletion() {
   }
 }
 
-function openNoteDialog() {
+async function openNoteDialog() {
   noteDraft.value = session.value?.note || ''
   noteError.value = ''
   noteDialog.value = true
+  await nextTick()
+  noteField.value?.focus()
 }
 
 async function saveSessionNote() {
@@ -901,6 +921,7 @@ async function runAgain(repetitions?: number) {
         </div>
         <v-alert v-if="noteError" type="error" variant="tonal" class="mt-4">{{ noteError }}</v-alert>
         <v-textarea
+          ref="noteField"
           v-model="noteDraft"
           label="Note"
           maxlength="2000"

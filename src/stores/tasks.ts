@@ -100,6 +100,9 @@ export const useTaskStore = defineStore('tasks', () => {
   const stepCountLoading = ref(false)
   const stepCountError = ref('')
   let stepCountRequest = 0
+  let progressRangeRequest = 0
+  let initialProgressSince = ''
+  const loadedProgressRanges = new Set<string>()
 
   const activeTasks = computed(() => tasks.value.filter((task) => task.active))
 
@@ -171,36 +174,41 @@ export const useTaskStore = defineStore('tasks', () => {
     })
   }
 
-  const selectedProgress = computed(() => {
+  function progressForDate(date: Date) {
     const result: TaskProgress[] = []
     for (const task of activeTasks.value) {
-      if (!isTaskScheduled(task, selectedDate.value)) continue
+      if (!isTaskScheduled(task, date)) continue
       if (task.type !== 'program') {
-        result.push(makeProgress(task, selectedDate.value))
+        result.push(makeProgress(task, date))
         continue
       }
-      for (const step of stepsForDate(task, steps.value, selectedDate.value)) {
-        result.push(makeProgress(task, selectedDate.value, step))
+      for (const step of stepsForDate(task, steps.value, date)) {
+        result.push(makeProgress(task, date, step))
       }
     }
-    const key = toDateKey(selectedDate.value)
+    const key = toDateKey(date)
     for (const occurrence of occurrences.value.filter((item) => item.scheduledDate === key)) {
       if (result.some((item) => item.task.id === occurrence.task && (item.programStep?.id || '') === (occurrence.programStep || ''))) continue
       const task = tasks.value.find((item) => item.id === occurrence.task)
       const step = steps.value.find((item) => item.id === occurrence.programStep)
-      if (task) result.push(makeProgress(task, selectedDate.value, step))
+      if (task) result.push(makeProgress(task, date, step))
     }
     return result.sort((a, b) => Number(b.task.mandatory) - Number(a.task.mandatory) || a.task.sortOrder - b.task.sortOrder)
-  })
+  }
 
-  const completionRate = computed(() => {
-    if (!selectedProgress.value.length) return 0
-    const earnedProgress = selectedProgress.value.reduce(
+  const selectedProgress = computed(() => progressForDate(selectedDate.value))
+
+  function completionRateForDate(date: Date) {
+    const progress = progressForDate(date)
+    if (!progress.length) return undefined
+    const earnedProgress = progress.reduce(
       (total, item) => total + Math.max(0, Math.min(item.percent, 100)),
       0,
     )
-    return Math.round(earnedProgress / selectedProgress.value.length)
-  })
+    return Math.round(earnedProgress / progress.length)
+  }
+
+  const completionRate = computed(() => completionRateForDate(selectedDate.value) || 0)
 
   async function load() {
     if (!api.authStore.record) return
@@ -218,11 +226,46 @@ export const useTaskStore = defineStore('tasks', () => {
       steps.value = stepRecords.map(mapStep)
       occurrences.value = occurrenceRecords.map(mapOccurrence)
       entries.value = entryRecords.map(mapEntry)
+      initialProgressSince = since
+      loadedProgressRanges.clear()
     } catch (cause) {
       error.value = cause instanceof Error ? cause.message : 'Could not load your plan.'
       throw cause
     } finally {
       loading.value = false
+    }
+  }
+
+  async function loadProgressRange(start: string, end: string) {
+    if (initialProgressSince && start >= initialProgressSince) return true
+    const rangeKey = `${start}:${end}`
+    if (loadedProgressRanges.has(rangeKey)) return true
+    const request = ++progressRangeRequest
+    try {
+      const [occurrenceRecords, entryRecords] = await Promise.all([
+        api.collection('occurrences').getFullList({
+          filter: `scheduled_date >= "${start}" && scheduled_date <= "${end}"`,
+          sort: '-scheduled_date',
+        }),
+        api.collection('entries').getFullList({
+          filter: `entry_date >= "${start}" && entry_date <= "${end}"`,
+          sort: '-created_at',
+        }),
+      ])
+      if (request !== progressRangeRequest) return false
+      const mergedOccurrences = new Map(occurrences.value.map((item) => [item.id, item]))
+      occurrenceRecords.map(mapOccurrence).forEach((item) => mergedOccurrences.set(item.id, item))
+      occurrences.value = [...mergedOccurrences.values()]
+      const mergedEntries = new Map(entries.value.map((item) => [item.id, item]))
+      entryRecords.map(mapEntry).forEach((item) => mergedEntries.set(item.id, item))
+      entries.value = [...mergedEntries.values()]
+      loadedProgressRanges.add(rangeKey)
+      return true
+    } catch (cause) {
+      if (request === progressRangeRequest) {
+        error.value = cause instanceof Error ? cause.message : 'Could not load task progress for this week.'
+      }
+      throw cause
     }
   }
 
@@ -279,12 +322,12 @@ export const useTaskStore = defineStore('tasks', () => {
     return occurrence
   }
 
-  async function toggleComplete(progress: TaskProgress) {
+  async function toggleComplete(progress: TaskProgress, complete: boolean) {
     const occurrence = await ensureOccurrence(progress.task, selectedDate.value, progress.programStep)
-    const completing = occurrence.status !== 'completed'
+    if ((occurrence.status === 'completed') === complete) return
     const record = await api.collection('occurrences').update(occurrence.id, {
-      status: completing ? 'completed' : 'pending',
-      completed_at: completing ? new Date().toISOString() : '',
+      status: complete ? 'completed' : 'pending',
+      completed_at: complete ? new Date().toISOString() : '',
     })
     Object.assign(occurrence, mapOccurrence(record))
   }
@@ -336,6 +379,17 @@ export const useTaskStore = defineStore('tasks', () => {
   async function loadEntryNoteHistory(taskId: string) {
     const records = await api.collection('entries').getFullList({
       filter: `task = "${taskId}"`,
+      sort: '-created_at',
+    })
+    return records.map(mapEntry)
+  }
+
+  async function loadEntriesForDay(taskId: string, entryDate: string, programStepId?: string) {
+    const stepFilter = programStepId
+      ? `program_step = "${programStepId}"`
+      : 'program_step = ""'
+    const records = await api.collection('entries').getFullList({
+      filter: `task = "${taskId}" && entry_date = "${entryDate}" && ${stepFilter}`,
       sort: '-created_at',
     })
     return records.map(mapEntry)
@@ -519,7 +573,10 @@ export const useTaskStore = defineStore('tasks', () => {
     activeTasks,
     selectedProgress,
     completionRate,
+    progressForDate,
+    completionRateForDate,
     load,
+    loadProgressRange,
     refreshStepCount,
     makeProgress,
     entriesFor,
@@ -527,6 +584,7 @@ export const useTaskStore = defineStore('tasks', () => {
     setDailyTotalSealed,
     addEntry,
     loadEntryNoteHistory,
+    loadEntriesForDay,
     setStatus,
     shiftProgram,
     saveTask,

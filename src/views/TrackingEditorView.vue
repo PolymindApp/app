@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import AppForm from '@/components/AppForm.vue'
 import ColorSwatchPicker from '@/components/ColorSwatchPicker.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import FormActionBar from '@/components/FormActionBar.vue'
@@ -157,7 +158,7 @@ async function remove() {
       Measurement type, unit, scale, and daily calculation are locked because this tracker has logs.
     </v-alert>
 
-    <v-form ref="form" validate-on="lazy" @submit.prevent="save">
+    <AppForm ref="form" validate-on="lazy" @submit.prevent="save">
       <v-card class="tracker-form-section surface-card pa-5 mb-4">
         <h2 class="section-title">Basics</h2>
         <v-text-field v-model="draft.name" label="Name" :rules="[(value: string) => Boolean(value?.trim()) || 'Name is required']" maxlength="160" variant="outlined" />
@@ -239,7 +240,7 @@ async function remove() {
         <v-switch v-if="isEditing" v-model="draft.active" color="secondary" label="Active tracker" hide-details />
       </v-card>
 
-    </v-form>
+    </AppForm>
 
     <FormActionBar
       :primary-text="isEditing ? 'Save' : 'Create'"

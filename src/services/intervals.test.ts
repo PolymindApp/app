@@ -220,6 +220,32 @@ describe('interval definitions', () => {
     ])
   })
 
+  it('keeps final-round skipping when an interval moves from a group to the root', () => {
+    const group = createIntervalGroup('Rounds', 2)
+    const work = createIntervalStep('Work', 'work', 30)
+    const rest = createIntervalStep('Rest', 'rest', 10)
+    rest.skipOnLastRound = true
+    group.children = [work, rest]
+    const definition: IntervalDefinition = {
+      version: 1,
+      children: [group],
+      globalRepetition: { enabled: true, defaultCount: 3 },
+    }
+
+    expect(moveIntervalNodeToGroup(
+      definition,
+      rest.id,
+      undefined,
+      [group.id, rest.id],
+    )).toBe(true)
+
+    expect(rest.skipOnLastRound).toBe(true)
+    expect(intervalStepCount(definition)).toBe(8)
+    expect(intervalDuration(definition)).toBe(200)
+    expect(Array.from({ length: 8 }, (_, index) => resolveIntervalStep(definition, index)?.step.name))
+      .toEqual(['Work', 'Work', 'Rest', 'Work', 'Work', 'Rest', 'Work', 'Work'])
+  })
+
   it('moves a complete group into another group', () => {
     const sourceGroup = createIntervalGroup('Source', 2)
     sourceGroup.children = [createIntervalStep('Work', 'work', 30)]

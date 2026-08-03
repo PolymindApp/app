@@ -17,6 +17,7 @@ final class IntervalCuePlayer {
     private final SoundPool soundPool;
     private final int countSound;
     private final int goSound;
+    private final int completeSound;
 
     private IntervalCuePlayer(Context context) {
         AudioAttributes attributes = new AudioAttributes.Builder()
@@ -44,6 +45,7 @@ final class IntervalCuePlayer {
         });
         countSound = soundPool.load(context, R.raw.count, 1);
         goSound = soundPool.load(context, R.raw.go, 1);
+        completeSound = soundPool.load(context, R.raw.complete, 1);
     }
 
     static void preload(Context context) {
@@ -58,6 +60,11 @@ final class IntervalCuePlayer {
     static void playGo(Context context) {
         IntervalCuePlayer player = get(context);
         player.play(player.goSound);
+    }
+
+    static void playComplete(Context context) {
+        IntervalCuePlayer player = get(context);
+        player.play(player.completeSound);
     }
 
     private static IntervalCuePlayer get(Context context) {

@@ -62,6 +62,12 @@ export function goalState(value: number, target: number, operator: TargetOperato
   return meetsTarget(value, target, operator) ? 'met' : 'neutral'
 }
 
+export function taskCompletionMarkerColor(percent: number) {
+  if (percent >= 100) return 'success'
+  if (percent < 25) return 'error'
+  return 'warning'
+}
+
 export function nextScheduledDates(task: Task, count = 3, from = new Date()): Date[] {
   const result: Date[] = []
   for (let offset = 0; offset < 370 && result.length < count; offset += 1) {

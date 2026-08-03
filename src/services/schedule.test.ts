@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { goalState, isTaskScheduled, meetsTarget, programCycleDay, progressPercent, stepsForDate } from './schedule'
+import { goalState, isTaskScheduled, meetsTarget, programCycleDay, progressPercent, stepsForDate, taskCompletionMarkerColor } from './schedule'
 import type { ProgramStep, Task } from '@/types/domain'
 
 const task = (overrides: Partial<Task> = {}): Task => ({
@@ -82,5 +82,15 @@ describe('quantitative targets', () => {
     expect(goalState(2100, 2200, 'lte')).toBe('neutral')
     expect(goalState(120, 150, 'gte')).toBe('not_enough')
     expect(goalState(150, 150, 'gte')).toBe('met')
+  })
+})
+
+describe('daily task completion markers', () => {
+  it('uses error below 25%, warning for other incomplete days, and success at 100%', () => {
+    expect(taskCompletionMarkerColor(0)).toBe('error')
+    expect(taskCompletionMarkerColor(24)).toBe('error')
+    expect(taskCompletionMarkerColor(25)).toBe('warning')
+    expect(taskCompletionMarkerColor(99)).toBe('warning')
+    expect(taskCompletionMarkerColor(100)).toBe('success')
   })
 })

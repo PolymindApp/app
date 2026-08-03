@@ -3,6 +3,7 @@ import { Capacitor } from '@capacitor/core'
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { format } from 'date-fns'
 import { useRoute, useRouter } from 'vue-router'
+import AppForm from '@/components/AppForm.vue'
 import ColorSwatchPicker from '@/components/ColorSwatchPicker.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import DatePickerField from '@/components/DatePickerField.vue'
@@ -262,7 +263,7 @@ async function removeTask() {
   <main class="app-page app-page--editor editor-page" :class="{ 'editor-page--editing': isEditing }">
     <v-alert v-if="error" type="error" variant="tonal" class="mb-4">{{ error }}</v-alert>
 
-    <v-form ref="form" validate-on="lazy" @submit.prevent="save">
+    <AppForm ref="form" validate-on="lazy" @submit.prevent="save">
       <v-card class="surface-card pa-5 mb-4">
         <div class="field-stack mb-4">
           <v-text-field v-model="draft.name" label="Task name" placeholder="e.g. Hit protein target" :rules="[v => Boolean(v) || 'Name is required']" />
@@ -560,7 +561,7 @@ async function removeTask() {
           </v-expansion-panel>
         </v-expansion-panels>
       </template>
-    </v-form>
+    </AppForm>
 
     <FormActionBar
       :primary-text="isEditing ? 'Save' : 'Create'"

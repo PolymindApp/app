@@ -9,6 +9,7 @@ import router from './router'
 import { vuetify } from './plugins/vuetify'
 import { installAndroidFocusAutoScroll } from './services/androidFocusAutoScroll'
 import { preloadIntervalCueAudio } from './services/intervalCues'
+import { installIntervalNotificationRouting } from './services/intervalNotificationRouting'
 import { installTrackingNotificationRouting } from './services/trackingReminders'
 import {
   readAndroidRoute,
@@ -49,6 +50,7 @@ app.mount('#app')
 if (nativePlatform === 'android') {
   installAndroidFocusAutoScroll()
   void router.isReady().then(() => {
+    void installIntervalNotificationRouting(router)
     void installTrackingNotificationRouting(router)
     rememberAndroidRoute(router.currentRoute.value)
     router.afterEach((to) => rememberAndroidRoute(to))

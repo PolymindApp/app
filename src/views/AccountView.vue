@@ -2,6 +2,7 @@
 import { Capacitor } from '@capacitor/core'
 import { computed, onMounted, ref } from 'vue'
 import AccountAvatarEditor from '@/components/AccountAvatarEditor.vue'
+import AppForm from '@/components/AppForm.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import { isAndroidPasskeyAvailable } from '@/services/passkeys'
 import { useAuthStore } from '@/stores/auth'
@@ -137,7 +138,7 @@ function showNotice(color: 'success' | 'error', text: string) {
         <v-icon icon="mdi-account-outline" />
       </div>
 
-      <v-form ref="form" validate-on="submit" @submit.prevent="saveProfile">
+      <AppForm ref="form" validate-on="submit" @submit.prevent="saveProfile">
         <div class="account-fields">
           <v-text-field
             v-model="name"
@@ -168,7 +169,7 @@ function showNotice(color: 'success' | 'error', text: string) {
             Save changes
           </v-btn>
         </div>
-      </v-form>
+      </AppForm>
     </v-card>
 
     <v-card class="surface-card pa-5 pa-sm-6">

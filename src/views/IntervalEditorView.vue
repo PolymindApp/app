@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
+import AppForm from '@/components/AppForm.vue'
 import ColorSwatchPicker from '@/components/ColorSwatchPicker.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import FormActionBar from '@/components/FormActionBar.vue'
@@ -302,7 +303,7 @@ async function removeTemplate() {
   <main class="app-page interval-editor">
     <v-alert v-if="error" type="error" variant="tonal" class="mb-4">{{ error }}</v-alert>
 
-    <v-form ref="form" validate-on="lazy" @submit.prevent="save">
+    <AppForm ref="form" validate-on="lazy" @submit.prevent="save">
       <div class="interval-form-cards">
       <v-card class="surface-card pa-5">
         <div class="field-stack">
@@ -389,13 +390,13 @@ async function removeTemplate() {
             :depth="0"
             :can-indent="index > 0 && draft.definition.children[index - 1]?.type === 'group'"
             :can-outdent="false"
-            :can-skip-on-last-round="globalRepetitionEnabled && index === draft.definition.children.length - 1 && node.type === 'step'"
+            :can-skip-on-last-round="index === draft.definition.children.length - 1 && node.type === 'step'"
             :expanded-node-id="expandedNodeId"
             :actions="actions"
           />
         </template>
       </div>
-    </v-form>
+    </AppForm>
 
     <ActionBottomSheet
       v-model="nodeActionsDrawer"

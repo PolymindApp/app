@@ -8,6 +8,7 @@ import android.app.Service;
 import android.content.Intent;
 import android.content.pm.ServiceInfo;
 import android.media.AudioAttributes;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
@@ -48,6 +49,7 @@ public class BackgroundIntervalService extends Service {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final List<IntervalStep> steps = new ArrayList<>();
     private PowerManager.WakeLock wakeLock;
+    private String sessionId = "";
     private String sessionName = "Interval";
     private int stepIndex;
     private int lastCountdownSecond = -1;
@@ -130,6 +132,11 @@ public class BackgroundIntervalService extends Service {
         }
         if (steps.isEmpty()) throw new IllegalArgumentException("Interval sequence is empty.");
 
+        sessionId = intent.getStringExtra(EXTRA_SESSION_ID);
+        if (sessionId == null || sessionId.trim().isEmpty()) {
+            throw new IllegalArgumentException("An interval session ID is required.");
+        }
+        sessionId = sessionId.trim();
         sessionName = intent.getStringExtra(EXTRA_SESSION_NAME);
         if (sessionName == null || sessionName.trim().isEmpty()) sessionName = "Interval";
         stepIndex = Math.max(0, Math.min(intent.getIntExtra(EXTRA_STEP_INDEX, 0), steps.size() - 1));
@@ -168,7 +175,7 @@ public class BackgroundIntervalService extends Service {
     }
 
     private void finishTimer() {
-        if (!MainActivity.isAppVisible()) playGoCue();
+        if (!MainActivity.isAppVisible()) playCompleteCue();
         running = false;
         handler.removeCallbacks(ticker);
         releaseWakeLock();
@@ -207,6 +214,11 @@ public class BackgroundIntervalService extends Service {
         if (vibrationEnabled) vibrate();
     }
 
+    private void playCompleteCue() {
+        if (soundEnabled) IntervalCuePlayer.playComplete(this);
+        if (vibrationEnabled) vibrate();
+    }
+
     private void vibrate() {
         Vibrator vibrator;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -235,6 +247,14 @@ public class BackgroundIntervalService extends Service {
 
     private Notification buildNotification(boolean complete) {
         Intent launchIntent = new Intent(this, MainActivity.class);
+        launchIntent.setAction(Intent.ACTION_VIEW);
+        launchIntent.setData(
+            new Uri.Builder()
+                .scheme("mom")
+                .authority("interval")
+                .appendQueryParameter(EXTRA_SESSION_ID, sessionId)
+                .build()
+        );
         launchIntent.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         PendingIntent contentIntent = PendingIntent.getActivity(
             this,

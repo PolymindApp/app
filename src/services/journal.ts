@@ -1,6 +1,7 @@
 import type { JournalEntry } from '@/types/domain'
 
 export type JournalContextFilter = 'all' | 'tasks' | 'tracking' | 'unlinked'
+export type JournalContextGroup = 'tasks' | 'tracking' | 'connected' | 'general'
 
 export function filterJournalEntries(
   entries: JournalEntry[],
@@ -29,6 +30,33 @@ export function groupJournalEntries(entries: JournalEntry[]) {
     groups.set(entry.localDate, group)
   }
   return [...groups].map(([date, items]) => ({ date, entries: items }))
+}
+
+export function groupJournalEntriesByContext(entries: JournalEntry[]) {
+  const groups = new Map<JournalContextGroup, JournalEntry[]>([
+    ['tasks', []],
+    ['tracking', []],
+    ['connected', []],
+    ['general', []],
+  ])
+  const sorted = [...entries].sort((left, right) => right.occurredAt.localeCompare(left.occurredAt))
+
+  for (const entry of sorted) {
+    const hasTaskContext = Boolean(entry.task || entry.taskSnapshot)
+    const hasTrackerContext = Boolean(entry.tracker || entry.trackerSnapshot)
+    const context: JournalContextGroup = hasTaskContext && hasTrackerContext
+      ? 'connected'
+      : hasTaskContext
+        ? 'tasks'
+        : hasTrackerContext
+          ? 'tracking'
+          : 'general'
+    groups.get(context)?.push(entry)
+  }
+
+  return [...groups]
+    .filter(([, items]) => items.length)
+    .map(([context, items]) => ({ context, entries: items }))
 }
 
 export function journalEntryHeading(entry: Pick<JournalEntry, 'title' | 'body'>) {

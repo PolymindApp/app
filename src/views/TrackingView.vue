@@ -42,6 +42,8 @@ const visibleWeekLabel = computed(() =>
 const dayEntries = computed(() => store.entries
   .filter((entry) => entry.localDate === dateKey.value)
   .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt)))
+const trackingDateMarkers = computed(() => [...new Set(store.entries.map((entry) => entry.localDate))]
+  .map((date) => ({ date, color: 'error', label: 'Has tracking entries' })))
 const outcomes = computed(() => store.activeTrackers.filter((tracker) => tracker.role === 'outcome'))
 const factors = computed(() => store.activeTrackers.filter((tracker) => tracker.role === 'factor'))
 const archivedTrackers = computed(() => store.trackers.filter((tracker) => !tracker.active))
@@ -215,6 +217,7 @@ async function loadVisibleWeekEntries() {
     <WeekDateNavigator
       v-model="selectedDate"
       v-model:week-start="visibleWeekStart"
+      :markers="trackingDateMarkers"
       class="mb-5"
     />
 

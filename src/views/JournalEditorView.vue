@@ -3,6 +3,7 @@ import { Capacitor } from '@capacitor/core'
 import { computed, onMounted, ref } from 'vue'
 import { format, isToday, isValid, parseISO } from 'date-fns'
 import { useRoute, useRouter } from 'vue-router'
+import AppForm from '@/components/AppForm.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import DateTimePickerField from '@/components/DateTimePickerField.vue'
 import FormActionBar from '@/components/FormActionBar.vue'
@@ -161,7 +162,7 @@ async function removeEntry() {
       <span class="text-body-2 muted">Loading reflection…</span>
     </div>
 
-    <v-form v-else ref="form" validate-on="lazy" @submit.prevent="save">
+    <AppForm v-else ref="form" validate-on="lazy" @submit.prevent="save">
       <v-card class="surface-card pa-5 mb-4">
         <div class="journal-editor-fields">
           <v-text-field
@@ -209,7 +210,7 @@ async function removeEntry() {
           />
         </div>
       </v-card>
-    </v-form>
+    </AppForm>
 
     <FormActionBar
       v-if="!loading"

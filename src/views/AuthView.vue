@@ -2,6 +2,7 @@
 import { Capacitor } from '@capacitor/core'
 import { nextTick, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import AppForm from '@/components/AppForm.vue'
 import { isAndroidPasskeyAvailable } from '@/services/passkeys'
 import { useAuthStore } from '@/stores/auth'
 
@@ -109,7 +110,7 @@ async function signInWithPasskey() {
             {{ auth.error }}
           </v-alert>
 
-          <v-form ref="form" validate-on="submit" autocomplete="off" @submit.prevent="submit">
+          <AppForm ref="form" validate-on="submit" autocomplete="off" @submit.prevent="submit">
             <div class="auth-fields">
               <v-text-field
                 v-if="mode === 'register'"
@@ -151,7 +152,7 @@ async function signInWithPasskey() {
             >
               {{ mode === 'login' ? 'Open your day' : 'Create account' }}
             </v-btn>
-          </v-form>
+          </AppForm>
 
           <template v-if="mode === 'login' && passkeyAvailable">
             <div class="auth-separator my-5" aria-hidden="true">

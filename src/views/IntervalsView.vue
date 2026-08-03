@@ -129,6 +129,10 @@ onBeforeUnmount(() => {
                   :aria-label="`${session.name}: ${intervalRunProgressPercent(session)}% accomplished`"
                 />
               </div>
+              <v-card v-if="session.note" class="recent-run-note pa-1" rounded="lg">
+                <v-icon icon="mdi-note-text-outline" size="15" />
+                <span>{{ session.note }}</span>
+              </v-card>
               <template #append>
                 <strong class="recent-run-time text-caption">{{ formatIntervalDuration(session.elapsedSeconds) }}</strong>
               </template>
@@ -188,6 +192,9 @@ onBeforeUnmount(() => {
 .recent-run-group__heading h3 { font-size: .75rem; font-weight: 900; letter-spacing: .04em; }
 .recent-run-group__heading span { color: rgba(var(--v-theme-on-surface), .54); font-size: .68rem; font-weight: 800; }
 .recent-run-progress { margin-top: .45rem; }
+.recent-run-note { display: flex; min-width: 0; align-items: flex-start; gap: .4rem; margin-top: .5rem; border: 1px solid rgba(var(--v-theme-on-surface), .05); background: rgba(0, 0, 0, .18); color: rgba(var(--v-theme-on-surface), .68); font-size: .75rem; line-height: 1.45; }
+.recent-run-note .v-icon { flex: 0 0 auto; margin-top: .05rem; color: rgba(var(--v-theme-on-surface), .52); }
+.recent-run-note span { min-width: 0; overflow-wrap: anywhere; white-space: pre-line; }
 .recent-run-meta { display: block; margin-top: .25rem; overflow: hidden; color: rgba(var(--v-theme-on-surface), .62); font-size: .875rem; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
 .recent-run-time { display: block; width: 3.5rem; font-variant-numeric: tabular-nums; text-align: end; }
 @media (min-width: 700px) {

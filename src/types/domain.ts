@@ -5,6 +5,12 @@ export type GoalPeriod = 'occurrence' | 'week'
 export type TargetOperator = 'gte' | 'lte' | 'eq'
 export type OccurrenceStatus = 'pending' | 'completed' | 'missed' | 'carried' | 'rescheduled'
 
+export interface WeekDateMarker {
+  date: string
+  color: string
+  label: string
+}
+
 export interface Tag {
   id: string
   name: string

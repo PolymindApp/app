@@ -2,7 +2,13 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { addDays, addWeeks, format, isSameDay, isSameWeek, startOfWeek } from 'date-fns'
 import WeekNavigator from '@/components/WeekNavigator.vue'
+import type { WeekDateMarker } from '@/types/domain'
 
+const props = withDefaults(defineProps<{
+  markers?: WeekDateMarker[]
+}>(), {
+  markers: () => [],
+})
 const selectedDate = defineModel<Date>({ required: true })
 const displayedWeekStart = defineModel<Date>('weekStart')
 const weekDirection = ref<'previous' | 'next'>('next')
@@ -10,11 +16,14 @@ const visibleWeekStart = ref(startOfWeek(selectedDate.value, { weekStartsOn: 1 }
 let weekTouchStart: { x: number; y: number } | undefined
 let suppressDateClick = false
 let suppressDateClickTimer: number | undefined
+const markerByDate = computed(() => new Map(props.markers.map((marker) => [marker.date, marker])))
 
 const days = computed(() => Array.from({ length: 7 }, (_, index) => {
   const date = addDays(visibleWeekStart.value, index)
+  const dateKey = format(date, 'yyyy-MM-dd')
   return {
     date,
+    marker: markerByDate.value.get(dateKey),
     day: format(date, 'EEE').slice(0, 2),
     number: format(date, 'd'),
     label: format(date, 'EEEE, MMMM d, yyyy'),
@@ -111,13 +120,20 @@ function selectDate(date: Date) {
             class="date-chip"
             :class="{ 'date-chip--active': isSameDay(selectedDate, day.date) }"
             type="button"
-            :aria-label="day.label"
+            :aria-label="day.marker ? `${day.label}, ${day.marker.label}` : day.label"
             :aria-pressed="isSameDay(selectedDate, day.date)"
             @click="selectDate(day.date)"
           >
             <span>{{ day.day }}</span>
             <strong>{{ day.number }}</strong>
-            <i v-if="isSameDay(new Date(), day.date)" aria-hidden="true" />
+            <span class="date-chip__markers" aria-hidden="true">
+              <i v-if="isSameDay(new Date(), day.date)" class="date-chip__dot date-chip__dot--today" />
+              <i
+                v-if="day.marker"
+                class="date-chip__dot"
+                :style="{ backgroundColor: `rgb(var(--v-theme-${day.marker.color}))` }"
+              />
+            </span>
           </button>
         </div>
       </transition>
@@ -179,8 +195,11 @@ function selectDate(date: Date) {
 
 .date-chip span { font-size: .64rem; font-weight: 800; text-transform: uppercase; }
 .date-chip strong { margin-top: .125rem; font-size: 1rem; }
-.date-chip i { position: absolute; bottom: .3125rem; width: .25rem; height: .25rem; border-radius: 50%; background: rgb(var(--v-theme-secondary)); }
+.date-chip__markers { position: absolute; bottom: .3125rem; display: flex; gap: .1875rem; }
+.date-chip__dot { width: .25rem; height: .25rem; border-radius: 50%; }
+.date-chip__dot--today { background: rgb(var(--v-theme-secondary)); }
 .date-chip--active { background: rgb(var(--v-theme-secondary)); color: rgb(var(--v-theme-on-secondary)); box-shadow: 0 .5rem 1.25rem rgba(var(--v-theme-secondary), .16); }
+.date-chip--active .date-chip__dot--today { background: rgb(var(--v-theme-on-secondary)); }
 
 @media (prefers-reduced-motion: reduce) {
   .week-next-enter-from,

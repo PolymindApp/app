@@ -81,3 +81,7 @@ export function nativeBackgroundIntervalOwnsCues() {
     && typeof document !== 'undefined'
     && document.visibilityState !== 'visible'
 }
+
+export function nativeBackgroundIntervalIsActive() {
+  return nativeBackgroundIntervalActive
+}
