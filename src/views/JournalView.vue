@@ -112,18 +112,7 @@ onMounted(async () => {
       class="mb-5"
     />
 
-    <v-btn
-      v-if="!showEmptyState"
-      block
-      size="large"
-      color="secondary"
-      prepend-icon="mdi-notebook-plus-outline"
-      :to="{ name: 'journal-new', query: newEntryQuery() }"
-    >
-      New reflection
-    </v-btn>
-
-    <div v-if="taskId || trackerId" class="d-flex flex-wrap ga-2 mt-3">
+    <div v-if="taskId || trackerId" class="d-flex flex-wrap ga-2">
       <v-chip
         v-if="taskId"
         closable
@@ -231,6 +220,18 @@ onMounted(async () => {
         Write a reflection
       </v-btn>
     </v-card>
+
+    <v-btn
+      v-if="!journalStore.loading && groups.length"
+      block
+      size="large"
+      class="mt-5"
+      color="secondary"
+      prepend-icon="mdi-notebook-plus-outline"
+      :to="{ name: 'journal-new', query: newEntryQuery() }"
+    >
+      New reflection
+    </v-btn>
   </main>
 </template>
 

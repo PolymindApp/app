@@ -1,11 +1,15 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { Capacitor } from '@capacitor/core'
 import { useDisplay } from 'vuetify'
 import { useRouter } from 'vue-router'
 import AccountMenu from '@/components/AccountMenu.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
-import { MAIN_NAV_ITEMS } from '@/services/navigation'
+import {
+  MAIN_MENU_ORDER_CHANGED_EVENT,
+  orderedMainNavItems,
+  readStoredMainMenuOrder,
+} from '@/services/navigation'
 import { useAuthStore } from '@/stores/auth'
 
 const { mdAndUp } = useDisplay()
@@ -14,8 +18,11 @@ const auth = useAuthStore()
 const logoutDialog = ref(false)
 const pageTransition = ref('page-level-forward')
 const isIos = Capacitor.getPlatform() === 'ios'
+const storedMenuOrder = ref(readStoredMainMenuOrder())
 
-const items = MAIN_NAV_ITEMS
+const items = computed(() => orderedMainNavItems(
+  storedMenuOrder.value ?? auth.user?.settings?.mainMenuOrder,
+))
 
 const immersive = computed(() => Boolean(router.currentRoute.value.meta.immersive))
 const pageTitle = computed(() => String(router.currentRoute.value.meta.title || 'Mom'))
@@ -59,8 +66,19 @@ const removeTransitionGuard = router.beforeEach((to, from) => {
   }
 })
 
+function refreshStoredMenuOrder() {
+  storedMenuOrder.value = readStoredMainMenuOrder()
+}
+
+onMounted(() => {
+  window.addEventListener(MAIN_MENU_ORDER_CHANGED_EVENT, refreshStoredMenuOrder)
+  window.addEventListener('storage', refreshStoredMenuOrder)
+})
+
 onBeforeUnmount(() => {
   removeTransitionGuard()
+  window.removeEventListener(MAIN_MENU_ORDER_CHANGED_EVENT, refreshStoredMenuOrder)
+  window.removeEventListener('storage', refreshStoredMenuOrder)
 })
 
 function logout() {

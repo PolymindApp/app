@@ -26,8 +26,15 @@ describe('TrackingTimelineChart', () => {
     })
 
     const factorPath = wrapper.find('.series-line--factor').attributes('d')
+    const outcomePath = wrapper.find('.series-line--outcome').attributes('d')
     expect(factorPath.match(/M/g)).toHaveLength(2)
     expect(wrapper.findAll('.series-dot--factor').filter((dot) => dot.isVisible())).toHaveLength(2)
+    expect(wrapper.findAll('.axis-value--outcome')).toHaveLength(3)
+    expect(wrapper.find('.axis-label--outcome').text()).toContain('Energy')
+
+    const factorStartY = Number(factorPath.match(/^M[^,]+,([\d.]+)/)?.[1])
+    const outcomeStartY = Number(outcomePath.match(/^M[^,]+,([\d.]+)/)?.[1])
+    expect(factorStartY).toBeCloseTo(outcomeStartY)
 
     await wrapper.trigger('keydown', { key: 'ArrowRight' })
     expect(wrapper.find('.chart-readout').text()).toContain('Wed, Jul 1')
@@ -58,6 +65,8 @@ describe('TrackingRelationshipChart', () => {
 
     expect(wrapper.findAll('.relationship-dot')).toHaveLength(3)
     expect(wrapper.find('.trend-line').exists()).toBe(true)
+    expect(wrapper.find('.axis-title--outcome').text()).toContain('Energy')
+    expect(wrapper.find('.axis-title--factor').text()).toContain('Exercise')
     expect(wrapper.text()).toContain('Line shows the observed linear trend')
   })
 
@@ -90,6 +99,7 @@ describe('TrackingRelationshipChart', () => {
     })
 
     expect(wrapper.findAll('.mean-line')).toHaveLength(2)
+    expect(wrapper.findAll('.axis-category--factor')).toHaveLength(2)
     expect(wrapper.text()).toContain('Absent · 1')
     expect(wrapper.text()).toContain('Present · 1')
   })

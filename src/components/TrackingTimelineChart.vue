@@ -21,11 +21,10 @@ const props = defineProps<{
 const selectedIndex = ref<number>()
 const chartWidth = 720
 const plotLeft = 58
-const plotRight = 20
+const plotRight = 62
 const plotWidth = chartWidth - plotLeft - plotRight
-const panelHeight = 102
-const factorTop = 42
-const outcomeTop = 205
+const plotTop = 42
+const plotHeight = 210
 
 const factorRange = computed(() => valueRange(
   props.points.map((point) => point.factorValue),
@@ -57,18 +56,18 @@ function xAt(index: number) {
   return plotLeft + (props.points.length <= 1 ? plotWidth / 2 : index / (props.points.length - 1) * plotWidth)
 }
 
-function yAt(value: number, top: number, range: [number, number]) {
+function yAt(value: number, range: [number, number]) {
   const ratio = Math.max(0, Math.min(1, (value - range[0]) / (range[1] - range[0])))
-  return top + panelHeight - ratio * panelHeight
+  return plotTop + plotHeight - ratio * plotHeight
 }
 
-function seriesPath(key: 'factorValue' | 'outcomeValue', top: number, range: [number, number]) {
+function seriesPath(key: 'factorValue' | 'outcomeValue', range: [number, number]) {
   return props.points.reduce((path, point, index) => {
     const value = point[key]
     if (value === null) return `${path} `
     const previous = props.points[index - 1]?.[key]
     const command = index === 0 || previous === null || previous === undefined ? 'M' : 'L'
-    return `${path}${command}${xAt(index).toFixed(2)},${yAt(value, top, range).toFixed(2)} `
+    return `${path}${command}${xAt(index).toFixed(2)},${yAt(value, range).toFixed(2)} `
   }, '').trim()
 }
 
@@ -76,8 +75,8 @@ function ticks(range: [number, number]) {
   return [range[1], (range[0] + range[1]) / 2, range[0]]
 }
 
-function tickY(index: number, top: number) {
-  return top + index * panelHeight / 2
+function tickY(index: number) {
+  return plotTop + index * plotHeight / 2
 }
 
 function selectFromPointer(event: PointerEvent) {
@@ -149,61 +148,69 @@ function displayValue(value: number | null, unit: string) {
     </div>
 
     <svg
-      viewBox="0 0 720 350"
+      viewBox="0 0 720 294"
       aria-hidden="true"
       @pointerdown="selectFromPointer"
       @pointermove="selectFromPointer"
       @pointerleave="clearPointerSelection"
     >
       <g v-for="(tick, index) in ticks(factorRange)" :key="`factor-${index}`">
-        <line :x1="plotLeft" :x2="chartWidth - plotRight" :y1="tickY(index, factorTop)" :y2="tickY(index, factorTop)" class="grid-line" />
-        <text :x="plotLeft - 8" :y="tickY(index, factorTop) + 4" class="axis-value">{{ formatNumber(tick) }}</text>
+        <line :x1="plotLeft" :x2="chartWidth - plotRight" :y1="tickY(index)" :y2="tickY(index)" class="grid-line" />
+        <text :x="plotLeft - 8" :y="tickY(index) + 4" class="axis-value axis-value--factor">{{ formatNumber(tick) }}</text>
       </g>
       <g v-for="(tick, index) in ticks(outcomeRange)" :key="`outcome-${index}`">
-        <line :x1="plotLeft" :x2="chartWidth - plotRight" :y1="tickY(index, outcomeTop)" :y2="tickY(index, outcomeTop)" class="grid-line" />
-        <text :x="plotLeft - 8" :y="tickY(index, outcomeTop) + 4" class="axis-value">{{ formatNumber(tick) }}</text>
+        <line
+          :x1="chartWidth - plotRight"
+          :x2="chartWidth - plotRight + 5"
+          :y1="tickY(index)"
+          :y2="tickY(index)"
+          class="axis-tick axis-tick--outcome"
+        />
+        <text :x="chartWidth - plotRight + 9" :y="tickY(index) + 4" class="axis-value axis-value--outcome">{{ formatNumber(tick) }}</text>
       </g>
 
-      <text :x="plotLeft" y="24" class="panel-label">{{ factorName }}{{ factorUnit ? ` · ${factorUnit}` : '' }}</text>
-      <text :x="plotLeft" y="187" class="panel-label">{{ outcomeName }}{{ outcomeUnit ? ` · ${outcomeUnit}` : '' }}</text>
+      <line :x1="plotLeft" :x2="plotLeft" :y1="plotTop" :y2="plotTop + plotHeight" class="axis-line axis-line--factor" />
+      <line :x1="chartWidth - plotRight" :x2="chartWidth - plotRight" :y1="plotTop" :y2="plotTop + plotHeight" class="axis-line axis-line--outcome" />
+      <text :x="plotLeft" y="24" class="axis-label axis-label--factor">{{ factorName }}{{ factorUnit ? ` · ${factorUnit}` : '' }}</text>
+      <text :x="chartWidth - plotRight" y="24" text-anchor="end" class="axis-label axis-label--outcome">{{ outcomeName }}{{ outcomeUnit ? ` · ${outcomeUnit}` : '' }}</text>
 
-      <path :d="seriesPath('factorValue', factorTop, factorRange)" class="series-line series-line--outline" />
-      <path :d="seriesPath('factorValue', factorTop, factorRange)" class="series-line series-line--factor" />
+      <path :d="seriesPath('factorValue', factorRange)" class="series-line series-line--outline" />
+      <path :d="seriesPath('factorValue', factorRange)" class="series-line series-line--factor" />
       <circle
         v-for="(point, index) in points"
         v-show="point.factorValue !== null"
         :key="`factor-dot-${point.date}`"
         :cx="xAt(index)"
-        :cy="point.factorValue === null ? factorTop + panelHeight : yAt(point.factorValue, factorTop, factorRange)"
+        :cy="point.factorValue === null ? plotTop + plotHeight : yAt(point.factorValue, factorRange)"
         r="3.5"
         class="series-dot series-dot--factor"
       />
 
-      <path :d="seriesPath('outcomeValue', outcomeTop, outcomeRange)" class="series-line series-line--outline" />
-      <path :d="seriesPath('outcomeValue', outcomeTop, outcomeRange)" class="series-line series-line--outcome" />
+      <path :d="seriesPath('outcomeValue', outcomeRange)" class="series-line series-line--outline" />
+      <path :d="seriesPath('outcomeValue', outcomeRange)" class="series-line series-line--outcome" />
       <circle
         v-for="(point, index) in points"
         v-show="point.outcomeValue !== null"
         :key="`outcome-dot-${point.date}`"
         :cx="xAt(index)"
-        :cy="point.outcomeValue === null ? outcomeTop + panelHeight : yAt(point.outcomeValue, outcomeTop, outcomeRange)"
+        :cy="point.outcomeValue === null ? plotTop + plotHeight : yAt(point.outcomeValue, outcomeRange)"
         r="3.5"
         class="series-dot series-dot--outcome"
       />
 
       <g v-if="selectedIndex !== undefined">
-        <line :x1="xAt(selectedIndex)" :x2="xAt(selectedIndex)" y1="28" y2="307" class="cursor-line" />
+        <line :x1="xAt(selectedIndex)" :x2="xAt(selectedIndex)" :y1="plotTop" :y2="plotTop + plotHeight" class="cursor-line" />
         <circle
           v-if="selectedPoint && selectedPoint.factorValue !== null"
           :cx="xAt(selectedIndex)"
-          :cy="yAt(selectedPoint!.factorValue!, factorTop, factorRange)"
+          :cy="yAt(selectedPoint!.factorValue!, factorRange)"
           r="7"
           class="selected-dot selected-dot--factor"
         />
         <circle
           v-if="selectedPoint && selectedPoint.outcomeValue !== null"
           :cx="xAt(selectedIndex)"
-          :cy="yAt(selectedPoint!.outcomeValue!, outcomeTop, outcomeRange)"
+          :cy="yAt(selectedPoint!.outcomeValue!, outcomeRange)"
           r="7"
           class="selected-dot selected-dot--outcome"
         />
@@ -213,7 +220,7 @@ function displayValue(value: number | null, unit: string) {
         v-for="label in xLabels"
         :key="label.index"
         :x="xAt(label.index)"
-        y="336"
+        y="282"
         class="axis-date"
         :text-anchor="label.index === 0 ? 'start' : label.index === points.length - 1 ? 'end' : 'middle'"
       >{{ label.label }}</text>
@@ -254,9 +261,19 @@ svg { display: block; width: 100%; height: auto; touch-action: pan-y; }
 .grid-line { stroke: rgba(var(--v-theme-on-surface), .2); stroke-width: 1; }
 .axis-value,
 .axis-date,
-.panel-label { fill: rgba(var(--v-theme-on-surface), .8); font-family: inherit; font-size: .6875rem; font-weight: 700; }
+.axis-label { fill: rgba(var(--v-theme-on-surface), .8); font-family: inherit; font-size: .6875rem; font-weight: 700; }
 .axis-value { text-anchor: end; }
-.panel-label { fill: rgba(var(--v-theme-on-surface), .94); font-size: .75rem; font-weight: 800; }
+.axis-value--outcome { text-anchor: start; }
+.axis-label { fill: rgba(var(--v-theme-on-surface), .94); font-size: .75rem; font-weight: 800; }
+.axis-label--factor,
+.axis-value--factor { fill: var(--factor-color); }
+.axis-label--outcome,
+.axis-value--outcome { fill: var(--outcome-color); }
+.axis-line,
+.axis-tick { fill: none; stroke-width: 1.5; }
+.axis-line--factor { stroke: var(--factor-color); }
+.axis-line--outcome,
+.axis-tick--outcome { stroke: var(--outcome-color); }
 .series-line { fill: none; stroke-width: 3.5; stroke-linecap: round; stroke-linejoin: round; }
 .series-line--outline { stroke: rgba(var(--v-theme-on-surface), .54); stroke-width: 6.5; }
 .series-line--factor { stroke: var(--factor-color); }

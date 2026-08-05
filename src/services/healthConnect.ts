@@ -1,4 +1,5 @@
 import { Capacitor, registerPlugin } from '@capacitor/core'
+import { format, parseISO } from 'date-fns'
 import type { StepSource } from '@/types/domain'
 
 export type HealthConnectAvailability = 'available' | 'update_required' | 'unavailable'
@@ -32,6 +33,8 @@ export class HealthConnectError extends Error {
 }
 
 const nativeHealthConnect = registerPlugin<HealthConnectPlugin>('HealthConnect')
+const stepCountCache = new Map<string, { value: number; loadedAt: number }>()
+const CURRENT_DAY_CACHE_MS = 60_000
 
 export const DEFAULT_STEP_SOURCE: StepSource = 'health_connect'
 
@@ -91,6 +94,32 @@ export async function readHealthConnectSteps(date: Date): Promise<number> {
   } catch (cause) {
     throw normalizeHealthConnectError(cause)
   }
+}
+
+export async function readHealthConnectStepsForDates(dateKeys: string[]): Promise<Record<string, number>> {
+  const keys = [...new Set(dateKeys)].sort()
+  const today = format(new Date(), 'yyyy-MM-dd')
+  const result: Record<string, number> = {}
+  const missing = keys.filter((date) => {
+    const cached = stepCountCache.get(date)
+    const cacheValid = cached && (date !== today || Date.now() - cached.loadedAt < CURRENT_DAY_CACHE_MS)
+    if (cacheValid) result[date] = cached.value
+    return !cacheValid
+  })
+  let nextIndex = 0
+
+  async function loadNext() {
+    while (nextIndex < missing.length) {
+      const date = missing[nextIndex++]!
+      const value = await readHealthConnectSteps(parseISO(date))
+      result[date] = value
+      stepCountCache.set(date, { value, loadedAt: Date.now() })
+    }
+  }
+
+  const workerCount = Math.min(4, missing.length)
+  await Promise.all(Array.from({ length: workerCount }, () => loadNext()))
+  return result
 }
 
 function normalizeHealthConnectError(cause: unknown): HealthConnectError {

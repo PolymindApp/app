@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import type { LongPressDragResult } from '@/directives/longPressDrag'
 import { api } from '@/lib/api'
 import {
   DEFAULT_STEP_SOURCE,
@@ -10,13 +11,24 @@ import {
   requestHealthConnectPermission,
   type HealthConnectStatus,
 } from '@/services/healthConnect'
+import {
+  orderedMainNavItems,
+  readStoredMainMenuOrder,
+  storeMainMenuOrder,
+  type MainNavItem,
+} from '@/services/navigation'
 import type { StepSource } from '@/types/domain'
 
 const stepSource = ref<StepSource>(DEFAULT_STEP_SOURCE)
+const menuItems = ref<MainNavItem[]>(orderedMainNavItems(
+  readStoredMainMenuOrder() ?? api.authStore.record?.settings?.mainMenuOrder,
+))
 const loading = ref(true)
 const connecting = ref(false)
+const menuSaving = ref(false)
 const error = ref('')
 const notice = ref(false)
+const noticeMessage = ref('')
 const healthStatus = ref<HealthConnectStatus>({
   availability: 'unavailable',
   authorized: false,
@@ -56,6 +68,9 @@ const connectionIcon = computed(() => healthStatus.value.authorized
 onMounted(async () => {
   try {
     const settings = await api.getUserSettings()
+    menuItems.value = orderedMainNavItems(
+      readStoredMainMenuOrder() ?? settings.mainMenuOrder,
+    )
     stepSource.value = normalizeStepSource(settings.stepSource)
     if (settings.stepSource !== stepSource.value) {
       await api.updateUserSettings({ stepSource: stepSource.value })
@@ -82,11 +97,41 @@ async function connectHealthConnect() {
   try {
     const result = await requestHealthConnectPermission()
     await refreshHealthStatus()
-    if (result.authorized) notice.value = true
+    if (result.authorized) {
+      noticeMessage.value = 'Health Connect is ready for step-counter tasks.'
+      notice.value = true
+    }
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Health Connect could not be connected.'
   } finally {
     connecting.value = false
+  }
+}
+
+async function reorderMainMenu(result: LongPressDragResult) {
+  const itemsById = new Map(menuItems.value.map(item => [item.id, item]))
+  const reorderedItems = result.orderedIds
+    .map(id => itemsById.get(id as MainNavItem['id']))
+    .filter((item): item is MainNavItem => Boolean(item))
+
+  if (reorderedItems.length !== menuItems.value.length) return
+
+  menuItems.value = reorderedItems
+  storeMainMenuOrder(reorderedItems.map(item => item.id))
+  menuSaving.value = true
+  error.value = ''
+  try {
+    const settings = await api.updateUserSettings({
+      mainMenuOrder: reorderedItems.map(item => item.id),
+    })
+    menuItems.value = orderedMainNavItems(settings.mainMenuOrder)
+    noticeMessage.value = 'Main menu order saved.'
+    notice.value = true
+  } catch {
+    noticeMessage.value = 'Main menu order saved on this device.'
+    notice.value = true
+  } finally {
+    menuSaving.value = false
   }
 }
 </script>
@@ -99,13 +144,58 @@ async function connectHealthConnect() {
       </div>
       <div>
         <h1 class="text-h5 font-weight-black">Settings</h1>
-        <p>Choose where Mom reads device data.</p>
+        <p>Customize Mom's navigation and connected data.</p>
       </div>
     </header>
 
     <v-alert v-if="error" type="error" variant="tonal" closable @click:close="error = ''">
       {{ error }}
     </v-alert>
+
+    <v-card class="surface-card pa-5 pa-sm-6">
+      <div class="settings-section-heading">
+        <div>
+          <h2>Main menu</h2>
+          <p>Press and hold an item, then drag it to choose where it appears.</p>
+        </div>
+        <v-progress-circular
+          v-if="menuSaving"
+          color="secondary"
+          indeterminate
+          size="22"
+          width="2"
+        />
+        <v-icon v-else icon="mdi-menu" />
+      </div>
+
+      <v-progress-linear
+        v-if="loading"
+        color="secondary"
+        indeterminate
+        rounded
+        class="mt-5"
+      />
+
+      <div v-else class="menu-order-list">
+        <div
+          v-for="item in menuItems"
+          :key="item.id"
+          v-long-press-drag="{
+            id: item.id,
+            group: 'settings-main-menu',
+            disabled: menuSaving || menuItems.length < 2,
+            onDrop: reorderMainMenu,
+          }"
+          class="menu-order-item"
+        >
+          <v-icon icon="mdi-drag" size="22" class="menu-order-item__handle" />
+          <span class="menu-order-item__icon">
+            <v-icon :icon="item.icon" size="21" />
+          </span>
+          <strong>{{ item.title }}</strong>
+        </div>
+      </div>
+    </v-card>
 
     <v-card class="surface-card pa-5 pa-sm-6">
       <div class="settings-section-heading">
@@ -166,7 +256,7 @@ async function connectHealthConnect() {
     </v-card>
 
     <v-snackbar v-model="notice" color="success" location="bottom" :timeout="4000">
-      Health Connect is ready for step-counter tasks.
+      {{ noticeMessage }}
     </v-snackbar>
   </main>
 </template>
@@ -219,6 +309,40 @@ async function connectHealthConnect() {
 }
 
 .settings-section-heading > .v-icon {
+  color: rgb(var(--v-theme-secondary));
+}
+
+.menu-order-list {
+  display: grid;
+  gap: .65rem;
+  margin-top: 1.25rem;
+}
+
+.menu-order-item {
+  display: grid;
+  grid-template-columns: 2rem 2.75rem minmax(0, 1fr);
+  align-items: center;
+  min-height: 3.75rem;
+  gap: .75rem;
+  padding: .5rem .75rem;
+  border: 1px solid rgb(var(--v-theme-on-surface) / .1);
+  border-radius: 16px;
+  background: rgb(var(--v-theme-surface-variant) / .28);
+  cursor: grab;
+  user-select: none;
+}
+
+.menu-order-item__handle {
+  color: rgb(var(--v-theme-on-surface) / .52);
+}
+
+.menu-order-item__icon {
+  display: grid;
+  width: 2.75rem;
+  height: 2.75rem;
+  place-items: center;
+  border-radius: 14px;
+  background: rgb(var(--v-theme-secondary) / .12);
   color: rgb(var(--v-theme-secondary));
 }
 

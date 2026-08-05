@@ -171,10 +171,10 @@ function displayValue(value: number, unit: string) {
     >
       <g v-for="(tick, index) in yTicks()" :key="`y-${index}`">
         <line :x1="plotLeft" :x2="chartWidth - plotRight" :y1="plotTop + index * plotHeight / 2" :y2="plotTop + index * plotHeight / 2" class="grid-line" />
-        <text :x="plotLeft - 8" :y="plotTop + index * plotHeight / 2 + 4" class="axis-value">{{ formatNumber(tick) }}</text>
+        <text :x="plotLeft - 8" :y="plotTop + index * plotHeight / 2 + 4" class="axis-value axis-value--outcome">{{ formatNumber(tick) }}</text>
       </g>
 
-      <text :x="16" :y="plotTop + plotHeight / 2" class="axis-title axis-title--vertical" :transform="`rotate(-90 16 ${plotTop + plotHeight / 2})`">
+      <text :x="16" :y="plotTop + plotHeight / 2" class="axis-title axis-title--outcome axis-title--vertical" :transform="`rotate(-90 16 ${plotTop + plotHeight / 2})`">
         {{ outcomeName }}{{ outcomeUnit ? ` · ${outcomeUnit}` : '' }}
       </text>
 
@@ -195,8 +195,8 @@ function displayValue(value: number, unit: string) {
           :y2="meanY(true)"
           class="mean-line"
         />
-        <text :x="plotLeft + plotWidth * .28" :y="chartHeight - 20" class="axis-category">Absent · {{ insight.comparison?.second.count || 0 }}</text>
-        <text :x="plotLeft + plotWidth * .72" :y="chartHeight - 20" class="axis-category">Present · {{ insight.comparison?.first.count || 0 }}</text>
+        <text :x="plotLeft + plotWidth * .28" :y="chartHeight - 20" class="axis-category axis-category--factor">Absent · {{ insight.comparison?.second.count || 0 }}</text>
+        <text :x="plotLeft + plotWidth * .72" :y="chartHeight - 20" class="axis-category axis-category--factor">Present · {{ insight.comparison?.first.count || 0 }}</text>
       </template>
 
       <template v-else>
@@ -205,11 +205,11 @@ function displayValue(value: number, unit: string) {
           <text
             :x="plotLeft + index * plotWidth / 2"
             :y="chartHeight - 25"
-            class="axis-category"
+            class="axis-category axis-category--factor"
             :text-anchor="index === 0 ? 'start' : index === 2 ? 'end' : 'middle'"
           >{{ formatNumber(tick) }}</text>
         </g>
-        <text :x="plotLeft + plotWidth / 2" :y="chartHeight - 5" class="axis-title">
+        <text :x="plotLeft + plotWidth / 2" :y="chartHeight - 5" class="axis-title axis-title--factor">
           {{ factorName }}{{ factorUnit ? ` · ${factorUnit}` : '' }}
         </text>
       </template>
@@ -236,6 +236,8 @@ function displayValue(value: number, unit: string) {
 .relationship-chart {
   --factor-color: rgb(var(--v-theme-info));
   --outcome-color: rgb(var(--v-theme-secondary));
+  --factor-contrast: color-mix(in srgb, var(--factor-color) 78%, white);
+  --outcome-contrast: color-mix(in srgb, var(--outcome-color) 78%, white);
 
   outline: none;
 }
@@ -252,28 +254,32 @@ function displayValue(value: number, unit: string) {
   align-items: center;
   gap: .75rem 1rem;
   flex-wrap: wrap;
-  color: rgb(var(--v-theme-on-surface) / .58);
+  color: rgb(var(--v-theme-on-surface) / .76);
   font-size: .7rem;
 }
 
 .chart-readout strong { color: rgb(var(--v-theme-on-surface)); }
 svg { display: block; width: 100%; height: auto; min-height: 14rem; touch-action: pan-y; }
-.grid-line { stroke: rgb(var(--v-theme-on-surface) / .09); stroke-width: 1; }
+.grid-line { stroke: rgb(var(--v-theme-on-surface) / .18); stroke-width: 1; }
 .axis-value,
 .axis-category,
-.axis-title { fill: rgb(var(--v-theme-on-surface) / .54); font-family: inherit; font-size: .6875rem; }
+.axis-title { fill: rgb(var(--v-theme-on-surface) / .78); font-family: inherit; font-size: .6875rem; font-weight: 700; }
 .axis-value { text-anchor: end; }
 .axis-category,
 .axis-title { text-anchor: middle; }
-.axis-title { fill: rgb(var(--v-theme-on-surface) / .68); font-size: .75rem; font-weight: 800; }
-.relationship-dot { fill: var(--outcome-color); fill-opacity: .7; stroke: rgb(var(--v-theme-surface)); stroke-width: 2; transition: r 160ms ease, fill-opacity 160ms ease; }
-.relationship-dot--selected { fill-opacity: 1; stroke: var(--factor-color); stroke-width: 3; }
-.mean-line { stroke: var(--factor-color); stroke-width: 5; stroke-linecap: round; }
-.trend-line { stroke: var(--factor-color); stroke-width: 3; stroke-dasharray: 8 6; stroke-linecap: round; }
-.chart-key { display: flex; gap: .5rem 1rem; flex-wrap: wrap; color: rgb(var(--v-theme-on-surface) / .52); font-size: .68rem; }
+.axis-title { font-size: .75rem; font-weight: 850; }
+.axis-value--outcome,
+.axis-title--outcome { fill: var(--outcome-contrast); }
+.axis-category--factor,
+.axis-title--factor { fill: var(--factor-contrast); }
+.relationship-dot { fill: var(--outcome-contrast); stroke: rgb(var(--v-theme-on-surface) / .88); stroke-width: 2.25; transition: r 160ms ease, stroke-width 160ms ease; }
+.relationship-dot--selected { stroke: rgb(var(--v-theme-on-surface)); stroke-width: 4; }
+.mean-line { stroke: var(--factor-contrast); stroke-width: 5; stroke-linecap: round; filter: drop-shadow(0 0 1px rgb(var(--v-theme-on-surface) / .8)); }
+.trend-line { stroke: var(--factor-contrast); stroke-width: 3.5; stroke-dasharray: 8 6; stroke-linecap: round; filter: drop-shadow(0 0 1px rgb(var(--v-theme-on-surface) / .8)); }
+.chart-key { display: flex; gap: .5rem 1rem; flex-wrap: wrap; color: rgb(var(--v-theme-on-surface) / .72); font-size: .68rem; }
 .chart-key span { display: inline-flex; align-items: center; gap: .35rem; }
-.chart-key i { width: .55rem; height: .55rem; border-radius: 50%; background: var(--outcome-color); }
-.chart-key b { display: inline-block; width: .85rem; height: .2rem; border-radius: 999rem; background: var(--factor-color); }
+.chart-key i { width: .55rem; height: .55rem; border: 1px solid rgb(var(--v-theme-on-surface) / .8); border-radius: 50%; background: var(--outcome-contrast); }
+.chart-key b { display: inline-block; width: .85rem; height: .2rem; border-radius: 999rem; background: var(--factor-contrast); box-shadow: 0 0 0 1px rgb(var(--v-theme-on-surface) / .54); }
 
 @media (max-width: 30rem) {
   .chart-readout { align-items: flex-start; flex-direction: column; gap: .15rem; }

@@ -73,19 +73,70 @@ const canLogTime = computed(() => !step.value && task.value.type === 'duration')
 const canToggleFromCard = computed(() =>
   isCheck.value && !togglePending.value && !props.busy && !props.progress.locked,
 )
-const target = computed(() => step.value?.targetValue || task.value.targetValue || 0)
+const target = computed(() => step.value?.targetValue ?? task.value.targetValue ?? 0)
 const unit = computed(() => step.value?.customUnit || step.value?.unit || task.value.customUnit || task.value.unit || '')
 const operator = computed(() => ({ gte: 'at least', lte: 'at most', eq: 'exactly' })[step.value?.targetOperator || task.value.targetOperator || 'gte'])
 const targetOperator = computed(() => step.value?.targetOperator || task.value.targetOperator || 'gte')
 const currentGoalState = computed(() => isCheck.value || isInterval.value ? 'neutral' : goalState(props.progress.value, target.value, targetOperator.value))
+const numericGoalStatus = computed(() => {
+  if (isCheck.value || isInterval.value) return undefined
+  const difference = target.value - props.progress.value
+  if (targetOperator.value === 'gte' && difference > 0) {
+    return {
+      title: 'Not enough yet',
+      amount: `${formatValue(difference)} remaining`,
+      icon: 'mdi-trending-down',
+      tone: 'text-error',
+    }
+  }
+  if (isDailyTotal.value && targetOperator.value === 'lte' && difference > 0) {
+    return {
+      title: 'Within target',
+      amount: `${formatValue(difference)} remaining`,
+      icon: 'mdi-check-circle-outline',
+      tone: 'text-success',
+    }
+  }
+  if (targetOperator.value === 'eq' && difference > 0) {
+    return {
+      title: 'Exact target not met',
+      amount: `${formatValue(difference)} missing`,
+      icon: 'mdi-target',
+      tone: 'text-error',
+    }
+  }
+  if ((targetOperator.value === 'lte' || targetOperator.value === 'eq') && difference < 0) {
+    return {
+      title: 'Target exceeded',
+      amount: `${formatValue(Math.abs(difference))} over`,
+      icon: 'mdi-alert-outline',
+      tone: 'text-warning',
+    }
+  }
+  if (isDailyTotal.value && targetOperator.value === 'gte' && difference < 0) {
+    return {
+      title: 'Target surpassed',
+      amount: `${formatValue(Math.abs(difference))} over`,
+      icon: 'mdi-trending-up',
+      tone: 'text-success',
+    }
+  }
+  return undefined
+})
 const taskColor = computed(() => task.value.color || '#C7F464')
 const stateColor = computed(() => {
+  if (numericGoalStatus.value?.tone === 'text-success') return 'success'
+  if (numericGoalStatus.value?.tone === 'text-warning') return 'warning'
+  if (numericGoalStatus.value?.tone === 'text-error') return 'error'
   if (currentGoalState.value === 'exceeded') return 'warning'
   if (currentGoalState.value === 'not_enough') return 'error'
   return taskColor.value
 })
 const stateIcon = computed(() => {
   if (props.progress.locked) return 'mdi-lock-outline'
+  if (numericGoalStatus.value?.tone === 'text-success') return numericGoalStatus.value.icon
+  if (numericGoalStatus.value?.tone === 'text-warning') return 'mdi-alert-outline'
+  if (numericGoalStatus.value?.tone === 'text-error') return numericGoalStatus.value.icon
   if (currentGoalState.value === 'exceeded') return 'mdi-alert-outline'
   if (currentGoalState.value === 'not_enough') return 'mdi-trending-down'
   if (props.progress.sealed) return 'mdi-lock-check'
@@ -233,108 +284,118 @@ watch(() => props.valuePulse, async (pulse, previousPulse) => {
     </div>
 
     <v-expand-transition>
-      <div v-if="!isCheck" v-show="expanded" :id="detailsId" class="task-card-details">
-        <template v-if="isInterval">
-          <v-btn
-            v-if="!displayedComplete && canStartInterval"
-            block
-            class="mt-4"
-            color="secondary"
-            prepend-icon="mdi-play"
-            :disabled="busy || progress.locked"
-            @touchstart.stop
-            @click.stop="emit('startInterval', progress)"
-          >
-            {{ intervalActive ? 'Resume interval' : 'Start interval' }}
-          </v-btn>
-          <div v-else-if="!displayedComplete && progress.status === 'pending'" class="status-banner mt-3 muted">
-            <v-icon icon="mdi-calendar-today-outline" size="16" /> Select today to start this interval
-          </div>
-        </template>
-
-        <template v-else>
-          <div class="metric-row mt-4">
-            <div>
-              <span
-                class="metric-value"
-                :class="{ 'metric-value--updated': valueAnimating }"
-                @animationend="valueAnimating = false"
-              >{{ formatValue(progress.value) }}</span>
-              <span class="metric-target"> / {{ operator }} {{ formatValue(target) }}</span>
-            </div>
-            <span v-if="task.goalPeriod === 'week' && !step" class="period-pill">This week</span>
-          </div>
-          <v-progress-linear
-            :model-value="progress.percent"
-            :color="stateColor"
-            bg-color="surface-variant"
-            rounded
-            height="7"
-            class="mt-2"
-          />
-
-          <div v-if="isStepCounter" class="step-source mt-3">
-            <v-progress-circular v-if="syncing" indeterminate color="secondary" :size="16" :width="2" />
-            <v-icon v-else icon="mdi-heart-pulse" color="secondary" size="17" />
-            <span>{{ syncing ? 'Syncing steps…' : 'Health Connect' }}</span>
-          </div>
-
-          <div v-if="canLogAmount" class="task-action-stack mt-4">
+      <div
+        v-show="isCheck || expanded"
+        :id="!isCheck ? detailsId : undefined"
+        class="task-card-body"
+      >
+        <div v-if="!isCheck" class="task-card-details">
+          <template v-if="isInterval">
             <v-btn
+              v-if="!displayedComplete && canStartInterval"
               block
-              size="small"
-              variant="tonal"
-              prepend-icon="mdi-plus-minus-variant"
-              :disabled="busy || progress.locked || progress.sealed"
-              @touchstart.stop
-              @click.stop="emit('logAmount', progress)"
-            >
-              Log amount
-            </v-btn>
-            <v-btn
-              v-if="canLogTime"
-              block
-              size="small"
-              variant="tonal"
+              class="mt-4"
               color="secondary"
-              prepend-icon="mdi-timer-outline"
-              :disabled="busy || progress.locked || progress.sealed"
-              @click="emit('logTime', progress)"
-            >
-              Log time
-            </v-btn>
-            <v-btn
-              v-if="isDailyTotal"
-              block
-              size="small"
-              variant="tonal"
-              :color="progress.sealed ? undefined : 'secondary'"
-              :prepend-icon="progress.sealed ? 'mdi-lock-open-variant-outline' : 'mdi-lock-check-outline'"
+              prepend-icon="mdi-play"
               :disabled="busy || progress.locked"
               @touchstart.stop
-              @click.stop="emit('seal', progress)"
+              @click.stop="emit('startInterval', progress)"
             >
-              {{ progress.sealed ? 'Unlock total' : 'Lock in total' }}
+              {{ intervalActive ? 'Resume interval' : 'Start interval' }}
             </v-btn>
-          </div>
-        </template>
+            <div v-else-if="!displayedComplete && progress.status === 'pending'" class="status-banner mt-3 muted">
+              <v-icon icon="mdi-calendar-today-outline" size="16" /> Select today to start this interval
+            </div>
+          </template>
 
-        <div v-if="!progress.locked && currentGoalState === 'not_enough'" class="status-banner mt-3 text-error">
-          <v-icon icon="mdi-trending-down" size="16" /> Not enough yet
+          <template v-else>
+            <div class="metric-row mt-4">
+              <div>
+                <span
+                  class="metric-value"
+                  :class="{ 'metric-value--updated': valueAnimating }"
+                  @animationend="valueAnimating = false"
+                >{{ formatValue(progress.value) }}</span>
+                <span class="metric-target"> / {{ operator }} {{ formatValue(target) }}</span>
+              </div>
+              <span v-if="task.goalPeriod === 'week' && !step" class="period-pill">This week</span>
+            </div>
+            <v-progress-linear
+              :model-value="progress.percent"
+              :color="stateColor"
+              bg-color="surface-variant"
+              rounded
+              height="7"
+              class="mt-2"
+            />
+
+            <div v-if="isStepCounter" class="step-source mt-3">
+              <v-progress-circular v-if="syncing" indeterminate color="secondary" :size="16" :width="2" />
+              <v-icon v-else icon="mdi-heart-pulse" color="secondary" size="17" />
+              <span>{{ syncing ? 'Syncing steps…' : 'Health Connect' }}</span>
+            </div>
+
+            <div v-if="canLogAmount" class="task-action-stack mt-4">
+              <v-btn
+                block
+                size="small"
+                variant="tonal"
+                prepend-icon="mdi-plus-minus-variant"
+                :disabled="busy || progress.locked || progress.sealed"
+                @touchstart.stop
+                @click.stop="emit('logAmount', progress)"
+              >
+                Log amount
+              </v-btn>
+              <v-btn
+                v-if="canLogTime"
+                block
+                size="small"
+                variant="tonal"
+                color="secondary"
+                prepend-icon="mdi-timer-outline"
+                :disabled="busy || progress.locked || progress.sealed"
+                @click="emit('logTime', progress)"
+              >
+                Log time
+              </v-btn>
+              <v-btn
+                v-if="isDailyTotal"
+                block
+                size="small"
+                variant="tonal"
+                :color="progress.sealed ? undefined : 'secondary'"
+                :prepend-icon="progress.sealed ? 'mdi-lock-open-variant-outline' : 'mdi-lock-check-outline'"
+                :disabled="busy || progress.locked"
+                @touchstart.stop
+                @click.stop="emit('seal', progress)"
+              >
+                {{ progress.sealed ? 'Unlock total' : 'Lock in total' }}
+              </v-btn>
+            </div>
+          </template>
+
+          <div
+            v-if="!progress.locked && numericGoalStatus"
+            :class="['status-banner', 'mt-3', numericGoalStatus.tone]"
+          >
+            <span class="status-banner__label">
+              <v-icon :icon="numericGoalStatus.icon" size="16" />
+              {{ numericGoalStatus.title }}
+            </span>
+            <strong class="status-banner__amount">{{ numericGoalStatus.amount }}</strong>
+          </div>
+        </div>
+
+        <div v-if="progress.locked" class="status-banner mt-3 muted">
+          <v-icon icon="mdi-lock-outline" size="16" /> Complete or resolve earlier program steps first
+        </div>
+
+        <div v-if="progress.status === 'missed'" class="status-banner mt-3 text-error">
+          <v-icon icon="mdi-alert-circle-outline" size="16" /> Missed
         </div>
       </div>
     </v-expand-transition>
-
-    <div v-if="progress.locked" class="status-banner mt-3 muted">
-      <v-icon icon="mdi-lock-outline" size="16" /> Complete or resolve earlier program steps first
-    </div>
-    <div v-else-if="currentGoalState === 'exceeded'" class="status-banner mt-3 text-warning">
-      <v-icon icon="mdi-alert-outline" size="16" /> Target exceeded
-    </div>
-
-    <div v-if="progress.status === 'missed'" class="status-banner mt-3 text-error">
-      <v-icon icon="mdi-alert-circle-outline" size="16" /> Missed
-    </div>
   </v-card>
 </template>
 
@@ -506,5 +567,19 @@ watch(() => props.valuePulse, async (pulse, previousPulse) => {
   gap: .35rem;
   font-size: .72rem;
   font-weight: 800;
+}
+
+.status-banner__label {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: .35rem;
+}
+
+.status-banner__amount {
+  margin-left: auto;
+  padding-left: .75rem;
+  text-align: right;
+  white-space: nowrap;
 }
 </style>

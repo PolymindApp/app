@@ -6,10 +6,10 @@ import { Ripple } from 'vuetify/directives'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import DateTimePickerField from '@/components/DateTimePickerField.vue'
 import LabeledSlider from '@/components/LabeledSlider.vue'
-import TrackingRatingValue from '@/components/TrackingRatingValue.vue'
+import TrackingTrackerCard from '@/components/TrackingTrackerCard.vue'
 import TrackingWeeklyBarChart from '@/components/TrackingWeeklyBarChart.vue'
 import WeekDateNavigator from '@/components/WeekDateNavigator.vue'
-import { formatTrackingValue, TRACKING_PRESETS, trackerDraftFromPreset } from '@/services/tracking'
+import { TRACKING_PRESETS, trackerDraftFromPreset } from '@/services/tracking'
 import { reconcileTrackingReminders } from '@/services/trackingReminders'
 import { useTrackingStore } from '@/stores/tracking'
 import type { TrackingEntry, TrackingTracker } from '@/types/domain'
@@ -47,9 +47,18 @@ const trackingDateMarkers = computed(() => [...new Set(store.entries.map((entry)
 const outcomes = computed(() => store.activeTrackers.filter((tracker) => tracker.role === 'outcome'))
 const factors = computed(() => store.activeTrackers.filter((tracker) => tracker.role === 'factor'))
 const archivedTrackers = computed(() => store.trackers.filter((tracker) => !tracker.active))
+const dayEntriesByTracker = computed(() => {
+  const grouped = new Map<string, TrackingEntry[]>()
+  for (const entry of dayEntries.value) {
+    const trackerEntries = grouped.get(entry.tracker) || []
+    trackerEntries.push(entry)
+    grouped.set(entry.tracker, trackerEntries)
+  }
+  return grouped
+})
 
-function trackerForEntry(entry: TrackingEntry) {
-  return store.trackers.find((tracker) => tracker.id === entry.tracker)
+function entriesForTracker(trackerId: string) {
+  return dayEntriesByTracker.value.get(trackerId) || []
 }
 
 function openTrackerActions(tracker: TrackingTracker) {
@@ -229,56 +238,28 @@ async function loadVisibleWeekEntries() {
       <section v-if="factors.length">
         <div class="section-heading"><h2>Things you did</h2><span class="muted text-caption">{{ factors.length }}</span></div>
         <div class="tracker-grid">
-          <v-card
+          <TrackingTrackerCard
             v-for="tracker in factors"
             :key="tracker.id"
-            class="tracker-card surface-card"
-            role="button"
-            tabindex="0"
-            :aria-label="`Open ${tracker.name} actions`"
-            @click="openTrackerActions(tracker)"
-            @keydown.enter="openTrackerActions(tracker)"
-            @keydown.space.prevent="openTrackerActions(tracker)"
-          >
-            <div class="tracker-card__accent" :style="{ background: tracker.color }" />
-            <div class="tracker-card__body">
-              <div class="tracker-card__icon" :style="{ color: tracker.color }"><v-icon :icon="tracker.icon" /></div>
-              <div class="min-width-0 flex-grow-1">
-                <strong class="d-block text-truncate">{{ tracker.name }}</strong>
-                <p class="tracker-card__description">
-                  {{ tracker.description || 'No description added.' }}
-                </p>
-              </div>
-            </div>
-          </v-card>
+            :tracker="tracker"
+            :entries="entriesForTracker(tracker.id)"
+            @actions="openTrackerActions"
+            @entry="startLog(tracker, $event)"
+          />
         </div>
       </section>
 
       <section v-if="outcomes.length">
         <div class="section-heading"><h2>How you felt</h2><span class="muted text-caption">{{ outcomes.length }}</span></div>
         <div class="tracker-grid">
-          <v-card
+          <TrackingTrackerCard
             v-for="tracker in outcomes"
             :key="tracker.id"
-            class="tracker-card surface-card"
-            role="button"
-            tabindex="0"
-            :aria-label="`Open ${tracker.name} actions`"
-            @click="openTrackerActions(tracker)"
-            @keydown.enter="openTrackerActions(tracker)"
-            @keydown.space.prevent="openTrackerActions(tracker)"
-          >
-            <div class="tracker-card__accent" :style="{ background: tracker.color }" />
-            <div class="tracker-card__body">
-              <div class="tracker-card__icon" :style="{ color: tracker.color }"><v-icon :icon="tracker.icon" /></div>
-              <div class="min-width-0 flex-grow-1">
-                <strong class="d-block text-truncate">{{ tracker.name }}</strong>
-                <p class="tracker-card__description">
-                  {{ tracker.description || 'No description added.' }}
-                </p>
-              </div>
-            </div>
-          </v-card>
+            :tracker="tracker"
+            :entries="entriesForTracker(tracker.id)"
+            @actions="openTrackerActions"
+            @entry="startLog(tracker, $event)"
+          />
         </div>
       </section>
 
@@ -292,36 +273,6 @@ async function loadVisibleWeekEntries() {
       >
         New tracker
       </v-btn>
-
-      <section>
-        <div class="section-heading"><h2>Timeline</h2><span class="muted text-caption">{{ dayEntries.length }}</span></div>
-        <v-card v-if="dayEntries.length" class="surface-card pa-2">
-          <v-list bg-color="transparent" class="overflow-x-hidden">
-            <v-list-item
-              v-for="entry in dayEntries"
-              :key="entry.id"
-              :title="trackerForEntry(entry)?.name || 'Archived tracker'"
-              :subtitle="`${format(new Date(entry.occurredAt), 'h:mm a')}${entry.note ? ` · ${entry.note}` : ''}`"
-              @click="trackerForEntry(entry) && startLog(trackerForEntry(entry)!, entry)"
-            >
-              <template #prepend>
-                <v-icon :icon="trackerForEntry(entry)?.icon || 'mdi-circle-outline'" />
-              </template>
-              <template #append>
-                <TrackingRatingValue
-                  v-if="trackerForEntry(entry)?.kind === 'rating'"
-                  :value="entry.value"
-                  :max="trackerForEntry(entry)?.scaleMax"
-                  :color="trackerForEntry(entry)?.color"
-                  :label="trackerForEntry(entry)?.name"
-                />
-                <strong v-else>{{ trackerForEntry(entry) ? formatTrackingValue(trackerForEntry(entry)!, entry.value) : entry.value }}</strong>
-              </template>
-            </v-list-item>
-          </v-list>
-        </v-card>
-        <v-card v-else class="surface-card pa-7 text-center"><p class="muted text-body-2">No logs for this day yet.</p></v-card>
-      </section>
 
       <v-card class="insight-card surface-card pa-5 mt-6">
         <router-link
@@ -481,13 +432,6 @@ async function loadVisibleWeekEntries() {
 .weekly-hint .v-icon { flex: 0 0 auto; color: rgb(var(--v-theme-secondary)); }
 .weekly-hint strong { color: rgb(var(--v-theme-on-surface)); }
 .tracker-grid { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 270px), 1fr)); }
-.tracker-card { position: relative; overflow: hidden; cursor: pointer; }
-.tracker-card:focus-visible { outline: .125rem solid rgba(var(--v-theme-secondary), .72); outline-offset: .1875rem; }
-.tracker-card__accent { position: absolute; top: 0; bottom: 0; left: 0; width: 4px; }
-.tracker-card__body { display: flex; align-items: center; gap: .85rem; padding: 1rem 1rem 1rem 1.2rem; }
-.tracker-card__icon { display: grid; width: 38px; height: 38px; flex: 0 0 auto; place-items: center; border-radius: 12px; background: currentColor; }
-.tracker-card__icon :deep(.v-icon) { color: rgb(var(--v-theme-background)); }
-.tracker-card__description { margin-top: .2rem; color: rgba(var(--v-theme-on-surface), .58); font-size: .72rem; line-height: 1.45; }
 .preset-grid { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); }
 .preset-card { display: grid; min-height: 150px; grid-template-rows: 1fr auto; align-items: start; gap: 1rem; }
 .preset-card__content { display: flex; align-items: flex-start; gap: .8rem; }

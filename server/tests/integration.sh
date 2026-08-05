@@ -268,6 +268,26 @@ invalid_step_source_status="$(curl --silent --output /dev/null --write-out '%{ht
   exit 1
 }
 
+menu_order_response="$(curl --silent --show-error --fail \
+  -X PATCH -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"mainMenuOrder":["journal","tracking","tasks","intervals"]}' \
+  "$api_url/auth/settings")"
+menu_order="$(php -r '$data=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); echo implode(",", $data["settings"]["mainMenuOrder"] ?? []);' <<<"$menu_order_response")"
+[[ "$menu_order" == "journal,tracking,tasks,intervals" ]] || {
+  echo "The main menu order was not persisted." >&2
+  exit 1
+}
+invalid_menu_order_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  -X PATCH -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"mainMenuOrder":["tasks","tasks","tracking","journal"]}' \
+  "$api_url/auth/settings")"
+[[ "$invalid_menu_order_status" == 422 ]] || {
+  echo "An invalid main menu order was not rejected." >&2
+  exit 1
+}
+
 passkey_status="$(curl --silent --show-error --fail \
   -H "Authorization: Bearer $alice_token" \
   "$api_url/auth/passkeys/status")"

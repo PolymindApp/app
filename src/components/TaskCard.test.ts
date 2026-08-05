@@ -226,6 +226,7 @@ describe('TaskCard amount actions', () => {
     expect(wrapper.find('.progress-number').exists()).toBe(false)
     expect(wrapper.text()).toContain('Log amount')
     expect(wrapper.get('.task-card-details').find('.status-banner.text-error').text()).toContain('Not enough yet')
+    expect(wrapper.get('.status-banner__amount').text()).toBe('2 L remaining')
     expect(wrapper.get('.task-card-header-actions').findAll('button').map(button => button.attributes('aria-label')))
       .toEqual(['More actions for Water'])
 
@@ -233,7 +234,109 @@ describe('TaskCard amount actions', () => {
 
     expect(wrapper.get('.task-card-header-main').attributes('aria-label')).toBe('Expand Water')
     expect(wrapper.get('.task-card-header-main').attributes('aria-expanded')).toBe('false')
-    expect(wrapper.get('.task-card-details').attributes('style')).toContain('display: none')
+    expect(wrapper.get('.task-card-body').attributes('style')).toContain('display: none')
+  })
+
+  it('right-aligns missing and exceeded amounts for exact and maximum targets', async () => {
+    const wrapper = mount(TaskCard, {
+      props: {
+        progress: {
+          ...progress,
+          value: 1,
+          task: { ...progress.task, targetOperator: 'eq' },
+        },
+      },
+      global: {
+        stubs: {
+          VBtn: VBtnStub,
+          VCard: { template: '<div><slot /></div>' },
+          VExpandTransition: { template: '<div><slot /></div>' },
+          ExpandTransition: { template: '<div><slot /></div>' },
+          VIcon: true,
+          VProgressCircular: { template: '<div><slot /></div>' },
+          VProgressLinear: true,
+        },
+      },
+    })
+
+    expect(wrapper.get('.status-banner__amount').text()).toBe('1 L missing')
+
+    await wrapper.setProps({
+      progress: {
+        ...progress,
+        value: 3,
+        task: { ...progress.task, targetOperator: 'lte' },
+      },
+    })
+
+    expect(wrapper.get('.status-banner__amount').text()).toBe('1 L over')
+  })
+
+  it('shows the remaining allowance and surpassed amount for daily totals', async () => {
+    const wrapper = mount(TaskCard, {
+      props: {
+        progress: {
+          ...progress,
+          value: 1,
+          task: { ...progress.task, targetOperator: 'lte' },
+        },
+      },
+      global: {
+        stubs: {
+          VBtn: VBtnStub,
+          VCard: { template: '<div><slot /></div>' },
+          VExpandTransition: { template: '<div><slot /></div>' },
+          ExpandTransition: { template: '<div><slot /></div>' },
+          VIcon: true,
+          VProgressCircular: { template: '<div><slot /></div>' },
+          VProgressLinear: true,
+        },
+      },
+    })
+
+    expect(wrapper.get('.status-banner.text-success').text()).toContain('Within target')
+    expect(wrapper.get('.status-banner__amount').text()).toBe('1 L remaining')
+
+    await wrapper.setProps({
+      progress: {
+        ...progress,
+        value: 3,
+        task: { ...progress.task, targetOperator: 'gte' },
+      },
+    })
+
+    expect(wrapper.get('.status-banner.text-success').text()).toContain('Target surpassed')
+    expect(wrapper.get('.status-banner__amount').text()).toBe('1 L over')
+  })
+
+  it('collapses every element below the header, including stacked status banners', async () => {
+    const wrapper = mount(TaskCard, {
+      props: {
+        progress: {
+          ...progress,
+          locked: true,
+          status: 'missed',
+        },
+      },
+      global: {
+        stubs: {
+          VBtn: VBtnStub,
+          VCard: { template: '<div><slot /></div>' },
+          VExpandTransition: { template: '<div><slot /></div>' },
+          ExpandTransition: { template: '<div><slot /></div>' },
+          VIcon: true,
+          VProgressCircular: { template: '<div><slot /></div>' },
+          VProgressLinear: true,
+        },
+      },
+    })
+
+    expect(wrapper.get('.task-card-body').text()).toContain('Complete or resolve earlier program steps first')
+    expect(wrapper.get('.task-card-body').text()).toContain('Missed')
+
+    await wrapper.get('.task-card-header-main').trigger('click')
+
+    expect(wrapper.get('.task-card-body').attributes('style')).toContain('display: none')
   })
 
   it('remembers each task expansion state for the browser session', async () => {

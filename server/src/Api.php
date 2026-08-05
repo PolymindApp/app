@@ -500,10 +500,12 @@ final class Api
         if (
             !array_key_exists('quickInterval', $body)
             && !array_key_exists('stepSource', $body)
+            && !array_key_exists('mainMenuOrder', $body)
         ) {
             throw new ApiException(422, 'At least one supported setting is required.', [
                 'quickInterval' => 'required',
                 'stepSource' => 'required',
+                'mainMenuOrder' => 'required',
             ]);
         }
         if (array_key_exists('quickInterval', $body)) {
@@ -519,6 +521,11 @@ final class Api
             }
             $settings['stepSource'] = 'health_connect';
         }
+        if (array_key_exists('mainMenuOrder', $body)) {
+            $settings['mainMenuOrder'] = $this->validateMainMenuOrder(
+                $body['mainMenuOrder'],
+            );
+        }
         $encoded = json_encode(
             $settings,
             JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
@@ -533,6 +540,28 @@ final class Api
             'id' => $user['id'],
         ]);
         $this->respond(['settings' => $settings, 'updated' => $updated]);
+    }
+
+    private function validateMainMenuOrder(mixed $value): array
+    {
+        $expected = ['tasks', 'intervals', 'tracking', 'journal'];
+        if (!is_array($value) || !array_is_list($value)) {
+            throw new ApiException(422, 'The main menu order is invalid.', [
+                'mainMenuOrder' => 'permutation',
+            ]);
+        }
+
+        $received = $value;
+        sort($received);
+        $sortedExpected = $expected;
+        sort($sortedExpected);
+        if ($received !== $sortedExpected) {
+            throw new ApiException(422, 'The main menu order is invalid.', [
+                'mainMenuOrder' => 'permutation',
+            ]);
+        }
+
+        return array_values($value);
     }
 
     private function validateQuickIntervalSettings(mixed $value): array

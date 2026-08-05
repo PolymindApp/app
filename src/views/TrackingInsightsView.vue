@@ -10,7 +10,12 @@ import {
   dateRangeKeys,
   type TrackingInsightResult,
 } from '@/services/tracking'
-import { isTaskScheduled } from '@/services/schedule'
+import { readHealthConnectStepsForDates } from '@/services/healthConnect'
+import {
+  taskInsightDailyValues,
+  taskInsightDateKeys,
+  taskInsightProfile,
+} from '@/services/taskInsights'
 import { useIntervalStore } from '@/stores/intervals'
 import { useTaskStore } from '@/stores/tasks'
 import { useTrackingStore } from '@/stores/tracking'
@@ -61,11 +66,8 @@ const factorSources = computed<TrackingAnalysisSource[]>(() => [
     name: `Task · ${task.name}`,
     role: 'factor' as const,
     favorableDirection: 'neutral' as const,
-    unit: 'completed',
     color: task.color || 'rgb(var(--v-theme-info))',
-    factorMode: 'presence' as const,
-    scaleMin: 0,
-    scaleMax: 1,
+    ...taskInsightProfile(task),
   })),
   ...intervals.templates.map((template) => ({
     id: `interval:${template.id}`,
@@ -211,16 +213,18 @@ async function factorDailyValues(sourceId: string, start: string, end: string): 
   if (source === 'task') {
     const task = tasks.tasks.find((item) => item.id === id)
     if (!task) return []
-    const records = await api.collection('occurrences').getFullList({
-      filter: `task = "${id}" && scheduled_date >= "${start}" && scheduled_date <= "${end}"`,
-      sort: 'scheduled_date',
-    })
-    const completedDates = new Set(records
-      .filter((record) => record.status === 'completed')
-      .map((record) => String(record.scheduled_date)))
-    return dates
-      .filter((date) => isTaskScheduled(task, new Date(`${date}T12:00:00`)))
-      .map((date) => ({ date, value: completedDates.has(date) ? 1 : 0 }))
+    await tasks.loadProgressRange(start, end)
+    const stepCounts = task.type === 'step_counter'
+      ? await readHealthConnectStepsForDates(taskInsightDateKeys(task, start, end))
+      : undefined
+    return taskInsightDailyValues(
+      task,
+      tasks.entries,
+      tasks.occurrences,
+      start,
+      end,
+      stepCounts,
+    )
   }
   if (source === 'interval') {
     const records = await api.collection('interval_sessions').getFullList({
@@ -322,7 +326,7 @@ function trackerDailyValues(trackerId: string, start: string, end: string) {
 
       <v-card class="chart-card surface-card pa-5 mb-4">
         <div class="chart-heading">
-          <div><h2>Over time</h2><p>Separate scales keep unlike units readable while dates stay aligned.</p></div>
+          <div><h2>Over time</h2><p>Both lines share one date plot, with independent scales on the left and right.</p></div>
           <v-icon icon="mdi-chart-timeline-variant" color="secondary" />
         </div>
         <TrackingTimelineChart
