@@ -10,6 +10,7 @@ import {
   stopFlashcardSpeech,
   syncBackgroundFlashcardReview,
 } from '@/services/flashcardSpeech'
+import { playReviewCompleteCue } from '@/services/intervalCues'
 import { formatReviewDuration, sessionAccuracy } from '@/services/flashcards'
 import { useFlashcardStore } from '@/stores/flashcards'
 import type {
@@ -238,9 +239,10 @@ function resetCurrentCardPhase() {
 
 async function performAction(
   action: FlashcardReviewAction,
-  options: { syncNative?: boolean } = {},
+  options: { syncNative?: boolean; playCompletionCue?: boolean } = {},
 ) {
   if (!session.value || busy.value) return false
+  const previousStatus = session.value.status
   tick()
   busy.value = true
   error.value = ''
@@ -250,6 +252,14 @@ async function performAction(
     localElapsedMs.value = updated.elapsedSeconds * 1000
     lastTickAt = Date.now()
     if (['success', 'error', 'view', 'push', 'eject'].includes(action)) resetCurrentCardPhase()
+    if (
+      previousStatus === 'running'
+      && updated.status === 'completed'
+      && options.playCompletionCue !== false
+      && document.visibilityState === 'visible'
+    ) {
+      playReviewCompleteCue()
+    }
     if (updated.status === 'completed' || updated.status === 'ended') {
       clearPassiveState()
       await stopBackgroundFlashcardReview()
@@ -353,6 +363,12 @@ async function speakCurrentSide() {
   }
 }
 
+function retrySpeech() {
+  lastSpokenKey = ''
+  speechPlaybackWarning.value = ''
+  void speakCurrentSide()
+}
+
 async function syncNativeBackground() {
   const value = session.value
   if (!value || !canUseNativeBackground.value) {
@@ -403,7 +419,10 @@ async function reconcileBackgroundReview(
   for (let index = 0; index < completed; index += 1) {
     if (session.value?.status !== 'running') break
     const queueLength = session.value.queue.length
-    const succeeded = await performAction('view', { syncNative: false })
+    const succeeded = await performAction('view', {
+      syncNative: false,
+      playCompletionCue: false,
+    })
     if (!succeeded || session.value?.queue.length === queueLength) {
       replayedAll = false
       break
@@ -497,6 +516,9 @@ function tagName(id: string) {
         class="runner-alert"
       >
         {{ speechWarning }}
+        <template v-if="speechPlaybackWarning" #append>
+          <v-btn variant="text" @click="retrySpeech">Try again</v-btn>
+        </template>
       </v-alert>
 
       <section v-if="isFinished" class="completion-panel">

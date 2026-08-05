@@ -87,4 +87,20 @@ describe('interval cue audio', () => {
     await vi.waitFor(() => expect(audioContexts[0]?.sources[0]?.start).toHaveBeenCalledOnce())
     expect(audioContexts[0].sources[0].buffer).toMatchObject({ marker: 3 })
   })
+
+  it('plays the completion sound for a completed review set', async () => {
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const marker = String(input).includes('complete') ? 3 : 1
+      return {
+        ok: true,
+        arrayBuffer: async () => new Uint8Array([marker]).buffer,
+      } as Response
+    })
+    const { playReviewCompleteCue } = await import('./intervalCues')
+
+    playReviewCompleteCue()
+
+    await vi.waitFor(() => expect(audioContexts[0]?.sources[0]?.start).toHaveBeenCalledOnce())
+    expect(audioContexts[0].sources[0].buffer).toMatchObject({ marker: 3 })
+  })
 })

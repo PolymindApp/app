@@ -284,6 +284,7 @@ watch(() => props.valuePulse, async (pulse, previousPulse) => {
 
       <div class="task-card-header-actions d-flex align-center ga-1 flex-shrink-0">
         <v-btn
+          v-if="canLogAmount"
           class="task-menu-button"
           icon="mdi-dots-vertical"
           variant="text"

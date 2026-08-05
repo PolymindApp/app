@@ -80,6 +80,10 @@ export async function prepareIntervalCues(cues: IntervalCueSettings) {
 
 function playCue(name: CueName, cues: IntervalCueSettings) {
   if (!cues.soundEnabled || nativeBackgroundIntervalOwnsCues()) return
+  playAudioCue(name)
+}
+
+function playAudioCue(name: CueName) {
   void Promise.all([loadCue(name), prepareIntervalAudio()])
     .then(([buffer]) => {
       if (!audioContext) return
@@ -109,6 +113,10 @@ export function playIntervalGoCue(cues: IntervalCueSettings) {
 
 export function playIntervalCompleteCue(cues: IntervalCueSettings) {
   playIntervalSignalCue('complete', cues)
+}
+
+export function playReviewCompleteCue() {
+  playAudioCue('complete')
 }
 
 export async function notifyIntervalTransition(title: string, body: string) {

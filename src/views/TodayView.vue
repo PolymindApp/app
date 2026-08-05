@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Capacitor } from '@capacitor/core'
 import { App } from '@capacitor/app'
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { addDays, format, isAfter, isSameDay, startOfDay, startOfWeek } from 'date-fns'
 import { storeToRefs } from 'pinia'
 import { useDisplay } from 'vuetify'
@@ -203,28 +203,6 @@ function openTaskActions(progress: TaskProgress) {
   taskSheet.value = true
 }
 
-async function writeTaskReflection() {
-  const progress = taskActionProgress.value
-  if (!progress) return
-  taskSheet.value = false
-  await nextTick()
-  await router.push({
-    name: 'journal-new',
-    query: { task: progress.task.id, date: toDateKey(selectedDate.value) },
-  })
-}
-
-async function viewTaskReflections() {
-  const progress = taskActionProgress.value
-  if (!progress) return
-  taskSheet.value = false
-  await nextTick()
-  await router.push({
-    name: 'journal',
-    query: { task: progress.task.id, date: toDateKey(selectedDate.value) },
-  })
-}
-
 function taskEntryKindLabel(entry: Entry) {
   if (entry.kind === 'duration') return 'Duration'
   if (entry.kind === 'adjustment') return 'Adjustment'
@@ -271,15 +249,7 @@ async function openTaskLogHistory() {
 }
 
 function runTaskCardAction(action: TaskCardActionId) {
-  if (action === 'write-reflection') {
-    void writeTaskReflection()
-    return
-  }
-  if (action === 'view-reflections') {
-    void viewTaskReflections()
-    return
-  }
-  void openTaskLogHistory()
+  if (action === 'view-log-history') void openTaskLogHistory()
 }
 
 async function openExact(progress: TaskProgress) {

@@ -6,16 +6,6 @@ export const TASK_CARD_ACTION_ITEMS = [
     title: 'View log history',
     icon: 'mdi-history',
   },
-  {
-    id: 'write-reflection',
-    title: 'Write reflection',
-    icon: 'mdi-notebook-plus-outline',
-  },
-  {
-    id: 'view-reflections',
-    title: 'View reflections',
-    icon: 'mdi-notebook-outline',
-  },
 ] as const
 
 export type TaskCardActionId = typeof TASK_CARD_ACTION_ITEMS[number]['id']

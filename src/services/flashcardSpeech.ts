@@ -34,6 +34,8 @@ interface FlashcardSpeechPlugin {
 
 const NativeFlashcardSpeech = registerPlugin<FlashcardSpeechPlugin>('FlashcardSpeech')
 let nativeBackgroundActive = false
+let activeBrowserUtterance: SpeechSynthesisUtterance | undefined
+let browserVoiceLoad: Promise<SpeechSynthesisVoice[]> | undefined
 
 function isNativeAndroid() {
   return Capacitor.getPlatform() === 'android' && Capacitor.isNativePlatform()
@@ -69,25 +71,41 @@ export function speechLanguageOptions(
     .sort((left, right) => left.title.localeCompare(right.title))
 }
 
-function browserVoiceLanguages(): Promise<string[]> {
+function loadBrowserVoices(): Promise<SpeechSynthesisVoice[]> {
   if (typeof window === 'undefined' || !('speechSynthesis' in window)) return Promise.resolve([])
   const synthesis = window.speechSynthesis
   const current = synthesis.getVoices()
-  if (current.length) return Promise.resolve(current.map(voice => voice.lang))
+  if (current.length) return Promise.resolve(current)
+  if (browserVoiceLoad) return browserVoiceLoad
 
-  return new Promise(resolve => {
+  browserVoiceLoad = new Promise(resolve => {
     let settled = false
     const finish = () => {
       if (settled) return
       settled = true
       synthesis.removeEventListener('voiceschanged', finish)
       window.clearTimeout(timeout)
-      const voices = synthesis.getVoices().map(voice => voice.lang)
-      resolve(voices.length ? voices : [navigator.language])
+      resolve(synthesis.getVoices())
     }
     const timeout = window.setTimeout(finish, 1000)
     synthesis.addEventListener('voiceschanged', finish, { once: true })
+  }).finally(() => {
+    browserVoiceLoad = undefined
   })
+  return browserVoiceLoad
+}
+
+async function browserVoiceLanguages() {
+  return (await loadBrowserVoices()).map(voice => voice.lang)
+}
+
+function browserVoiceForLanguage(voices: SpeechSynthesisVoice[], language: string) {
+  const requested = normalizeSpeechLanguage(language)
+  const exact = voices.find(voice => normalizeSpeechLanguage(voice.lang) === requested)
+  if (exact) return exact
+  const base = requested.split('-')[0]
+  return voices.find(voice => voice.default && normalizeSpeechLanguage(voice.lang).split('-')[0] === base)
+    || voices.find(voice => normalizeSpeechLanguage(voice.lang).split('-')[0] === base)
 }
 
 export async function loadFlashcardSpeechSupport(): Promise<FlashcardSpeechSupport> {
@@ -106,7 +124,7 @@ export async function loadFlashcardSpeechSupport(): Promise<FlashcardSpeechSuppo
   if (
     typeof window === 'undefined'
     || !('speechSynthesis' in window)
-    || typeof SpeechSynthesisUtterance === 'undefined'
+    || typeof window.SpeechSynthesisUtterance === 'undefined'
   ) return { available: false, languages: [] }
 
   const languages = speechLanguageOptions(await browserVoiceLanguages())
@@ -126,19 +144,60 @@ export function defaultFlashcardSpeechLanguage(languages: FlashcardSpeechLanguag
 export async function speakFlashcardText(text: string, language: string) {
   const content = text.trim()
   if (!content || !language) return
-  await stopFlashcardSpeech()
   if (isNativeAndroid()) {
+    await stopFlashcardSpeech()
     await NativeFlashcardSpeech.speak({ text: content, language })
     return
   }
   if (
     typeof window === 'undefined'
     || !('speechSynthesis' in window)
-    || typeof SpeechSynthesisUtterance === 'undefined'
-  ) return
-  const utterance = new SpeechSynthesisUtterance(content)
-  utterance.lang = language
-  window.speechSynthesis.speak(utterance)
+    || typeof window.SpeechSynthesisUtterance === 'undefined'
+  ) throw new Error('Speech synthesis is not available in this browser.')
+
+  const synthesis = window.speechSynthesis
+  const voice = browserVoiceForLanguage(await loadBrowserVoices(), language)
+  if (!voice) throw new Error(`No browser voice is available for ${language}.`)
+  await stopFlashcardSpeech()
+
+  const utterance = new window.SpeechSynthesisUtterance(content)
+  utterance.lang = voice.lang
+  utterance.voice = voice
+  await new Promise<void>((resolve, reject) => {
+    let settled = false
+    const settle = (cause?: Error) => {
+      if (settled) return
+      settled = true
+      window.clearTimeout(startTimeout)
+      if (cause) reject(cause)
+      else resolve()
+    }
+    const clearActive = () => {
+      if (activeBrowserUtterance === utterance) activeBrowserUtterance = undefined
+    }
+    const startTimeout = window.setTimeout(() => {
+      clearActive()
+      synthesis.cancel()
+      settle(new Error('The browser did not start speech synthesis.'))
+    }, 2000)
+    utterance.onstart = () => settle()
+    utterance.onend = () => {
+      clearActive()
+      settle()
+    }
+    utterance.onerror = event => {
+      clearActive()
+      settle(new Error(`Browser speech synthesis failed: ${event.error}.`))
+    }
+    activeBrowserUtterance = utterance
+    try {
+      synthesis.resume()
+      synthesis.speak(utterance)
+    } catch (cause) {
+      clearActive()
+      settle(cause instanceof Error ? cause : new Error('Browser speech synthesis failed.'))
+    }
+  })
 }
 
 export async function stopFlashcardSpeech() {
@@ -147,7 +206,11 @@ export async function stopFlashcardSpeech() {
     return
   }
   if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-    window.speechSynthesis.cancel()
+    const synthesis = window.speechSynthesis
+    if (activeBrowserUtterance || synthesis.speaking || synthesis.pending || synthesis.paused) {
+      synthesis.cancel()
+    }
+    activeBrowserUtterance = undefined
   }
 }
 

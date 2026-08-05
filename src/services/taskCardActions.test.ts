@@ -10,8 +10,8 @@ function progress(type: TaskType, completionType?: ProgramStep['completionType']
 }
 
 describe('task card actions', () => {
-  it('places log history first', () => {
-    expect(TASK_CARD_ACTION_ITEMS[0].id).toBe('view-log-history')
+  it('only includes log history in the task menu', () => {
+    expect(TASK_CARD_ACTION_ITEMS.map(item => item.id)).toEqual(['view-log-history'])
   })
 
   it('limits log history to tasks and steps that can log amounts', () => {

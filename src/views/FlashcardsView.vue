@@ -72,10 +72,6 @@ function tagName(id: string) {
   return store.tags.find(tag => tag.id === id)?.name || 'Removed tag'
 }
 
-function reviewSetTags(reviewSet: FlashcardReviewSet) {
-  return reviewSet.tags.length ? reviewSet.tags.map(tagName).join(', ') : 'All cards'
-}
-
 function reviewSetCardCount(reviewSet: FlashcardReviewSet) {
   return store.matchingCards(reviewSet.tags).length
 }
@@ -161,7 +157,7 @@ async function removeTag() {
     <v-alert v-if="startError" type="error" variant="tonal" class="mb-4">{{ startError }}</v-alert>
 
     <section>
-      <div class="section-heading">
+      <div class="section-heading mt-0">
         <h2>Review sets</h2>
         <v-btn
           size="small"
@@ -190,14 +186,46 @@ async function removeTag() {
             <div class="review-set__icon"><v-icon icon="mdi-cards-playing-outline" size="25" /></div>
             <div class="min-width-0">
               <h3 class="text-body-1 font-weight-black text-truncate">{{ reviewSet.name }}</h3>
-              <p class="text-caption muted mt-1 text-truncate">{{ reviewSetTags(reviewSet) }}</p>
               <div class="review-set__meta mt-2">
-                <span>{{ reviewSet.mode === 'passive' ? 'Passive' : 'Manual' }}</span>
-                <span v-if="reviewSet.speechEnabled" class="review-set__speech">
-                  <v-icon icon="mdi-volume-high" size="12" /> Speech
-                </span>
-                <span>{{ reviewSortTitle(reviewSet.sortMode) }}</span>
-                <span>{{ reviewSetCardCount(reviewSet) }} cards</span>
+                <v-chip
+                  v-if="!reviewSet.tags.length"
+                  size="x-small"
+                  variant="tonal"
+                  prepend-icon="mdi-cards-outline"
+                >
+                  All cards
+                </v-chip>
+                <v-chip
+                  size="x-small"
+                  variant="tonal"
+                  :prepend-icon="reviewSet.mode === 'passive' ? 'mdi-play-speed' : 'mdi-gesture-tap'"
+                >
+                  {{ reviewSet.mode === 'passive' ? 'Passive' : 'Manual' }}
+                </v-chip>
+                <v-chip
+                  v-if="reviewSet.speechEnabled"
+                  size="x-small"
+                  variant="tonal"
+                  color="secondary"
+                  prepend-icon="mdi-volume-high"
+                >
+                  Speech
+                </v-chip>
+                <v-chip size="x-small" variant="tonal">
+                  {{ reviewSortTitle(reviewSet.sortMode) }}
+                </v-chip>
+                <v-chip size="x-small" variant="tonal" prepend-icon="mdi-cards-outline">
+                  {{ reviewSetCardCount(reviewSet) }} cards
+                </v-chip>
+                <v-chip
+                  v-for="tag in reviewSet.tags"
+                  :key="tag"
+                  size="x-small"
+                  variant="tonal"
+                  prepend-icon="mdi-tag-outline"
+                >
+                  {{ tagName(tag) }}
+                </v-chip>
               </div>
             </div>
             <v-icon icon="mdi-chevron-right" color="medium-emphasis" />
@@ -453,8 +481,7 @@ async function removeTag() {
 .review-set__main { display: grid; min-width: 0; grid-template-columns: 3rem minmax(0, 1fr) 1.5rem; align-items: center; gap: .85rem; }
 .review-set__icon { display: grid; width: 3rem; height: 3rem; place-items: center; border-radius: 1rem; background: rgba(var(--v-theme-secondary), .14); color: rgb(var(--v-theme-secondary)); }
 .review-set__meta { display: flex; flex-wrap: wrap; gap: .35rem; }
-.review-set__meta span { padding: .2rem .45rem; border-radius: 999rem; background: rgba(var(--v-theme-on-surface), .07); color: rgba(var(--v-theme-on-surface), .64); font-size: .64rem; font-weight: 800; }
-.review-set__meta .review-set__speech { display: inline-flex; align-items: center; gap: .2rem; color: rgb(var(--v-theme-secondary)); }
+.review-set__meta :deep(.v-chip) { font-weight: 800; }
 .card-filters { display: grid; grid-template-columns: minmax(0, 1fr) 2.75rem; align-items: start; gap: .75rem; }
 .card-filters > .v-btn { min-width: 2.75rem; min-height: 2.75rem; }
 .card-library-table { overflow: hidden; border-radius: 1rem; }

@@ -239,6 +239,7 @@ public class BackgroundFlashcardService extends Service {
         finished = true;
         handler.removeCallbacks(ticker);
         if (speech != null) speech.stop();
+        if (!MainActivity.isAppVisible()) IntervalCuePlayer.playComplete(this);
         persistState();
         releaseWakeLock();
         getSystemService(NotificationManager.class).notify(
