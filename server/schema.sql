@@ -187,11 +187,14 @@ CREATE TABLE interval_templates (
     sound_enabled BOOLEAN NOT NULL DEFAULT FALSE,
     vibration_enabled BOOLEAN NOT NULL DEFAULT FALSE,
     sound TEXT NOT NULL DEFAULT '',
-    sort_order NUMERIC NOT NULL DEFAULT 0
+    sort_order NUMERIC NOT NULL DEFAULT 0,
+    flashcard_review_set TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX idx_interval_templates_owner_order
     ON interval_templates (owner, sort_order);
+CREATE INDEX idx_interval_templates_owner_flashcard_review_set
+    ON interval_templates (owner, flashcard_review_set);
 
 CREATE TABLE interval_sessions (
     id TEXT PRIMARY KEY NOT NULL DEFAULT ('r' || lower(hex(randomblob(7)))),
@@ -210,7 +213,8 @@ CREATE TABLE interval_sessions (
     task TEXT NOT NULL DEFAULT '',
     program_step TEXT NOT NULL DEFAULT '',
     task_date TEXT NOT NULL DEFAULT '',
-    note TEXT NOT NULL DEFAULT ''
+    note TEXT NOT NULL DEFAULT '',
+    flashcard_snapshot JSON NOT NULL DEFAULT '{}'
 );
 
 CREATE INDEX idx_interval_sessions_owner_started

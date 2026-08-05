@@ -163,6 +163,7 @@ function selectKind(kind: IntervalStepKind | null) {
           :items="INTERVAL_STEP_TYPES"
           item-title="title"
           item-value="value"
+          autocomplete="off"
           :menu-props="{ transition: 'slide-y-transition' }"
           @update:model-value="selectKind"
         >

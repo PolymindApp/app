@@ -1,4 +1,11 @@
-import type { Flashcard, FlashcardReviewSession, FlashcardReviewSort } from '@/types/domain'
+import type {
+  Flashcard,
+  FlashcardReviewSession,
+  FlashcardReviewSet,
+  FlashcardReviewSide,
+  FlashcardReviewSort,
+  IntervalFlashcardReviewSnapshot,
+} from '@/types/domain'
 
 export const FLASHCARD_REVIEW_SORT_OPTIONS: Array<{
   title: string
@@ -44,4 +51,122 @@ export function formatReviewDuration(totalSeconds: number) {
 
 export function reviewSortTitle(value: FlashcardReviewSort) {
   return FLASHCARD_REVIEW_SORT_OPTIONS.find(option => option.value === value)?.title || value
+}
+
+function compareText(left: string, right: string) {
+  return left < right ? -1 : left > right ? 1 : 0
+}
+
+export function sortFlashcardsForReview(
+  cards: Flashcard[],
+  sortMode: FlashcardReviewSort,
+  random = Math.random,
+) {
+  const sorted = [...cards]
+  if (sortMode === 'random') {
+    for (let index = sorted.length - 1; index > 0; index -= 1) {
+      const target = Math.floor(random() * (index + 1))
+      const current = sorted[index]
+      const replacement = sorted[target]
+      if (current && replacement) [sorted[index], sorted[target]] = [replacement, current]
+    }
+    return sorted
+  }
+
+  return sorted.sort((left, right) => {
+    if (sortMode === 'recently_added') {
+      return compareText(right.createdAt, left.createdAt) || compareText(left.id, right.id)
+    }
+    if (sortMode === 'least_recent') {
+      if (Boolean(left.lastReviewedAt) !== Boolean(right.lastReviewedAt)) {
+        return left.lastReviewedAt ? 1 : -1
+      }
+      return compareText(left.lastReviewedAt || '', right.lastReviewedAt || '')
+        || compareText(right.createdAt, left.createdAt)
+    }
+    if (sortMode === 'never_reviewed') {
+      if (Boolean(left.lastReviewedAt) !== Boolean(right.lastReviewedAt)) {
+        return left.lastReviewedAt ? 1 : -1
+      }
+      return !left.lastReviewedAt
+        ? compareText(right.createdAt, left.createdAt)
+        : compareText(left.lastReviewedAt, right.lastReviewedAt || '')
+    }
+
+    const leftDifficulty = flashcardDifficulty(left) ?? -1
+    const rightDifficulty = flashcardDifficulty(right) ?? -1
+    return rightDifficulty - leftDifficulty
+      || right.errorCount - left.errorCount
+      || compareText(left.lastReviewedAt || '', right.lastReviewedAt || '')
+      || compareText(left.id, right.id)
+  })
+}
+
+export function createIntervalFlashcardReviewSnapshot(
+  reviewSet: FlashcardReviewSet,
+  cards: Flashcard[],
+  random = Math.random,
+): IntervalFlashcardReviewSnapshot | undefined {
+  const matching = cards.filter(card => cardMatchesTags(card, reviewSet.tags))
+  if (!matching.length) return undefined
+  const effectiveSeconds = reviewSet.mode === 'passive'
+    ? { front: reviewSet.frontSeconds, back: reviewSet.backSeconds }
+    : { front: 5, back: 5 }
+
+  return {
+    reviewSet: reviewSet.id,
+    name: reviewSet.name,
+    tags: [...reviewSet.tags],
+    sortMode: reviewSet.sortMode,
+    frontSeconds: effectiveSeconds.front,
+    backSeconds: effectiveSeconds.back,
+    speechEnabled: reviewSet.speechEnabled,
+    frontLanguage: reviewSet.frontLanguage,
+    backLanguage: reviewSet.backLanguage,
+    cards: sortFlashcardsForReview(matching, reviewSet.sortMode, random).map(card => ({
+      id: card.id,
+      front: card.front,
+      back: card.back,
+      tags: [...card.tags],
+    })),
+  }
+}
+
+export interface IntervalFlashcardPhase {
+  card: IntervalFlashcardReviewSnapshot['cards'][number]
+  cardIndex: number
+  cycle: number
+  side: FlashcardReviewSide
+  progress: number
+  remainingMs: number
+  key: string
+}
+
+export function intervalFlashcardPhase(
+  review: IntervalFlashcardReviewSnapshot,
+  elapsedMs: number,
+): IntervalFlashcardPhase | undefined {
+  if (!review.cards.length) return undefined
+  const frontMs = Math.max(1000, review.frontSeconds * 1000)
+  const backMs = Math.max(1000, review.backSeconds * 1000)
+  const cardDurationMs = frontMs + backMs
+  const safeElapsedMs = Number.isFinite(elapsedMs) ? Math.max(0, elapsedMs) : 0
+  const absoluteCardIndex = Math.floor(safeElapsedMs / cardDurationMs)
+  const cardIndex = absoluteCardIndex % review.cards.length
+  const elapsedInCard = safeElapsedMs % cardDurationMs
+  const side: FlashcardReviewSide = elapsedInCard < frontMs ? 'front' : 'back'
+  const sideElapsedMs = side === 'front' ? elapsedInCard : elapsedInCard - frontMs
+  const sideDurationMs = side === 'front' ? frontMs : backMs
+  const card = review.cards[cardIndex]
+  if (!card) return undefined
+
+  return {
+    card,
+    cardIndex,
+    cycle: Math.floor(absoluteCardIndex / review.cards.length),
+    side,
+    progress: Math.min(100, Math.max(0, sideElapsedMs / sideDurationMs * 100)),
+    remainingMs: Math.max(0, sideDurationMs - sideElapsedMs),
+    key: `${absoluteCardIndex}:${side}`,
+  }
 }

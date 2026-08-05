@@ -184,6 +184,7 @@ final class Schema
                     'vibration_enabled' => self::boolean(),
                     'sound' => self::choice(['beep', 'bell', 'soft'], true),
                     'sort_order' => self::integer(0),
+                    'flashcard_review_set' => self::relation(false, true),
                 ],
                 'required' => ['name', 'color', 'definition', 'sound'],
                 'sort' => ['name', 'sort_order'],
@@ -206,6 +207,7 @@ final class Schema
                     'program_step' => self::relation(false, true),
                     'task_date' => self::dateKey(false, true),
                     'note' => self::text(2000),
+                    'flashcard_snapshot' => self::json(2000000),
                 ],
                 'required' => [
                     'source',

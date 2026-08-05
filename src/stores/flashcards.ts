@@ -251,8 +251,11 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       const tasks = cause instanceof ApiError && Array.isArray(cause.details.tasks)
         ? cause.details.tasks.map(item => typeof item === 'object' && item && 'name' in item ? String(item.name) : '').filter(Boolean)
         : []
+      const intervals = cause instanceof ApiError && Array.isArray(cause.details.intervals)
+        ? cause.details.intervals.map(item => typeof item === 'object' && item && 'name' in item ? String(item.name) : '').filter(Boolean)
+        : []
       error.value = cause instanceof Error
-        ? `${cause.message}${tasks.length ? ` Attached tasks: ${tasks.join(', ')}.` : ''}`
+        ? `${cause.message}${tasks.length ? ` Attached tasks: ${tasks.join(', ')}.` : ''}${intervals.length ? ` Attached intervals: ${intervals.join(', ')}.` : ''}`
         : 'Could not delete this Review set.'
       throw cause
     }

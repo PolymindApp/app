@@ -66,12 +66,13 @@ final class Database
             'interval_templates' => [
                 'id', 'owner', 'name', 'description', 'color', 'definition',
                 'sound_enabled', 'vibration_enabled', 'sound', 'sort_order',
+                'flashcard_review_set',
             ],
             'interval_sessions' => [
                 'id', 'owner', 'template', 'source', 'status', 'snapshot_name',
                 'definition_snapshot', 'cue_snapshot', 'started_at', 'ended_at',
                 'planned_seconds', 'elapsed_seconds', 'runtime_state', 'task',
-                'program_step', 'task_date', 'note',
+                'program_step', 'task_date', 'note', 'flashcard_snapshot',
             ],
             'tracking_trackers' => [
                 'id', 'owner', 'name', 'description', 'role', 'kind', 'category',

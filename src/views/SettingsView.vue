@@ -12,16 +12,23 @@ import {
   type HealthConnectStatus,
 } from '@/services/healthConnect'
 import {
+  normalizeHiddenMainMenuItems,
   orderedMainNavItems,
+  readStoredHiddenMainMenuItems,
   readStoredMainMenuOrder,
+  storeHiddenMainMenuItems,
   storeMainMenuOrder,
   type MainNavItem,
+  type MainNavItemId,
 } from '@/services/navigation'
 import type { StepSource } from '@/types/domain'
 
 const stepSource = ref<StepSource>(DEFAULT_STEP_SOURCE)
 const menuItems = ref<MainNavItem[]>(orderedMainNavItems(
   readStoredMainMenuOrder() ?? api.authStore.record?.settings?.mainMenuOrder,
+))
+const hiddenMenuItems = ref<MainNavItemId[]>(normalizeHiddenMainMenuItems(
+  readStoredHiddenMainMenuItems() ?? api.authStore.record?.settings?.mainMenuHidden,
 ))
 const loading = ref(true)
 const connecting = ref(false)
@@ -64,12 +71,16 @@ const connectionIcon = computed(() => healthStatus.value.authorized
   ? 'mdi-check-circle-outline'
   : 'mdi-heart-pulse',
 )
+const visibleMenuItemCount = computed(() => menuItems.value.length - hiddenMenuItems.value.length)
 
 onMounted(async () => {
   try {
     const settings = await api.getUserSettings()
     menuItems.value = orderedMainNavItems(
       readStoredMainMenuOrder() ?? settings.mainMenuOrder,
+    )
+    hiddenMenuItems.value = normalizeHiddenMainMenuItems(
+      readStoredHiddenMainMenuItems() ?? settings.mainMenuHidden,
     )
     stepSource.value = normalizeStepSource(settings.stepSource)
     if (settings.stepSource !== stepSource.value) {
@@ -134,6 +145,40 @@ async function reorderMainMenu(result: LongPressDragResult) {
     menuSaving.value = false
   }
 }
+
+function mainMenuItemIsVisible(id: MainNavItemId) {
+  return !hiddenMenuItems.value.includes(id)
+}
+
+function mainMenuItemStatus(id: MainNavItemId) {
+  if (!mainMenuItemIsVisible(id)) return 'Hidden from the main menu'
+  if (visibleMenuItemCount.value === 1) return 'Keep at least one item visible'
+  return 'Shown in the main menu'
+}
+
+async function setMainMenuItemVisibility(id: MainNavItemId, visible: boolean) {
+  if (menuSaving.value || (mainMenuItemIsVisible(id) && !visible && visibleMenuItemCount.value === 1)) return
+
+  const hidden = new Set(hiddenMenuItems.value)
+  if (visible) hidden.delete(id)
+  else hidden.add(id)
+  hiddenMenuItems.value = storeHiddenMainMenuItems([...hidden])
+  menuSaving.value = true
+  error.value = ''
+  try {
+    const settings = await api.updateUserSettings({
+      mainMenuHidden: hiddenMenuItems.value,
+    })
+    hiddenMenuItems.value = storeHiddenMainMenuItems(settings.mainMenuHidden)
+    noticeMessage.value = `${menuItems.value.find(item => item.id === id)?.title || 'Menu item'} ${visible ? 'shown' : 'hidden'}.`
+    notice.value = true
+  } catch {
+    noticeMessage.value = 'Main menu visibility saved on this device.'
+    notice.value = true
+  } finally {
+    menuSaving.value = false
+  }
+}
 </script>
 
 <template>
@@ -156,7 +201,7 @@ async function reorderMainMenu(result: LongPressDragResult) {
       <div class="settings-section-heading">
         <div>
           <h2>Main menu</h2>
-          <p>Press and hold an item, then drag it to choose where it appears.</p>
+          <p>Press and hold to reorder items, or turn them off to hide them from the menu.</p>
         </div>
         <v-progress-circular
           v-if="menuSaving"
@@ -187,12 +232,33 @@ async function reorderMainMenu(result: LongPressDragResult) {
             onDrop: reorderMainMenu,
           }"
           class="menu-order-item"
+          :class="{ 'menu-order-item--hidden': !mainMenuItemIsVisible(item.id) }"
         >
           <v-icon icon="mdi-drag" size="22" class="menu-order-item__handle" />
           <span class="menu-order-item__icon">
             <v-icon :icon="item.icon" size="21" />
           </span>
-          <strong>{{ item.title }}</strong>
+          <span class="menu-order-item__copy">
+            <strong>{{ item.title }}</strong>
+            <small>{{ mainMenuItemStatus(item.id) }}</small>
+          </span>
+          <span
+            class="menu-order-item__visibility"
+            @pointerdown.stop
+            @pointerup.stop
+            @touchstart.stop
+            @click.stop
+          >
+            <v-switch
+              :model-value="mainMenuItemIsVisible(item.id)"
+              color="secondary"
+              inset
+              hide-details="auto"
+              :disabled="menuSaving || (mainMenuItemIsVisible(item.id) && visibleMenuItemCount === 1)"
+              :aria-label="`${mainMenuItemIsVisible(item.id) ? 'Hide' : 'Show'} ${item.title} in the main menu`"
+              @update:model-value="setMainMenuItemVisibility(item.id, $event === true)"
+            />
+          </span>
         </div>
       </div>
     </v-card>
@@ -320,7 +386,7 @@ async function reorderMainMenu(result: LongPressDragResult) {
 
 .menu-order-item {
   display: grid;
-  grid-template-columns: 2rem 2.75rem minmax(0, 1fr);
+  grid-template-columns: 2rem 2.75rem minmax(0, 1fr) auto;
   align-items: center;
   min-height: 3.75rem;
   gap: .75rem;
@@ -330,6 +396,31 @@ async function reorderMainMenu(result: LongPressDragResult) {
   background: rgb(var(--v-theme-surface-variant) / .28);
   cursor: grab;
   user-select: none;
+}
+
+.menu-order-item__copy {
+  display: grid;
+  min-width: 0;
+  gap: .15rem;
+}
+
+.menu-order-item__copy small {
+  overflow: hidden;
+  color: rgb(var(--v-theme-on-surface) / .52);
+  font-size: .68rem;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.menu-order-item__visibility {
+  display: grid;
+  min-width: 3.5rem;
+  place-items: center end;
+}
+
+.menu-order-item__visibility :deep(.v-switch) {
+  flex: 0 0 auto;
 }
 
 .menu-order-item__handle {
@@ -346,6 +437,11 @@ async function reorderMainMenu(result: LongPressDragResult) {
   color: rgb(var(--v-theme-secondary));
 }
 
+.menu-order-item--hidden .menu-order-item__icon {
+  background: rgb(var(--v-theme-on-surface) / .08);
+  color: rgb(var(--v-theme-on-surface) / .46);
+}
+
 .settings-actions {
   display: flex;
   justify-content: flex-end;
@@ -354,6 +450,23 @@ async function reorderMainMenu(result: LongPressDragResult) {
 @media (max-width: 440px) {
   .settings-actions .v-btn {
     width: 100%;
+  }
+}
+
+@media (max-width: 27.5rem) {
+  .menu-order-item {
+    grid-template-columns: 1.25rem 2.5rem minmax(0, 1fr) auto;
+    gap: .5rem;
+    padding-inline: .5rem;
+  }
+
+  .menu-order-item__icon {
+    width: 2.5rem;
+    height: 2.5rem;
+  }
+
+  .menu-order-item__visibility {
+    min-width: 3.25rem;
   }
 }
 </style>

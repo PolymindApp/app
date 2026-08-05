@@ -1,10 +1,15 @@
 import {
   bottomNavigationFontSize,
   DEFAULT_MAIN_MENU_ORDER,
+  mainMenuTransitionDirection,
+  normalizeHiddenMainMenuItems,
   normalizeMainMenuOrder,
   orderedMainNavItems,
+  readStoredHiddenMainMenuItems,
   readStoredMainMenuOrder,
+  storeHiddenMainMenuItems,
   storeMainMenuOrder,
+  visibleMainNavItems,
 } from '@/services/navigation'
 
 describe('main menu ordering', () => {
@@ -34,6 +39,42 @@ describe('main menu ordering', () => {
 
     expect(readStoredMainMenuOrder())
       .toEqual(['journal', 'tasks', 'intervals', 'tracking', 'flashcards'])
+  })
+
+  it('filters hidden items without changing their configured order', () => {
+    expect(visibleMainNavItems(
+      ['journal', 'tracking', 'flashcards', 'tasks', 'intervals'],
+      ['tracking', 'tasks'],
+    ).map(item => item.id)).toEqual(['journal', 'flashcards', 'intervals'])
+  })
+
+  it('derives transition direction from the current visible menu order', () => {
+    const defaultItems = visibleMainNavItems(DEFAULT_MAIN_MENU_ORDER, [])
+    expect(mainMenuTransitionDirection(defaultItems, '/tasks', '/tracking')).toBe('forward')
+    expect(mainMenuTransitionDirection(defaultItems, '/journal', '/intervals')).toBe('back')
+    expect(mainMenuTransitionDirection(defaultItems, '/tracking/new', '/journal')).toBe('forward')
+
+    const reorderedItems = visibleMainNavItems(
+      ['journal', 'tracking', 'flashcards', 'intervals', 'tasks'],
+      ['flashcards'],
+    )
+    expect(mainMenuTransitionDirection(reorderedItems, '/tracking', '/tasks')).toBe('forward')
+    expect(mainMenuTransitionDirection(reorderedItems, '/tasks', '/tracking')).toBe('back')
+  })
+
+  it('leaves same-section and non-menu transitions to the route-depth fallback', () => {
+    const items = visibleMainNavItems(DEFAULT_MAIN_MENU_ORDER, [])
+    expect(mainMenuTransitionDirection(items, '/tracking', '/tracking/new')).toBeUndefined()
+    expect(mainMenuTransitionDirection(items, '/settings', '/tasks')).toBeUndefined()
+  })
+
+  it('normalizes and persists hidden items while keeping one destination visible', () => {
+    expect(normalizeHiddenMainMenuItems(['journal', 'unknown', 'journal']))
+      .toEqual(['journal'])
+    expect(normalizeHiddenMainMenuItems(DEFAULT_MAIN_MENU_ORDER)).not.toContain('tasks')
+
+    storeHiddenMainMenuItems(['intervals', 'journal'])
+    expect(readStoredHiddenMainMenuItems()).toEqual(['intervals', 'journal'])
   })
 
   it('reduces bottom navigation labels only when more than four items are visible', () => {

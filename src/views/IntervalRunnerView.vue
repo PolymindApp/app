@@ -1,11 +1,19 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import IntervalTypeIcon from '@/components/IntervalTypeIcon.vue'
 import LabeledSlider from '@/components/LabeledSlider.vue'
 import { stopBackgroundInterval, syncBackgroundInterval } from '@/services/backgroundInterval'
+import {
+  speakFlashcardText,
+  stopFlashcardSpeech,
+} from '@/services/flashcardSpeech'
+import {
+  createIntervalFlashcardReviewSnapshot,
+  intervalFlashcardPhase,
+} from '@/services/flashcards'
 import { createIntervalCueHandoff } from '@/services/intervalCueHandoff'
 import {
   notifyIntervalTransition,
@@ -29,6 +37,7 @@ import {
   MIN_GLOBAL_REPETITIONS,
 } from '@/services/intervals'
 import { isTaskScheduled, stepsForDate, toDateKey } from '@/services/schedule'
+import { useFlashcardStore } from '@/stores/flashcards'
 import { useIntervalStore } from '@/stores/intervals'
 import { useTaskStore } from '@/stores/tasks'
 import type { IntervalDefinition, IntervalRuntimeState, IntervalSession } from '@/types/domain'
@@ -36,6 +45,7 @@ import type { IntervalDefinition, IntervalRuntimeState, IntervalSession } from '
 const route = useRoute()
 const router = useRouter()
 const store = useIntervalStore()
+const flashcardStore = useFlashcardStore()
 const taskStore = useTaskStore()
 const displayRemainingMs = ref(0)
 const syncing = ref(false)
@@ -65,6 +75,7 @@ const pendingCompletion = ref<{
   endedAt: string
 }>()
 const backgroundError = ref('')
+const speechWarning = ref('')
 const timerEffect = ref<'count' | ''>('')
 const timerEffectKey = ref(0)
 let ticker: number | undefined
@@ -72,6 +83,8 @@ let wakeLock: { release: () => Promise<void> } | undefined
 let runnerMounted = false
 let lastCountCue = ''
 let timerEffectTimeout: number | undefined
+let lastSpokenFlashcardKey = ''
+let speechRequest = 0
 const cueHandoff = createIntervalCueHandoff(document.visibilityState)
 
 const previewSession = ref<IntervalSession>()
@@ -82,6 +95,17 @@ const current = computed(() => session.value ? resolveIntervalStep(session.value
 const next = computed(() => session.value ? resolveIntervalStep(session.value.definition, session.value.runtime.stepIndex + 1) : undefined)
 const finished = computed(() => session.value?.status === 'completed' || session.value?.status === 'ended')
 const currentConfirmation = computed(() => current.value?.step.kind === 'confirmation')
+const sessionElapsedMs = computed(() => {
+  displayRemainingMs.value
+  const item = session.value
+  if (!item) return 0
+  if (item.status !== 'running' || !item.runtime.stepStartedAt) return item.runtime.accumulatedMs
+  return item.runtime.accumulatedMs
+    + Math.max(0, Date.now() - new Date(item.runtime.stepStartedAt).getTime())
+})
+const flashcardPhase = computed(() => session.value?.flashcardReview
+  ? intervalFlashcardPhase(session.value.flashcardReview, sessionElapsedMs.value)
+  : undefined)
 const remainingLabel = computed(() => {
   const totalSeconds = Math.max(0, Math.ceil(displayRemainingMs.value / 1000))
   const minutes = Math.floor(totalSeconds / 60)
@@ -163,11 +187,20 @@ const selectedRepetitionDuration = computed(() => repetitionDefinition.value
     ))
   : 0)
 
+watch([
+  () => session.value?.status,
+  () => session.value?.flashcardReview?.speechEnabled,
+  () => flashcardPhase.value?.key,
+], () => {
+  void speakCurrentFlashcardSide()
+}, { flush: 'post' })
+
 onMounted(async () => {
   runnerMounted = true
   try {
     await Promise.all([
       store.loaded ? Promise.resolve() : store.load(),
+      flashcardStore.loaded ? Promise.resolve() : flashcardStore.load(),
       taskStore.tasks.length ? Promise.resolve() : taskStore.load(),
     ])
     if (isTemplatePreview.value) {
@@ -179,6 +212,19 @@ onMounted(async () => {
       const now = new Date()
       const runtime = createRuntimeState(template.definition, now)
       runtime.stepStartedAt = undefined
+      let flashcardReview
+      if (template.flashcardReviewSet) {
+        const reviewSet = flashcardStore.reviewSets.find(item => item.id === template.flashcardReviewSet)
+        if (!reviewSet) {
+          error.value = 'The Review set attached to this interval could not be found.'
+          return
+        }
+        flashcardReview = createIntervalFlashcardReviewSnapshot(reviewSet, flashcardStore.cards)
+        if (!flashcardReview) {
+          error.value = 'The Review set attached to this interval has no matching cards.'
+          return
+        }
+      }
       previewSession.value = {
         id: `template-preview-${template.id}`,
         template: template.id,
@@ -190,6 +236,7 @@ onMounted(async () => {
         name: template.name,
         definition: template.definition,
         cues: template.cues,
+        flashcardReview,
         startedAt: now.toISOString(),
         plannedSeconds: intervalDuration(template.definition),
         elapsedSeconds: 0,
@@ -239,7 +286,41 @@ onBeforeUnmount(() => {
   document.removeEventListener('visibilitychange', handleVisibility)
   window.removeEventListener('pagehide', handlePageHide)
   void wakeLock?.release()
+  void stopFlashcardSpeech()
 })
+
+async function speakCurrentFlashcardSide() {
+  const request = ++speechRequest
+  const item = session.value
+  const review = item?.flashcardReview
+  const phase = flashcardPhase.value
+  const key = item && phase ? `${item.id}:${phase.key}` : ''
+  if (
+    document.visibilityState !== 'visible'
+    || item?.status !== 'running'
+    || !review?.speechEnabled
+    || !phase
+    || !key
+  ) {
+    if (!key || item?.status !== 'running') lastSpokenFlashcardKey = ''
+    await stopFlashcardSpeech()
+    return
+  }
+  if (key === lastSpokenFlashcardKey) return
+
+  lastSpokenFlashcardKey = key
+  try {
+    await speakFlashcardText(
+      phase.side === 'front' ? phase.card.front : phase.card.back,
+      phase.side === 'front' ? review.frontLanguage : review.backLanguage,
+    )
+    if (request === speechRequest) speechWarning.value = ''
+  } catch {
+    if (request === speechRequest) {
+      speechWarning.value = 'This attached card could not be spoken in the selected language.'
+    }
+  }
+}
 
 function pulseTimer(effect: 'count') {
   if (timerEffectTimeout) window.clearTimeout(timerEffectTimeout)
@@ -276,6 +357,7 @@ function mirrorCurrentRuntime() {
 function handlePageHide() {
   cueHandoff.recordVisibility('hidden')
   mirrorCurrentRuntime()
+  void stopFlashcardSpeech()
 }
 
 async function handleVisibility() {
@@ -283,6 +365,10 @@ async function handleVisibility() {
   if (document.visibilityState === 'visible' && session.value?.status === 'running') {
     wakeLock = await requestIntervalWakeLock()
     await tick()
+    lastSpokenFlashcardKey = ''
+    await speakCurrentFlashcardSide()
+  } else if (document.visibilityState !== 'visible') {
+    await stopFlashcardSpeech()
   }
 }
 
@@ -338,6 +424,7 @@ async function completeSession(
   playCompletionCue = true,
 ) {
   if (playCompletionCue) playIntervalCompleteCue(item.cues)
+  await stopFlashcardSpeech()
   await notifyIntervalTransition(`${item.name} complete`, 'Your interval session is finished.')
   await stopBackgroundInterval()
   const completion = {
@@ -413,6 +500,7 @@ async function pause() {
   })
   displayRemainingMs.value = runtime.remainingMs
   await stopBackgroundInterval()
+  await stopFlashcardSpeech()
   await wakeLock?.release()
   wakeLock = undefined
 }
@@ -429,6 +517,7 @@ async function resume() {
   }
   await prepareIntervalCues(item.cues)
   const updated = await store.updateSession(item.id, { status: 'running', runtime })
+  lastSpokenFlashcardKey = ''
   await syncNativeTimer(updated)
   wakeLock = await requestIntervalWakeLock()
 }
@@ -640,6 +729,7 @@ async function restart() {
   const updated = await store.updateSession(item.id, { status: item.status === 'paused' ? 'paused' : 'running', runtime, elapsedSeconds: 0 })
   displayRemainingMs.value = runtime.remainingMs
   lastCountCue = ''
+  lastSpokenFlashcardKey = ''
   if (updated.status === 'running') await syncNativeTimer(updated)
 }
 
@@ -656,6 +746,7 @@ async function endEarly() {
   })
   endDialog.value = false
   await stopBackgroundInterval()
+  await stopFlashcardSpeech()
   await wakeLock?.release()
   wakeLock = undefined
 }
@@ -711,6 +802,7 @@ async function runAgain(repetitions?: number) {
 <template>
   <main class="runner-page" :class="{ 'runner-page--finished': finished }">
     <v-alert v-if="backgroundError" type="warning" variant="tonal" class="mb-3">{{ backgroundError }}</v-alert>
+    <v-alert v-if="speechWarning" type="warning" variant="tonal" class="mb-3">{{ speechWarning }}</v-alert>
     <v-alert v-if="completionError" type="error" variant="tonal" class="mb-3">
       {{ completionError }}
       <template #append>
@@ -761,7 +853,7 @@ async function runAgain(repetitions?: number) {
         </header>
 
         <div class="runner-stage">
-          <section class="runner-main">
+          <section class="runner-main" :class="{ 'runner-main--with-review': flashcardPhase }">
             <div class="runner-details">
               <p class="runner-session">{{ session.name }}</p>
               <p v-if="attributedTaskName" class="runner-task-link">
@@ -773,66 +865,95 @@ async function runAgain(repetitions?: number) {
               </div>
               <h1 class="runner-step">{{ current.step.name }}</h1>
             </div>
-            <div class="runner-progress" :class="{ 'runner-progress--confirmation': currentConfirmation }">
-              <div class="progress-rings">
-                <IntervalTypeIcon
-                  v-if="current.step.kind"
-                  class="runner-type-backdrop"
-                  :kind="current.step.kind"
-                  size="clamp(8rem, 44vw, 28rem)"
-                  :animated="session.status === 'running'"
-                />
-                <v-progress-circular
-                  v-if="showTotalProgress"
-                  class="progress-ring progress-ring--total"
-                  :model-value="progress.total"
-                  :width="7"
-                  color="info"
-                  bg-color="surface-variant"
-                  :aria-label="`Total progress: ${Math.round(progress.total)}%`"
-                />
-                <v-progress-circular
-                  v-if="showRoundProgress"
-                  class="progress-ring progress-ring--round"
-                  :model-value="progress.round"
-                  :width="7"
-                  color="warning"
-                  bg-color="surface-variant"
-                  :aria-label="`Current round progress: ${Math.round(progress.round || 0)}%`"
-                />
-                <v-progress-circular
-                  class="progress-ring progress-ring--item"
-                  :model-value="progress.item"
-                  :width="12"
-                  color="secondary"
-                  bg-color="surface-variant"
-                  :aria-label="`Current item progress: ${Math.round(progress.item)}%`"
-                />
-                <div class="progress-rings__content">
-                  <v-btn
-                    v-if="currentConfirmation"
+            <div class="runner-progress-stack">
+              <div class="runner-progress" :class="{ 'runner-progress--confirmation': currentConfirmation }">
+                <div class="progress-rings">
+                  <IntervalTypeIcon
+                    v-if="current.step.kind"
+                    class="runner-type-backdrop"
+                    :kind="current.step.kind"
+                    size="clamp(8rem, 44vw, 28rem)"
+                    :animated="session.status === 'running'"
+                  />
+                  <v-progress-circular
+                    v-if="showTotalProgress"
+                    class="progress-ring progress-ring--total"
+                    :model-value="progress.total"
+                    :width="7"
+                    color="info"
+                    bg-color="surface-variant"
+                    :aria-label="`Total progress: ${Math.round(progress.total)}%`"
+                  />
+                  <v-progress-circular
+                    v-if="showRoundProgress"
+                    class="progress-ring progress-ring--round"
+                    :model-value="progress.round"
+                    :width="7"
+                    color="warning"
+                    bg-color="surface-variant"
+                    :aria-label="`Current round progress: ${Math.round(progress.round || 0)}%`"
+                  />
+                  <v-progress-circular
+                    class="progress-ring progress-ring--item"
+                    :model-value="progress.item"
+                    :width="12"
                     color="secondary"
-                    size="large"
-                    prepend-icon="mdi-check-bold"
-                    :loading="starting || syncing"
-                    :disabled="!isTemplatePreview && session.status !== 'running'"
-                    @touchstart.stop
-                    @click.stop="isTemplatePreview ? requestStartTemplate() : confirmCurrent()"
-                  >
-                    {{ isTemplatePreview ? playActionLabel : 'Confirm and continue' }}
-                  </v-btn>
-                  <span
-                    v-else
-                    :key="timerEffectKey"
-                    class="timer-value"
-                    :class="{
-                      'timer-value--count': timerEffect === 'count',
-                    }"
-                  >
-                    {{ remainingLabel }}
-                  </span>
+                    bg-color="surface-variant"
+                    :aria-label="`Current item progress: ${Math.round(progress.item)}%`"
+                  />
+                  <div class="progress-rings__content">
+                    <v-btn
+                      v-if="currentConfirmation"
+                      color="secondary"
+                      size="large"
+                      prepend-icon="mdi-check-bold"
+                      :loading="starting || syncing"
+                      :disabled="!isTemplatePreview && session.status !== 'running'"
+                      @touchstart.stop
+                      @click.stop="isTemplatePreview ? requestStartTemplate() : confirmCurrent()"
+                    >
+                      {{ isTemplatePreview ? playActionLabel : 'Confirm and continue' }}
+                    </v-btn>
+                    <span
+                      v-else
+                      :key="timerEffectKey"
+                      class="timer-value"
+                      :class="{
+                        'timer-value--count': timerEffect === 'count',
+                      }"
+                    >
+                      {{ remainingLabel }}
+                    </span>
+                  </div>
                 </div>
               </div>
+              <section
+                v-if="flashcardPhase && session.flashcardReview"
+                class="interval-review-card"
+                :aria-label="`${session.flashcardReview.name}, ${flashcardPhase.side}, card ${flashcardPhase.cardIndex + 1} of ${session.flashcardReview.cards.length}`"
+              >
+                <div class="interval-review-card__content">
+                  <div class="interval-review-card__heading">
+                    <small>{{ flashcardPhase.side === 'front' ? 'Front' : 'Back' }}</small>
+                    <div class="interval-review-card__meta">
+                      <span class="interval-review-card__set">
+                        <v-icon icon="mdi-cards-outline" size="17" />
+                        <span class="text-truncate">{{ session.flashcardReview.name }}</span>
+                      </span>
+                      <span>{{ flashcardPhase.cardIndex + 1 }}/{{ session.flashcardReview.cards.length }}</span>
+                    </div>
+                  </div>
+                  <strong>{{ flashcardPhase.side === 'front' ? flashcardPhase.card.front : flashcardPhase.card.back }}</strong>
+                </div>
+                <v-progress-linear
+                  :model-value="flashcardPhase.progress"
+                  color="surface-variant"
+                  bg-color="background"
+                  height="5"
+                  rounded
+                  :aria-label="`${Math.round(flashcardPhase.progress)}% through the ${flashcardPhase.side}`"
+                />
+              </section>
             </div>
             <p class="next-copy">{{ next ? `Next: ${next.step.name}` : 'Final interval' }}</p>
           </section>
@@ -1086,16 +1207,29 @@ async function runAgain(repetitions?: number) {
 .runner-main,
 .runner-controls,
 .runner-details,
+.runner-progress-stack,
 .runner-progress,
 .next-copy { position: relative; z-index: 1; }
 .runner-main { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
 .runner-details { display: contents; }
+.runner-progress-stack { display: flex; width: 100%; flex-direction: column; align-items: center; }
 .runner-session { display: none; }
 .runner-task-link { margin-top: .45rem; color: rgb(var(--v-theme-secondary)); font-size: .76rem; font-weight: 800; }
 .runner-position { display: none; }
 .group-breadcrumb { display: flex; flex-wrap: wrap; justify-content: center; gap: .35rem; margin-bottom: 1.25rem; }
 .group-breadcrumb span { padding: 4px 8px; border-radius: 999px; background: rgb(var(--v-theme-surface-variant)); color: rgb(var(--v-theme-on-surface) / .7); font-size: .65rem; }
 .runner-step { min-width: 0; max-width: 40rem; margin-top: .5rem; font-size: clamp(2rem, 10vw, 4.5rem); font-weight: 900; line-height: 1; }
+.interval-review-card { width: min(100%, 34rem); overflow: hidden; border: 1px solid rgb(var(--v-theme-on-surface) / .1); background: rgb(var(--v-theme-surface) / .9); box-shadow: 0 .75rem 2rem rgba(0, 0, 0, .24); text-align: left; }
+.interval-review-card__content { display: flex; padding: 1rem; align-items: center; justify-content: center; flex-direction: column; gap: .65rem; text-align: center; }
+.interval-review-card__heading { display: flex; width: 100%; min-width: 0; align-items: center; justify-content: space-between; gap: .75rem; }
+.interval-review-card__meta { display: flex; min-width: 0; max-width: 75%; align-items: center; justify-content: flex-end; gap: .75rem; color: rgba(var(--v-theme-on-surface), .58); font-size: .62rem; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
+.interval-review-card__meta > span { min-width: 0; }
+.interval-review-card__meta > span:last-child { flex: 0 0 auto; font-variant-numeric: tabular-nums; }
+.interval-review-card__set { display: flex; align-items: center; gap: .4rem; }
+.interval-review-card__set > .text-truncate { min-width: 0; }
+.interval-review-card__content small { color: rgba(var(--v-theme-on-surface), .58); font-size: .62rem; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
+.interval-review-card__content strong { overflow-wrap: anywhere; font-size: clamp(1.05rem, 4.5vw, 1.5rem); line-height: 1.3; white-space: pre-wrap; }
+.interval-review-card :deep(.v-progress-linear) { border-radius: 0; }
 .runner-progress {
   display: flex;
   width: 100%;
@@ -1103,6 +1237,10 @@ async function runAgain(repetitions?: number) {
   flex-direction: column;
   align-items: center;
 }
+.runner-main--with-review .runner-progress { margin: 1.25rem 0 1rem; }
+.runner-main--with-review .interval-review-card { margin-bottom: 1.25rem; }
+.runner-main--with-review .progress-rings { width: min(13.5rem, calc(100vw - 3rem)); }
+.runner-main--with-review .timer-value { font-size: 3.25rem; }
 .progress-rings {
   position: relative;
   width: min(292px, calc(100vw - 2rem));
@@ -1266,6 +1404,17 @@ async function runAgain(repetitions?: number) {
     text-align: left;
   }
 
+  .runner-progress-stack {
+    display: flex;
+    min-width: 0;
+    min-height: 0;
+    grid-column: 1;
+    grid-row: 1 / 4;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+
   .runner-session {
     display: block;
     margin-bottom: clamp(.6rem, 2dvh, 1rem);
@@ -1304,6 +1453,27 @@ async function runAgain(repetitions?: number) {
     line-height: .96;
   }
 
+  .interval-review-card {
+    flex: 0 0 auto;
+  }
+
+  .interval-review-card__content {
+    padding: .65rem;
+  }
+
+  .interval-review-card__heading,
+  .interval-review-card__meta {
+    gap: .5rem;
+  }
+
+  .interval-review-card__content strong {
+    display: -webkit-box;
+    overflow: hidden;
+    font-size: clamp(.9rem, 2.5dvh, 1.2rem);
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+  }
+
   .runner-progress {
     --runner-progress-inset: clamp(1rem, 5dvh, 2.5rem);
     display: flex;
@@ -1311,14 +1481,27 @@ async function runAgain(repetitions?: number) {
     min-height: 0;
     margin: 0;
     padding: var(--runner-progress-inset);
-    grid-column: 1;
-    grid-row: 1 / 4;
+    flex: 1 1 auto;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     overflow: visible;
     border-radius: 0;
     background: transparent;
+  }
+
+  .runner-main--with-review .runner-progress {
+    margin: 0;
+    padding: clamp(.5rem, 2dvh, 1rem);
+  }
+
+  .runner-main--with-review .progress-rings {
+    width: min(12rem, 50dvh, calc(100% - 1rem));
+  }
+
+  .runner-main--with-review .interval-review-card {
+    width: min(100%, 30rem);
+    margin: 0;
   }
 
   .progress-rings {

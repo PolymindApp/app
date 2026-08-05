@@ -9,6 +9,7 @@ import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
 import com.getcapacitor.JSArray;
+import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
@@ -26,8 +27,10 @@ public class BackgroundIntervalPlugin extends Plugin {
         String sessionName = call.getString("sessionName", "Interval");
         Integer stepIndex = call.getInt("stepIndex", 0);
         Double remainingMs = call.getDouble("remainingMs", 1d);
+        Double elapsedMs = call.getDouble("elapsedMs", 0d);
         Boolean soundEnabled = call.getBoolean("soundEnabled", true);
         Boolean vibrationEnabled = call.getBoolean("vibrationEnabled", true);
+        JSObject flashcardReview = call.getObject("flashcardReview");
 
         if (steps == null || steps.length() == 0) {
             call.reject("An interval sequence is required.");
@@ -52,8 +55,13 @@ public class BackgroundIntervalPlugin extends Plugin {
         intent.putExtra(BackgroundIntervalService.EXTRA_STEPS, steps.toString());
         intent.putExtra(BackgroundIntervalService.EXTRA_STEP_INDEX, stepIndex == null ? 0 : stepIndex);
         intent.putExtra(BackgroundIntervalService.EXTRA_REMAINING_MS, remainingMs == null ? 1L : Math.max(1L, remainingMs.longValue()));
+        intent.putExtra(BackgroundIntervalService.EXTRA_ELAPSED_MS, elapsedMs == null ? 0L : Math.max(0L, elapsedMs.longValue()));
         intent.putExtra(BackgroundIntervalService.EXTRA_SOUND_ENABLED, soundEnabled == null || soundEnabled);
         intent.putExtra(BackgroundIntervalService.EXTRA_VIBRATION_ENABLED, vibrationEnabled == null || vibrationEnabled);
+        intent.putExtra(
+            BackgroundIntervalService.EXTRA_FLASHCARD_REVIEW,
+            flashcardReview == null ? "" : flashcardReview.toString()
+        );
 
         ContextCompat.startForegroundService(getContext(), intent);
         call.resolve();

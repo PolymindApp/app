@@ -17,6 +17,7 @@ final class Api
 {
     private const MAX_PAGE_SIZE = 200;
     private const PASSKEY_CHALLENGE_TTL = 300;
+    private const MAIN_MENU_ITEMS = ['tasks', 'intervals', 'flashcards', 'tracking', 'journal'];
 
     public function __construct(
         private readonly Config $config,
@@ -527,11 +528,13 @@ final class Api
             !array_key_exists('quickInterval', $body)
             && !array_key_exists('stepSource', $body)
             && !array_key_exists('mainMenuOrder', $body)
+            && !array_key_exists('mainMenuHidden', $body)
         ) {
             throw new ApiException(422, 'At least one supported setting is required.', [
                 'quickInterval' => 'required',
                 'stepSource' => 'required',
                 'mainMenuOrder' => 'required',
+                'mainMenuHidden' => 'required',
             ]);
         }
         if (array_key_exists('quickInterval', $body)) {
@@ -552,6 +555,11 @@ final class Api
                 $body['mainMenuOrder'],
             );
         }
+        if (array_key_exists('mainMenuHidden', $body)) {
+            $settings['mainMenuHidden'] = $this->validateHiddenMainMenuItems(
+                $body['mainMenuHidden'],
+            );
+        }
         $encoded = json_encode(
             $settings,
             JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
@@ -570,7 +578,6 @@ final class Api
 
     private function validateMainMenuOrder(mixed $value): array
     {
-        $expected = ['tasks', 'intervals', 'tracking', 'journal'];
         if (!is_array($value) || !array_is_list($value)) {
             throw new ApiException(422, 'The main menu order is invalid.', [
                 'mainMenuOrder' => 'permutation',
@@ -579,7 +586,7 @@ final class Api
 
         $received = $value;
         sort($received);
-        $sortedExpected = $expected;
+        $sortedExpected = self::MAIN_MENU_ITEMS;
         sort($sortedExpected);
         if ($received !== $sortedExpected) {
             throw new ApiException(422, 'The main menu order is invalid.', [
@@ -588,6 +595,36 @@ final class Api
         }
 
         return array_values($value);
+    }
+
+    private function validateHiddenMainMenuItems(mixed $value): array
+    {
+        if (!is_array($value) || !array_is_list($value)) {
+            throw new ApiException(422, 'The hidden main menu items are invalid.', [
+                'mainMenuHidden' => 'unique subset',
+            ]);
+        }
+
+        $hidden = [];
+        foreach ($value as $item) {
+            if (
+                !is_string($item)
+                || !in_array($item, self::MAIN_MENU_ITEMS, true)
+                || in_array($item, $hidden, true)
+            ) {
+                throw new ApiException(422, 'The hidden main menu items are invalid.', [
+                    'mainMenuHidden' => 'unique subset',
+                ]);
+            }
+            $hidden[] = $item;
+        }
+        if (count($hidden) >= count(self::MAIN_MENU_ITEMS)) {
+            throw new ApiException(422, 'Keep at least one main menu item visible.', [
+                'mainMenuHidden' => 'at least one visible',
+            ]);
+        }
+
+        return $hidden;
     }
 
     private function validateQuickIntervalSettings(mixed $value): array
@@ -1312,6 +1349,9 @@ final class Api
         if ($collection['name'] === 'flashcard_review_sets') {
             $this->rejectFields($body, ['created_at', 'updated_at']);
         }
+        if ($collection['name'] === 'interval_sessions') {
+            $this->rejectFields($body, ['flashcard_snapshot']);
+        }
         $values = $this->validateRecordInput($collection, $body, true);
         $values['id'] = $this->newId();
         $values['owner'] = $user['id'];
@@ -1353,6 +1393,12 @@ final class Api
             $this->validateFlashcardSpeechSettings($values);
         }
         $this->validateRelations($collection['name'], $values, (string) $user['id']);
+        if ($collection['name'] === 'interval_sessions') {
+            $values['flashcard_snapshot'] = $this->intervalFlashcardSnapshot(
+                (string) ($values['template'] ?? ''),
+                (string) $user['id'],
+            );
+        }
         if ($collection['name'] === 'journal_entries') {
             $now = (new DateTimeImmutable('now'))->format('Y-m-d\TH:i:s.v\Z');
             $values = array_merge(
@@ -1403,6 +1449,7 @@ final class Api
             ]);
         }
         if ($collection['name'] === 'interval_sessions') {
+            $this->rejectFields($body, ['flashcard_snapshot']);
             if (
                 array_key_exists('task', $body)
                 || array_key_exists('program_step', $body)
@@ -1556,39 +1603,10 @@ final class Api
             ]);
         }
 
-        $selectedTags = $this->decodeJsonColumn($reviewSet['tags'] ?? '[]');
-        if (!is_array($selectedTags)) {
-            $selectedTags = [];
-        }
-        $statement = $this->database->pdo->prepare(
-            'SELECT * FROM flashcards WHERE owner = :owner',
-        );
-        $statement->execute(['owner' => $owner]);
-        $cards = array_values(array_filter(
-            $statement->fetchAll(),
-            function (array $card) use ($selectedTags): bool {
-                if ($selectedTags === []) {
-                    return true;
-                }
-                $cardTags = $this->decodeJsonColumn($card['tags'] ?? '[]');
-                return is_array($cardTags) && array_intersect($selectedTags, $cardTags) !== [];
-            },
-        ));
-        if ($cards === []) {
-            throw new ApiException(409, 'No flashcards match this Review set.');
-        }
-
-        $sortMode = (string) $reviewSet['sort_mode'];
-        $this->sortFlashcardsForReview($cards, $sortMode);
-        $queue = array_map(function (array $card): array {
-            $tags = $this->decodeJsonColumn($card['tags'] ?? '[]');
-            return [
-                'id' => (string) $card['id'],
-                'front' => (string) $card['front'],
-                'back' => (string) $card['back'],
-                'tags' => is_array($tags) ? array_values($tags) : [],
-            ];
-        }, $cards);
+        $selection = $this->flashcardReviewSelection($reviewSet, $owner);
+        $selectedTags = $selection['tags'];
+        $sortMode = $selection['sortMode'];
+        $queue = $selection['queue'];
 
         $now = (new DateTimeImmutable('now'))->format('Y-m-d\TH:i:s.v\Z');
         $sessionId = $this->newId();
@@ -1888,6 +1906,77 @@ final class Api
                 ?: strcmp($leftReviewed, $rightReviewed)
                 ?: strcmp((string) $left['id'], (string) $right['id']);
         });
+    }
+
+    private function flashcardReviewSelection(array $reviewSet, string $owner): array
+    {
+        $selectedTags = $this->decodeJsonColumn($reviewSet['tags'] ?? '[]');
+        if (!is_array($selectedTags)) {
+            $selectedTags = [];
+        }
+        $statement = $this->database->pdo->prepare(
+            'SELECT * FROM flashcards WHERE owner = :owner',
+        );
+        $statement->execute(['owner' => $owner]);
+        $cards = array_values(array_filter(
+            $statement->fetchAll(),
+            function (array $card) use ($selectedTags): bool {
+                if ($selectedTags === []) {
+                    return true;
+                }
+                $cardTags = $this->decodeJsonColumn($card['tags'] ?? '[]');
+                return is_array($cardTags) && array_intersect($selectedTags, $cardTags) !== [];
+            },
+        ));
+        if ($cards === []) {
+            throw new ApiException(409, 'No flashcards match this Review set.');
+        }
+
+        $sortMode = (string) $reviewSet['sort_mode'];
+        $this->sortFlashcardsForReview($cards, $sortMode);
+        $queue = array_map(function (array $card): array {
+            $tags = $this->decodeJsonColumn($card['tags'] ?? '[]');
+            return [
+                'id' => (string) $card['id'],
+                'front' => (string) $card['front'],
+                'back' => (string) $card['back'],
+                'tags' => is_array($tags) ? array_values($tags) : [],
+            ];
+        }, $cards);
+
+        return [
+            'tags' => array_values($selectedTags),
+            'sortMode' => $sortMode,
+            'queue' => $queue,
+        ];
+    }
+
+    private function intervalFlashcardSnapshot(string $templateId, string $owner): array
+    {
+        if ($templateId === '') {
+            return [];
+        }
+        $template = $this->ownedRecord('interval_templates', $templateId, $owner);
+        $reviewSetId = (string) ($template['flashcard_review_set'] ?? '');
+        if ($reviewSetId === '') {
+            return [];
+        }
+
+        $reviewSet = $this->ownedRecord('flashcard_review_sets', $reviewSetId, $owner);
+        $selection = $this->flashcardReviewSelection($reviewSet, $owner);
+        $isPassive = (string) $reviewSet['mode'] === 'passive';
+        return [
+            'reviewSet' => $reviewSetId,
+            'name' => (string) $reviewSet['name'],
+            'tags' => $selection['tags'],
+            'sortMode' => $selection['sortMode'],
+            'frontSeconds' => $isPassive ? (int) $reviewSet['front_seconds'] : 5,
+            'backSeconds' => $isPassive ? (int) $reviewSet['back_seconds'] : 5,
+            'speechEnabled' => (bool) $reviewSet['speech_enabled'],
+            'frontLanguage' => (string) $reviewSet['front_language'],
+            'backLanguage' => (string) $reviewSet['back_language'],
+            'cards' => $selection['queue'],
+        ];
     }
 
     private function flashcardAttributionMatchesReviewSet(
@@ -2262,10 +2351,17 @@ final class Api
         );
         $statement->execute(['id' => $id, 'owner' => $owner]);
         $attachedProgramSteps = $statement->fetchAll();
-        if ($attachedTasks !== [] || $attachedProgramSteps !== []) {
+        $statement = $this->database->pdo->prepare(
+            'SELECT id, name FROM interval_templates
+             WHERE flashcard_review_set = :id AND owner = :owner
+             ORDER BY sort_order, name',
+        );
+        $statement->execute(['id' => $id, 'owner' => $owner]);
+        $attachedIntervals = $statement->fetchAll();
+        if ($attachedTasks !== [] || $attachedProgramSteps !== [] || $attachedIntervals !== []) {
             throw new ApiException(
                 409,
-                'This Review set is attached to one or more tasks or program steps. Reassign them first.',
+                'This Review set is attached to one or more tasks, program steps, or intervals. Reassign them first.',
                 [
                     'tasks' => array_map(static fn (array $task): array => [
                         'id' => (string) $task['id'],
@@ -2276,6 +2372,10 @@ final class Api
                         'name' => (string) $step['name'],
                         'taskName' => (string) $step['task_name'],
                     ], $attachedProgramSteps),
+                    'intervals' => array_map(static fn (array $interval): array => [
+                        'id' => (string) $interval['id'],
+                        'name' => (string) $interval['name'],
+                    ], $attachedIntervals),
                 ],
             );
         }
@@ -2614,6 +2714,17 @@ final class Api
                 if (!is_string($tag) || !$this->relationExists('flashcard_tags', $tag, $owner)) {
                     throw new ApiException(422, 'A selected flashcard tag is invalid.');
                 }
+            }
+            return;
+        }
+
+        if ($collection === 'interval_templates') {
+            $reviewSet = (string) ($record['flashcard_review_set'] ?? '');
+            if (
+                $reviewSet !== ''
+                && !$this->relationExists('flashcard_review_sets', $reviewSet, $owner)
+            ) {
+                throw new ApiException(422, 'The selected Review set is invalid.');
             }
             return;
         }

@@ -57,7 +57,7 @@ suffix="$(php -r 'echo bin2hex(random_bytes(5));')"
 password="correct-horse-battery"
 
 migration_count="$(sqlite3 "$test_db" 'SELECT COUNT(*) FROM mom_schema_migrations;')"
-[[ "$migration_count" == 14 ]] || {
+[[ "$migration_count" == 15 ]] || {
   echo "The API did not apply the complete database migration sequence." >&2
   exit 1
 }
@@ -271,20 +271,40 @@ invalid_step_source_status="$(curl --silent --output /dev/null --write-out '%{ht
 menu_order_response="$(curl --silent --show-error --fail \
   -X PATCH -H "Content-Type: application/json" \
   -H "Authorization: Bearer $alice_token" \
-  --data '{"mainMenuOrder":["journal","tracking","tasks","intervals"]}' \
+  --data '{"mainMenuOrder":["journal","tracking","flashcards","tasks","intervals"]}' \
   "$api_url/auth/settings")"
 menu_order="$(php -r '$data=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); echo implode(",", $data["settings"]["mainMenuOrder"] ?? []);' <<<"$menu_order_response")"
-[[ "$menu_order" == "journal,tracking,tasks,intervals" ]] || {
+[[ "$menu_order" == "journal,tracking,flashcards,tasks,intervals" ]] || {
   echo "The main menu order was not persisted." >&2
   exit 1
 }
 invalid_menu_order_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
   -X PATCH -H "Content-Type: application/json" \
   -H "Authorization: Bearer $alice_token" \
-  --data '{"mainMenuOrder":["tasks","tasks","tracking","journal"]}' \
+  --data '{"mainMenuOrder":["tasks","tasks","flashcards","tracking","journal"]}' \
   "$api_url/auth/settings")"
 [[ "$invalid_menu_order_status" == 422 ]] || {
   echo "An invalid main menu order was not rejected." >&2
+  exit 1
+}
+
+menu_visibility_response="$(curl --silent --show-error --fail \
+  -X PATCH -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"mainMenuHidden":["flashcards","journal"]}' \
+  "$api_url/auth/settings")"
+hidden_menu_items="$(php -r '$data=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); echo implode(",", $data["settings"]["mainMenuHidden"] ?? []);' <<<"$menu_visibility_response")"
+[[ "$hidden_menu_items" == "flashcards,journal" ]] || {
+  echo "The hidden main menu items were not persisted." >&2
+  exit 1
+}
+invalid_hidden_menu_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  -X PATCH -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"mainMenuHidden":["tasks","intervals","flashcards","tracking","journal"]}' \
+  "$api_url/auth/settings")"
+[[ "$invalid_hidden_menu_status" == 422 ]] || {
+  echo "The API allowed every main menu item to be hidden." >&2
   exit 1
 }
 
@@ -916,6 +936,92 @@ curl --silent --show-error --fail \
   --data '{"action":"view","elapsed_seconds":8}' \
   "$api_url/flashcard-review-sessions/$passive_session_id/actions" >/dev/null
 
+curl --silent --show-error --fail \
+  -X PATCH -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "{\"flashcard_review_set\":\"$passive_review_set_id\"}" \
+  "$api_url/collections/interval_templates/records/$interval_template_id" >/dev/null
+interval_flashcard_session_payload="$(php -r '
+  $payload = json_decode($argv[1], true, 512, JSON_THROW_ON_ERROR);
+  $payload["task"] = "";
+  $payload["started_at"] = "2026-08-04T14:00:00Z";
+  $payload["runtime_state"]["stepStartedAt"] = "2026-08-04T14:00:00Z";
+  $payload["runtime_state"]["updatedAt"] = "2026-08-04T14:00:00Z";
+  echo json_encode($payload, JSON_THROW_ON_ERROR);
+' "$session_payload")"
+interval_flashcard_session_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "$interval_flashcard_session_payload" \
+  "$api_url/collections/interval_sessions/records")"
+interval_flashcard_session_id="$(json_field id <<<"$interval_flashcard_session_response")"
+interval_flashcard_snapshot="$(php -r '
+  $data = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+  $snapshot = $data["flashcard_snapshot"];
+  echo $snapshot["reviewSet"] . ":" . $snapshot["frontSeconds"] . ":"
+    . $snapshot["backSeconds"] . ":" . ((int) $snapshot["speechEnabled"])
+    . ":" . count($snapshot["cards"]);
+' <<<"$interval_flashcard_session_response")"
+[[ "$interval_flashcard_snapshot" == "$passive_review_set_id:3:4:1:1" ]] || {
+  echo "An interval did not snapshot its attached Passive Review set." >&2
+  exit 1
+}
+interval_flashcard_snapshot_update_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  -X PATCH -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"flashcard_snapshot":{}}' \
+  "$api_url/collections/interval_sessions/records/$interval_flashcard_session_id")"
+[[ "$interval_flashcard_snapshot_update_status" == 422 ]] || {
+  echo "An interval session accepted a client-authored Review set snapshot." >&2
+  exit 1
+}
+curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"runtime_state":{"stepIndex":1,"remainingMs":0,"accumulatedMs":1000,"updatedAt":"2026-08-04T14:00:01Z"},"elapsed_seconds":1,"ended_at":"2026-08-04T14:00:01Z"}' \
+  "$api_url/interval-sessions/$interval_flashcard_session_id/complete" >/dev/null
+
+attached_interval_review_set_delete_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  -X DELETE -H "Authorization: Bearer $alice_token" \
+  "$api_url/collections/flashcard_review_sets/records/$passive_review_set_id")"
+[[ "$attached_interval_review_set_delete_status" == 409 ]] || {
+  echo "The API deleted a Review set that is still attached to an interval." >&2
+  exit 1
+}
+
+curl --silent --show-error --fail \
+  -X PATCH -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "{\"flashcard_review_set\":\"$manual_review_set_id\"}" \
+  "$api_url/collections/interval_templates/records/$interval_template_id" >/dev/null
+manual_interval_payload="$(php -r '
+  $payload = json_decode($argv[1], true, 512, JSON_THROW_ON_ERROR);
+  $payload["started_at"] = "2026-08-04T15:00:00Z";
+  $payload["runtime_state"]["stepStartedAt"] = "2026-08-04T15:00:00Z";
+  $payload["runtime_state"]["updatedAt"] = "2026-08-04T15:00:00Z";
+  echo json_encode($payload, JSON_THROW_ON_ERROR);
+' "$interval_flashcard_session_payload")"
+manual_interval_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "$manual_interval_payload" \
+  "$api_url/collections/interval_sessions/records")"
+manual_interval_session_id="$(json_field id <<<"$manual_interval_response")"
+manual_interval_timing="$(php -r '
+  $data = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+  echo $data["flashcard_snapshot"]["frontSeconds"] . ":"
+    . $data["flashcard_snapshot"]["backSeconds"];
+' <<<"$manual_interval_response")"
+[[ "$manual_interval_timing" == "5:5" ]] || {
+  echo "An interval did not apply the five-second fallback to a Manual Review set." >&2
+  exit 1
+}
+curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"runtime_state":{"stepIndex":1,"remainingMs":0,"accumulatedMs":1000,"updatedAt":"2026-08-04T15:00:01Z"},"elapsed_seconds":1,"ended_at":"2026-08-04T15:00:01Z"}' \
+  "$api_url/interval-sessions/$manual_interval_session_id/complete" >/dev/null
+
 flashcard_today="$(TZ=America/Toronto date +%F)"
 flashcard_task_payload="$(php -r '
   echo json_encode([
@@ -974,6 +1080,12 @@ attached_review_set_delete_status="$(curl --silent --output /dev/null --write-ou
   echo "The API deleted a Review set that is still attached to a task." >&2
   exit 1
 }
+
+curl --silent --show-error --fail \
+  -X PATCH -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"flashcard_review_set":""}' \
+  "$api_url/collections/interval_templates/records/$interval_template_id" >/dev/null
 
 register "Bob API" "$bob_email" >/dev/null
 bob_login="$(login "$bob_email")"

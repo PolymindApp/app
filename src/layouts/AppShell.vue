@@ -8,9 +8,12 @@ import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import MainNavigationIcon from '@/components/MainNavigationIcon.vue'
 import {
   bottomNavigationFontSize,
+  mainMenuTransitionDirection,
   MAIN_MENU_ORDER_CHANGED_EVENT,
-  orderedMainNavItems,
+  MAIN_MENU_VISIBILITY_CHANGED_EVENT,
+  readStoredHiddenMainMenuItems,
   readStoredMainMenuOrder,
+  visibleMainNavItems,
 } from '@/services/navigation'
 import {
   formatRunningSessionTitle,
@@ -32,6 +35,7 @@ const pageTransition = ref('page-level-forward')
 const isIos = Capacitor.getPlatform() === 'ios'
 const isBrowser = Capacitor.getPlatform() === 'web'
 const storedMenuOrder = ref(readStoredMainMenuOrder())
+const storedHiddenMenuItems = ref(readStoredHiddenMainMenuItems())
 const reducedMotion = ref(
   typeof window !== 'undefined'
   && typeof window.matchMedia === 'function'
@@ -43,8 +47,9 @@ const documentTitle = typeof document === 'undefined'
 let documentTitleFrame = 0
 let documentTitleTimer: number | undefined
 
-const items = computed(() => orderedMainNavItems(
+const items = computed(() => visibleMainNavItems(
   storedMenuOrder.value ?? auth.user?.settings?.mainMenuOrder,
+  storedHiddenMenuItems.value ?? auth.user?.settings?.mainMenuHidden,
 ))
 const intervalIsRunning = computed(() => intervalStore.activeSession?.status === 'running')
 const flashcardIsRunning = computed(() => flashcardStore.activeSession?.status === 'running')
@@ -123,6 +128,14 @@ function syncDocumentTitle() {
 watch([sessionIsRunning, reducedMotion], syncDocumentTitle, { immediate: true })
 
 const removeTransitionGuard = router.beforeEach((to, from) => {
+  const menuDirection = mainMenuTransitionDirection(items.value, from.path, to.path)
+  if (menuDirection) {
+    pageTransition.value = menuDirection === 'forward'
+      ? 'page-level-forward'
+      : 'page-level-back'
+    return
+  }
+
   const toDepth = Number(to.meta.pageDepth ?? 0)
   const fromDepth = Number(from.meta.pageDepth ?? 0)
 
@@ -137,13 +150,15 @@ const removeTransitionGuard = router.beforeEach((to, from) => {
   }
 })
 
-function refreshStoredMenuOrder() {
+function refreshStoredMenuSettings() {
   storedMenuOrder.value = readStoredMainMenuOrder()
+  storedHiddenMenuItems.value = readStoredHiddenMainMenuItems()
 }
 
 onMounted(() => {
-  window.addEventListener(MAIN_MENU_ORDER_CHANGED_EVENT, refreshStoredMenuOrder)
-  window.addEventListener('storage', refreshStoredMenuOrder)
+  window.addEventListener(MAIN_MENU_ORDER_CHANGED_EVENT, refreshStoredMenuSettings)
+  window.addEventListener(MAIN_MENU_VISIBILITY_CHANGED_EVENT, refreshStoredMenuSettings)
+  window.addEventListener('storage', refreshStoredMenuSettings)
   void Promise.allSettled([
     !intervalStore.loading ? intervalStore.load() : Promise.resolve(),
     !flashcardStore.loading ? flashcardStore.load() : Promise.resolve(),
@@ -153,8 +168,9 @@ onMounted(() => {
 onBeforeUnmount(() => {
   stopDocumentTitleAnimation()
   removeTransitionGuard()
-  window.removeEventListener(MAIN_MENU_ORDER_CHANGED_EVENT, refreshStoredMenuOrder)
-  window.removeEventListener('storage', refreshStoredMenuOrder)
+  window.removeEventListener(MAIN_MENU_ORDER_CHANGED_EVENT, refreshStoredMenuSettings)
+  window.removeEventListener(MAIN_MENU_VISIBILITY_CHANGED_EVENT, refreshStoredMenuSettings)
+  window.removeEventListener('storage', refreshStoredMenuSettings)
 })
 
 function logout() {

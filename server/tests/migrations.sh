@@ -34,7 +34,7 @@ run_migrations() {
 
 sqlite3 "$empty_db" 'VACUUM'
 first_run="$(run_migrations "$empty_db")"
-[[ "$first_run" == "202607290001,202607290002,202607290003,202607300001,202607310001,202607310002,202607310003,202608010001,202608020001,202608020002,202608020003,202608020004,202608050001,202608050002" ]] || {
+[[ "$first_run" == "202607290001,202607290002,202607290003,202607300001,202607310001,202607310002,202607310003,202608010001,202608020001,202608020002,202608020003,202608020004,202608050001,202608050002,202608050003" ]] || {
   echo "An empty database did not apply the complete migration sequence." >&2
   exit 1
 }
@@ -71,7 +71,7 @@ for table in "${expected_tables[@]}"; do
 done
 
 migration_count="$(sqlite3 "$empty_db" 'SELECT COUNT(*) FROM mom_schema_migrations;')"
-[[ "$migration_count" == 14 ]] || {
+[[ "$migration_count" == 15 ]] || {
   echo "Migration history does not contain all migrations." >&2
   exit 1
 }
@@ -95,7 +95,7 @@ cli_output="$(
   MOM_API_SECRET="mom-migration-test-secret-at-least-32-characters" \
     php server/migrate.php
 )"
-[[ "$cli_output" == *"Applied 14 migrations"* && "$cli_output" == *"202608050002"* ]] || {
+[[ "$cli_output" == *"Applied 15 migrations"* && "$cli_output" == *"202608050003"* ]] || {
   echo "The migration CLI did not initialize and report a new database." >&2
   exit 1
 }
@@ -107,7 +107,8 @@ source_db="${MOM_TEST_SOURCE_DB:-private/data.db}"
 }
 sqlite3 "$source_db" ".backup $existing_db"
 sqlite3 "$existing_db" \
-  "DELETE FROM mom_schema_migrations WHERE version IN ('202608050001', '202608050002');
+  "DELETE FROM mom_schema_migrations WHERE version IN ('202608050001', '202608050002', '202608050003');
+   DROP INDEX IF EXISTS idx_interval_templates_owner_flashcard_review_set;
    DROP INDEX IF EXISTS idx_tasks_owner_flashcard_review_set;
    DROP INDEX IF EXISTS idx_program_steps_owner_flashcard_review_set;
    DROP TABLE IF EXISTS flashcard_review_events;
@@ -125,12 +126,22 @@ existing_step_flashcard_column="$(sqlite3 "$existing_db" \
 if [[ "$existing_step_flashcard_column" == 1 ]]; then
   sqlite3 "$existing_db" 'ALTER TABLE program_steps DROP COLUMN flashcard_review_set;'
 fi
+existing_interval_review_set_column="$(sqlite3 "$existing_db" \
+  "SELECT COUNT(*) FROM pragma_table_info('interval_templates') WHERE name = 'flashcard_review_set';")"
+if [[ "$existing_interval_review_set_column" == 1 ]]; then
+  sqlite3 "$existing_db" 'ALTER TABLE interval_templates DROP COLUMN flashcard_review_set;'
+fi
+existing_interval_snapshot_column="$(sqlite3 "$existing_db" \
+  "SELECT COUNT(*) FROM pragma_table_info('interval_sessions') WHERE name = 'flashcard_snapshot';")"
+if [[ "$existing_interval_snapshot_column" == 1 ]]; then
+  sqlite3 "$existing_db" 'ALTER TABLE interval_sessions DROP COLUMN flashcard_snapshot;'
+fi
 before_counts="$(sqlite3 "$existing_db" \
   "SELECT (SELECT COUNT(*) FROM tasks) || ':' || (SELECT COUNT(*) FROM entries);")"
 existing_run="$(run_migrations "$existing_db")"
 after_counts="$(sqlite3 "$existing_db" \
   "SELECT (SELECT COUNT(*) FROM tasks) || ':' || (SELECT COUNT(*) FROM entries);")"
-[[ "$existing_run" == "202608050001,202608050002" ]] || {
+[[ "$existing_run" == "202608050001,202608050002,202608050003" ]] || {
   echo "An existing PHP database did not apply only the pending flashcard migration." >&2
   exit 1
 }
@@ -193,6 +204,16 @@ flashcard_speech_columns="$(sqlite3 "$existing_db" \
              WHERE name IN ('speech_enabled_snapshot', 'front_language_snapshot', 'back_language_snapshot'));")"
 [[ "$flashcard_speech_columns" == "3:3" ]] || {
   echo "The flashcard speech migration did not install every speech setting." >&2
+  exit 1
+}
+
+interval_flashcard_columns="$(sqlite3 "$existing_db" \
+  "SELECT (SELECT COUNT(*) FROM pragma_table_info('interval_templates')
+             WHERE name = 'flashcard_review_set') || ':' ||
+          (SELECT COUNT(*) FROM pragma_table_info('interval_sessions')
+             WHERE name = 'flashcard_snapshot');")"
+[[ "$interval_flashcard_columns" == "1:1" ]] || {
+  echo "The interval Review set migration did not install its attachment and snapshot columns." >&2
   exit 1
 }
 

@@ -18,6 +18,7 @@ import android.os.SystemClock;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.os.VibratorManager;
+import android.speech.tts.TextToSpeech;
 
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
@@ -39,8 +40,10 @@ public class BackgroundIntervalService extends Service {
     public static final String EXTRA_STEPS = "steps";
     public static final String EXTRA_STEP_INDEX = "stepIndex";
     public static final String EXTRA_REMAINING_MS = "remainingMs";
+    public static final String EXTRA_ELAPSED_MS = "elapsedMs";
     public static final String EXTRA_SOUND_ENABLED = "soundEnabled";
     public static final String EXTRA_VIBRATION_ENABLED = "vibrationEnabled";
+    public static final String EXTRA_FLASHCARD_REVIEW = "flashcardReview";
 
     private static final String CHANNEL_ID = "mom_interval_timer";
     private static final int NOTIFICATION_ID = 4107;
@@ -48,7 +51,10 @@ public class BackgroundIntervalService extends Service {
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final List<IntervalStep> steps = new ArrayList<>();
+    private final List<ReviewCard> reviewCards = new ArrayList<>();
     private PowerManager.WakeLock wakeLock;
+    private TextToSpeech speech;
+    private boolean speechReady;
     private String sessionId = "";
     private String sessionName = "Interval";
     private int stepIndex;
@@ -57,6 +63,16 @@ public class BackgroundIntervalService extends Service {
     private boolean soundEnabled;
     private boolean vibrationEnabled;
     private boolean running;
+    private long reviewBaseElapsedMs;
+    private long reviewConfiguredElapsedMs;
+    private long reviewFrontDurationMs = 5000L;
+    private long reviewBackDurationMs = 5000L;
+    private String reviewFrontLanguage = "";
+    private String reviewBackLanguage = "";
+    private String lastReviewSpeechKey = "";
+    private String pendingReviewSpeechText = "";
+    private String pendingReviewSpeechLanguage = "";
+    private boolean appWasVisible;
 
     private final Runnable ticker = new Runnable() {
         @Override
@@ -66,6 +82,7 @@ public class BackgroundIntervalService extends Service {
             playCountdown(now);
             advance(now);
             if (!running) return;
+            updateReviewSpeech(now);
             updateNotification(false);
             if (steps.get(stepIndex).requiresConfirmation) {
                 releaseWakeLock();
@@ -87,10 +104,45 @@ public class BackgroundIntervalService extends Service {
         }
     }
 
+    private static final class ReviewCard {
+        final String front;
+        final String back;
+
+        ReviewCard(String front, String back) {
+            this.front = front;
+            this.back = back;
+        }
+    }
+
+    private static final class ReviewPhase {
+        final int cardIndex;
+        final String side;
+        final String key;
+
+        ReviewPhase(int cardIndex, String side, String key) {
+            this.cardIndex = cardIndex;
+            this.side = side;
+            this.key = key;
+        }
+    }
+
     @Override
     public void onCreate() {
         super.onCreate();
         createNotificationChannel();
+        speech = new TextToSpeech(this, status -> {
+            speechReady = status == TextToSpeech.SUCCESS;
+            TextToSpeech currentSpeech = speech;
+            if (speechReady && currentSpeech != null) {
+                currentSpeech.setAudioAttributes(
+                    new AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                        .build()
+                );
+                speakPendingReviewSide();
+            }
+        });
     }
 
     @Override
@@ -120,6 +172,7 @@ public class BackgroundIntervalService extends Service {
     }
 
     private void configure(Intent intent) throws JSONException {
+        String previousSessionId = sessionId;
         JSONArray encodedSteps = new JSONArray(intent.getStringExtra(EXTRA_STEPS));
         steps.clear();
         for (int index = 0; index < encodedSteps.length(); index += 1) {
@@ -145,6 +198,103 @@ public class BackgroundIntervalService extends Service {
         lastCountdownSecond = -1;
         soundEnabled = intent.getBooleanExtra(EXTRA_SOUND_ENABLED, true);
         vibrationEnabled = intent.getBooleanExtra(EXTRA_VIBRATION_ENABLED, true);
+        configureFlashcardReview(intent, previousSessionId);
+    }
+
+    private void configureFlashcardReview(Intent intent, String previousSessionId) throws JSONException {
+        String encodedReview = intent.getStringExtra(EXTRA_FLASHCARD_REVIEW);
+        reviewCards.clear();
+        pendingReviewSpeechText = "";
+        pendingReviewSpeechLanguage = "";
+        reviewBaseElapsedMs = Math.max(0L, intent.getLongExtra(EXTRA_ELAPSED_MS, 0L));
+        reviewConfiguredElapsedMs = SystemClock.elapsedRealtime();
+        appWasVisible = MainActivity.isAppVisible();
+
+        if (encodedReview == null || encodedReview.trim().isEmpty()) {
+            lastReviewSpeechKey = "";
+            if (speech != null) speech.stop();
+            return;
+        }
+        JSONObject review = new JSONObject(encodedReview);
+        if (!review.optBoolean("speechEnabled", false)) {
+            lastReviewSpeechKey = "";
+            if (speech != null) speech.stop();
+            return;
+        }
+
+        JSONArray cards = review.optJSONArray("cards");
+        if (cards == null) return;
+        for (int index = 0; index < cards.length(); index += 1) {
+            JSONObject card = cards.getJSONObject(index);
+            reviewCards.add(new ReviewCard(
+                card.optString("front", ""),
+                card.optString("back", "")
+            ));
+        }
+        reviewFrontDurationMs = Math.max(1000L, review.optLong("frontSeconds", 5L) * 1000L);
+        reviewBackDurationMs = Math.max(1000L, review.optLong("backSeconds", 5L) * 1000L);
+        reviewFrontLanguage = review.optString("frontLanguage", "").trim();
+        reviewBackLanguage = review.optString("backLanguage", "").trim();
+        if (!previousSessionId.equals(sessionId)) lastReviewSpeechKey = "";
+    }
+
+    private ReviewPhase currentReviewPhase(long now) {
+        if (reviewCards.isEmpty()) return null;
+        long cardDurationMs = reviewFrontDurationMs + reviewBackDurationMs;
+        long elapsedMs = reviewBaseElapsedMs + Math.max(0L, now - reviewConfiguredElapsedMs);
+        long absoluteCardIndex = elapsedMs / cardDurationMs;
+        int cardIndex = (int) (absoluteCardIndex % reviewCards.size());
+        long elapsedInCard = elapsedMs % cardDurationMs;
+        String side = elapsedInCard < reviewFrontDurationMs ? "front" : "back";
+        return new ReviewPhase(cardIndex, side, absoluteCardIndex + ":" + side);
+    }
+
+    private void updateReviewSpeech(long now) {
+        boolean appVisible = MainActivity.isAppVisible();
+        if (appVisible) {
+            if (!appWasVisible && speech != null) speech.stop();
+            lastReviewSpeechKey = "";
+            pendingReviewSpeechText = "";
+            pendingReviewSpeechLanguage = "";
+        } else {
+            speakCurrentReviewSide(now, appWasVisible);
+        }
+        appWasVisible = appVisible;
+    }
+
+    private void speakCurrentReviewSide(long now, boolean force) {
+        ReviewPhase phase = currentReviewPhase(now);
+        if (phase == null || (!force && phase.key.equals(lastReviewSpeechKey))) return;
+        ReviewCard card = reviewCards.get(phase.cardIndex);
+        lastReviewSpeechKey = phase.key;
+        pendingReviewSpeechText = "front".equals(phase.side) ? card.front : card.back;
+        pendingReviewSpeechLanguage = "front".equals(phase.side)
+            ? reviewFrontLanguage
+            : reviewBackLanguage;
+        speakPendingReviewSide();
+    }
+
+    private void speakPendingReviewSide() {
+        if (
+            !speechReady
+            || speech == null
+            || pendingReviewSpeechText.isEmpty()
+            || pendingReviewSpeechLanguage.isEmpty()
+            || MainActivity.isAppVisible()
+        ) return;
+        int availability = speech.setLanguage(Locale.forLanguageTag(pendingReviewSpeechLanguage));
+        if (
+            availability == TextToSpeech.LANG_MISSING_DATA
+            || availability == TextToSpeech.LANG_NOT_SUPPORTED
+        ) return;
+        speech.speak(
+            pendingReviewSpeechText,
+            TextToSpeech.QUEUE_FLUSH,
+            null,
+            "mom-background-interval-flashcard-" + System.nanoTime()
+        );
+        pendingReviewSpeechText = "";
+        pendingReviewSpeechLanguage = "";
     }
 
     private void startAsForeground() {
@@ -178,6 +328,7 @@ public class BackgroundIntervalService extends Service {
         if (!MainActivity.isAppVisible()) playCompleteCue();
         running = false;
         handler.removeCallbacks(ticker);
+        if (speech != null) speech.stop();
         releaseWakeLock();
         NotificationManager manager = getSystemService(NotificationManager.class);
         manager.notify(NOTIFICATION_ID + 1, buildNotification(true));
@@ -188,6 +339,7 @@ public class BackgroundIntervalService extends Service {
     private void stopTimer() {
         running = false;
         handler.removeCallbacks(ticker);
+        if (speech != null) speech.stop();
         releaseWakeLock();
         stopForeground(STOP_FOREGROUND_REMOVE);
         stopSelf();
@@ -322,6 +474,11 @@ public class BackgroundIntervalService extends Service {
         running = false;
         handler.removeCallbacksAndMessages(null);
         releaseWakeLock();
+        if (speech != null) {
+            speech.stop();
+            speech.shutdown();
+            speech = null;
+        }
         super.onDestroy();
     }
 

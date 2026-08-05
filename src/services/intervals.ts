@@ -217,6 +217,7 @@ export function cloneIntervalTemplateDraft(template: IntervalTemplate): Interval
     name: template.name,
     description: template.description,
     color: template.color,
+    flashcardReviewSet: template.flashcardReviewSet,
     definition: {
       version: template.definition.version,
       children: template.definition.children.map(cloneIntervalNode),

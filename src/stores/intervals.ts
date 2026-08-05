@@ -13,6 +13,7 @@ import {
 import type {
   IntervalCueSettings,
   IntervalDefinition,
+  IntervalFlashcardReviewSnapshot,
   IntervalRuntimeState,
   IntervalSession,
   IntervalSessionStatus,
@@ -29,6 +30,7 @@ function mapTemplate(record: Record<string, any>): IntervalTemplate {
     name: record.name,
     description: record.description || '',
     color: record.color || '#C7F464',
+    flashcardReviewSet: record.flashcard_review_set || undefined,
     definition: record.definition,
     cues: {
       soundEnabled: record.sound_enabled !== false,
@@ -39,6 +41,14 @@ function mapTemplate(record: Record<string, any>): IntervalTemplate {
 }
 
 function mapSession(record: Record<string, any>): IntervalSession {
+  const flashcardSnapshot = record.flashcard_snapshot
+  const flashcardReview = flashcardSnapshot
+    && typeof flashcardSnapshot === 'object'
+    && !Array.isArray(flashcardSnapshot)
+    && Array.isArray(flashcardSnapshot.cards)
+    && flashcardSnapshot.cards.length
+      ? flashcardSnapshot as IntervalFlashcardReviewSnapshot
+      : undefined
   return {
     id: record.id,
     template: record.template || undefined,
@@ -53,6 +63,7 @@ function mapSession(record: Record<string, any>): IntervalSession {
       soundEnabled: record.cue_snapshot?.soundEnabled !== false,
       vibrationEnabled: record.cue_snapshot?.vibrationEnabled !== false,
     },
+    flashcardReview,
     startedAt: record.started_at,
     endedAt: record.ended_at || undefined,
     note: record.note || undefined,
@@ -127,6 +138,7 @@ export const useIntervalStore = defineStore('intervals', () => {
       name: draft.name,
       description: draft.description,
       color: draft.color,
+      flashcard_review_set: draft.flashcardReviewSet || '',
       definition: draft.definition,
       sound_enabled: draft.cues.soundEnabled,
       vibration_enabled: draft.cues.vibrationEnabled,

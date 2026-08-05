@@ -148,11 +148,25 @@ export interface IntervalCueSettings {
   vibrationEnabled: boolean
 }
 
+export interface IntervalFlashcardReviewSnapshot {
+  reviewSet: string
+  name: string
+  tags: string[]
+  sortMode: FlashcardReviewSort
+  frontSeconds: number
+  backSeconds: number
+  speechEnabled: boolean
+  frontLanguage: string
+  backLanguage: string
+  cards: FlashcardReviewQueueCard[]
+}
+
 export interface IntervalTemplate {
   id: string
   name: string
   description: string
   color: string
+  flashcardReviewSet?: string
   definition: IntervalDefinition
   cues: IntervalCueSettings
   sortOrder: number
@@ -181,6 +195,7 @@ export interface IntervalSession {
   name: string
   definition: IntervalDefinition
   cues: IntervalCueSettings
+  flashcardReview?: IntervalFlashcardReviewSnapshot
   startedAt: string
   endedAt?: string
   note?: string

@@ -19,8 +19,18 @@ interface BackgroundIntervalPlugin {
     steps: BackgroundIntervalStep[]
     stepIndex: number
     remainingMs: number
+    elapsedMs: number
     soundEnabled: boolean
     vibrationEnabled: boolean
+    flashcardReview?: {
+      name: string
+      cards: Array<{ front: string; back: string }>
+      frontSeconds: number
+      backSeconds: number
+      speechEnabled: boolean
+      frontLanguage: string
+      backLanguage: string
+    }
   }): Promise<void>
   stop(): Promise<void>
 }
@@ -57,8 +67,30 @@ export async function syncBackgroundInterval(session: IntervalSession) {
       steps: nativeSteps(session),
       stepIndex: session.runtime.stepIndex,
       remainingMs: Math.max(1, Math.round(session.runtime.remainingMs)),
+      elapsedMs: Math.max(0, Math.round(
+        session.runtime.accumulatedMs
+        + (session.runtime.stepStartedAt
+          ? Math.max(0, Date.now() - new Date(session.runtime.stepStartedAt).getTime())
+          : 0),
+      )),
       soundEnabled: session.cues.soundEnabled,
       vibrationEnabled: session.cues.vibrationEnabled,
+      ...(session.flashcardReview?.speechEnabled
+        ? {
+            flashcardReview: {
+              name: session.flashcardReview.name,
+              cards: session.flashcardReview.cards.map(card => ({
+                front: card.front,
+                back: card.back,
+              })),
+              frontSeconds: session.flashcardReview.frontSeconds,
+              backSeconds: session.flashcardReview.backSeconds,
+              speechEnabled: true,
+              frontLanguage: session.flashcardReview.frontLanguage,
+              backLanguage: session.flashcardReview.backLanguage,
+            },
+          }
+        : {}),
     })
     nativeBackgroundIntervalActive = true
   } catch (error) {
