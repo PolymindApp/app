@@ -1,71 +1,71 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
-import { format } from 'date-fns'
+import { computed, onMounted, ref, watch } from 'vue'
+import { format, isSameWeek, startOfWeek } from 'date-fns'
 import { useRouter } from 'vue-router'
 import { useDisplay } from 'vuetify'
 import { Ripple } from 'vuetify/directives'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
-import ConfirmDialog from '@/components/ConfirmDialog.vue'
-import FlashcardEditorDialog from '@/components/FlashcardEditorDialog.vue'
+import WeekNavigator from '@/components/WeekNavigator.vue'
+import { flashcardReviewProgressPercent } from '@/services/flashcardHistory'
 import {
   cardMatchesTags,
   formatReviewDuration,
   reviewSortTitle,
   sessionAccuracy,
 } from '@/services/flashcards'
+import { groupSessionsByDate } from '@/services/sessionHistory'
 import { useFlashcardStore } from '@/stores/flashcards'
-import type { Flashcard, FlashcardReviewSet, FlashcardTag } from '@/types/domain'
+import type { Flashcard, FlashcardReviewSession, FlashcardReviewSet } from '@/types/domain'
 
 const router = useRouter()
 const { xs } = useDisplay()
 const store = useFlashcardStore()
 const selectedTags = ref<string[]>([])
-const cardDialog = ref(false)
-const editingCard = ref<Flashcard>()
-const tagManager = ref(false)
-const tagNames = reactive<Record<string, string>>({})
-const tagSaving = ref('')
-const tagError = ref('')
-const deleteTagDialog = ref(false)
-const deletingTag = ref<FlashcardTag>()
 const startError = ref('')
 const reviewSetActionsOpen = ref(false)
 const selectedReviewSet = ref<FlashcardReviewSet>()
+const recentWeekStart = ref(startOfWeek(new Date(), { weekStartsOn: 1 }))
+const cardPage = ref(1)
 const vRipple = Ripple
+const CARD_PAGE_SIZE = 10
 
 const filteredCards = computed(() => store.cards.filter(card => cardMatchesTags(card, selectedTags.value)))
-const sessionGroups = computed(() => {
-  const groups = new Map<string, typeof store.recentSessions>()
-  for (const session of store.recentSessions) {
-    const key = format(new Date(session.startedAt), 'yyyy-MM-dd')
-    const list = groups.get(key) || []
-    list.push(session)
-    groups.set(key, list)
-  }
-  return [...groups.entries()].map(([key, sessions]) => ({
-    key,
-    label: format(new Date(`${key}T12:00:00`), 'EEEE, MMMM d'),
-    sessions,
-  }))
+const cardPageCount = computed(() => Math.ceil(filteredCards.value.length / CARD_PAGE_SIZE))
+const paginatedCards = computed(() => {
+  const start = (cardPage.value - 1) * CARD_PAGE_SIZE
+  return filteredCards.value.slice(start, start + CARD_PAGE_SIZE)
 })
+const recentReviewsForWeek = computed(() => store.sessions.filter(session =>
+  (session.status === 'completed' || session.status === 'ended')
+  && isSameWeek(new Date(session.startedAt), recentWeekStart.value, { weekStartsOn: 1 }),
+))
+const recentReviewGroups = computed(() => groupSessionsByDate(recentReviewsForWeek.value))
+const recentWeekIsCurrent = computed(() =>
+  isSameWeek(recentWeekStart.value, new Date(), { weekStartsOn: 1 }),
+)
 
 watch(() => store.tags, (tags) => {
-  for (const tag of tags) tagNames[tag.id] = tag.name
   selectedTags.value = selectedTags.value.filter(id => tags.some(tag => tag.id === id))
 }, { deep: true, immediate: true })
+
+watch(selectedTags, () => {
+  cardPage.value = 1
+}, { deep: true })
+
+watch(() => filteredCards.value.length, () => {
+  cardPage.value = Math.min(cardPage.value, Math.max(1, cardPageCount.value))
+})
 
 onMounted(() => {
   store.load().catch(() => undefined)
 })
 
 function openNewCard() {
-  editingCard.value = undefined
-  cardDialog.value = true
+  void router.push({ name: 'flashcard-new' })
 }
 
 function openCard(card: Flashcard) {
-  editingCard.value = card
-  cardDialog.value = true
+  void router.push({ name: 'flashcard-edit', params: { id: card.id } })
 }
 
 function tagName(id: string) {
@@ -78,6 +78,10 @@ function reviewSetCardCount(reviewSet: FlashcardReviewSet) {
 
 function cardTagNames(card: Flashcard) {
   return card.tags.length ? card.tags.map(tagName).join(', ') : 'No tags'
+}
+
+function recentReviewColor(session: FlashcardReviewSession) {
+  return session.status === 'completed' ? 'success' : 'warning'
 }
 
 function openReviewSetActions(reviewSet: FlashcardReviewSet) {
@@ -114,36 +118,6 @@ async function startReview(reviewSet: FlashcardReviewSet) {
   }
 }
 
-async function saveTagName(tag: FlashcardTag) {
-  const name = tagNames[tag.id]?.trim()
-  if (!name || name === tag.name) return
-  tagSaving.value = tag.id
-  tagError.value = ''
-  try {
-    await store.renameTag(tag.id, name)
-  } catch (cause) {
-    tagError.value = cause instanceof Error ? cause.message : 'Could not rename this tag.'
-    tagNames[tag.id] = tag.name
-  } finally {
-    tagSaving.value = ''
-  }
-}
-
-async function removeTag() {
-  if (!deletingTag.value) return
-  tagSaving.value = deletingTag.value.id
-  tagError.value = ''
-  try {
-    await store.deleteTag(deletingTag.value.id)
-    deleteTagDialog.value = false
-    deletingTag.value = undefined
-  } catch (cause) {
-    tagError.value = cause instanceof Error ? cause.message : 'Could not delete this tag.'
-    deleteTagDialog.value = false
-  } finally {
-    tagSaving.value = ''
-  }
-}
 </script>
 
 <template>
@@ -257,15 +231,16 @@ async function removeTag() {
           chips
           closable-chips
           clearable
+          autocomplete="off"
           prepend-inner-icon="mdi-filter-variant"
           :disabled="!store.tags.length"
         />
         <v-btn
-          icon="mdi-tag-edit-outline"
+          icon="mdi-tag-multiple-outline"
           variant="tonal"
           aria-label="Manage flashcard tags"
           :disabled="!store.tags.length"
-          @click="tagManager = true"
+          :to="{ name: 'flashcard-tags' }"
         />
       </div>
 
@@ -279,7 +254,7 @@ async function removeTag() {
         </thead>
         <tbody>
           <tr
-            v-for="card in filteredCards"
+            v-for="card in paginatedCards"
             :key="card.id"
             v-ripple
             tabindex="0"
@@ -303,7 +278,18 @@ async function removeTag() {
         </tbody>
       </v-table>
 
-      <v-card v-else-if="store.loaded" class="surface-card pa-8 text-center">
+      <v-pagination
+        v-if="cardPageCount > 1"
+        v-model="cardPage"
+        :length="cardPageCount"
+        :total-visible="xs ? 3 : 7"
+        color="secondary"
+        rounded="lg"
+        class="card-library-pagination mt-3"
+        aria-label="Flashcard table pages"
+      />
+
+      <v-card v-if="!filteredCards.length && store.loaded" class="surface-card pa-8 text-center">
         <v-icon icon="mdi-cards-outline" size="44" color="secondary" />
         <h3 class="text-h6 font-weight-black mt-3">
           {{ store.cards.length ? 'No cards match these tags' : 'Your card library is empty' }}
@@ -331,39 +317,77 @@ async function removeTag() {
     <section>
       <div class="section-heading">
         <h2>Recent reviews</h2>
-        <span class="text-caption muted">{{ store.recentSessions.length }}</span>
+        <span class="text-caption muted">{{ recentReviewsForWeek.length }}</span>
       </div>
-      <v-card v-if="sessionGroups.length" class="surface-card pa-2">
-        <section v-for="(group, index) in sessionGroups" :key="group.key">
-          <v-divider v-if="index" />
-          <div class="history-group-heading px-4 pt-3 pb-1">
-            <h3>{{ group.label }}</h3>
-            <span>{{ group.sessions.length }}</span>
-          </div>
-          <v-list bg-color="transparent">
-            <v-list-item v-for="session in group.sessions" :key="session.id" :title="session.name">
-              <template #prepend>
-                <v-icon
-                  :icon="session.status === 'completed' ? 'mdi-check-circle-outline' : 'mdi-stop-circle-outline'"
-                  :color="session.status === 'completed' ? 'success' : 'warning'"
-                />
-              </template>
-              <div class="review-history-meta">
-                <span>{{ format(new Date(session.startedAt), 'h:mm a') }}</span>
-                <span>{{ session.mode === 'passive' ? `${session.viewedCount} viewed` : `${session.successCount} success · ${session.errorCount} error` }}</span>
-                <span v-if="sessionAccuracy(session) !== undefined">{{ sessionAccuracy(session) }}% accuracy</span>
-                <span v-if="session.ejectedCount">{{ session.ejectedCount }} ejected</span>
-              </div>
-              <template #append>
-                <strong class="text-caption">{{ formatReviewDuration(session.elapsedSeconds) }}</strong>
-              </template>
-            </v-list-item>
-          </v-list>
-        </section>
-      </v-card>
-      <v-card v-else-if="store.loaded" class="surface-card pa-7 text-center">
-        <p class="text-body-2 muted">Finished and ended reviews will appear here.</p>
-      </v-card>
+      <WeekNavigator v-model="recentWeekStart" class="mb-3" />
+      <transition name="review-history-content" mode="out-in">
+        <v-card
+          v-if="recentReviewsForWeek.length"
+          :key="recentWeekStart.toISOString()"
+          class="surface-card pa-2"
+        >
+          <section
+            v-for="(group, groupIndex) in recentReviewGroups"
+            :key="group.key"
+            class="recent-review-group"
+          >
+            <v-divider v-if="groupIndex" />
+            <div class="recent-review-group__heading px-4 pt-3 pb-1">
+              <h3>{{ group.label }}</h3>
+              <span>{{ group.sessions.length }}</span>
+            </div>
+            <v-list bg-color="transparent">
+              <v-list-item
+                v-for="session in group.sessions"
+                :key="session.id"
+                class="recent-review-item"
+                :title="session.name"
+              >
+                <template #prepend>
+                  <v-icon
+                    :icon="session.status === 'completed' ? 'mdi-check-circle-outline' : 'mdi-stop-circle-outline'"
+                    :color="recentReviewColor(session)"
+                  />
+                </template>
+                <span class="recent-review-meta">
+                  {{ format(new Date(session.startedAt), 'h:mm a') }} · {{ session.mode === 'passive' ? 'Passive' : 'Manual' }}
+                </span>
+                <div class="recent-review-progress">
+                  <v-progress-linear
+                    :model-value="flashcardReviewProgressPercent(session)"
+                    :color="recentReviewColor(session)"
+                    bg-color="surface-variant"
+                    height="4"
+                    rounded
+                    :aria-label="`${session.name}: ${flashcardReviewProgressPercent(session)}% accomplished`"
+                  />
+                </div>
+                <div class="recent-review-stats">
+                  <span v-if="session.mode === 'passive'">{{ session.viewedCount }} viewed</span>
+                  <template v-else>
+                    <span>{{ session.successCount }} success</span>
+                    <span>{{ session.errorCount }} error</span>
+                  </template>
+                  <span v-if="sessionAccuracy(session) !== undefined">{{ sessionAccuracy(session) }}% accuracy</span>
+                  <span v-if="session.ejectedCount">{{ session.ejectedCount }} ejected</span>
+                </div>
+                <template #append>
+                  <strong class="recent-review-time text-caption">{{ formatReviewDuration(session.elapsedSeconds) }}</strong>
+                </template>
+              </v-list-item>
+            </v-list>
+          </section>
+        </v-card>
+        <v-card
+          v-else-if="store.loaded"
+          :key="`empty-${recentWeekStart.toISOString()}`"
+          class="surface-card pa-7 text-center"
+        >
+          <p class="text-body-2 muted">
+            {{ recentWeekIsCurrent ? 'Finished reviews will appear here.' : 'No finished reviews this week.' }}
+          </p>
+        </v-card>
+      </transition>
     </section>
 
     <v-card
@@ -384,13 +408,6 @@ async function removeTag() {
         Resume
       </v-btn>
     </v-card>
-
-    <FlashcardEditorDialog
-      v-model="cardDialog"
-      :card="editingCard"
-      @saved="editingCard = undefined"
-      @deleted="editingCard = undefined"
-    />
 
     <ActionBottomSheet
       v-model="reviewSetActionsOpen"
@@ -415,67 +432,11 @@ async function removeTag() {
       </template>
     </ActionBottomSheet>
 
-    <v-dialog v-model="tagManager" :fullscreen="xs" max-width="34rem" scrollable>
-      <v-card :rounded="xs ? '0' : 'xl'" class="tag-manager">
-        <div class="tag-manager__header px-5 py-4">
-          <div>
-            <h2 class="text-h6 font-weight-black">Manage tags</h2>
-            <p class="text-caption muted mt-1">Renaming updates every card and Review set.</p>
-          </div>
-          <v-btn icon="mdi-close" variant="text" aria-label="Close tag manager" @click="tagManager = false" />
-        </div>
-        <v-divider />
-        <v-card-text class="pa-5">
-          <v-alert v-if="tagError" type="error" variant="tonal" class="mb-4">{{ tagError }}</v-alert>
-          <div class="tag-manager__list">
-            <div v-for="tag in store.tags" :key="tag.id" class="tag-manager__row">
-              <v-text-field
-                v-model="tagNames[tag.id]"
-                label="Tag name"
-                maxlength="50"
-                autocomplete="off"
-                prepend-inner-icon="mdi-tag-outline"
-                :disabled="tagSaving === tag.id"
-                @keyup.enter="saveTagName(tag)"
-              />
-              <v-btn
-                icon="mdi-content-save-outline"
-                variant="tonal"
-                color="secondary"
-                :loading="tagSaving === tag.id"
-                :disabled="!tagNames[tag.id]?.trim() || tagNames[tag.id]?.trim() === tag.name"
-                :aria-label="`Save ${tag.name}`"
-                @click="saveTagName(tag)"
-              />
-              <v-btn
-                icon="mdi-delete-outline"
-                variant="text"
-                color="error"
-                :disabled="Boolean(tagSaving)"
-                :aria-label="`Delete ${tag.name}`"
-                @click="deletingTag = tag; deleteTagDialog = true"
-              />
-            </div>
-          </div>
-        </v-card-text>
-      </v-card>
-    </v-dialog>
-
-    <ConfirmDialog
-      v-model="deleteTagDialog"
-      title="Delete this tag?"
-      message="The tag will be removed from every card and Review set. The cards themselves will stay."
-      confirm-text="Delete tag"
-      icon="mdi-tag-remove-outline"
-      :loading="Boolean(deletingTag && tagSaving === deletingTag.id)"
-      @confirm="removeTag"
-    />
   </main>
 </template>
 
 <style scoped>
-.review-set-list,
-.tag-manager__list { display: grid; gap: .75rem; }
+.review-set-list { display: grid; gap: .75rem; }
 .review-set { overflow: hidden; cursor: pointer; }
 .review-set:focus-visible { outline: .125rem solid rgba(var(--v-theme-secondary), .72); outline-offset: .1875rem; }
 .review-set__main { display: grid; min-width: 0; grid-template-columns: 3rem minmax(0, 1fr) 1.5rem; align-items: center; gap: .85rem; }
@@ -495,13 +456,19 @@ async function removeTag() {
 .card-library-table tbody tr { position: relative; overflow: hidden; cursor: pointer; transition: background-color 160ms ease; }
 .card-library-table tbody tr:hover { background: rgba(var(--v-theme-on-surface), .045); }
 .card-library-table tbody tr:focus-visible { outline: .125rem solid rgba(var(--v-theme-secondary), .72); outline-offset: -.125rem; }
+.card-library-pagination :deep(.v-btn) { min-width: 2.75rem; min-height: 2.75rem; }
 .flashcard-table__text { display: -webkit-box; overflow: hidden; overflow-wrap: anywhere; font-size: .78rem; line-height: 1.35; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .flashcard-table__back { color: rgba(var(--v-theme-on-surface), .72); }
 .flashcard-table__tags { color: rgba(var(--v-theme-on-surface), .56); font-size: .7rem; }
-.history-group-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
-.history-group-heading h3 { font-size: .75rem; font-weight: 900; }
-.history-group-heading span { color: rgba(var(--v-theme-on-surface), .54); font-size: .68rem; font-weight: 800; }
-.review-history-meta { display: flex; flex-wrap: wrap; gap: .3rem .65rem; margin-top: .25rem; color: rgba(var(--v-theme-on-surface), .58); font-size: .7rem; }
+.review-history-content-enter-active { transition: opacity 180ms ease, transform 220ms cubic-bezier(.22, 1, .36, 1); }
+.review-history-content-enter-from { opacity: 0; transform: translateY(.75rem); }
+.recent-review-group__heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.recent-review-group__heading h3 { font-size: .75rem; font-weight: 900; letter-spacing: .04em; }
+.recent-review-group__heading span { color: rgba(var(--v-theme-on-surface), .54); font-size: .68rem; font-weight: 800; }
+.recent-review-meta { display: block; margin-top: .25rem; overflow: hidden; color: rgba(var(--v-theme-on-surface), .62); font-size: .875rem; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
+.recent-review-progress { margin-top: .45rem; }
+.recent-review-stats { display: flex; flex-wrap: wrap; gap: .3rem .65rem; margin-top: .45rem; color: rgba(var(--v-theme-on-surface), .58); font-size: .7rem; }
+.recent-review-time { display: block; width: 3.5rem; font-variant-numeric: tabular-nums; text-align: end; }
 .active-review { display: flex; align-items: center; justify-content: space-between; gap: 1rem; color: rgb(var(--v-theme-on-secondary)); }
 .active-review > div { display: flex; flex-direction: column; }
 .active-review__label { font-size: .65rem; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }

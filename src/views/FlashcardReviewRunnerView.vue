@@ -585,8 +585,10 @@ function tagName(id: string) {
         </button>
 
         <div v-else class="passive-card">
-          <small>{{ passiveSide === 'front' ? 'Front' : 'Back' }}</small>
-          <strong>{{ passiveSide === 'front' ? currentCard.front : currentCard.back }}</strong>
+          <div class="passive-card__content">
+            <small>{{ passiveSide === 'front' ? 'Front' : 'Back' }}</small>
+            <strong>{{ passiveSide === 'front' ? currentCard.front : currentCard.back }}</strong>
+          </div>
           <v-progress-linear
             :model-value="passiveProgress"
             color="secondary"
@@ -708,8 +710,9 @@ function tagName(id: string) {
 .passive-card strong { max-width: 34rem; overflow-wrap: anywhere; font-size: clamp(1.3rem, 5vw, 2.1rem); font-weight: 850; line-height: 1.35; white-space: pre-wrap; }
 .review-card__back { border-color: rgba(var(--v-theme-secondary), .34); transform: rotateY(180deg); }
 .review-card__hint { display: flex; align-items: center; gap: .4rem; color: rgba(var(--v-theme-on-surface), .48); font-size: .72rem; font-weight: 800; }
-.passive-card { display: flex; min-height: min(50dvh, 28rem); padding: 2rem; border: .0625rem solid rgba(var(--v-theme-secondary), .28); border-radius: 1.5rem; align-items: center; justify-content: center; flex-direction: column; gap: 1.5rem; background: rgb(var(--v-theme-surface)); text-align: center; box-shadow: 0 1rem 2.5rem rgba(0, 0, 0, .26); }
-.passive-card .v-progress-linear { width: min(20rem, 100%); margin-top: auto; }
+.passive-card { display: flex; min-height: min(50dvh, 28rem); padding: 2rem; border: .0625rem solid rgba(var(--v-theme-secondary), .28); border-radius: 1.5rem; align-items: center; flex-direction: column; gap: 1.5rem; background: rgb(var(--v-theme-surface)); text-align: center; box-shadow: 0 1rem 2.5rem rgba(0, 0, 0, .26); }
+.passive-card__content { display: flex; width: 100%; flex: 1 1 auto; align-items: center; justify-content: center; flex-direction: column; gap: 1.5rem; }
+.passive-card .v-progress-linear { width: min(20rem, 100%); flex: 0 0 auto; }
 .queue-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
 .queue-actions .v-btn,
 .grading-actions .v-btn { min-height: 3.25rem; }
