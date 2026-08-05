@@ -3,7 +3,9 @@ import { beforeEach, vi } from 'vitest'
 
 const apiMocks = vi.hoisted(() => ({
   act: vi.fn(),
+  bulkUpdateCards: vi.fn(),
   createTag: vi.fn(),
+  importCards: vi.fn(),
 }))
 
 vi.mock('@/lib/api', () => ({
@@ -13,6 +15,8 @@ vi.mock('@/lib/api', () => ({
   api: {
     authStore: { record: { id: 'user-1' } },
     actOnFlashcardReviewSession: apiMocks.act,
+    bulkUpdateFlashcards: apiMocks.bulkUpdateCards,
+    importFlashcards: apiMocks.importCards,
     collection: (name: string) => {
       if (name === 'flashcard_tags') return { create: apiMocks.createTag }
       throw new Error(`Unexpected collection: ${name}`)
@@ -27,7 +31,9 @@ describe('flashcard store', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     apiMocks.act.mockReset()
+    apiMocks.bulkUpdateCards.mockReset()
     apiMocks.createTag.mockReset()
+    apiMocks.importCards.mockReset()
   })
 
   it('reuses an existing tag regardless of letter casing', async () => {
@@ -101,5 +107,78 @@ describe('flashcard store', () => {
     expect(useTaskStore().occurrences).toEqual([
       expect.objectContaining({ id: 'occurrence-1', status: 'completed' }),
     ])
+  })
+
+  it('merges atomically imported cards and newly created tags', async () => {
+    const store = useFlashcardStore()
+    store.tags = [{ id: 'tag-existing', name: 'Existing' }]
+    apiMocks.importCards.mockResolvedValue({
+      tags: [{ id: 'tag-new', name: 'Woodworking' }],
+      cards: [{
+        id: 'card-imported', front: 'chisel', back: 'formón', tags: ['tag-new'],
+        created_at: '2026-08-05T10:00:00Z', updated_at: '2026-08-05T10:00:00Z',
+        last_reviewed_at: '', passive_views: 0, success_count: 0, error_count: 0,
+      }],
+    })
+
+    const imported = await store.importCards([
+      { front: 'chisel', back: 'formón', tags: ['Woodworking'] },
+    ])
+
+    expect(apiMocks.importCards).toHaveBeenCalledWith([
+      { front: 'chisel', back: 'formón', tags: ['Woodworking'] },
+    ])
+    expect(imported).toHaveLength(1)
+    expect(store.cards[0]).toEqual(expect.objectContaining({ id: 'card-imported', front: 'chisel' }))
+    expect(store.tags.map(tag => tag.name)).toEqual(['Existing', 'Woodworking'])
+  })
+
+  it('applies bulk card updates and removes deleted cards from local state', async () => {
+    const store = useFlashcardStore()
+    store.cards = [{
+      id: 'card-1',
+      front: 'Question',
+      back: 'Answer',
+      tags: ['tag-old'],
+      createdAt: '2026-08-05T10:00:00Z',
+      updatedAt: '2026-08-05T10:00:00Z',
+      passiveViews: 0,
+      successCount: 0,
+      errorCount: 0,
+    }, {
+      id: 'card-2',
+      front: 'Keep',
+      back: 'This card',
+      tags: [],
+      createdAt: '2026-08-05T10:00:00Z',
+      updatedAt: '2026-08-05T10:00:00Z',
+      passiveViews: 0,
+      successCount: 0,
+      errorCount: 0,
+    }]
+    apiMocks.bulkUpdateCards.mockResolvedValueOnce({
+      cards: [{
+        id: 'card-1', front: 'Question', back: 'Answer', tags: ['tag-new'],
+        created_at: '2026-08-05T10:00:00Z', updated_at: '2026-08-05T10:05:00Z',
+        last_reviewed_at: '', passive_views: 0, success_count: 0, error_count: 0,
+      }],
+      deleted_ids: [],
+    })
+
+    await store.bulkUpdateCards('set_tags', ['card-1', 'card-1'], ['tag-new'])
+
+    expect(apiMocks.bulkUpdateCards).toHaveBeenNthCalledWith(
+      1,
+      'set_tags',
+      ['card-1'],
+      ['tag-new'],
+    )
+    expect(store.cards[0].tags).toEqual(['tag-new'])
+    expect(store.cards[1].id).toBe('card-2')
+
+    apiMocks.bulkUpdateCards.mockResolvedValueOnce({ cards: [], deleted_ids: ['card-1'] })
+    await store.bulkUpdateCards('delete', ['card-1'])
+
+    expect(store.cards.map(card => card.id)).toEqual(['card-2'])
   })
 })

@@ -345,6 +345,8 @@ describe('step-counter task progress', () => {
 describe('interval task completion', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    apiMocks.createOccurrence.mockReset()
+    apiMocks.updateOccurrence.mockReset()
   })
 
   it('uses the daily occurrence as all-or-nothing progress', () => {
@@ -377,6 +379,57 @@ describe('interval task completion', () => {
       percent: 100,
       complete: true,
       status: 'completed',
+    })
+  })
+
+  it('keeps today open when a previous-day interval is marked missed', async () => {
+    const store = useTaskStore()
+    const intervalTask: Task = {
+      ...task,
+      id: 'daily-interval-task',
+      name: 'Daily intervals',
+      type: 'interval',
+      intervalTemplate: 'template-1',
+      targetValue: 1,
+    }
+    const previousDate = new Date(2026, 6, 28)
+    const previousProgress = store.makeProgress(intervalTask, previousDate)
+    store.selectedDate = selectedDate
+    apiMocks.createOccurrence.mockResolvedValue({
+      id: 'previous-interval-occurrence',
+      task: intervalTask.id,
+      program_step: '',
+      scheduled_date: '2026-07-28',
+      status: 'pending',
+      sealed: false,
+      completed_at: '',
+      snapshot_name: intervalTask.name,
+      snapshot_target: 1,
+      snapshot_unit: '',
+    })
+    apiMocks.updateOccurrence.mockResolvedValue({
+      id: 'previous-interval-occurrence',
+      task: intervalTask.id,
+      program_step: '',
+      scheduled_date: '2026-07-28',
+      status: 'missed',
+      sealed: false,
+      completed_at: '',
+      snapshot_name: intervalTask.name,
+      snapshot_target: 1,
+      snapshot_unit: '',
+    })
+
+    await store.setStatus(previousProgress, 'missed')
+
+    expect(apiMocks.createOccurrence).toHaveBeenCalledWith(expect.objectContaining({
+      scheduled_date: '2026-07-28',
+    }))
+    expect(store.makeProgress(intervalTask, previousDate).status).toBe('missed')
+    expect(store.makeProgress(intervalTask, selectedDate)).toMatchObject({
+      scheduledDate: '2026-07-29',
+      status: 'pending',
+      complete: false,
     })
   })
 

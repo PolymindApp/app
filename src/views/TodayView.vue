@@ -2,7 +2,7 @@
 import { Capacitor } from '@capacitor/core'
 import { App } from '@capacitor/app'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { addDays, format, isAfter, isSameDay, startOfDay, startOfWeek } from 'date-fns'
+import { addDays, format, isAfter, startOfDay, startOfWeek } from 'date-fns'
 import { storeToRefs } from 'pinia'
 import { useDisplay } from 'vuetify'
 import { useRouter } from 'vue-router'
@@ -113,7 +113,6 @@ const reviewItems = computed(() =>
   selectedProgress.value.filter((item) => item.task.reviewWhenMissed && item.status === 'pending' && !item.complete),
 )
 const doneCount = computed(() => selectedProgress.value.filter((item) => item.complete).length)
-const selectedDateIsToday = computed(() => isSameDay(selectedDate.value, new Date()))
 const hasStepCounter = computed(() => selectedProgress.value.some(item => item.task.type === 'step_counter'))
 let appStateListener: Awaited<ReturnType<typeof App.addListener>> | undefined
 
@@ -159,6 +158,10 @@ async function run(action: () => Promise<void>) {
 
 function progressKey(progress: TaskProgress) {
   return `${progress.task.id}:${progress.programStep?.id || ''}`
+}
+
+function progressIsToday(progress: TaskProgress) {
+  return progress.scheduledDate === toDateKey(new Date())
 }
 
 function progressIsBusy(progress: TaskProgress) {
@@ -235,7 +238,7 @@ async function openTaskLogHistory() {
   try {
     const entries = await store.loadEntriesForDay(
       progress.task.id,
-      toDateKey(selectedDate.value),
+      progress.scheduledDate,
       progress.programStep?.id,
     )
     if (request === taskLogRequest) taskLogEntries.value = entries
@@ -303,7 +306,7 @@ function openTimeLogger(progress: TaskProgress) {
   void router.push({
     name: 'task-timer',
     params: { id: progress.task.id },
-    query: { date: toDateKey(selectedDate.value) },
+    query: { date: progress.scheduledDate },
   })
 }
 
@@ -356,7 +359,7 @@ async function startFlashcardTask(progress: TaskProgress) {
     query: {
       task: progress.task.id,
       ...(progress.programStep ? { step: progress.programStep.id } : {}),
-      date: toDateKey(selectedDate.value),
+      date: progress.scheduledDate,
       from: 'tasks',
     },
   })
@@ -524,10 +527,10 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
             :value-pulse="valuePulseFor(item)"
             :syncing="item.task.type === 'step_counter' && stepCountLoading"
             :interval="intervalMeta(item)"
-            :can-start-interval="selectedDateIsToday && item.status === 'pending'"
+            :can-start-interval="progressIsToday(item) && item.status === 'pending'"
             :interval-active="sessionMatchesProgress(item)"
             :review-set="reviewSetMeta(item)"
-            :can-start-review="selectedDateIsToday && item.status === 'pending'"
+            :can-start-review="progressIsToday(item) && item.status === 'pending'"
             :review-active="reviewSessionMatchesProgress(item)"
             @toggle="(progress, complete) => runForProgress(progress, () => store.toggleComplete(progress, complete))"
             @seal="progress => runForProgress(progress, () => store.setDailyTotalSealed(progress))"
@@ -551,10 +554,10 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
             :value-pulse="valuePulseFor(item)"
             :syncing="item.task.type === 'step_counter' && stepCountLoading"
             :interval="intervalMeta(item)"
-            :can-start-interval="selectedDateIsToday && item.status === 'pending'"
+            :can-start-interval="progressIsToday(item) && item.status === 'pending'"
             :interval-active="sessionMatchesProgress(item)"
             :review-set="reviewSetMeta(item)"
-            :can-start-review="selectedDateIsToday && item.status === 'pending'"
+            :can-start-review="progressIsToday(item) && item.status === 'pending'"
             :review-active="reviewSessionMatchesProgress(item)"
             @toggle="(progress, complete) => runForProgress(progress, () => store.toggleComplete(progress, complete))"
             @seal="progress => runForProgress(progress, () => store.setDailyTotalSealed(progress))"

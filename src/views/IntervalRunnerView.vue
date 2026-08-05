@@ -1219,7 +1219,7 @@ async function runAgain(repetitions?: number) {
 .group-breadcrumb { display: flex; flex-wrap: wrap; justify-content: center; gap: .35rem; margin-bottom: 1.25rem; }
 .group-breadcrumb span { padding: 4px 8px; border-radius: 999px; background: rgb(var(--v-theme-surface-variant)); color: rgb(var(--v-theme-on-surface) / .7); font-size: .65rem; }
 .runner-step { min-width: 0; max-width: 40rem; margin-top: .5rem; font-size: clamp(2rem, 10vw, 4.5rem); font-weight: 900; line-height: 1; }
-.interval-review-card { width: min(100%, 34rem); overflow: hidden; border: 1px solid rgb(var(--v-theme-on-surface) / .1); background: rgb(var(--v-theme-surface) / .9); box-shadow: 0 .75rem 2rem rgba(0, 0, 0, .24); text-align: left; }
+.interval-review-card { width: min(100%, 34rem); overflow: hidden; border: 1px solid rgba(var(--v-theme-on-surface), .08); border-radius: .75rem; background: rgba(var(--v-theme-on-surface), .055); box-shadow: none; text-align: left; }
 .interval-review-card__content { display: flex; padding: 1rem; align-items: center; justify-content: center; flex-direction: column; gap: .65rem; text-align: center; }
 .interval-review-card__heading { display: flex; width: 100%; min-width: 0; align-items: center; justify-content: space-between; gap: .75rem; }
 .interval-review-card__meta { display: flex; min-width: 0; max-width: 75%; align-items: center; justify-content: flex-end; gap: .75rem; color: rgba(var(--v-theme-on-surface), .58); font-size: .62rem; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }

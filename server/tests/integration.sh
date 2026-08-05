@@ -847,6 +847,229 @@ flashcard_created_at="$(json_field created_at <<<"$flashcard_response")"
   exit 1
 }
 
+flashcard_import_payload='{"rows":[{"front":"Imported chisel","back":"formón","tags":["algebra","Imported"]},{"front":"Imported plane","back":"cepillo","tags":[]}]}'
+flashcard_import_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "$flashcard_import_payload" \
+  "$api_url/flashcards/import")"
+flashcard_import_summary="$(php -r '
+  $data = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+  echo count($data["cards"]) . ":" . count($data["tags"]) . ":"
+    . $data["cards"][0]["tags"][0] . ":" . count($data["cards"][1]["tags"]);
+' <<<"$flashcard_import_response")"
+[[ "$flashcard_import_summary" == "2:1:$flashcard_tag_id:0" ]] || {
+  echo "Bulk flashcard import did not reuse tags or preserve optional tags." >&2
+  exit 1
+}
+flashcard_import_invalid_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"rows":[{"front":"Should not persist","back":"valid","tags":[]},{"front":"Invalid","back":"","tags":[]}]}' \
+  "$api_url/flashcards/import")"
+flashcard_import_partial_count="$(sqlite3 "$test_db" \
+  "SELECT COUNT(*) FROM flashcards WHERE owner = '$alice_id' AND front = 'Should not persist';")"
+[[ "$flashcard_import_invalid_status" == 422 && "$flashcard_import_partial_count" == 0 ]] || {
+  echo "An invalid bulk flashcard import persisted partial data." >&2
+  exit 1
+}
+flashcard_import_first_id="$(php -r '
+  $data = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+  echo $data["cards"][0]["id"];
+' <<<"$flashcard_import_response")"
+flashcard_import_second_id="$(php -r '
+  $data = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+  echo $data["cards"][1]["id"];
+' <<<"$flashcard_import_response")"
+flashcard_import_tag_id="$(php -r '
+  $data = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+  echo $data["tags"][0]["id"];
+' <<<"$flashcard_import_response")"
+
+flashcard_bulk_add_payload="$(php -r '
+  echo json_encode([
+    "action" => "add_tags",
+    "card_ids" => [$argv[1], $argv[2]],
+    "tag_ids" => [$argv[3]],
+  ], JSON_THROW_ON_ERROR);
+' "$flashcard_import_first_id" "$flashcard_import_second_id" "$flashcard_tag_id")"
+flashcard_bulk_add_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "$flashcard_bulk_add_payload" \
+  "$api_url/flashcards/bulk")"
+flashcard_bulk_add_summary="$(php -r '
+  $data = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+  echo count($data["cards"][0]["tags"]) . ":" . count($data["cards"][1]["tags"])
+    . ":" . $data["cards"][1]["tags"][0];
+' <<<"$flashcard_bulk_add_response")"
+[[ "$flashcard_bulk_add_summary" == "2:1:$flashcard_tag_id" ]] || {
+  echo "Bulk flashcard tag addition did not preserve and merge tags." >&2
+  exit 1
+}
+
+flashcard_bulk_set_payload="$(php -r '
+  echo json_encode([
+    "action" => "set_tags",
+    "card_ids" => [$argv[1], $argv[2]],
+    "tag_ids" => [$argv[3]],
+  ], JSON_THROW_ON_ERROR);
+' "$flashcard_import_first_id" "$flashcard_import_second_id" "$flashcard_import_tag_id")"
+flashcard_bulk_set_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "$flashcard_bulk_set_payload" \
+  "$api_url/flashcards/bulk")"
+flashcard_bulk_set_summary="$(php -r '
+  $data = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+  echo count($data["cards"][0]["tags"]) . ":" . $data["cards"][0]["tags"][0]
+    . ":" . count($data["cards"][1]["tags"]) . ":" . $data["cards"][1]["tags"][0];
+' <<<"$flashcard_bulk_set_response")"
+[[ "$flashcard_bulk_set_summary" == "1:$flashcard_import_tag_id:1:$flashcard_import_tag_id" ]] || {
+  echo "Bulk flashcard tag replacement did not apply the exact tag set." >&2
+  exit 1
+}
+
+flashcard_bulk_remove_payload="$(php -r '
+  echo json_encode([
+    "action" => "remove_tags",
+    "card_ids" => [$argv[1]],
+    "tag_ids" => [$argv[2]],
+  ], JSON_THROW_ON_ERROR);
+' "$flashcard_import_first_id" "$flashcard_import_tag_id")"
+flashcard_bulk_remove_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "$flashcard_bulk_remove_payload" \
+  "$api_url/flashcards/bulk")"
+[[ "$(php -r '
+  $data = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+  echo count($data["cards"][0]["tags"]);
+' <<<"$flashcard_bulk_remove_response")" == 0 ]] || {
+  echo "Bulk flashcard tag removal did not remove the selected tag." >&2
+  exit 1
+}
+
+flashcard_bulk_clear_payload="$(php -r '
+  echo json_encode([
+    "action" => "clear_tags", "card_ids" => [$argv[1]], "tag_ids" => [],
+  ], JSON_THROW_ON_ERROR);
+' "$flashcard_import_second_id")"
+flashcard_bulk_clear_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "$flashcard_bulk_clear_payload" \
+  "$api_url/flashcards/bulk")"
+[[ "$(php -r '
+  $data = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+  echo count($data["cards"][0]["tags"]);
+' <<<"$flashcard_bulk_clear_response")" == 0 ]] || {
+  echo "Bulk flashcard tag clearing did not remove every tag." >&2
+  exit 1
+}
+
+flashcard_bulk_delete_payload="$(php -r '
+  echo json_encode([
+    "action" => "delete", "card_ids" => [$argv[1], $argv[2]], "tag_ids" => [],
+  ], JSON_THROW_ON_ERROR);
+' "$flashcard_import_first_id" "$flashcard_import_second_id")"
+flashcard_bulk_delete_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "$flashcard_bulk_delete_payload" \
+  "$api_url/flashcards/bulk")"
+flashcard_bulk_delete_count="$(php -r '
+  $data = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+  echo count($data["deleted_ids"]);
+' <<<"$flashcard_bulk_delete_response")"
+flashcard_bulk_remaining_count="$(sqlite3 "$test_db" \
+  "SELECT COUNT(*) FROM flashcards WHERE id IN ('$flashcard_import_first_id', '$flashcard_import_second_id');")"
+[[ "$flashcard_bulk_delete_count" == 2 && "$flashcard_bulk_remaining_count" == 0 ]] || {
+  echo "Bulk flashcard deletion did not remove every selected card." >&2
+  exit 1
+}
+
+curl --silent --show-error --fail \
+  -X DELETE -H "Authorization: Bearer $alice_token" \
+  "$api_url/collections/flashcard_tags/records/$flashcard_import_tag_id" >/dev/null
+
+navigation_tag_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"name":"Navigation"}' \
+  "$api_url/collections/flashcard_tags/records")"
+navigation_tag_id="$(json_field id <<<"$navigation_tag_response")"
+navigation_card_one_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "{\"front\":\"Navigation one\",\"back\":\"First back\",\"tags\":[\"$navigation_tag_id\"]}" \
+  "$api_url/collections/flashcards/records")"
+navigation_card_one_id="$(json_field id <<<"$navigation_card_one_response")"
+navigation_card_two_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "{\"front\":\"Navigation two\",\"back\":\"Second back\",\"tags\":[\"$navigation_tag_id\"]}" \
+  "$api_url/collections/flashcards/records")"
+navigation_card_two_id="$(json_field id <<<"$navigation_card_two_response")"
+navigation_review_set_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "{\"name\":\"Navigation test\",\"tags\":[\"$navigation_tag_id\"],\"mode\":\"manual\",\"front_seconds\":5,\"back_seconds\":5,\"sort_mode\":\"recently_added\",\"sort_order\":99}" \
+  "$api_url/collections/flashcard_review_sets/records")"
+navigation_review_set_id="$(json_field id <<<"$navigation_review_set_response")"
+navigation_session_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"task":"","program_step":"","task_date":""}' \
+  "$api_url/flashcard-review-sets/$navigation_review_set_id/sessions")"
+navigation_session_id="$(json_field id <<<"$navigation_session_response")"
+navigation_initial_front="$(php -r '
+  $data = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+  echo $data["queue_state"][0]["id"];
+' <<<"$navigation_session_response")"
+navigation_next_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"action":"next","elapsed_seconds":0}' \
+  "$api_url/flashcard-review-sessions/$navigation_session_id/actions")"
+navigation_next_front="$(php -r '
+  $data = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+  echo $data["session"]["queue_state"][0]["id"];
+' <<<"$navigation_next_response")"
+navigation_previous_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"action":"previous","elapsed_seconds":0}' \
+  "$api_url/flashcard-review-sessions/$navigation_session_id/actions")"
+navigation_restored_front="$(php -r '
+  $data = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+  echo $data["session"]["queue_state"][0]["id"] . ":"
+    . $data["session"]["viewed_count"] . ":"
+    . $data["session"]["success_count"] . ":"
+    . $data["session"]["error_count"];
+' <<<"$navigation_previous_response")"
+[[ "$navigation_next_front" != "$navigation_initial_front" \
+  && "$navigation_restored_front" == "$navigation_initial_front:0:0:0" ]] || {
+  echo "Whole-card Review set navigation did not rotate the queue without grading it." >&2
+  exit 1
+}
+curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"action":"end","elapsed_seconds":0}' \
+  "$api_url/flashcard-review-sessions/$navigation_session_id/actions" >/dev/null
+curl --silent --show-error --fail \
+  -X DELETE -H "Authorization: Bearer $alice_token" \
+  "$api_url/collections/flashcard_review_sets/records/$navigation_review_set_id" >/dev/null
+for navigation_card_id in "$navigation_card_one_id" "$navigation_card_two_id"; do
+  curl --silent --show-error --fail \
+    -X DELETE -H "Authorization: Bearer $alice_token" \
+    "$api_url/collections/flashcards/records/$navigation_card_id" >/dev/null
+done
+curl --silent --show-error --fail \
+  -X DELETE -H "Authorization: Bearer $alice_token" \
+  "$api_url/collections/flashcard_tags/records/$navigation_tag_id" >/dev/null
+
 manual_review_set_payload="$(php -r '
   echo json_encode([
     "name" => "Daily algebra", "tags" => [$argv[1]], "mode" => "manual",

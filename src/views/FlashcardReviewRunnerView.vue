@@ -84,14 +84,10 @@ const canUseNativeBackground = computed(() => Boolean(
   && session.value.backLanguage
   && session.value.status === 'running',
 ))
-const canNavigateLeft = computed(() => Boolean(
+const canNavigateCards = computed(() => Boolean(
   session.value?.status === 'running'
-  && (session.value.mode === 'passive' ? passiveSide.value === 'back' : revealed.value),
+  && session.value.queue.length > 1,
 ))
-const navigationRightLabel = computed(() => {
-  if (session.value?.mode === 'passive') return passiveSide.value === 'front' ? 'Back' : 'Next'
-  return revealed.value ? 'Success' : 'Reveal'
-})
 
 watch([
   loading,
@@ -246,35 +242,13 @@ function resetCurrentCardPhase() {
 }
 
 async function navigateLeft() {
-  if (!session.value || !canNavigateLeft.value || busy.value) return
-  if (session.value.mode === 'manual') {
-    await performAction('error')
-    return
-  }
-  passiveSide.value = 'front'
-  passiveRemainingMs.value = session.value.frontSeconds * 1000
-  savePassiveState()
-  await syncNativeBackground()
+  if (!session.value || !canNavigateCards.value || busy.value) return
+  await performAction('previous')
 }
 
 async function navigateRight() {
-  if (!session.value || session.value.status !== 'running' || busy.value) return
-  if (session.value.mode === 'manual') {
-    if (!revealed.value) {
-      revealed.value = true
-      return
-    }
-    await performAction('success')
-    return
-  }
-  if (passiveSide.value === 'front') {
-    passiveSide.value = 'back'
-    passiveRemainingMs.value = session.value.backSeconds * 1000
-    savePassiveState()
-    await syncNativeBackground()
-    return
-  }
-  await performAction('view')
+  if (!session.value || !canNavigateCards.value || busy.value) return
+  await performAction('next')
 }
 
 async function performAction(
@@ -291,7 +265,7 @@ async function performAction(
     const updated = await store.act(session.value.id, action, elapsedSeconds.value)
     localElapsedMs.value = updated.elapsedSeconds * 1000
     lastTickAt = Date.now()
-    if (['success', 'error', 'view', 'push', 'eject'].includes(action)) resetCurrentCardPhase()
+    if (['success', 'error', 'view', 'previous', 'next', 'push', 'eject'].includes(action)) resetCurrentCardPhase()
     if (
       previousStatus === 'running'
       && updated.status === 'completed'
@@ -638,15 +612,48 @@ function tagName(id: string) {
           />
         </div>
 
+        <div v-if="session.mode === 'manual'" class="grading-actions">
+          <v-btn
+            v-if="!revealed"
+            size="large"
+            color="secondary"
+            prepend-icon="mdi-eye-outline"
+            :disabled="busy || session.status === 'paused'"
+            @click="revealed = true"
+          >
+            Show answer
+          </v-btn>
+          <template v-else>
+            <v-btn
+              size="large"
+              color="error"
+              variant="tonal"
+              prepend-icon="mdi-close-bold"
+              :loading="busy"
+              @click="performAction('error')"
+            >
+              Error
+            </v-btn>
+            <v-btn
+              size="large"
+              color="success"
+              prepend-icon="mdi-check-bold"
+              :loading="busy"
+              @click="performAction('success')"
+            >
+              Success
+            </v-btn>
+          </template>
+        </div>
+
         <footer class="review-navigation" aria-label="Review navigation">
           <div class="review-navigation__control">
             <v-btn
-              icon="mdi-chevron-left"
+              icon="mdi-skip-previous"
               variant="tonal"
               size="large"
-              :color="session.mode === 'manual' && revealed ? 'error' : undefined"
-              :aria-label="session.mode === 'manual' ? 'Mark card as an error' : 'Show card front'"
-              :disabled="!canNavigateLeft || busy"
+              aria-label="Previous card"
+              :disabled="!canNavigateCards || busy"
               @click="navigateLeft"
             />
           </div>
@@ -663,12 +670,11 @@ function tagName(id: string) {
           </div>
           <div class="review-navigation__control">
             <v-btn
-              icon="mdi-chevron-right"
+              icon="mdi-skip-next"
               variant="tonal"
               size="large"
-              :color="session.mode === 'manual' && revealed ? 'success' : undefined"
-              :aria-label="navigationRightLabel"
-              :disabled="busy || session.status === 'paused'"
+              aria-label="Next card"
+              :disabled="!canNavigateCards || busy"
               @click="navigateRight"
             />
           </div>
@@ -737,8 +743,11 @@ function tagName(id: string) {
 .passive-card .v-progress-linear { width: min(20rem, 100%); flex: 0 0 auto; }
 .review-navigation { display: grid; margin-top: auto; padding-top: .25rem; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: center; justify-items: center; gap: 1rem; }
 .review-navigation__control { display: flex; min-width: 0; align-items: center; }
+.grading-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
+.grading-actions > .v-btn:only-child { grid-column: 1 / -1; }
 .queue-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
-.queue-actions .v-btn { min-height: 3.25rem; }
+.queue-actions .v-btn,
+.grading-actions .v-btn { min-height: 3.25rem; }
 .completion-panel { display: flex; width: min(42rem, calc(100% - 2rem)); min-height: 0; margin: 0 auto; padding: 2rem 0; align-items: center; justify-content: center; flex: 1 1 auto; flex-direction: column; gap: 1.25rem; overflow-y: auto; text-align: center; }
 .completion-panel__icon { display: grid; width: 6rem; height: 6rem; place-items: center; border-radius: 2rem; background: rgba(var(--v-theme-secondary), .16); color: rgb(var(--v-theme-secondary)); }
 .completion-panel h1 { font-size: clamp(2.6rem, 10vw, 5rem); }

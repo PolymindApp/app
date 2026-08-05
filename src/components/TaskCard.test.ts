@@ -31,6 +31,7 @@ const progress: TaskProgress = {
     entryNoteSuggestionsEnabled: false,
     sortOrder: 0,
   },
+  scheduledDate: '2026-08-01',
   value: 0,
   percent: 0,
   complete: false,

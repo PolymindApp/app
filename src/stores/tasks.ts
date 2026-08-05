@@ -147,6 +147,7 @@ export const useTaskStore = defineStore('tasks', () => {
     const sealed = isDailyTotal && Boolean(occurrence?.sealed)
     return {
       task,
+      scheduledDate: toDateKey(date),
       occurrence,
       value,
       percent: isOccurrenceDriven ? (occurrenceComplete ? 100 : 0) : progressPercent(value, target, operator),
@@ -326,7 +327,8 @@ export const useTaskStore = defineStore('tasks', () => {
   }
 
   async function toggleComplete(progress: TaskProgress, complete: boolean) {
-    const occurrence = await ensureOccurrence(progress.task, selectedDate.value, progress.programStep)
+    const progressDate = parseISO(progress.scheduledDate)
+    const occurrence = await ensureOccurrence(progress.task, progressDate, progress.programStep)
     if ((occurrence.status === 'completed') === complete) return
     const record = await api.collection('occurrences').update(occurrence.id, {
       status: complete ? 'completed' : 'pending',
@@ -337,7 +339,8 @@ export const useTaskStore = defineStore('tasks', () => {
 
   async function setDailyTotalSealed(progress: TaskProgress) {
     if (progress.task.type !== 'daily_total' || progress.programStep) return
-    const occurrence = await ensureOccurrence(progress.task, selectedDate.value, progress.programStep)
+    const progressDate = parseISO(progress.scheduledDate)
+    const occurrence = await ensureOccurrence(progress.task, progressDate, progress.programStep)
     const sealed = !occurrence.sealed
     const record = await api.collection('occurrences').update(occurrence.id, {
       sealed,
@@ -349,21 +352,22 @@ export const useTaskStore = defineStore('tasks', () => {
 
   async function addEntry(progress: TaskProgress, amount: number, kind?: Entry['kind'], note = '') {
     if (progress.sealed) return
-    const occurrence = await ensureOccurrence(progress.task, selectedDate.value, progress.programStep)
+    const progressDate = parseISO(progress.scheduledDate)
+    const occurrence = await ensureOccurrence(progress.task, progressDate, progress.programStep)
     const unit = progress.programStep?.customUnit || progress.programStep?.unit || progress.task.customUnit || progress.task.unit || (progress.task.type === 'duration' ? 'hours' : '')
     const record = await api.collection('entries').create({
       owner: api.authStore.record!.id,
       task: progress.task.id,
       occurrence: occurrence.id,
       program_step: progress.programStep?.id || '',
-      entry_date: toDateKey(selectedDate.value),
+      entry_date: progress.scheduledDate,
       value: amount,
       kind: kind || (progress.task.type === 'duration' ? 'duration' : 'quantity'),
       unit,
       note: sanitizeTaskEntryNote(note).trim(),
     })
     entries.value.unshift(mapEntry(record))
-    const updated = makeProgress(progress.task, selectedDate.value, progress.programStep)
+    const updated = makeProgress(progress.task, progressDate, progress.programStep)
     const isCheck = progress.programStep
       ? progress.programStep.completionType === 'check'
       : progress.task.type === 'check'
@@ -399,7 +403,8 @@ export const useTaskStore = defineStore('tasks', () => {
   }
 
   async function setStatus(progress: TaskProgress, status: Occurrence['status']) {
-    const occurrence = await ensureOccurrence(progress.task, selectedDate.value, progress.programStep)
+    const progressDate = parseISO(progress.scheduledDate)
+    const occurrence = await ensureOccurrence(progress.task, progressDate, progress.programStep)
     const record = await api.collection('occurrences').update(occurrence.id, {
       status,
       sealed: status === 'completed',
@@ -407,7 +412,7 @@ export const useTaskStore = defineStore('tasks', () => {
     })
     Object.assign(occurrence, mapOccurrence(record))
     if (status === 'carried') {
-      await ensureOccurrence(progress.task, addDays(selectedDate.value, 1), progress.programStep)
+      await ensureOccurrence(progress.task, addDays(progressDate, 1), progress.programStep)
     }
   }
 

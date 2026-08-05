@@ -19,6 +19,7 @@ const router = createRouter({
         { path: 'intervals', name: 'intervals', component: () => import('@/views/IntervalsView.vue'), meta: { title: 'Intervals', pageDepth: 0, pageOrder: 1 } },
         { path: 'flashcards', name: 'flashcards', component: () => import('@/views/FlashcardsView.vue'), meta: { title: 'Flashcards', pageDepth: 0, pageOrder: 2 } },
         { path: 'flashcards/tags', name: 'flashcard-tags', component: () => import('@/views/FlashcardTagsView.vue'), meta: { title: 'Manage tags', pageDepth: 1, pageOrder: 2, backTo: '/flashcards' } },
+        { path: 'flashcards/cards/import', name: 'flashcard-import', component: () => import('@/views/FlashcardImportView.vue'), meta: { title: 'Import cards', pageDepth: 1, pageOrder: 2, backTo: '/flashcards' } },
         { path: 'flashcards/cards/new', name: 'flashcard-new', component: () => import('@/views/FlashcardEditorView.vue'), meta: { title: 'New card', pageDepth: 1, pageOrder: 2, backTo: '/flashcards' } },
         { path: 'flashcards/cards/:id/edit', name: 'flashcard-edit', component: () => import('@/views/FlashcardEditorView.vue'), meta: { title: 'Edit card', pageDepth: 1, pageOrder: 2, backTo: '/flashcards' } },
         { path: 'flashcards/review-sets/new', name: 'flashcard-review-set-new', component: () => import('@/views/FlashcardReviewSetEditorView.vue'), meta: { title: 'New Review set', pageDepth: 1, pageOrder: 2, backTo: '/flashcards' } },

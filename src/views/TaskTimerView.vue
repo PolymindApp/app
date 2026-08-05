@@ -48,6 +48,11 @@ const elapsedHours = computed(() => elapsedMs.value / 3_600_000)
 const running = computed(() => timer.value?.status === 'running')
 const target = computed(() => task.value?.targetValue || 0)
 const projectedValue = computed(() => (progress.value?.value || 0) + elapsedHours.value)
+const currentPercent = computed(() => progressPercent(
+  progress.value?.value || 0,
+  target.value,
+  task.value?.targetOperator,
+))
 const projectedPercent = computed(() => progressPercent(
   projectedValue.value,
   target.value,
@@ -259,15 +264,34 @@ function leave() {
           </div>
 
           <div class="timer-ring">
-            <v-progress-circular
-              :model-value="projectedPercent"
-              :size="260"
-              :width="12"
-              :color="timerColor"
-              bg-color="surface-variant"
-            >
-              <span class="timer-value">{{ elapsedLabel }}</span>
-            </v-progress-circular>
+            <div class="timer-ring__stack">
+              <v-progress-circular
+                class="timer-ring__projected"
+                :model-value="projectedPercent"
+                :size="260"
+                :width="12"
+                :color="timerColor"
+                bg-color="surface-variant"
+                :aria-label="`After logging: ${projectedSummary}`"
+              />
+              <div class="timer-ring__current">
+                <v-progress-circular
+                  :model-value="currentPercent"
+                  :size="218"
+                  :width="7"
+                  color="secondary"
+                  bg-color="surface-variant"
+                  :aria-label="`Current total: ${formatHours(progress.value)}`"
+                >
+                  <div class="timer-readout">
+                    <span class="timer-value">{{ elapsedLabel }}</span>
+                    <span class="timer-current-total">
+                      Current total <strong>{{ formatHours(progress.value) }}</strong>
+                    </span>
+                  </div>
+                </v-progress-circular>
+              </div>
+            </div>
           </div>
 
           <p class="projected-copy">{{ projectedSummary }}</p>
@@ -454,12 +478,61 @@ function leave() {
   margin: 2.25rem 0 1.5rem;
 }
 
+.timer-ring__stack {
+  position: relative;
+  width: 16.25rem;
+  aspect-ratio: 1;
+}
+
+.timer-ring__stack :deep(.timer-ring__projected) {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.timer-ring__current {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+.timer-ring__current :deep(.v-progress-circular) {
+  width: 84% !important;
+  height: 84% !important;
+}
+
+.timer-readout {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
 .timer-value {
   display: inline-block;
   font-family: "Arial Narrow", Impact, sans-serif;
   font-size: 4rem;
   font-weight: 900;
   letter-spacing: -.04em;
+}
+
+.timer-current-total {
+  display: flex;
+  margin-top: .2rem;
+  align-items: baseline;
+  gap: .3rem;
+  color: rgb(var(--v-theme-on-surface) / .56);
+  font-size: .62rem;
+  font-weight: 800;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.timer-current-total strong {
+  color: rgb(var(--v-theme-secondary));
+  font-size: .75rem;
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 .projected-copy {
@@ -572,7 +645,7 @@ function leave() {
     overflow: visible;
   }
 
-  .timer-ring :deep(.v-progress-circular) {
+  .timer-ring__stack {
     width: min(
       100%,
       calc(
@@ -583,8 +656,6 @@ function leave() {
         - var(--timer-ring-inset)
       )
     ) !important;
-    height: auto !important;
-    aspect-ratio: 1;
   }
 
   .timer-value {

@@ -90,6 +90,7 @@ export interface Entry {
 
 export interface TaskProgress {
   task: Task
+  scheduledDate: string
   occurrence?: Occurrence
   value: number
   percent: number
@@ -231,7 +232,8 @@ export type FlashcardReviewSide = 'front' | 'back'
 export type FlashcardReviewSort = 'difficult' | 'never_reviewed' | 'least_recent' | 'recently_added' | 'random'
 export type FlashcardReviewStatus = 'running' | 'paused' | 'completed' | 'ended'
 export type FlashcardReviewOutcome = 'success' | 'error' | 'passive'
-export type FlashcardReviewAction = 'success' | 'error' | 'view' | 'push' | 'eject' | 'pause' | 'resume' | 'end'
+export type FlashcardReviewAction = 'success' | 'error' | 'view' | 'previous' | 'next' | 'push' | 'eject' | 'pause' | 'resume' | 'end'
+export type FlashcardBulkAction = 'add_tags' | 'set_tags' | 'remove_tags' | 'clear_tags' | 'delete'
 
 export interface FlashcardTag {
   id: string
@@ -256,6 +258,17 @@ export interface FlashcardDraft {
   front: string
   back: string
   tags: string[]
+}
+
+export interface FlashcardImportRow {
+  front: string
+  back: string
+  tags: string[]
+}
+
+export interface FlashcardCsvParseResult {
+  rows: FlashcardImportRow[]
+  errors: string[]
 }
 
 export interface FlashcardReviewSet {

@@ -6,7 +6,9 @@ import { useSnackbarStore } from '@/stores/snackbar'
 import { useTaskStore } from '@/stores/tasks'
 import type {
   Flashcard,
+  FlashcardBulkAction,
   FlashcardDraft,
+  FlashcardImportRow,
   FlashcardReviewAction,
   FlashcardReviewEvent,
   FlashcardReviewSession,
@@ -213,6 +215,41 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     useSnackbarStore().showDeletion('Card')
   }
 
+  async function importCards(rows: FlashcardImportRow[]) {
+    const response = await api.importFlashcards(rows)
+    const importedTags = response.tags.map(mapTag)
+    const importedCards = response.cards.map(mapCard)
+    for (const tag of importedTags) {
+      const index = tags.value.findIndex(item => item.id === tag.id)
+      if (index >= 0) tags.value.splice(index, 1, tag)
+      else tags.value.push(tag)
+    }
+    tags.value.sort((left, right) => left.name.localeCompare(right.name))
+    cards.value.unshift(...importedCards)
+    return importedCards
+  }
+
+  async function bulkUpdateCards(
+    action: FlashcardBulkAction,
+    cardIds: string[],
+    tagIds: string[] = [],
+  ) {
+    const uniqueCardIds = [...new Set(cardIds)]
+    if (!uniqueCardIds.length) return []
+    const response = await api.bulkUpdateFlashcards(action, uniqueCardIds, [...new Set(tagIds)])
+    if (action === 'delete') {
+      const deleted = new Set(response.deleted_ids)
+      cards.value = cards.value.filter(card => !deleted.has(card.id))
+      useSnackbarStore().showDeletion(deleted.size === 1 ? 'Card' : `${deleted.size} cards`)
+      return []
+    }
+
+    const updatedCards = response.cards.map(mapCard)
+    const updates = new Map(updatedCards.map(card => [card.id, card]))
+    cards.value = cards.value.map(card => updates.get(card.id) || card)
+    return updatedCards
+  }
+
   async function saveReviewSet(draft: FlashcardReviewSetDraft) {
     const payload = {
       owner: api.authStore.record!.id,
@@ -316,6 +353,8 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     deleteTag,
     saveCard,
     deleteCard,
+    importCards,
+    bulkUpdateCards,
     saveReviewSet,
     deleteReviewSet,
     matchingCards,

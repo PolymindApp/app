@@ -1,3 +1,5 @@
+import type { FlashcardBulkAction, FlashcardImportRow, FlashcardReviewAction } from '@/types/domain'
+
 type RecordModel = Record<string, any> & { id: string }
 type AuthRecord = RecordModel & { email: string; name?: string; avatar?: string }
 type AuthListener = (token: string, record: AuthRecord | null) => void
@@ -38,6 +40,16 @@ interface CompleteIntervalSessionResponse {
 interface FlashcardReviewActionResponse {
   session: RecordModel
   occurrence: RecordModel | null
+}
+
+interface FlashcardImportResponse {
+  cards: RecordModel[]
+  tags: RecordModel[]
+}
+
+interface FlashcardBulkActionResponse {
+  cards: RecordModel[]
+  deleted_ids: string[]
 }
 
 const AUTH_STORAGE_KEY = 'mom-api-auth'
@@ -374,9 +386,28 @@ class ApiClient {
     )
   }
 
+  importFlashcards(rows: FlashcardImportRow[]) {
+    return request<FlashcardImportResponse>(
+      '/flashcards/import',
+      { method: 'POST', body: { rows } },
+      this.authStore,
+    )
+  }
+
+  bulkUpdateFlashcards(action: FlashcardBulkAction, cardIds: string[], tagIds: string[] = []) {
+    return request<FlashcardBulkActionResponse>(
+      '/flashcards/bulk',
+      {
+        method: 'POST',
+        body: { action, card_ids: cardIds, tag_ids: tagIds },
+      },
+      this.authStore,
+    )
+  }
+
   actOnFlashcardReviewSession(
     sessionId: string,
-    action: 'success' | 'error' | 'view' | 'push' | 'eject' | 'pause' | 'resume' | 'end',
+    action: FlashcardReviewAction,
     elapsedSeconds: number,
   ) {
     return request<FlashcardReviewActionResponse>(

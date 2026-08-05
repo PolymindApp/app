@@ -330,7 +330,6 @@ async function setMainMenuItemVisibility(id: MainNavItemId, visible: boolean) {
 <style scoped>
 .settings-page {
   display: grid;
-  max-width: 720px;
   gap: 1rem;
 }
 

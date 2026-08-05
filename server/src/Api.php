@@ -16,6 +16,7 @@ use Throwable;
 final class Api
 {
     private const MAX_PAGE_SIZE = 200;
+    private const MAX_FLASHCARD_IMPORT_ROWS = 500;
     private const PASSKEY_CHALLENGE_TTL = 300;
     private const MAIN_MENU_ITEMS = ['tasks', 'intervals', 'flashcards', 'tracking', 'journal'];
 
@@ -101,6 +102,12 @@ final class Api
                     $flashcardSetMatches[1],
                     $this->authenticate(),
                 );
+            }
+            if ($method === 'POST' && $path === '/flashcards/import') {
+                $this->importFlashcards($this->authenticate());
+            }
+            if ($method === 'POST' && $path === '/flashcards/bulk') {
+                $this->bulkUpdateFlashcards($this->authenticate());
             }
             if (
                 $method === 'POST'
@@ -1540,6 +1547,277 @@ final class Api
         }
     }
 
+    private function importFlashcards(array $user): never
+    {
+        $body = $this->jsonBody();
+        $this->allowOnlyFields($body, ['rows']);
+        $rows = $body['rows'] ?? null;
+        if (!is_array($rows) || !array_is_list($rows) || $rows === []) {
+            throw new ApiException(422, 'Add at least one flashcard row.', ['rows' => 'required']);
+        }
+        if (count($rows) > self::MAX_FLASHCARD_IMPORT_ROWS) {
+            throw new ApiException(
+                422,
+                'Too many flashcards were included in one import.',
+                ['rows' => 'max:' . self::MAX_FLASHCARD_IMPORT_ROWS],
+            );
+        }
+
+        $validatedRows = [];
+        $tagNames = [];
+        foreach ($rows as $index => $row) {
+            $rowNumber = $index + 1;
+            if (!is_array($row) || array_is_list($row)) {
+                throw new ApiException(422, "Flashcard row {$rowNumber} is invalid.");
+            }
+            $unknown = array_values(array_diff(array_keys($row), ['front', 'back', 'tags']));
+            if ($unknown !== []) {
+                throw new ApiException(422, "Flashcard row {$rowNumber} contains unknown fields.", [
+                    'fields' => $unknown,
+                ]);
+            }
+            $front = $this->validateText($row['front'] ?? null, 'front', 5000, true);
+            $back = $this->validateText($row['back'] ?? null, 'back', 5000, true);
+            $rowTags = $row['tags'] ?? [];
+            if (!is_array($rowTags) || !array_is_list($rowTags) || count($rowTags) > 50) {
+                throw new ApiException(422, "Flashcard row {$rowNumber} has invalid tags.");
+            }
+
+            $normalizedTags = [];
+            foreach ($rowTags as $tag) {
+                $name = $this->validateText($tag, 'tag', 50, true);
+                $key = $this->caseInsensitiveKey($name);
+                $normalizedTags[$key] = $name;
+                $tagNames[$key] ??= $name;
+            }
+            $validatedRows[] = [
+                'front' => $front,
+                'back' => $back,
+                'tag_keys' => array_keys($normalizedTags),
+            ];
+        }
+        if (count($tagNames) > self::MAX_FLASHCARD_IMPORT_ROWS) {
+            throw new ApiException(422, 'Too many unique tags were included in one import.');
+        }
+
+        $owner = (string) $user['id'];
+        $pdo = $this->database->pdo;
+        $tagCollection = $this->requireCollection('flashcard_tags');
+        $cardCollection = $this->requireCollection('flashcards');
+        $createdTags = [];
+        $createdCards = [];
+        $pdo->beginTransaction();
+        try {
+            $existingStatement = $pdo->prepare(
+                'SELECT * FROM flashcard_tags WHERE owner = :owner ORDER BY name',
+            );
+            $existingStatement->execute(['owner' => $owner]);
+            $tagsByKey = [];
+            foreach ($existingStatement->fetchAll() as $tag) {
+                $tagsByKey[$this->caseInsensitiveKey((string) $tag['name'])] = $tag;
+            }
+
+            $insertTag = $pdo->prepare(
+                'INSERT INTO flashcard_tags (id, owner, name) VALUES (:id, :owner, :name)',
+            );
+            foreach ($tagNames as $key => $name) {
+                if (isset($tagsByKey[$key])) {
+                    continue;
+                }
+                $tag = ['id' => $this->newId(), 'owner' => $owner, 'name' => $name];
+                $insertTag->execute($tag);
+                $tagsByKey[$key] = $tag;
+                $createdTags[] = $tag;
+            }
+
+            $insertCard = $pdo->prepare(
+                'INSERT INTO flashcards (
+                    id, owner, front, back, tags, created_at, updated_at,
+                    last_reviewed_at, passive_views, success_count, error_count
+                 ) VALUES (
+                    :id, :owner, :front, :back, :tags, :created_at, :updated_at,
+                    :last_reviewed_at, :passive_views, :success_count, :error_count
+                 )',
+            );
+            $now = (new DateTimeImmutable('now'))->format('Y-m-d\TH:i:s.v\Z');
+            foreach ($validatedRows as $row) {
+                $tagIds = array_map(
+                    static fn (string $key): string => (string) $tagsByKey[$key]['id'],
+                    $row['tag_keys'],
+                );
+                $card = [
+                    'id' => $this->newId(),
+                    'owner' => $owner,
+                    'front' => $row['front'],
+                    'back' => $row['back'],
+                    'tags' => json_encode($tagIds, JSON_THROW_ON_ERROR),
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                    'last_reviewed_at' => '',
+                    'passive_views' => 0,
+                    'success_count' => 0,
+                    'error_count' => 0,
+                ];
+                $insertCard->execute($card);
+                $createdCards[] = $card;
+            }
+            $pdo->commit();
+        } catch (Throwable $exception) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            if ($exception instanceof PDOException && $this->isConstraintViolation($exception)) {
+                throw new ApiException(409, 'The import conflicts with an existing tag.');
+            }
+            throw $exception;
+        }
+
+        $this->respond([
+            'cards' => array_map(
+                fn (array $card): array => $this->normalizeRecord($cardCollection, $card),
+                $createdCards,
+            ),
+            'tags' => array_map(
+                fn (array $tag): array => $this->normalizeRecord($tagCollection, $tag),
+                $createdTags,
+            ),
+        ], 201);
+    }
+
+    private function bulkUpdateFlashcards(array $user): never
+    {
+        $body = $this->jsonBody();
+        $this->allowOnlyFields($body, ['action', 'card_ids', 'tag_ids']);
+        $action = $body['action'] ?? null;
+        $allowedActions = ['add_tags', 'set_tags', 'remove_tags', 'clear_tags', 'delete'];
+        if (!is_string($action) || !in_array($action, $allowedActions, true)) {
+            throw new ApiException(422, 'Select a valid flashcard bulk action.', [
+                'action' => 'choice',
+            ]);
+        }
+
+        $cardIds = $this->validateFlashcardBulkIds(
+            $body['card_ids'] ?? null,
+            'card_ids',
+            false,
+        );
+        $tagIds = $this->validateFlashcardBulkIds(
+            $body['tag_ids'] ?? [],
+            'tag_ids',
+            true,
+        );
+        if (in_array($action, ['add_tags', 'set_tags', 'remove_tags'], true) && $tagIds === []) {
+            throw new ApiException(422, 'Select at least one flashcard tag.', [
+                'tag_ids' => 'required',
+            ]);
+        }
+
+        $owner = (string) $user['id'];
+        foreach ($cardIds as $cardId) {
+            $this->ownedRecord('flashcards', $cardId, $owner);
+        }
+        foreach ($tagIds as $tagId) {
+            if (!$this->relationExists('flashcard_tags', $tagId, $owner)) {
+                throw new ApiException(422, 'A selected flashcard tag is invalid.', [
+                    'tag_ids' => 'relation',
+                ]);
+            }
+        }
+
+        $pdo = $this->database->pdo;
+        $cardCollection = $this->requireCollection('flashcards');
+        $updatedCards = [];
+        $deletedIds = [];
+        $pdo->beginTransaction();
+        try {
+            if ($action === 'delete') {
+                foreach ($cardIds as $cardId) {
+                    $this->deleteFlashcard($cardId, $owner);
+                    $deletedIds[] = $cardId;
+                }
+            } else {
+                $update = $pdo->prepare(
+                    'UPDATE flashcards
+                     SET tags = :tags, updated_at = :updated_at
+                     WHERE id = :id AND owner = :owner',
+                );
+                $updatedAt = (new DateTimeImmutable('now'))->format('Y-m-d\TH:i:s.v\Z');
+                foreach ($cardIds as $cardId) {
+                    $card = $this->ownedRecord('flashcards', $cardId, $owner);
+                    $currentTags = $this->decodeJsonColumn($card['tags'] ?? '[]');
+                    if (!is_array($currentTags)) {
+                        $currentTags = [];
+                    }
+                    $currentTags = array_values(array_filter(
+                        $currentTags,
+                        static fn (mixed $tag): bool => is_string($tag),
+                    ));
+                    $nextTags = match ($action) {
+                        'add_tags' => array_values(array_unique([...$currentTags, ...$tagIds])),
+                        'set_tags' => $tagIds,
+                        'remove_tags' => array_values(array_filter(
+                            $currentTags,
+                            static fn (string $tag): bool => !in_array($tag, $tagIds, true),
+                        )),
+                        'clear_tags' => [],
+                    };
+                    $update->execute([
+                        'tags' => json_encode($nextTags, JSON_THROW_ON_ERROR),
+                        'updated_at' => $updatedAt,
+                        'id' => $cardId,
+                        'owner' => $owner,
+                    ]);
+                    $updatedCards[] = $this->ownedRecord('flashcards', $cardId, $owner);
+                }
+            }
+            $pdo->commit();
+        } catch (Throwable $exception) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $exception;
+        }
+
+        $this->respond([
+            'cards' => array_map(
+                fn (array $card): array => $this->normalizeRecord($cardCollection, $card),
+                $updatedCards,
+            ),
+            'deleted_ids' => $deletedIds,
+        ]);
+    }
+
+    private function validateFlashcardBulkIds(mixed $value, string $field, bool $allowEmpty): array
+    {
+        if (!is_array($value) || !array_is_list($value)) {
+            throw new ApiException(422, "The {$field} field must be an array.", [
+                $field => 'array',
+            ]);
+        }
+        if ((!$allowEmpty && $value === []) || count($value) > self::MAX_FLASHCARD_IMPORT_ROWS) {
+            throw new ApiException(422, "The {$field} field has an invalid number of items.", [
+                $field => $value === [] ? 'required' : 'max:' . self::MAX_FLASHCARD_IMPORT_ROWS,
+            ]);
+        }
+
+        $ids = [];
+        foreach ($value as $id) {
+            if (!is_string($id)) {
+                throw new ApiException(422, "The {$field} field contains an invalid record ID.", [
+                    $field => 'relation',
+                ]);
+            }
+            $id = $this->validateRelationId($id, $field);
+            if ($id === '') {
+                throw new ApiException(422, "The {$field} field contains an invalid record ID.", [
+                    $field => 'relation',
+                ]);
+            }
+            $ids[$id] = $id;
+        }
+        return array_values($ids);
+    }
+
     private function startFlashcardReviewSession(string $reviewSetId, array $user): never
     {
         $body = $this->jsonBody();
@@ -1671,7 +1949,9 @@ final class Api
             throw new ApiException(422, 'The action field must be a string.');
         }
         $action = $body['action'];
-        $validActions = ['success', 'error', 'view', 'push', 'eject', 'pause', 'resume', 'end'];
+        $validActions = [
+            'success', 'error', 'view', 'previous', 'next', 'push', 'eject', 'pause', 'resume', 'end',
+        ];
         if (!in_array($action, $validActions, true)) {
             throw new ApiException(422, 'The review action is invalid.');
         }
@@ -1735,7 +2015,12 @@ final class Api
                     throw new ApiException(409, 'This flashcard review has no remaining cards.');
                 }
 
-                if ($action === 'push') {
+                if ($action === 'previous') {
+                    if (count($queue) > 1) {
+                        $previous = array_pop($queue);
+                        array_unshift($queue, $previous);
+                    }
+                } elseif ($action === 'next' || $action === 'push') {
                     if (count($queue) > 1) {
                         $current = array_shift($queue);
                         $queue[] = $current;
@@ -3447,6 +3732,13 @@ final class Api
     private function newId(): string
     {
         return 'r' . bin2hex(random_bytes(7));
+    }
+
+    private function caseInsensitiveKey(string $value): string
+    {
+        return function_exists('mb_strtolower')
+            ? mb_strtolower($value, 'UTF-8')
+            : strtolower($value);
     }
 
     private function randomTokenVersionKey(): string
