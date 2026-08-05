@@ -2,6 +2,7 @@
 import { computed, nextTick, ref, useId, watch } from 'vue'
 import { goalState } from '@/services/schedule'
 import { taskCanLogAmounts } from '@/services/taskCardActions'
+import { TASK_TYPE_PRESENTATION } from '@/services/taskTypes'
 import type { TaskProgress } from '@/types/domain'
 
 const TASK_CARD_EXPANSION_STORAGE_PREFIX = 'mom-task-card-expanded'
@@ -132,7 +133,8 @@ const numericGoalStatus = computed(() => {
   }
   return undefined
 })
-const taskColor = computed(() => task.value.color || '#C7F464')
+const taskTypePresentation = computed(() => TASK_TYPE_PRESENTATION[task.value.type])
+const taskColor = computed(() => task.value.color || taskTypePresentation.value.color)
 const stateColor = computed(() => {
   if (numericGoalStatus.value?.tone === 'text-success') return 'success'
   if (numericGoalStatus.value?.tone === 'text-warning') return 'warning'
@@ -142,20 +144,16 @@ const stateColor = computed(() => {
   return taskColor.value
 })
 const stateIcon = computed(() => {
-  if (props.progress.locked) return 'mdi-lock-outline'
-  if (numericGoalStatus.value?.tone === 'text-success') return numericGoalStatus.value.icon
-  if (numericGoalStatus.value?.tone === 'text-warning') return 'mdi-alert-outline'
-  if (numericGoalStatus.value?.tone === 'text-error') return numericGoalStatus.value.icon
-  if (currentGoalState.value === 'exceeded') return 'mdi-alert-outline'
-  if (currentGoalState.value === 'not_enough') return 'mdi-trending-down'
-  if (props.progress.sealed) return 'mdi-lock-check'
   if (displayedComplete.value) return 'mdi-check-bold'
-  if (isInterval.value) return 'mdi-timer-play-outline'
-  if (isFlashcards.value) return 'mdi-cards-outline'
-  if (isStepCounter.value) return 'mdi-shoe-print'
-  return isCheck.value ? 'mdi-circle-outline' : 'mdi-lightning-bolt'
+  if (props.progress.locked) return 'mdi-lock-outline'
+  return taskTypePresentation.value.icon
 })
+const showingTaskTypeIcon = computed(() =>
+  !displayedComplete.value && !props.progress.locked,
+)
 const stateIconColor = computed(() => {
+  if (showingTaskTypeIcon.value) return '#191C19'
+  if (displayedComplete.value) return 'white'
   return stateColor.value
 })
 const title = computed(() => step.value?.name || task.value.name)
@@ -249,9 +247,9 @@ watch(() => props.valuePulse, async (pulse, previousPulse) => {
           v-if="isCheck"
           class="check-control"
           :class="{
+            'check-control--status': displayedComplete,
+            'check-control--type': showingTaskTypeIcon,
             'check-control--done': displayedComplete,
-            'check-control--warning': currentGoalState === 'exceeded',
-            'check-control--error': currentGoalState === 'not_enough',
           }"
           :style="{ '--task-color': taskColor }"
           :aria-label="displayedComplete ? `Mark ${title} incomplete` : `Complete ${title}`"
@@ -265,9 +263,8 @@ watch(() => props.valuePulse, async (pulse, previousPulse) => {
           v-else
           class="check-control check-control--status"
           :class="{
-            'check-control--done': progress.complete,
-            'check-control--warning': currentGoalState === 'exceeded',
-            'check-control--error': currentGoalState === 'not_enough',
+            'check-control--type': showingTaskTypeIcon,
+            'check-control--done': displayedComplete,
           }"
           :style="{ '--task-color': taskColor }"
           aria-hidden="true"
@@ -488,19 +485,13 @@ watch(() => props.valuePulse, async (pulse, previousPulse) => {
 }
 
 .check-control--done {
-  border: 1px solid var(--task-color);
-  background: color-mix(in srgb, var(--task-color) 18%, transparent);
+  background: rgba(var(--v-theme-surface-variant), 0);
   color: var(--task-color);
 }
 
-.check-control--warning {
-  border: 1px solid rgb(var(--v-theme-warning));
-  background: rgb(var(--v-theme-warning) / .16);
-}
-
-.check-control--error {
-  border: 1px solid rgb(var(--v-theme-error));
-  background: rgb(var(--v-theme-error) / .16);
+.check-control--type {
+  background: var(--task-color);
+  color: #191c19;
 }
 
 .check-control--status {

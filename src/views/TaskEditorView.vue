@@ -10,10 +10,11 @@ import DatePickerField from '@/components/DatePickerField.vue'
 import FormActionBar from '@/components/FormActionBar.vue'
 import type { LongPressDragResult } from '@/directives/longPressDrag'
 import { formatIntervalDuration, intervalDuration, intervalStepCount } from '@/services/intervals'
+import { TASK_TYPE_OPTIONS } from '@/services/taskTypes'
 import { useFlashcardStore } from '@/stores/flashcards'
 import { useIntervalStore } from '@/stores/intervals'
 import { useTaskStore } from '@/stores/tasks'
-import type { ProgramStepDraft, TaskDraft, TaskType } from '@/types/domain'
+import type { ProgramStepDraft, TaskDraft } from '@/types/domain'
 
 const allowAutomaticFocus = Capacitor.getPlatform() !== 'android'
 const route = useRoute()
@@ -31,16 +32,6 @@ const stepDragIds = new WeakMap<ProgramStepDraft, string>()
 let nextStepDragId = 0
 const typeLocked = computed(() => Boolean(route.params.id))
 const isEditing = computed(() => Boolean(route.params.id))
-
-const typeOptions: Array<{ type: TaskType; title: string; subtitle: string; icon: string; color: string }> = [
-  { type: 'check', title: 'Check-off', subtitle: 'One action, one tap', icon: 'mdi-check-bold', color: '#8FB8FF' },
-  { type: 'duration', title: 'Duration', subtitle: 'Track time toward a goal', icon: 'mdi-timer-outline', color: '#D4A5FF' },
-  { type: 'daily_total', title: 'Daily total', subtitle: 'Protein, calories, water…', icon: 'mdi-chart-donut', color: '#FFB86B' },
-  { type: 'step_counter', title: 'Step counter', subtitle: 'Sync progress from Health Connect', icon: 'mdi-shoe-print', color: '#7ED6A5' },
-  { type: 'program', title: 'Program', subtitle: 'A flexible sequence', icon: 'mdi-repeat-variant', color: '#C7F464' },
-  { type: 'interval', title: 'Interval', subtitle: 'Complete a saved interval', icon: 'mdi-timer-play-outline', color: '#66D9C8' },
-  { type: 'flashcards', title: 'Flashcards', subtitle: 'Complete a saved Review set', icon: 'mdi-cards-outline', color: '#C7F464' },
-]
 
 const weekdays = [
   { value: 1, label: 'M' }, { value: 2, label: 'T' }, { value: 3, label: 'W' },
@@ -309,7 +300,7 @@ async function removeTask() {
           <label class="field-label">Task type</label>
           <div class="type-selector mt-2">
             <button
-              v-for="option in typeOptions"
+              v-for="option in TASK_TYPE_OPTIONS"
               :key="option.type"
               type="button"
               class="editor-type"

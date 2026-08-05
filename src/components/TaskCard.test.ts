@@ -145,6 +145,78 @@ describe('TaskCard amount actions', () => {
     expect(wrapper.text()).toContain('Start interval')
   })
 
+  it('uses the Manage Tasks type icon treatment for an incomplete task', () => {
+    const durationProgress: TaskProgress = {
+      ...progress,
+      task: {
+        ...progress.task,
+        id: 'focus-time',
+        name: 'Focus time',
+        type: 'duration',
+        color: undefined,
+        targetValue: 4,
+        unit: 'hours',
+      },
+      value: 1,
+      percent: 25,
+    }
+    const wrapper = mount(TaskCard, {
+      props: { progress: durationProgress },
+      global: {
+        stubs: {
+          VBtn: VBtnStub,
+          VCard: { template: '<div><slot /></div>' },
+          VExpandTransition: { template: '<div><slot /></div>' },
+          ExpandTransition: { template: '<div><slot /></div>' },
+          VIcon: true,
+          VProgressCircular: { template: '<div><slot /></div>' },
+          VProgressLinear: true,
+        },
+      },
+    })
+
+    expect(wrapper.get('.check-control').classes()).toContain('check-control--type')
+    expect(wrapper.get('.check-control v-icon-stub').attributes('icon')).toBe('mdi-timer-outline')
+    expect(wrapper.get('.task-card').attributes('style')).toContain('--task-color: #D4A5FF')
+  })
+
+  it('keeps a completed check-off inside the status-control treatment', () => {
+    const completedCheck: TaskProgress = {
+      ...progress,
+      task: {
+        ...progress.task,
+        id: 'medication',
+        name: 'Medication',
+        type: 'check',
+        color: '#8FB8FF',
+      },
+      value: 0,
+      percent: 100,
+      complete: true,
+      status: 'completed',
+    }
+    const wrapper = mount(TaskCard, {
+      props: { progress: completedCheck },
+      global: {
+        stubs: {
+          VBtn: VBtnStub,
+          VCard: { template: '<div><slot /></div>' },
+          VExpandTransition: { template: '<div><slot /></div>' },
+          ExpandTransition: { template: '<div><slot /></div>' },
+          VIcon: true,
+          VProgressCircular: { template: '<div><slot /></div>' },
+          VProgressLinear: true,
+        },
+      },
+    })
+
+    const control = wrapper.get('button.check-control')
+    expect(control.classes()).toContain('check-control--status')
+    expect(control.classes()).toContain('check-control--done')
+    expect(control.classes()).not.toContain('check-control--type')
+    expect(control.get('v-icon-stub').attributes('icon')).toBe('mdi-check-bold')
+  })
+
   it('shows and launches an attached flashcard Review set', async () => {
     const flashcardProgress: TaskProgress = {
       ...progress,

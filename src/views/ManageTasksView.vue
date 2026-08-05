@@ -5,11 +5,12 @@ import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import { nextScheduledDates } from '@/services/schedule'
+import { TASK_TYPE_PRESENTATION } from '@/services/taskTypes'
 import { useFlashcardStore } from '@/stores/flashcards'
 import { useIntervalStore } from '@/stores/intervals'
 import { useTaskStore } from '@/stores/tasks'
 import type { LongPressDragResult } from '@/directives/longPressDrag'
-import type { Task, TaskType } from '@/types/domain'
+import type { Task } from '@/types/domain'
 
 const store = useTaskStore()
 const intervalStore = useIntervalStore()
@@ -30,16 +31,6 @@ watch(filter, (status, previousStatus) => {
 const visibleTasks = computed(() => tasks.value.filter((task) =>
   task.active === (filter.value === 'active'),
 ))
-
-const typeInfo: Record<TaskType, { label: string; icon: string; color: string }> = {
-  check: { label: 'Check-off', icon: 'mdi-check-bold', color: '#8FB8FF' },
-  duration: { label: 'Duration', icon: 'mdi-timer-outline', color: '#D4A5FF' },
-  daily_total: { label: 'Daily total', icon: 'mdi-chart-donut', color: '#FFB86B' },
-  step_counter: { label: 'Step counter', icon: 'mdi-shoe-print', color: '#7ED6A5' },
-  program: { label: 'Program', icon: 'mdi-repeat-variant', color: '#C7F464' },
-  interval: { label: 'Interval', icon: 'mdi-timer-play-outline', color: '#66D9C8' },
-  flashcards: { label: 'Flashcards', icon: 'mdi-cards-outline', color: '#C7F464' },
-}
 
 onMounted(() => {
   if (!tasks.value.length) store.load().catch(() => undefined)
@@ -137,15 +128,15 @@ async function confirmStatusChange() {
               @click="router.push(`/tasks/${task.id}`)"
             >
               <div class="d-flex align-start ga-3">
-                <div class="type-icon" :style="{ background: task.color || typeInfo[task.type].color }">
-                  <v-icon :icon="typeInfo[task.type].icon" size="21" />
+                <div class="type-icon" :style="{ background: task.color || TASK_TYPE_PRESENTATION[task.type].color }">
+                  <v-icon :icon="TASK_TYPE_PRESENTATION[task.type].icon" size="21" />
                 </div>
                 <div class="flex-grow-1 min-width-0">
                   <div class="d-flex align-center ga-2">
                     <h2 class="text-body-1 font-weight-black text-truncate">{{ task.name }}</h2>
                     <v-icon v-if="task.mandatory" icon="mdi-shield-check" color="primary" size="15" />
                   </div>
-                  <p class="text-caption muted mt-1">{{ typeInfo[task.type].label }} · {{ scheduleLabel(task) }}</p>
+                  <p class="text-caption muted mt-1">{{ TASK_TYPE_PRESENTATION[task.type].title }} · {{ scheduleLabel(task) }}</p>
                   <div v-if="task.type === 'program'" class="step-preview mt-3">
                     <span
                       v-for="step in steps.filter(item => item.active && item.task === task.id).slice(0, 4)"
