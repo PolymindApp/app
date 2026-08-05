@@ -12,7 +12,7 @@ import WeekDateNavigator from '@/components/WeekDateNavigator.vue'
 import { isNativeHealthConnectSupported } from '@/services/healthConnect'
 import { formatIntervalDuration, intervalDuration } from '@/services/intervals'
 import { taskCompletionMarkerColor, toDateKey } from '@/services/schedule'
-import { TASK_CARD_ACTION_ITEMS, taskCanLogAmounts } from '@/services/taskCardActions'
+import { TASK_CARD_ACTION_ITEMS, taskCanLogAmounts, taskIntervalCanStart } from '@/services/taskCardActions'
 import type { TaskCardActionId } from '@/services/taskCardActions'
 import {
   TASK_ENTRY_NOTE_MAX_LENGTH,
@@ -113,7 +113,6 @@ const reviewItems = computed(() =>
   selectedProgress.value.filter((item) => item.task.reviewWhenMissed && item.status === 'pending' && !item.complete),
 )
 const doneCount = computed(() => selectedProgress.value.filter((item) => item.complete).length)
-const hasStepCounter = computed(() => selectedProgress.value.some(item => item.task.type === 'step_counter'))
 let appStateListener: Awaited<ReturnType<typeof App.addListener>> | undefined
 
 onMounted(async () => {
@@ -162,6 +161,10 @@ function progressKey(progress: TaskProgress) {
 
 function progressIsToday(progress: TaskProgress) {
   return progress.scheduledDate === toDateKey(new Date())
+}
+
+function intervalCanStart(progress: TaskProgress) {
+  return taskIntervalCanStart(progress, toDateKey(new Date()))
 }
 
 function progressIsBusy(progress: TaskProgress) {
@@ -397,6 +400,7 @@ async function startIntervalTask(progress: TaskProgress) {
     query: {
       task: progress.task.id,
       ...(progress.programStep ? { step: progress.programStep.id } : {}),
+      date: progress.scheduledDate,
       from: 'tasks',
     },
   })
@@ -503,18 +507,6 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
     <v-alert v-if="flashcardStartError" type="error" variant="tonal" class="mt-4">
       {{ flashcardStartError }}
     </v-alert>
-    <v-alert
-      v-if="hasStepCounter && stepCountError"
-      type="warning"
-      variant="tonal"
-      class="mt-4"
-    >
-      {{ stepCountError }}
-      <template #append>
-        <v-btn size="small" variant="text" to="/settings">Settings</v-btn>
-      </template>
-    </v-alert>
-
     <template v-if="selectedProgress.length">
       <section v-if="required.length">
         <div class="section-heading"><h2>Required tasks</h2><span class="text-caption muted">{{ required.filter(i => i.complete).length }}/{{ required.length }}</span></div>
@@ -526,8 +518,9 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
             :busy="progressIsBusy(item)"
             :value-pulse="valuePulseFor(item)"
             :syncing="item.task.type === 'step_counter' && stepCountLoading"
+            :step-count-error="item.task.type === 'step_counter' ? stepCountError : ''"
             :interval="intervalMeta(item)"
-            :can-start-interval="progressIsToday(item) && item.status === 'pending'"
+            :can-start-interval="intervalCanStart(item)"
             :interval-active="sessionMatchesProgress(item)"
             :review-set="reviewSetMeta(item)"
             :can-start-review="progressIsToday(item) && item.status === 'pending'"
@@ -553,8 +546,9 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
             :busy="progressIsBusy(item)"
             :value-pulse="valuePulseFor(item)"
             :syncing="item.task.type === 'step_counter' && stepCountLoading"
+            :step-count-error="item.task.type === 'step_counter' ? stepCountError : ''"
             :interval="intervalMeta(item)"
-            :can-start-interval="progressIsToday(item) && item.status === 'pending'"
+            :can-start-interval="intervalCanStart(item)"
             :interval-active="sessionMatchesProgress(item)"
             :review-set="reviewSetMeta(item)"
             :can-start-review="progressIsToday(item) && item.status === 'pending'"

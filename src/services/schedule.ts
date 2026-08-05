@@ -13,6 +13,10 @@ import type { ProgramStep, TargetOperator, Task } from '@/types/domain'
 export const toDateKey = (date: Date) => format(date, 'yyyy-MM-dd')
 export type GoalState = 'neutral' | 'met' | 'exceeded' | 'not_enough'
 
+function comparableTaskValue(value: number) {
+  return Number(value.toFixed(2))
+}
+
 export function isTaskScheduled(task: Task, date: Date): boolean {
   const start = parseISO(task.startDate)
   if (isBefore(date, start)) return false
@@ -45,21 +49,47 @@ export function stepsForDate(task: Task, steps: ProgramStep[], date: Date): Prog
 }
 
 export function meetsTarget(value: number, target: number, operator: TargetOperator = 'gte'): boolean {
-  if (operator === 'lte') return value <= target
-  if (operator === 'eq') return Math.abs(value - target) < 0.001
-  return value >= target
+  const comparableValue = comparableTaskValue(value)
+  const comparableTarget = comparableTaskValue(target)
+  if (operator === 'lte') return comparableValue <= comparableTarget
+  if (operator === 'eq') return comparableValue === comparableTarget
+  return comparableValue >= comparableTarget
 }
 
 export function progressPercent(value: number, target = 1, operator: TargetOperator = 'gte'): number {
   if (target <= 0) return 0
+  if (operator !== 'lte' && meetsTarget(value, target, operator)) return 100
   if (operator === 'lte') return value <= target ? Math.max(0, Math.min((value / target) * 100, 100)) : 100
   return Math.max(0, Math.min((value / target) * 100, 100))
 }
 
+export function dailyTotalCompletionPercent(
+  value: number,
+  target: number,
+  operator: TargetOperator = 'gte',
+) {
+  const comparableValue = comparableTaskValue(value)
+  const comparableTarget = comparableTaskValue(target)
+  if (comparableTarget <= 0) {
+    if (operator === 'gte') return 100
+    return comparableValue <= 0 ? 100 : 0
+  }
+  if (operator === 'lte') {
+    const exceeding = Math.max(0, comparableValue - comparableTarget)
+    return Math.max(0, 100 - (exceeding * 100 / comparableTarget))
+  }
+  if (operator === 'eq') {
+    const difference = Math.abs(comparableValue - comparableTarget)
+    return Math.max(0, 100 - (difference * 100 / comparableTarget))
+  }
+  return Math.max(0, Math.min(comparableValue * 100 / comparableTarget, 100))
+}
+
 export function goalState(value: number, target: number, operator: TargetOperator = 'gte'): GoalState {
-  if (operator === 'lte') return value > target ? 'exceeded' : 'neutral'
-  if (operator === 'gte') return value < target ? 'not_enough' : 'met'
-  return meetsTarget(value, target, operator) ? 'met' : 'neutral'
+  const targetMet = meetsTarget(value, target, operator)
+  if (operator === 'lte') return targetMet ? 'neutral' : 'exceeded'
+  if (operator === 'gte') return targetMet ? 'met' : 'not_enough'
+  return targetMet ? 'met' : 'neutral'
 }
 
 export function taskCompletionMarkerColor(percent: number) {

@@ -3,6 +3,8 @@ import { createPinia, setActivePinia } from 'pinia'
 import type { IntervalTemplate } from '@/types/domain'
 
 const apiMocks = vi.hoisted(() => ({
+  createIntervalSession: vi.fn(),
+  getIntervalSessions: vi.fn(),
   updateTemplate: vi.fn(),
   updateIntervalSession: vi.fn(),
   completeIntervalSession: vi.fn(),
@@ -14,7 +16,11 @@ vi.mock('@/lib/api', () => ({
     completeIntervalSession: apiMocks.completeIntervalSession,
     collection: (name: string) => {
       if (name === 'interval_templates') return { update: apiMocks.updateTemplate }
-      if (name === 'interval_sessions') return { update: apiMocks.updateIntervalSession }
+      if (name === 'interval_sessions') return {
+        create: apiMocks.createIntervalSession,
+        getList: apiMocks.getIntervalSessions,
+        update: apiMocks.updateIntervalSession,
+      }
       throw new Error(`Unexpected collection: ${name}`)
     },
   },
@@ -79,8 +85,36 @@ describe('interval task attribution', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     localStorage.clear()
+    apiMocks.createIntervalSession.mockReset()
+    apiMocks.getIntervalSessions.mockReset()
     apiMocks.updateIntervalSession.mockReset()
     apiMocks.completeIntervalSession.mockReset()
+    apiMocks.getIntervalSessions.mockResolvedValue({ items: [] })
+  })
+
+  it('keeps the task date selected by the task view when starting a session', async () => {
+    apiMocks.createIntervalSession.mockImplementation(async payload => ({
+      id: 'session-1',
+      ...payload,
+      updated: payload.started_at,
+    }))
+    const store = useIntervalStore()
+
+    const session = await store.startSession({
+      name: 'Attached interval',
+      source: 'template',
+      definition: { version: 1, children: [] },
+      cues: { soundEnabled: true, vibrationEnabled: true },
+      template: 'template-1',
+      task: 'task-1',
+      taskDate: '2026-08-05',
+    })
+
+    expect(apiMocks.createIntervalSession).toHaveBeenCalledWith(expect.objectContaining({
+      task: 'task-1',
+      task_date: '2026-08-05',
+    }))
+    expect(session.taskDate).toBe('2026-08-05')
   })
 
   it('merges the occurrence returned by atomic session completion', async () => {

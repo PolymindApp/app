@@ -44,6 +44,7 @@ const props = defineProps<{
   canStartReview?: boolean
   reviewActive?: boolean
   syncing?: boolean
+  stepCountError?: string
 }>()
 const emit = defineEmits<{
   toggle: [progress: TaskProgress, complete: boolean]
@@ -88,7 +89,7 @@ const currentGoalState = computed(() => isCheck.value || isInterval.value || isF
 const numericGoalStatus = computed(() => {
   if (isCheck.value || isInterval.value) return undefined
   const difference = target.value - props.progress.value
-  if (targetOperator.value === 'gte' && difference > 0) {
+  if (targetOperator.value === 'gte' && currentGoalState.value === 'not_enough' && difference > 0) {
     return {
       title: 'Not enough yet',
       amount: `${formatValue(difference)} remaining`,
@@ -104,7 +105,7 @@ const numericGoalStatus = computed(() => {
       tone: 'text-success',
     }
   }
-  if (targetOperator.value === 'eq' && difference > 0) {
+  if (targetOperator.value === 'eq' && currentGoalState.value !== 'met' && difference > 0) {
     return {
       title: 'Exact target not met',
       amount: `${formatValue(difference)} missing`,
@@ -112,7 +113,8 @@ const numericGoalStatus = computed(() => {
       tone: 'text-error',
     }
   }
-  if ((targetOperator.value === 'lte' || targetOperator.value === 'eq') && difference < 0) {
+  if ((targetOperator.value === 'lte' && currentGoalState.value === 'exceeded')
+    || (targetOperator.value === 'eq' && currentGoalState.value !== 'met' && difference < 0)) {
     return {
       title: 'Target exceeded',
       amount: `${formatValue(Math.abs(difference))} over`,
@@ -360,7 +362,12 @@ watch(() => props.valuePulse, async (pulse, previousPulse) => {
               class="mt-2"
             />
 
-            <div v-if="isStepCounter" class="step-source mt-3">
+            <div v-if="isStepCounter && stepCountError" class="step-source-message mt-3 text-warning">
+              <v-icon icon="mdi-alert-circle-outline" size="16" />
+              <span>{{ stepCountError }}</span>
+            </div>
+
+            <div v-if="isStepCounter" class="step-source" :class="stepCountError ? 'mt-2' : 'mt-3'">
               <v-progress-circular v-if="syncing" indeterminate color="secondary" :size="16" :width="2" />
               <v-icon v-else icon="mdi-heart-pulse" color="secondary" size="17" />
               <span>{{ syncing ? 'Syncing steps…' : 'Health Connect' }}</span>
@@ -555,6 +562,20 @@ watch(() => props.valuePulse, async (pulse, previousPulse) => {
   color: rgb(var(--v-theme-on-surface) / .56);
   font-size: .7rem;
   font-weight: 800;
+}
+
+.step-source-message {
+  display: flex;
+  align-items: flex-start;
+  gap: .4rem;
+  font-size: .72rem;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.step-source-message .v-icon {
+  margin-top: .05rem;
+  flex: 0 0 auto;
 }
 
 @keyframes metric-value-pulse {

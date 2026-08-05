@@ -30,8 +30,7 @@ function progressFor(date: Date): TaskProgress[] {
 }
 
 function rateFor(date: Date) {
-  const list = progressFor(date)
-  return list.length ? Math.round((list.filter((item) => item.complete).length / list.length) * 100) : 0
+  return store.completionRateForDate(date) || 0
 }
 
 const selectedItems = computed(() => progressFor(selected.value))

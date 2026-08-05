@@ -84,7 +84,10 @@ describe('TaskCard amount actions', () => {
       percent: 42,
     }
     const wrapper = mount(TaskCard, {
-      props: { progress: stepProgress },
+      props: {
+        progress: stepProgress,
+        stepCountError: 'Open Mom on a supported Android device to load steps from Health Connect.',
+      },
       global: {
         stubs: {
           VBtn: VBtnStub,
@@ -101,6 +104,10 @@ describe('TaskCard amount actions', () => {
     expect(wrapper.text()).toContain('4,200 steps')
     expect(wrapper.text()).toContain('Health Connect')
     expect(wrapper.text()).not.toContain('Log amount')
+    const sourceMessage = wrapper.get('.step-source-message')
+    expect(sourceMessage.text()).toContain('Open Mom on a supported Android device')
+    expect(sourceMessage.element.compareDocumentPosition(wrapper.get('.step-source').element)
+      & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
   it('shows interval duration beside its type without a nested interval card', () => {

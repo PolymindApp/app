@@ -537,11 +537,11 @@ session_payload="$(php -r '
       "kind" => "work", "durationSeconds" => 1,
     ]]],
     "cue_snapshot" => ["soundEnabled" => true, "vibrationEnabled" => true],
-    "started_at" => "2026-07-31T14:00:00Z", "planned_seconds" => 1,
+    "started_at" => "2026-08-01T03:30:00Z", "task_date" => "2026-08-01", "planned_seconds" => 1,
     "elapsed_seconds" => 0, "runtime_state" => [
       "stepIndex" => 0, "remainingMs" => 1000,
-      "stepStartedAt" => "2026-07-31T14:00:00Z", "accumulatedMs" => 0,
-      "updatedAt" => "2026-07-31T14:00:00Z",
+      "stepStartedAt" => "2026-08-01T03:30:00Z", "accumulatedMs" => 0,
+      "updatedAt" => "2026-08-01T03:30:00Z",
     ],
   ], JSON_THROW_ON_ERROR);
 ' "$interval_template_id" "$interval_task_one_id")"
@@ -552,8 +552,8 @@ attributed_session_response="$(curl --silent --show-error --fail \
   "$api_url/collections/interval_sessions/records")"
 attributed_session_id="$(json_field id <<<"$attributed_session_response")"
 attributed_session_date="$(json_field task_date <<<"$attributed_session_response")"
-[[ "$attributed_session_date" == "2026-07-31" ]] || {
-  echo "The attributed interval did not use its Toronto start date." >&2
+[[ "$attributed_session_date" == "2026-08-01" ]] || {
+  echo "The attributed interval did not preserve its selected task date." >&2
   exit 1
 }
 
@@ -601,7 +601,7 @@ interval_note="$(json_field note <<<"$interval_note_response")"
 }
 
 first_task_completion_count="$(sqlite3 "$test_db" \
-  "SELECT COUNT(*) FROM occurrences WHERE task = '$interval_task_one_id' AND scheduled_date = '2026-07-31' AND status = 'completed';")"
+  "SELECT COUNT(*) FROM occurrences WHERE task = '$interval_task_one_id' AND scheduled_date = '2026-08-01' AND status = 'completed';")"
 second_task_completion_count="$(sqlite3 "$test_db" \
   "SELECT COUNT(*) FROM occurrences WHERE task = '$interval_task_two_id';")"
 [[ "$first_task_completion_count" == 1 && "$second_task_completion_count" == 0 ]] || {

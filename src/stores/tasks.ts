@@ -3,7 +3,7 @@ import { defineStore } from 'pinia'
 import { addDays, endOfWeek, format, parseISO, startOfWeek, subDays } from 'date-fns'
 import { api } from '@/lib/api'
 import { readHealthConnectSteps } from '@/services/healthConnect'
-import { isTaskScheduled, meetsTarget, programCycleDay, progressPercent, stepsForDate, toDateKey } from '@/services/schedule'
+import { dailyTotalCompletionPercent, isTaskScheduled, meetsTarget, programCycleDay, progressPercent, stepsForDate, toDateKey } from '@/services/schedule'
 import { sanitizeTaskEntryNote } from '@/services/taskEntryNotes'
 import { useSnackbarStore } from '@/stores/snackbar'
 import type { Entry, Occurrence, ProgramStep, Task, TaskDraft, TaskProgress } from '@/types/domain'
@@ -145,19 +145,25 @@ export const useTaskStore = defineStore('tasks', () => {
       || (!step && ['check', 'interval', 'flashcards'].includes(task.type))
     const isDailyTotal = !step && task.type === 'daily_total'
     const sealed = isDailyTotal && Boolean(occurrence?.sealed)
+    const complete = isOccurrenceDriven
+      ? occurrenceComplete
+      : isDailyTotal
+        ? sealed
+        : operator !== 'lte' && targetReached
+    const storedStatus = occurrence?.status || 'pending'
     return {
       task,
       scheduledDate: toDateKey(date),
       occurrence,
       value,
       percent: isOccurrenceDriven ? (occurrenceComplete ? 100 : 0) : progressPercent(value, target, operator),
-      complete: isOccurrenceDriven
-        ? occurrenceComplete
-        : isDailyTotal
-          ? sealed
-          : operator !== 'lte' && targetReached,
+      complete,
       sealed,
-      status: occurrence?.status || 'pending',
+      status: complete
+        ? 'completed'
+        : !isOccurrenceDriven && storedStatus === 'completed'
+          ? 'pending'
+          : storedStatus,
       programStep: step,
       locked: step ? isStepLocked(task, step, date) : false,
     }
@@ -204,12 +210,24 @@ export const useTaskStore = defineStore('tasks', () => {
 
   function completionRateForDate(date: Date) {
     const progress = progressForDate(date)
-    if (!progress.length) return undefined
-    const earnedProgress = progress.reduce(
-      (total, item) => total + Math.max(0, Math.min(item.percent, 100)),
+    const scoredProgress = progress.filter((item) =>
+      item.task.type !== 'daily_total' || item.sealed,
+    )
+    if (!scoredProgress.length) return undefined
+    const earnedProgress = scoredProgress.reduce(
+      (total, item) => {
+        if (!item.programStep && item.task.type === 'daily_total') {
+          return total + dailyTotalCompletionPercent(
+            item.value,
+            item.task.targetValue || 0,
+            item.task.targetOperator || 'gte',
+          )
+        }
+        return total + Math.max(0, Math.min(item.percent, 100))
+      },
       0,
     )
-    return Math.round(earnedProgress / progress.length)
+    return Math.round(earnedProgress / scoredProgress.length)
   }
 
   const completionRate = computed(() => completionRateForDate(selectedDate.value) || 0)
@@ -371,11 +389,12 @@ export const useTaskStore = defineStore('tasks', () => {
     const isCheck = progress.programStep
       ? progress.programStep.completionType === 'check'
       : progress.task.type === 'check'
-    if (progress.task.type !== 'daily_total' && !isCheck) {
+    if (!isCheck) {
       const shouldComplete = updated.complete
-      if (shouldComplete !== (occurrence.status === 'completed')) {
+      const nextStatus = shouldComplete ? 'completed' : 'pending'
+      if (occurrence.status !== nextStatus) {
         const updatedOccurrence = await api.collection('occurrences').update(occurrence.id, {
-          status: shouldComplete ? 'completed' : 'pending',
+          status: nextStatus,
           completed_at: shouldComplete ? new Date().toISOString() : '',
         })
         Object.assign(occurrence, mapOccurrence(updatedOccurrence))

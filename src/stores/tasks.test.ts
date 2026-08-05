@@ -121,6 +121,134 @@ describe('quantitative task completion', () => {
     expect(store.completionRate).toBe(50)
   })
 
+  it('excludes an unlocked daily total from the daily percentage denominator', () => {
+    const store = useTaskStore()
+    const dailyTotal: Task = {
+      ...task,
+      id: 'daily-total-task',
+      name: 'Daily total',
+      type: 'daily_total',
+      targetValue: 4,
+      targetOperator: 'lte',
+    }
+    store.selectedDate = selectedDate
+    store.tasks = [task, dailyTotal]
+    store.entries = [
+      entry('duration-entry', 2),
+      { ...entry('daily-total-entry', 5), task: dailyTotal.id },
+    ]
+
+    expect(store.completionRate).toBe(50)
+  })
+
+  it('reopens a missed daily total without scoring it before it is locked', async () => {
+    const store = useTaskStore()
+    const dailyTotal: Task = {
+      ...task,
+      id: 'daily-total-task',
+      name: 'Daily total',
+      type: 'daily_total',
+      targetValue: 4,
+      unit: 'hours',
+    }
+    const missedOccurrence: Occurrence = {
+      ...completedOccurrence,
+      id: 'daily-total-occurrence',
+      task: dailyTotal.id,
+      status: 'missed',
+      completedAt: undefined,
+      snapshotName: dailyTotal.name,
+      snapshotTarget: 4,
+      snapshotUnit: 'hours',
+    }
+    const existingValues = [3, -1.28, 2]
+    const timerValue = 1007 / 3600
+    store.tasks = [dailyTotal]
+    store.occurrences = [missedOccurrence]
+    store.entries = existingValues.map((value, index) => ({
+      ...entry(`daily-total-entry-${index}`, value),
+      task: dailyTotal.id,
+      occurrence: missedOccurrence.id,
+    }))
+    apiMocks.createEntry.mockResolvedValue({
+      id: 'timer-entry',
+      task: dailyTotal.id,
+      occurrence: missedOccurrence.id,
+      program_step: '',
+      entry_date: '2026-07-29',
+      value: timerValue,
+      kind: 'duration',
+      unit: 'hours',
+      note: 'Logged with timer',
+      created_at: '2026-07-29T13:00:00.000Z',
+    })
+    apiMocks.updateOccurrence.mockResolvedValue({
+      id: missedOccurrence.id,
+      task: dailyTotal.id,
+      program_step: '',
+      scheduled_date: '2026-07-29',
+      status: 'pending',
+      sealed: false,
+      completed_at: '',
+      snapshot_name: dailyTotal.name,
+      snapshot_target: 4,
+      snapshot_unit: 'hours',
+    })
+
+    await store.addEntry(
+      store.makeProgress(dailyTotal, selectedDate),
+      timerValue,
+      'duration',
+      'Logged with timer',
+    )
+
+    expect(apiMocks.updateOccurrence).toHaveBeenCalledWith(missedOccurrence.id, {
+      status: 'pending',
+      completed_at: '',
+    })
+    expect(store.makeProgress(dailyTotal, selectedDate)).toMatchObject({
+      percent: 100,
+      complete: false,
+      status: 'pending',
+      sealed: false,
+    })
+    expect(store.completionRateForDate(selectedDate)).toBeUndefined()
+  })
+
+  it('scores a locked at-most daily total by subtracting its proportional excess', () => {
+    const store = useTaskStore()
+    const dailyTotal: Task = {
+      ...task,
+      id: 'daily-total-task',
+      name: 'Daily total',
+      type: 'daily_total',
+      targetValue: 4,
+      targetOperator: 'lte',
+      unit: 'hours',
+    }
+    store.tasks = [dailyTotal]
+    store.occurrences = [{
+      ...completedOccurrence,
+      id: 'daily-total-occurrence',
+      task: dailyTotal.id,
+      sealed: true,
+      snapshotName: dailyTotal.name,
+      snapshotTarget: 4,
+      snapshotUnit: 'hours',
+    }]
+    store.entries = [{
+      ...entry('daily-total-entry', 5),
+      task: dailyTotal.id,
+      occurrence: 'daily-total-occurrence',
+    }]
+
+    expect(store.makeProgress(dailyTotal, selectedDate)).toMatchObject({
+      complete: true,
+      sealed: true,
+    })
+    expect(store.completionRateForDate(selectedDate)).toBe(75)
+  })
+
   it('does not invert an explicit completion request from a stale task card', async () => {
     const store = useTaskStore()
     store.selectedDate = selectedDate

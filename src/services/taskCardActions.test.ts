@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { TASK_CARD_ACTION_ITEMS, taskCanLogAmounts } from './taskCardActions'
+import { TASK_CARD_ACTION_ITEMS, taskCanLogAmounts, taskIntervalCanStart } from './taskCardActions'
 import type { ProgramStep, Task, TaskProgress, TaskType } from '@/types/domain'
 
 function progress(type: TaskType, completionType?: ProgramStep['completionType']) {
@@ -23,5 +23,22 @@ describe('task card actions', () => {
     expect(taskCanLogAmounts(progress('step_counter'))).toBe(false)
     expect(taskCanLogAmounts(progress('program', 'check'))).toBe(false)
     expect(taskCanLogAmounts(progress('program', 'interval'))).toBe(false)
+  })
+
+  it('allows a missed interval to be reopened only for the current day', () => {
+    const missedInterval = {
+      ...progress('interval'),
+      scheduledDate: '2026-08-05',
+      status: 'missed',
+      complete: false,
+    } as TaskProgress
+
+    expect(taskIntervalCanStart(missedInterval, '2026-08-05')).toBe(true)
+    expect(taskIntervalCanStart(missedInterval, '2026-08-06')).toBe(false)
+    expect(taskIntervalCanStart({
+      ...missedInterval,
+      status: 'completed',
+      complete: true,
+    }, '2026-08-05')).toBe(false)
   })
 })

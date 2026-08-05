@@ -15,3 +15,13 @@ export function taskCanLogAmounts(progress?: TaskProgress) {
   if (progress.programStep) return progress.programStep.completionType === 'quantity'
   return progress.task.type === 'duration' || progress.task.type === 'daily_total'
 }
+
+export function taskIntervalCanStart(progress: TaskProgress, currentDate: string) {
+  const isInterval = progress.programStep
+    ? progress.programStep.completionType === 'interval'
+    : progress.task.type === 'interval'
+  return isInterval
+    && progress.scheduledDate === currentDate
+    && !progress.complete
+    && (progress.status === 'pending' || progress.status === 'missed')
+}

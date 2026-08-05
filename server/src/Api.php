@@ -1363,10 +1363,12 @@ final class Api
         $values['id'] = $this->newId();
         $values['owner'] = $user['id'];
         if ($collection['name'] === 'interval_sessions') {
-            $values['task_date'] = $this->dateKeyInTimezone(
-                (string) $values['started_at'],
-                (string) $user['timezone'],
-            );
+            if (($values['task_date'] ?? '') === '') {
+                $values['task_date'] = $this->dateKeyInTimezone(
+                    (string) $values['started_at'],
+                    (string) $user['timezone'],
+                );
+            }
             $this->validateNewIntervalSession($values, $user);
         }
         if ($collection['name'] === 'entries') {

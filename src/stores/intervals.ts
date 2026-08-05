@@ -244,6 +244,7 @@ export const useIntervalStore = defineStore('intervals', () => {
     template?: string
     task?: string
     programStep?: string
+    taskDate?: string
   }) {
     if (activeSession.value) return activeSession.value
     const activeRecords = await api.collection('interval_sessions').getList(1, 1, {
@@ -262,6 +263,7 @@ export const useIntervalStore = defineStore('intervals', () => {
       template: input.template || '',
       task: input.task || '',
       program_step: input.programStep || '',
+      task_date: input.task ? input.taskDate || '' : '',
       source: input.source,
       status: 'running',
       snapshot_name: input.name,

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { isValid, parseISO } from 'date-fns'
 import { useRoute, useRouter } from 'vue-router'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
@@ -142,26 +143,34 @@ const playActionLabel = computed(() => hasStarted.value ? 'Resume' : 'Start')
 const returnTo = computed(() => route.query.from === 'tasks' ? '/tasks' : '/intervals')
 const originTaskId = computed(() => typeof route.query.task === 'string' ? route.query.task : '')
 const originProgramStepId = computed(() => typeof route.query.step === 'string' ? route.query.step : '')
+const originTaskDate = computed(() => {
+  if (typeof route.query.date !== 'string') return toDateKey(new Date())
+  const parsed = parseISO(route.query.date)
+  return isValid(parsed) && toDateKey(parsed) === route.query.date
+    ? route.query.date
+    : toDateKey(new Date())
+})
 const attachedProgressCandidates = computed(() => {
   const templateId = typeof route.params.templateId === 'string' ? route.params.templateId : session.value?.template
   if (!templateId) return []
+  const taskDate = originTaskId.value ? parseISO(originTaskDate.value) : new Date()
   const taskProgress = taskStore.tasks
     .filter((task) => task.type === 'interval' && task.intervalTemplate === templateId)
-    .map((task) => taskStore.makeProgress(task, new Date()))
+    .map((task) => taskStore.makeProgress(task, taskDate))
   const stepProgress = taskStore.steps
     .filter((step) => step.active
       && step.completionType === 'interval'
       && step.intervalTemplate === templateId)
     .flatMap((step) => {
       const task = taskStore.tasks.find((item) => item.id === step.task && item.type === 'program')
-      return task ? [taskStore.makeProgress(task, new Date(), step)] : []
+      return task ? [taskStore.makeProgress(task, taskDate, step)] : []
     })
   return [...taskProgress, ...stepProgress]
 })
 const eligibleTaskProgress = computed(() => {
   const today = new Date()
   return attachedProgressCandidates.value
-    .filter((item) => item.status === 'pending'
+    .filter((item) => (item.status === 'pending' || item.status === 'missed')
       && !item.complete
       && !item.locked
       && item.task.active
@@ -230,7 +239,7 @@ onMounted(async () => {
         template: template.id,
         task: originTaskId.value || undefined,
         programStep: originProgramStepId.value || undefined,
-        taskDate: toDateKey(now),
+        taskDate: originTaskId.value ? originTaskDate.value : toDateKey(now),
         source: 'template',
         status: 'paused',
         name: template.name,
@@ -565,6 +574,15 @@ async function startTemplate(taskId?: string, programStepId?: string, repetition
   error.value = ''
   repetitionError.value = ''
   try {
+    const attributedProgress = taskId
+      ? eligibleTaskProgress.value.find((progress) =>
+          progress.task.id === taskId
+          && (progress.programStep?.id || '') === (programStepId || ''),
+        )
+      : undefined
+    if (attributedProgress?.status === 'missed') {
+      await taskStore.setStatus(attributedProgress, 'pending')
+    }
     const definition = repetitionSettings.enabled
       ? intervalDefinitionWithRepetitions(item.definition, repetitions ?? repetitionSettings.defaultCount)
       : item.definition
@@ -577,6 +595,7 @@ async function startTemplate(taskId?: string, programStepId?: string, repetition
       template: item.template,
       task: taskId,
       programStep: programStepId,
+      taskDate: taskId ? item.taskDate : undefined,
     })
     if (started.task !== taskId || started.programStep !== programStepId) {
       repetitionDialog.value = false

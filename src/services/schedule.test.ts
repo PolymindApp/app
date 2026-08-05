@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { goalState, isTaskScheduled, meetsTarget, programCycleDay, progressPercent, stepsForDate, taskCompletionMarkerColor } from './schedule'
+import { dailyTotalCompletionPercent, goalState, isTaskScheduled, meetsTarget, programCycleDay, progressPercent, stepsForDate, taskCompletionMarkerColor } from './schedule'
 import type { ProgramStep, Task } from '@/types/domain'
 
 const task = (overrides: Partial<Task> = {}): Task => ({
@@ -71,10 +71,26 @@ describe('quantitative targets', () => {
     expect(meetsTarget(2.4, 2.5, 'eq')).toBe(false)
   })
 
+  it('compares targets at the same two-decimal precision shown to the user', () => {
+    const displayedFourHours = 3 - 1.28 + (1007 / 3600) + 2
+
+    expect(Number(displayedFourHours.toFixed(2))).toBe(4)
+    expect(meetsTarget(displayedFourHours, 4, 'gte')).toBe(true)
+    expect(progressPercent(displayedFourHours, 4, 'gte')).toBe(100)
+    expect(goalState(displayedFourHours, 4, 'gte')).toBe('met')
+  })
+
   it('caps progress at one hundred percent', () => {
     expect(progressPercent(175, 150, 'gte')).toBe(100)
     expect(progressPercent(75, 150, 'gte')).toBe(50)
     expect(progressPercent(-25, 150, 'gte')).toBe(0)
+  })
+
+  it('penalizes a locked at-most daily total only by its proportional excess', () => {
+    expect(dailyTotalCompletionPercent(3, 4, 'lte')).toBe(100)
+    expect(dailyTotalCompletionPercent(4, 4, 'lte')).toBe(100)
+    expect(dailyTotalCompletionPercent(5, 4, 'lte')).toBe(75)
+    expect(dailyTotalCompletionPercent(8, 4, 'lte')).toBe(0)
   })
 
   it('identifies exceeded maximums and insufficient minimums', () => {
