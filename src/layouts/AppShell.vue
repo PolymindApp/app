@@ -53,6 +53,8 @@ const items = computed(() => visibleMainNavItems(
 ))
 const intervalIsRunning = computed(() => intervalStore.activeSession?.status === 'running')
 const flashcardIsRunning = computed(() => flashcardStore.activeSession?.status === 'running')
+const intervalSessionIsActive = computed(() => Boolean(intervalStore.activeSession))
+const flashcardSessionIsActive = computed(() => Boolean(flashcardStore.activeSession))
 const sessionIsRunning = computed(() => intervalIsRunning.value || flashcardIsRunning.value)
 
 const immersive = computed(() => Boolean(router.currentRoute.value.meta.immersive))
@@ -83,14 +85,20 @@ const current = computed({
   set: (path: string) => router.push(path),
 })
 
-function menuItemIsRunning(itemId: string) {
-  if (itemId === 'intervals') return intervalIsRunning.value
-  if (itemId === 'flashcards') return flashcardIsRunning.value
+function menuItemHasActiveSession(itemId: string) {
+  if (itemId === 'intervals') return intervalSessionIsActive.value
+  if (itemId === 'flashcards') return flashcardSessionIsActive.value
   return false
 }
 
 function menuItemLabel(item: { id: string; title: string }) {
-  return menuItemIsRunning(item.id) ? `${item.title}, session running` : item.title
+  if (item.id === 'intervals' && intervalStore.activeSession) {
+    return `${item.title}, session ${intervalStore.activeSession.status}`
+  }
+  if (item.id === 'flashcards' && flashcardStore.activeSession) {
+    return `${item.title}, review ${flashcardStore.activeSession.status}`
+  }
+  return item.title
 }
 
 function stopDocumentTitleAnimation(restoreTitle = true) {
@@ -223,7 +231,7 @@ function releaseLeavingPage(element: Element) {
           <template #prepend>
             <MainNavigationIcon
               :icon="item.icon"
-              :running="menuItemIsRunning(item.id)"
+              :running="menuItemHasActiveSession(item.id)"
               badge-surface="background"
             />
           </template>
@@ -313,7 +321,7 @@ function releaseLeavingPage(element: Element) {
         >
           <MainNavigationIcon
             :icon="item.icon"
-            :running="menuItemIsRunning(item.id)"
+            :running="menuItemHasActiveSession(item.id)"
             badge-surface="surface"
           />
           <span>{{ item.title }}</span>

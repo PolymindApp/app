@@ -84,6 +84,18 @@ const canUseNativeBackground = computed(() => Boolean(
   && session.value.backLanguage
   && session.value.status === 'running',
 ))
+const canNavigateLeft = computed(() => Boolean(
+  session.value?.status === 'running'
+  && (session.value.mode === 'passive' ? passiveSide.value === 'back' : revealed.value),
+))
+const navigationLeftLabel = computed(() => {
+  if (session.value?.mode === 'passive') return 'Front'
+  return 'Error'
+})
+const navigationRightLabel = computed(() => {
+  if (session.value?.mode === 'passive') return passiveSide.value === 'front' ? 'Back' : 'Next'
+  return revealed.value ? 'Success' : 'Reveal'
+})
 
 watch([
   loading,
@@ -235,6 +247,38 @@ function resetCurrentCardPhase() {
   passiveRemainingMs.value = (session.value?.frontSeconds || 5) * 1000
   if (isFinished.value) clearPassiveState()
   else savePassiveState()
+}
+
+async function navigateLeft() {
+  if (!session.value || !canNavigateLeft.value || busy.value) return
+  if (session.value.mode === 'manual') {
+    await performAction('error')
+    return
+  }
+  passiveSide.value = 'front'
+  passiveRemainingMs.value = session.value.frontSeconds * 1000
+  savePassiveState()
+  await syncNativeBackground()
+}
+
+async function navigateRight() {
+  if (!session.value || session.value.status !== 'running' || busy.value) return
+  if (session.value.mode === 'manual') {
+    if (!revealed.value) {
+      revealed.value = true
+      return
+    }
+    await performAction('success')
+    return
+  }
+  if (passiveSide.value === 'front') {
+    passiveSide.value = 'back'
+    passiveRemainingMs.value = session.value.backSeconds * 1000
+    savePassiveState()
+    await syncNativeBackground()
+    return
+  }
+  await performAction('view')
 }
 
 async function performAction(
@@ -477,7 +521,7 @@ function tagName(id: string) {
     <template v-else-if="session">
       <header class="runner-header">
         <v-btn
-          icon="mdi-close"
+          icon="mdi-chevron-down"
           variant="text"
           aria-label="Leave review"
           :disabled="busy"
@@ -488,12 +532,12 @@ function tagName(id: string) {
           <span>{{ completedCards }} of {{ session.totalCards }}</span>
         </div>
         <v-btn
-          :icon="session.status === 'paused' ? 'mdi-play' : 'mdi-pause'"
-          variant="tonal"
-          color="secondary"
-          :aria-label="session.status === 'paused' ? 'Resume review' : 'Pause review'"
+          icon="mdi-stop-circle-outline"
+          variant="text"
+          color="error"
+          aria-label="End review"
           :disabled="isFinished || busy"
-          @click="session.status === 'paused' ? resumeReview() : pauseReview(false)"
+          @click="endDialog = true"
         />
       </header>
 
@@ -598,6 +642,45 @@ function tagName(id: string) {
           />
         </div>
 
+        <footer class="review-navigation" aria-label="Review navigation">
+          <div class="review-navigation__control">
+            <v-btn
+              icon="mdi-chevron-left"
+              variant="tonal"
+              size="large"
+              :color="session.mode === 'manual' && revealed ? 'error' : undefined"
+              :aria-label="session.mode === 'manual' ? 'Mark card as an error' : 'Show card front'"
+              :disabled="!canNavigateLeft || busy"
+              @click="navigateLeft"
+            />
+            <span>{{ navigationLeftLabel }}</span>
+          </div>
+          <div class="review-navigation__control">
+            <v-btn
+              :icon="session.status === 'paused' ? 'mdi-play' : 'mdi-pause'"
+              color="secondary"
+              size="x-large"
+              :loading="busy"
+              :aria-label="session.status === 'paused' ? 'Resume review' : 'Pause review'"
+              @touchstart.stop
+              @click.stop="session.status === 'paused' ? resumeReview() : pauseReview(false)"
+            />
+            <span>{{ session.status === 'paused' ? 'Resume' : 'Pause' }}</span>
+          </div>
+          <div class="review-navigation__control">
+            <v-btn
+              icon="mdi-chevron-right"
+              variant="tonal"
+              size="large"
+              :color="session.mode === 'manual' && revealed ? 'success' : undefined"
+              :aria-label="navigationRightLabel"
+              :disabled="busy || session.status === 'paused'"
+              @click="navigateRight"
+            />
+            <span>{{ navigationRightLabel }}</span>
+          </div>
+        </footer>
+
         <div class="queue-actions">
           <v-btn
             variant="tonal"
@@ -617,61 +700,7 @@ function tagName(id: string) {
             Eject
           </v-btn>
         </div>
-
-        <div v-if="session.mode === 'manual'" class="grading-actions">
-          <v-btn
-            v-if="!revealed"
-            block
-            size="large"
-            color="secondary"
-            prepend-icon="mdi-eye-outline"
-            :disabled="busy || session.status === 'paused'"
-            @click="revealed = true"
-          >
-            Show answer
-          </v-btn>
-          <template v-else>
-            <v-btn
-              size="large"
-              color="error"
-              variant="tonal"
-              prepend-icon="mdi-close-bold"
-              :loading="busy"
-              @click="performAction('error')"
-            >
-              Error
-            </v-btn>
-            <v-btn
-              size="large"
-              color="success"
-              prepend-icon="mdi-check-bold"
-              :loading="busy"
-              @click="performAction('success')"
-            >
-              Success
-            </v-btn>
-          </template>
-        </div>
-
-        <v-btn
-          class="end-review"
-          variant="text"
-          color="medium-emphasis"
-          :disabled="busy"
-          @click="endDialog = true"
-        >
-          End review early
-        </v-btn>
       </section>
-
-      <div v-if="session.status === 'paused' && !isFinished" class="pause-overlay">
-        <v-icon icon="mdi-pause-circle-outline" size="48" color="secondary" />
-        <h2 class="text-h5 font-weight-black">Review paused</h2>
-        <p class="text-body-2 muted">Your place and card timing are saved.</p>
-        <v-btn size="large" color="secondary" prepend-icon="mdi-play" :loading="busy" @click="resumeReview">
-          Resume
-        </v-btn>
-      </div>
     </template>
 
     <ConfirmDialog
@@ -679,7 +708,7 @@ function tagName(id: string) {
       title="End this review?"
       message="Partial statistics will be saved, but an attached task will remain incomplete."
       confirm-text="End review"
-      confirm-color="warning"
+      confirm-color="error"
       icon="mdi-stop-circle-outline"
       :loading="busy"
       @confirm="finishEarly"
@@ -688,18 +717,18 @@ function tagName(id: string) {
 </template>
 
 <style scoped>
-.review-runner { min-height: 100dvh; background: radial-gradient(circle at 50% 26%, rgba(var(--v-theme-secondary), .08), transparent 34rem), rgb(var(--v-theme-background)); color: rgb(var(--v-theme-on-background)); }
+.review-runner { position: fixed; z-index: 1003; inset: 0; display: flex; width: 100%; max-width: 100vw; height: 100dvh; min-height: 0; flex-direction: column; overflow: hidden; background: radial-gradient(circle at 50% 26%, rgba(var(--v-theme-secondary), .08), transparent 34rem), rgb(var(--v-theme-background)); color: rgb(var(--v-theme-on-background)); }
 .runner-header { display: grid; min-height: calc(4rem + max(env(safe-area-inset-top), var(--safe-area-inset-top, 0rem))); padding: max(env(safe-area-inset-top), var(--safe-area-inset-top, 0rem)) 1rem 0; grid-template-columns: 2.75rem minmax(0, 1fr) 2.75rem; align-items: center; gap: .75rem; }
 .runner-header__title { display: flex; flex-direction: column; align-items: center; }
 .runner-header__title strong { max-width: 100%; font-size: .88rem; }
 .runner-header__title span { color: rgba(var(--v-theme-on-surface), .52); font-size: .68rem; font-weight: 800; }
 .runner-state { display: flex; min-height: 100dvh; align-items: center; justify-content: center; flex-direction: column; gap: 1rem; }
 .runner-alert { max-width: 44rem; margin: 1rem auto 0; }
-.runner-body { display: grid; width: 100%; max-width: 44rem; margin: 0 auto; padding: 1.25rem 1rem 2rem; gap: 1rem; }
+.runner-body { display: flex; width: 100%; max-width: 44rem; min-height: 0; margin: 0 auto; padding: 1rem 1rem .5rem; flex: 1 1 auto; flex-direction: column; gap: .875rem; overflow-y: auto; overscroll-behavior: contain; }
 .runner-meta { display: flex; align-items: center; justify-content: space-between; gap: 1rem; color: rgba(var(--v-theme-on-surface), .68); font-size: .75rem; font-weight: 850; }
 .runner-meta > div { display: flex; align-items: center; gap: .4rem; }
 .tag-row { display: flex; min-height: 2rem; flex-wrap: wrap; justify-content: center; gap: .4rem; }
-.review-card { width: 100%; min-height: min(50dvh, 28rem); border: 0; border-radius: 1.5rem; background: transparent; color: inherit; cursor: pointer; perspective: 80rem; }
+.review-card { width: 100%; min-height: min(38dvh, 22rem); border: 0; border-radius: 1.5rem; flex: 1 1 auto; background: transparent; color: inherit; cursor: pointer; perspective: 80rem; }
 .review-card:focus-visible { outline: .1875rem solid rgba(var(--v-theme-secondary), .72); outline-offset: .25rem; }
 .review-card__inner { position: relative; display: grid; min-height: inherit; transform-style: preserve-3d; transition: transform 240ms cubic-bezier(.22, 1, .36, 1); }
 .review-card--revealed .review-card__inner { transform: rotateY(180deg); }
@@ -710,17 +739,15 @@ function tagName(id: string) {
 .passive-card strong { max-width: 34rem; overflow-wrap: anywhere; font-size: clamp(1.3rem, 5vw, 2.1rem); font-weight: 850; line-height: 1.35; white-space: pre-wrap; }
 .review-card__back { border-color: rgba(var(--v-theme-secondary), .34); transform: rotateY(180deg); }
 .review-card__hint { display: flex; align-items: center; gap: .4rem; color: rgba(var(--v-theme-on-surface), .48); font-size: .72rem; font-weight: 800; }
-.passive-card { display: flex; min-height: min(50dvh, 28rem); padding: 2rem; border: .0625rem solid rgba(var(--v-theme-secondary), .28); border-radius: 1.5rem; align-items: center; flex-direction: column; gap: 1.5rem; background: rgb(var(--v-theme-surface)); text-align: center; box-shadow: 0 1rem 2.5rem rgba(0, 0, 0, .26); }
+.passive-card { display: flex; min-height: min(38dvh, 22rem); padding: 2rem; border: .0625rem solid rgba(var(--v-theme-secondary), .28); border-radius: 1.5rem; align-items: center; flex: 1 1 auto; flex-direction: column; gap: 1.5rem; background: rgb(var(--v-theme-surface)); text-align: center; box-shadow: 0 1rem 2.5rem rgba(0, 0, 0, .26); }
 .passive-card__content { display: flex; width: 100%; flex: 1 1 auto; align-items: center; justify-content: center; flex-direction: column; gap: 1.5rem; }
 .passive-card .v-progress-linear { width: min(20rem, 100%); flex: 0 0 auto; }
+.review-navigation { display: grid; margin-top: auto; padding-top: .25rem; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; justify-items: center; gap: 1rem; }
+.review-navigation__control { display: flex; min-width: 0; align-items: center; flex-direction: column; gap: .35rem; }
+.review-navigation__control > span { color: rgba(var(--v-theme-on-surface), .56); font-size: .65rem; font-weight: 800; }
 .queue-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
-.queue-actions .v-btn,
-.grading-actions .v-btn { min-height: 3.25rem; }
-.grading-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
-.grading-actions > .v-btn:only-child { grid-column: 1 / -1; }
-.end-review { justify-self: center; }
-.pause-overlay { position: fixed; z-index: 30; inset: 0; display: flex; padding: 2rem; align-items: center; justify-content: center; flex-direction: column; gap: 1rem; background: rgba(var(--v-theme-background), .9); -webkit-backdrop-filter: blur(1rem); backdrop-filter: blur(1rem); text-align: center; }
-.completion-panel { display: flex; width: min(42rem, calc(100% - 2rem)); min-height: calc(100dvh - 5rem); margin: 0 auto; padding: 2rem 0; align-items: center; justify-content: center; flex-direction: column; gap: 1.25rem; text-align: center; }
+.queue-actions .v-btn { min-height: 3.25rem; }
+.completion-panel { display: flex; width: min(42rem, calc(100% - 2rem)); min-height: 0; margin: 0 auto; padding: 2rem 0; align-items: center; justify-content: center; flex: 1 1 auto; flex-direction: column; gap: 1.25rem; overflow-y: auto; text-align: center; }
 .completion-panel__icon { display: grid; width: 6rem; height: 6rem; place-items: center; border-radius: 2rem; background: rgba(var(--v-theme-secondary), .16); color: rgb(var(--v-theme-secondary)); }
 .completion-panel h1 { font-size: clamp(2.6rem, 10vw, 5rem); }
 .completion-stats { display: grid; width: 100%; margin: 1rem 0; grid-template-columns: repeat(auto-fit, minmax(6rem, 1fr)); gap: .6rem; }
