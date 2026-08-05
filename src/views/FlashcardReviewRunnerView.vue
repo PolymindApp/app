@@ -88,10 +88,6 @@ const canNavigateLeft = computed(() => Boolean(
   session.value?.status === 'running'
   && (session.value.mode === 'passive' ? passiveSide.value === 'back' : revealed.value),
 ))
-const navigationLeftLabel = computed(() => {
-  if (session.value?.mode === 'passive') return 'Front'
-  return 'Error'
-})
 const navigationRightLabel = computed(() => {
   if (session.value?.mode === 'passive') return passiveSide.value === 'front' ? 'Back' : 'Next'
   return revealed.value ? 'Success' : 'Reveal'
@@ -581,7 +577,7 @@ function tagName(id: string) {
           <div v-if="accuracy !== undefined"><strong>{{ accuracy }}%</strong><span>Accuracy</span></div>
           <div><strong>{{ session.ejectedCount }}</strong><span>Ejected</span></div>
         </div>
-        <v-btn block size="large" color="secondary" @click="router.replace(exitDestination)">Done</v-btn>
+        <v-btn class="completion-panel__done" size="large" color="secondary" @click="router.replace(exitDestination)">Done</v-btn>
       </section>
 
       <section v-else-if="currentCard" class="runner-body">
@@ -653,7 +649,6 @@ function tagName(id: string) {
               :disabled="!canNavigateLeft || busy"
               @click="navigateLeft"
             />
-            <span>{{ navigationLeftLabel }}</span>
           </div>
           <div class="review-navigation__control">
             <v-btn
@@ -665,7 +660,6 @@ function tagName(id: string) {
               @touchstart.stop
               @click.stop="session.status === 'paused' ? resumeReview() : pauseReview(false)"
             />
-            <span>{{ session.status === 'paused' ? 'Resume' : 'Pause' }}</span>
           </div>
           <div class="review-navigation__control">
             <v-btn
@@ -677,7 +671,6 @@ function tagName(id: string) {
               :disabled="busy || session.status === 'paused'"
               @click="navigateRight"
             />
-            <span>{{ navigationRightLabel }}</span>
           </div>
         </footer>
 
@@ -742,14 +735,14 @@ function tagName(id: string) {
 .passive-card { display: flex; min-height: min(38dvh, 22rem); padding: 2rem; border: .0625rem solid rgba(var(--v-theme-secondary), .28); border-radius: 1.5rem; align-items: center; flex: 1 1 auto; flex-direction: column; gap: 1.5rem; background: rgb(var(--v-theme-surface)); text-align: center; box-shadow: 0 1rem 2.5rem rgba(0, 0, 0, .26); }
 .passive-card__content { display: flex; width: 100%; flex: 1 1 auto; align-items: center; justify-content: center; flex-direction: column; gap: 1.5rem; }
 .passive-card .v-progress-linear { width: min(20rem, 100%); flex: 0 0 auto; }
-.review-navigation { display: grid; margin-top: auto; padding-top: .25rem; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; justify-items: center; gap: 1rem; }
-.review-navigation__control { display: flex; min-width: 0; align-items: center; flex-direction: column; gap: .35rem; }
-.review-navigation__control > span { color: rgba(var(--v-theme-on-surface), .56); font-size: .65rem; font-weight: 800; }
+.review-navigation { display: grid; margin-top: auto; padding-top: .25rem; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: center; justify-items: center; gap: 1rem; }
+.review-navigation__control { display: flex; min-width: 0; align-items: center; }
 .queue-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
 .queue-actions .v-btn { min-height: 3.25rem; }
 .completion-panel { display: flex; width: min(42rem, calc(100% - 2rem)); min-height: 0; margin: 0 auto; padding: 2rem 0; align-items: center; justify-content: center; flex: 1 1 auto; flex-direction: column; gap: 1.25rem; overflow-y: auto; text-align: center; }
 .completion-panel__icon { display: grid; width: 6rem; height: 6rem; place-items: center; border-radius: 2rem; background: rgba(var(--v-theme-secondary), .16); color: rgb(var(--v-theme-secondary)); }
 .completion-panel h1 { font-size: clamp(2.6rem, 10vw, 5rem); }
+.completion-panel__done { width: 100%; flex: 0 0 auto; }
 .completion-stats { display: grid; width: 100%; margin: 1rem 0; grid-template-columns: repeat(auto-fit, minmax(6rem, 1fr)); gap: .6rem; }
 .completion-stats > div { display: flex; padding: 1rem .5rem; border-radius: 1rem; flex-direction: column; background: rgba(var(--v-theme-on-surface), .06); }
 .completion-stats strong { font-size: 1.25rem; }
