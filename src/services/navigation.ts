@@ -1,6 +1,7 @@
 export const MAIN_NAV_ITEMS = [
-  { id: 'tasks', title: 'Tasks', icon: 'mdi-lightning-bolt', to: '/tasks' },
+  { id: 'tasks', title: 'Tasks', icon: 'mdi-clipboard-check-outline', to: '/tasks' },
   { id: 'intervals', title: 'Intervals', icon: 'mdi-timer-outline', to: '/intervals' },
+  { id: 'flashcards', title: 'Flashcards', icon: 'mdi-cards-outline', to: '/flashcards' },
   { id: 'tracking', title: 'Tracking', icon: 'mdi-chart-timeline-variant', to: '/tracking' },
   { id: 'journal', title: 'Journal', icon: 'mdi-notebook-outline', to: '/journal' },
 ] as const
@@ -13,6 +14,13 @@ export const MAIN_MENU_ORDER_CHANGED_EVENT = 'mom-main-menu-order-changed'
 
 const mainNavIds = new Set<string>(DEFAULT_MAIN_MENU_ORDER)
 const mainMenuOrderStorageKey = 'mom-main-menu-order'
+
+export function bottomNavigationFontSize(itemCount: number) {
+  const count = Number.isFinite(itemCount) ? Math.max(0, Math.floor(itemCount)) : 0
+  const extraItems = Math.max(0, count - 4)
+  const size = Math.max(.56, .68 - extraItems * .18)
+  return `${size.toFixed(2)}rem`
+}
 
 export function normalizeMainMenuOrder(value: unknown): MainNavItemId[] {
   const orderedIds: MainNavItemId[] = []

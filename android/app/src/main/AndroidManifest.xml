@@ -60,10 +60,23 @@
                 android:value="User-started interval timer with scheduled audio and haptic cues"
             />
         </service>
+
+        <service
+            android:name=".BackgroundFlashcardService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="User-started passive flashcard review with timed text-to-speech while the app is backgrounded or the screen is locked"
+            />
+        </service>
     </application>
 
     <queries>
         <package android:name="com.google.android.apps.healthdata" />
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
     </queries>
 
     <!-- Permissions -->

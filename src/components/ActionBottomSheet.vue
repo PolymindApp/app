@@ -159,6 +159,13 @@ watch(model, (open) => {
   clearInlineGestureStyles()
 })
 
+watch(model, (open) => {
+  const scrim = sheetElement()?.nextElementSibling
+  if (!(scrim instanceof HTMLElement) || !scrim.classList.contains('v-navigation-drawer__scrim')) return
+  if (open) scrim.style.removeProperty('pointer-events')
+  else scrim.style.setProperty('pointer-events', 'none', 'important')
+}, { flush: 'post' })
+
 onBeforeUnmount(() => {
   drag = undefined
   clearPointerListeners()
@@ -227,8 +234,8 @@ onBeforeUnmount(() => {
 /* The drawer scrim is a sibling rendered by Vuetify and remains in the DOM
    while fading out. Once it is leaving, it must no longer consume a quick
    follow-up tap meant for the page beneath the sheet. */
-:global(.action-bottom-sheet + .v-navigation-drawer__scrim.fade-transition-leave-active) {
-  pointer-events: none;
+:global(.v-navigation-drawer__scrim.fade-transition-leave-active) {
+  pointer-events: none !important;
 }
 
 .action-bottom-sheet__description {

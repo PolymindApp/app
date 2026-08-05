@@ -137,6 +137,43 @@ describe('TaskCard amount actions', () => {
     expect(wrapper.text()).toContain('Start interval')
   })
 
+  it('shows and launches an attached flashcard Review set', async () => {
+    const flashcardProgress: TaskProgress = {
+      ...progress,
+      task: {
+        ...progress.task,
+        id: 'review-algebra',
+        name: 'Review algebra',
+        type: 'flashcards',
+        flashcardReviewSet: 'algebra',
+      },
+    }
+    const wrapper = mount(TaskCard, {
+      props: {
+        progress: flashcardProgress,
+        reviewSet: { name: 'Algebra', cardCount: 12, mode: 'manual' },
+        canStartReview: true,
+      },
+      global: {
+        stubs: {
+          VBtn: VBtnStub,
+          VCard: { template: '<div><slot /></div>' },
+          VExpandTransition: { template: '<div><slot /></div>' },
+          ExpandTransition: { template: '<div><slot /></div>' },
+          VIcon: true,
+          VProgressCircular: { template: '<div><slot /></div>' },
+          VProgressLinear: true,
+        },
+      },
+    })
+
+    expect(wrapper.get('.task-subtitle').text()).toBe('Manual review · 12 cards')
+    const start = wrapper.findAll('button').find(button => button.text() === 'Start review')
+    expect(start).toBeDefined()
+    await start!.trigger('click')
+    expect(wrapper.emitted('startReview')).toEqual([[flashcardProgress]])
+  })
+
   it('opens the task menu without toggling the task card', async () => {
     const wrapper = mount(TaskCard, {
       props: { progress },

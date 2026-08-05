@@ -66,4 +66,10 @@ describe('FormActionBar', () => {
     expect(wrapper.find('.form-action-bar__cancel').attributes()).toHaveProperty('disabled')
     expect(wrapper.find('.form-action-bar__primary').attributes('data-loading')).toBe('true')
   })
+
+  it('supports an embedded action row inside modal forms', () => {
+    const wrapper = mountActionBar({ embedded: true })
+
+    expect(wrapper.classes()).toContain('form-action-bar--embedded')
+  })
 })

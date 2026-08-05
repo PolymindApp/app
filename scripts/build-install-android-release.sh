@@ -12,15 +12,16 @@ Usage: pnpm android:build:install:release [-- --adb [DEVICE]]
 
 Build the signed release APK and install it.
 
-With no options, Termux opens Android's package installer on this phone.
-Use --adb to install through ADB instead (optionally selecting DEVICE).
+With no options, the script opens Android's package installer when running
+inside Termux and uses ADB on desktop hosts. Use --adb to force ADB instead
+(optionally selecting DEVICE).
 
-Before the first on-phone install, Android may ask you to allow Termux to
-install unknown apps. Release signing files must exist in private/.
+For a Termux install, Android may first ask you to allow Termux to install
+unknown apps. Release signing files must exist in private/.
 EOF
 }
 
-install_method="package-installer"
+install_method="auto"
 device_serial=""
 
 while (( $# )); do
@@ -47,6 +48,30 @@ while (( $# )); do
   shift
 done
 
+if [[ "$install_method" == auto ]]; then
+  if [[ "$(uname -o 2>/dev/null || true)" == Android ]]; then
+    install_method="package-installer"
+  else
+    install_method="adb"
+  fi
+fi
+
+case "$install_method" in
+  package-installer)
+    if ! command -v termux-open >/dev/null 2>&1; then
+      echo "termux-open is required for installation from Termux." >&2
+      echo "Install or update the Termux tools package, or rerun with --adb." >&2
+      exit 1
+    fi
+    ;;
+  adb)
+    if ! command -v adb >/dev/null 2>&1; then
+      echo "adb is required for installation from this host." >&2
+      exit 1
+    fi
+    ;;
+esac
+
 cd "$repository_root"
 
 if [[ ! -r private/android-signing.properties || ! -r private/mom-release.jks ]]; then
@@ -66,22 +91,11 @@ fi
 
 case "$install_method" in
   package-installer)
-    if ! command -v termux-open >/dev/null 2>&1; then
-      echo "termux-open is required for installation on this phone." >&2
-      echo "Install or update the Termux tools package, or rerun with --adb." >&2
-      exit 1
-    fi
-
     echo "Opening Android's installer for $application_id…"
     echo "Approve the update in the system dialog to finish installation."
     termux-open --content-type application/vnd.android.package-archive "$apk_path"
     ;;
   adb)
-    if ! command -v adb >/dev/null 2>&1; then
-      echo "adb is required for --adb installation." >&2
-      exit 1
-    fi
-
     adb_args=()
     if [[ -n "$device_serial" ]]; then
       adb_args=(-s "$device_serial")

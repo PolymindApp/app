@@ -35,6 +35,11 @@ interface CompleteIntervalSessionResponse {
   occurrence: RecordModel | null
 }
 
+interface FlashcardReviewActionResponse {
+  session: RecordModel
+  occurrence: RecordModel | null
+}
+
 const AUTH_STORAGE_KEY = 'mom-api-auth'
 const baseUrl = (import.meta.env.VITE_API_URL || '/api').replace(/\/+$/, '')
 
@@ -345,6 +350,42 @@ class ApiClient {
           runtime_state: input.runtimeState,
           elapsed_seconds: input.elapsedSeconds,
           ended_at: input.endedAt,
+        },
+      },
+      this.authStore,
+    )
+  }
+
+  startFlashcardReviewSession(
+    reviewSetId: string,
+    input: { task?: string; programStep?: string; taskDate?: string } = {},
+  ) {
+    return request<RecordModel>(
+      `/flashcard-review-sets/${encodeURIComponent(reviewSetId)}/sessions`,
+      {
+        method: 'POST',
+        body: {
+          task: input.task || '',
+          program_step: input.programStep || '',
+          task_date: input.taskDate || '',
+        },
+      },
+      this.authStore,
+    )
+  }
+
+  actOnFlashcardReviewSession(
+    sessionId: string,
+    action: 'success' | 'error' | 'view' | 'push' | 'eject' | 'pause' | 'resume' | 'end',
+    elapsedSeconds: number,
+  ) {
+    return request<FlashcardReviewActionResponse>(
+      `/flashcard-review-sessions/${encodeURIComponent(sessionId)}/actions`,
+      {
+        method: 'POST',
+        body: {
+          action,
+          elapsed_seconds: Math.max(0, Math.round(elapsedSeconds)),
         },
       },
       this.authStore,

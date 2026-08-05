@@ -40,6 +40,9 @@ const props = defineProps<{
   interval?: { name: string; duration: string }
   canStartInterval?: boolean
   intervalActive?: boolean
+  reviewSet?: { name: string; cardCount: number; mode: 'manual' | 'passive' }
+  canStartReview?: boolean
+  reviewActive?: boolean
   syncing?: boolean
 }>()
 const emit = defineEmits<{
@@ -49,6 +52,7 @@ const emit = defineEmits<{
   logTime: [progress: TaskProgress]
   review: [progress: TaskProgress]
   startInterval: [progress: TaskProgress]
+  startReview: [progress: TaskProgress]
   actions: [progress: TaskProgress]
 }>()
 
@@ -66,6 +70,9 @@ const isCheck = computed(() => (step.value ? step.value.completionType === 'chec
 const isInterval = computed(() =>
   (!step.value && task.value.type === 'interval') || step.value?.completionType === 'interval',
 )
+const isFlashcards = computed(() =>
+  (!step.value && task.value.type === 'flashcards') || step.value?.completionType === 'flashcards',
+)
 const isDailyTotal = computed(() => !step.value && task.value.type === 'daily_total')
 const isStepCounter = computed(() => !step.value && task.value.type === 'step_counter')
 const canLogAmount = computed(() => taskCanLogAmounts(props.progress))
@@ -77,7 +84,7 @@ const target = computed(() => step.value?.targetValue ?? task.value.targetValue 
 const unit = computed(() => step.value?.customUnit || step.value?.unit || task.value.customUnit || task.value.unit || '')
 const operator = computed(() => ({ gte: 'at least', lte: 'at most', eq: 'exactly' })[step.value?.targetOperator || task.value.targetOperator || 'gte'])
 const targetOperator = computed(() => step.value?.targetOperator || task.value.targetOperator || 'gte')
-const currentGoalState = computed(() => isCheck.value || isInterval.value ? 'neutral' : goalState(props.progress.value, target.value, targetOperator.value))
+const currentGoalState = computed(() => isCheck.value || isInterval.value || isFlashcards.value ? 'neutral' : goalState(props.progress.value, target.value, targetOperator.value))
 const numericGoalStatus = computed(() => {
   if (isCheck.value || isInterval.value) return undefined
   const difference = target.value - props.progress.value
@@ -142,6 +149,7 @@ const stateIcon = computed(() => {
   if (props.progress.sealed) return 'mdi-lock-check'
   if (displayedComplete.value) return 'mdi-check-bold'
   if (isInterval.value) return 'mdi-timer-play-outline'
+  if (isFlashcards.value) return 'mdi-cards-outline'
   if (isStepCounter.value) return 'mdi-shoe-print'
   return isCheck.value ? 'mdi-circle-outline' : 'mdi-lightning-bolt'
 })
@@ -152,6 +160,10 @@ const title = computed(() => step.value?.name || task.value.name)
 const subtitle = computed(() => {
   if (isInterval.value) {
     return props.interval?.duration ? `Interval · ${props.interval.duration} total` : 'Interval'
+  }
+  if (isFlashcards.value) {
+    if (!props.reviewSet) return 'Flashcards'
+    return `${props.reviewSet.mode === 'passive' ? 'Passive' : 'Manual'} review · ${props.reviewSet.cardCount} cards`
   }
   return step.value ? `${task.value.name} · Program step` : task.value.description
 })
@@ -290,7 +302,7 @@ watch(() => props.valuePulse, async (pulse, previousPulse) => {
         class="task-card-body"
       >
         <div v-if="!isCheck" class="task-card-details">
-          <template v-if="isInterval">
+        <template v-if="isInterval">
             <v-btn
               v-if="!displayedComplete && canStartInterval"
               block
@@ -305,10 +317,28 @@ watch(() => props.valuePulse, async (pulse, previousPulse) => {
             </v-btn>
             <div v-else-if="!displayedComplete && progress.status === 'pending'" class="status-banner mt-3 muted">
               <v-icon icon="mdi-calendar-today-outline" size="16" /> Select today to start this interval
-            </div>
-          </template>
+          </div>
+        </template>
 
-          <template v-else>
+        <template v-else-if="isFlashcards">
+          <v-btn
+            v-if="!displayedComplete && canStartReview"
+            block
+            class="mt-4"
+            color="secondary"
+            prepend-icon="mdi-cards-playing-outline"
+            :disabled="busy || progress.locked || !reviewSet?.cardCount"
+            @touchstart.stop
+            @click.stop="emit('startReview', progress)"
+          >
+            {{ reviewActive ? 'Resume review' : 'Start review' }}
+          </v-btn>
+          <div v-else-if="!displayedComplete && progress.status === 'pending'" class="status-banner mt-3 muted">
+            <v-icon icon="mdi-calendar-today-outline" size="16" /> Select today to start this review
+          </div>
+        </template>
+
+        <template v-else>
             <div class="metric-row mt-4">
               <div>
                 <span

@@ -3,6 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import type { Entry, Occurrence, ProgramStep, Task } from '@/types/domain'
 
 const apiMocks = vi.hoisted(() => ({
+  createOccurrence: vi.fn(),
   createEntry: vi.fn(),
   getEntries: vi.fn(),
   updateOccurrence: vi.fn(),
@@ -20,7 +21,10 @@ vi.mock('@/lib/api', () => ({
         create: apiMocks.createEntry,
         getFullList: apiMocks.getEntries,
       }
-      if (name === 'occurrences') return { update: apiMocks.updateOccurrence }
+      if (name === 'occurrences') return {
+        create: apiMocks.createOccurrence,
+        update: apiMocks.updateOccurrence,
+      }
       if (name === 'tasks') return { update: apiMocks.updateTask }
       throw new Error(`Unexpected collection: ${name}`)
     },
@@ -81,6 +85,7 @@ function entry(id: string, value: number): Entry {
 describe('quantitative task completion', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    apiMocks.createOccurrence.mockReset()
     apiMocks.createEntry.mockReset()
     apiMocks.getEntries.mockReset()
     apiMocks.updateOccurrence.mockReset()
@@ -131,6 +136,44 @@ describe('quantitative task completion', () => {
 
     expect(apiMocks.updateOccurrence).not.toHaveBeenCalled()
     expect(store.occurrences[0]?.status).toBe('completed')
+  })
+
+  it('reactively updates review progress when setting a newly created occurrence to missed', async () => {
+    const store = useTaskStore()
+    const reviewTask = {
+      ...task,
+      id: 'review-task',
+      type: 'check' as const,
+      reviewWhenMissed: true,
+    }
+    const pendingRecord = {
+      id: 'review-occurrence',
+      task: reviewTask.id,
+      program_step: '',
+      scheduled_date: '2026-07-29',
+      status: 'pending',
+      sealed: false,
+      completed_at: '',
+      snapshot_name: reviewTask.name,
+      snapshot_target: 1,
+      snapshot_unit: '',
+    }
+    let resolveUpdate!: (record: typeof pendingRecord) => void
+    store.selectedDate = selectedDate
+    store.tasks = [reviewTask]
+    apiMocks.createOccurrence.mockResolvedValue(pendingRecord)
+    apiMocks.updateOccurrence.mockReturnValue(new Promise((resolve) => {
+      resolveUpdate = resolve
+    }))
+
+    const statusUpdate = store.setStatus(store.selectedProgress[0]!, 'missed')
+    await vi.waitFor(() => expect(apiMocks.updateOccurrence).toHaveBeenCalled())
+    expect(store.selectedProgress[0]?.status).toBe('pending')
+
+    resolveUpdate({ ...pendingRecord, status: 'missed' })
+    await statusUpdate
+
+    expect(store.selectedProgress[0]?.status).toBe('missed')
   })
 
   it('returns a completed occurrence to pending when an entry drops below its target', async () => {
@@ -334,6 +377,35 @@ describe('interval task completion', () => {
       percent: 100,
       complete: true,
       status: 'completed',
+    })
+  })
+
+  it('uses the same occurrence completion model for flashcard reviews', () => {
+    const store = useTaskStore()
+    const flashcardTask: Task = {
+      ...task,
+      id: 'flashcard-task',
+      name: 'Review algebra',
+      type: 'flashcards',
+      flashcardReviewSet: 'set-1',
+      targetValue: 1,
+    }
+
+    expect(store.makeProgress(flashcardTask, selectedDate)).toMatchObject({
+      percent: 0,
+      complete: false,
+    })
+
+    store.occurrences = [{
+      ...completedOccurrence,
+      id: 'flashcard-occurrence',
+      task: flashcardTask.id,
+      snapshotName: flashcardTask.name,
+    }]
+
+    expect(store.makeProgress(flashcardTask, selectedDate)).toMatchObject({
+      percent: 100,
+      complete: true,
     })
   })
 

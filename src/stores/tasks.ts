@@ -5,6 +5,7 @@ import { api } from '@/lib/api'
 import { readHealthConnectSteps } from '@/services/healthConnect'
 import { isTaskScheduled, meetsTarget, programCycleDay, progressPercent, stepsForDate, toDateKey } from '@/services/schedule'
 import { sanitizeTaskEntryNote } from '@/services/taskEntryNotes'
+import { useSnackbarStore } from '@/stores/snackbar'
 import type { Entry, Occurrence, ProgramStep, Task, TaskDraft, TaskProgress } from '@/types/domain'
 
 const asNumberArray = (value: unknown, fallback: number[] = []) =>
@@ -37,6 +38,7 @@ function mapTask(record: Record<string, any>): Task {
     entryNoteSuggestionsEnabled: record.entry_note_suggestions_enabled === true,
     sortOrder: record.sort_order || 0,
     intervalTemplate: record.interval_template || undefined,
+    flashcardReviewSet: record.flashcard_review_set || undefined,
   }
 }
 
@@ -55,6 +57,7 @@ function mapStep(record: Record<string, any>): ProgramStep {
     customUnit: record.custom_unit || undefined,
     active: record.active !== false,
     intervalTemplate: record.interval_template || undefined,
+    flashcardReviewSet: record.flashcard_review_set || undefined,
   }
 }
 
@@ -138,8 +141,8 @@ export const useTaskStore = defineStore('tasks', () => {
     const operator = step?.targetOperator || task.targetOperator || 'gte'
     const targetReached = meetsTarget(value, target, operator)
     const occurrenceComplete = occurrence?.status === 'completed'
-    const isOccurrenceDriven = (step && (step.completionType === 'check' || step.completionType === 'interval'))
-      || (!step && (task.type === 'check' || task.type === 'interval'))
+    const isOccurrenceDriven = (step && ['check', 'interval', 'flashcards'].includes(step.completionType))
+      || (!step && ['check', 'interval', 'flashcards'].includes(task.type))
     const isDailyTotal = !step && task.type === 'daily_total'
     const sealed = isDailyTotal && Boolean(occurrence?.sealed)
     return {
@@ -319,7 +322,7 @@ export const useTaskStore = defineStore('tasks', () => {
     })
     const occurrence = mapOccurrence(record)
     occurrences.value.push(occurrence)
-    return occurrence
+    return occurrences.value[occurrences.value.length - 1]!
   }
 
   async function toggleComplete(progress: TaskProgress, complete: boolean) {
@@ -438,6 +441,7 @@ export const useTaskStore = defineStore('tasks', () => {
       entry_note_suggestions_enabled: draft.entryNoteSuggestionsEnabled,
       sort_order: sortOrder,
       interval_template: draft.type === 'interval' ? draft.intervalTemplate || '' : '',
+      flashcard_review_set: draft.type === 'flashcards' ? draft.flashcardReviewSet || '' : '',
     }
     const record = draft.id
       ? await api.collection('tasks').update(draft.id, payload)
@@ -448,7 +452,11 @@ export const useTaskStore = defineStore('tasks', () => {
       const existing = steps.value.filter((step) => step.task === taskId)
       const retainedIds = new Set(draft.steps.map((step) => step.id).filter(Boolean))
       await Promise.all(existing.filter((step) => !retainedIds.has(step.id)).map((step) =>
-        api.collection('program_steps').update(step.id, { active: false, interval_template: '' }),
+        api.collection('program_steps').update(step.id, {
+          active: false,
+          interval_template: '',
+          flashcard_review_set: '',
+        }),
       ))
       await Promise.all(
         draft.steps.map((step, index) => {
@@ -466,6 +474,7 @@ export const useTaskStore = defineStore('tasks', () => {
             custom_unit: step.customUnit || '',
             active: true,
             interval_template: step.completionType === 'interval' ? step.intervalTemplate || '' : '',
+            flashcard_review_set: step.completionType === 'flashcards' ? step.flashcardReviewSet || '' : '',
           }
           return step.id
             ? api.collection('program_steps').update(step.id, stepPayload)
@@ -550,6 +559,7 @@ export const useTaskStore = defineStore('tasks', () => {
     steps.value = steps.value.filter((step) => step.task !== taskId)
     occurrences.value = occurrences.value.filter((occurrence) => occurrence.task !== taskId)
     entries.value = entries.value.filter((entry) => entry.task !== taskId)
+    useSnackbarStore().showDeletion('Routine')
   }
 
   async function shiftProgram(progress: TaskProgress) {

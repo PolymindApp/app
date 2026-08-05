@@ -1,4 +1,4 @@
-export type TaskType = 'check' | 'duration' | 'daily_total' | 'step_counter' | 'program' | 'interval'
+export type TaskType = 'check' | 'duration' | 'daily_total' | 'step_counter' | 'program' | 'interval' | 'flashcards'
 export type StepSource = 'health_connect'
 export type RecurrenceType = 'daily' | 'weekdays' | 'interval_weeks'
 export type GoalPeriod = 'occurrence' | 'week'
@@ -42,6 +42,7 @@ export interface Task {
   entryNoteSuggestionsEnabled: boolean
   sortOrder: number
   intervalTemplate?: string
+  flashcardReviewSet?: string
 }
 
 export interface ProgramStep {
@@ -51,13 +52,14 @@ export interface ProgramStep {
   description: string
   sortOrder: number
   cycleDays: number[]
-  completionType: 'check' | 'quantity' | 'interval'
+  completionType: 'check' | 'quantity' | 'interval' | 'flashcards'
   targetValue?: number
   targetOperator?: TargetOperator
   unit?: string
   customUnit?: string
   active: boolean
   intervalTemplate?: string
+  flashcardReviewSet?: string
 }
 
 export interface Occurrence {
@@ -207,6 +209,124 @@ export interface QuickIntervalDraft {
 
 export interface QuickIntervalSettings extends QuickIntervalDraft {
   includeRest: boolean
+}
+
+export type FlashcardReviewMode = 'manual' | 'passive'
+export type FlashcardReviewSide = 'front' | 'back'
+export type FlashcardReviewSort = 'difficult' | 'never_reviewed' | 'least_recent' | 'recently_added' | 'random'
+export type FlashcardReviewStatus = 'running' | 'paused' | 'completed' | 'ended'
+export type FlashcardReviewOutcome = 'success' | 'error' | 'passive'
+export type FlashcardReviewAction = 'success' | 'error' | 'view' | 'push' | 'eject' | 'pause' | 'resume' | 'end'
+
+export interface FlashcardTag {
+  id: string
+  name: string
+}
+
+export interface Flashcard {
+  id: string
+  front: string
+  back: string
+  tags: string[]
+  createdAt: string
+  updatedAt: string
+  lastReviewedAt?: string
+  passiveViews: number
+  successCount: number
+  errorCount: number
+}
+
+export interface FlashcardDraft {
+  id?: string
+  front: string
+  back: string
+  tags: string[]
+}
+
+export interface FlashcardReviewSet {
+  id: string
+  name: string
+  tags: string[]
+  mode: FlashcardReviewMode
+  frontSeconds: number
+  backSeconds: number
+  speechEnabled: boolean
+  frontLanguage: string
+  backLanguage: string
+  sortMode: FlashcardReviewSort
+  sortOrder: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface FlashcardReviewSetDraft extends Omit<FlashcardReviewSet, 'id' | 'createdAt' | 'updatedAt'> {
+  id?: string
+}
+
+export interface FlashcardReviewQueueCard {
+  id: string
+  front: string
+  back: string
+  tags: string[]
+}
+
+export interface FlashcardReviewSession {
+  id: string
+  reviewSet?: string
+  status: FlashcardReviewStatus
+  name: string
+  mode: FlashcardReviewMode
+  sortMode: FlashcardReviewSort
+  tags: string[]
+  frontSeconds: number
+  backSeconds: number
+  speechEnabled: boolean
+  frontLanguage: string
+  backLanguage: string
+  queue: FlashcardReviewQueueCard[]
+  startedAt: string
+  endedAt?: string
+  updatedAt: string
+  elapsedSeconds: number
+  totalCards: number
+  viewedCount: number
+  successCount: number
+  errorCount: number
+  ejectedCount: number
+  task?: string
+  programStep?: string
+  taskDate?: string
+}
+
+export interface FlashcardSpeechLanguage {
+  tag: string
+  title: string
+}
+
+export interface FlashcardSpeechSupport {
+  available: boolean
+  languages: FlashcardSpeechLanguage[]
+}
+
+export interface BackgroundFlashcardReviewState {
+  sessionId: string
+  running: boolean
+  finished: boolean
+  completedCards: number
+  side: FlashcardReviewSide
+  remainingMs: number
+  elapsedMs: number
+}
+
+export interface FlashcardReviewEvent {
+  id: string
+  session: string
+  card?: string
+  outcome: FlashcardReviewOutcome
+  reviewedAt: string
+  front: string
+  back: string
+  tags: string[]
 }
 
 export type TrackerRole = 'factor' | 'outcome'

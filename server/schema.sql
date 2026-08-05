@@ -29,6 +29,54 @@ CREATE TABLE tags (
 
 CREATE UNIQUE INDEX idx_tags_owner_name ON tags (owner, name);
 
+CREATE TABLE flashcard_tags (
+    id TEXT PRIMARY KEY NOT NULL DEFAULT ('r' || lower(hex(randomblob(7)))),
+    owner TEXT NOT NULL,
+    name VARCHAR(50) NOT NULL DEFAULT '' COLLATE NOCASE
+);
+
+CREATE UNIQUE INDEX idx_flashcard_tags_owner_name
+    ON flashcard_tags (owner, name COLLATE NOCASE);
+
+CREATE TABLE flashcards (
+    id TEXT PRIMARY KEY NOT NULL DEFAULT ('r' || lower(hex(randomblob(7)))),
+    owner TEXT NOT NULL,
+    front TEXT NOT NULL DEFAULT '',
+    back TEXT NOT NULL DEFAULT '',
+    tags JSON NOT NULL DEFAULT '[]',
+    created_at TEXT NOT NULL DEFAULT '',
+    updated_at TEXT NOT NULL DEFAULT '',
+    last_reviewed_at TEXT NOT NULL DEFAULT '',
+    passive_views INTEGER NOT NULL DEFAULT 0,
+    success_count INTEGER NOT NULL DEFAULT 0,
+    error_count INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX idx_flashcards_owner_created
+    ON flashcards (owner, created_at DESC);
+CREATE INDEX idx_flashcards_owner_reviewed
+    ON flashcards (owner, last_reviewed_at);
+
+CREATE TABLE flashcard_review_sets (
+    id TEXT PRIMARY KEY NOT NULL DEFAULT ('r' || lower(hex(randomblob(7)))),
+    owner TEXT NOT NULL,
+    name VARCHAR(160) NOT NULL DEFAULT '',
+    tags JSON NOT NULL DEFAULT '[]',
+    mode TEXT NOT NULL DEFAULT 'manual',
+    front_seconds INTEGER NOT NULL DEFAULT 5,
+    back_seconds INTEGER NOT NULL DEFAULT 5,
+    speech_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    front_language VARCHAR(35) NOT NULL DEFAULT '',
+    back_language VARCHAR(35) NOT NULL DEFAULT '',
+    sort_mode TEXT NOT NULL DEFAULT 'difficult',
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT '',
+    updated_at TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX idx_flashcard_review_sets_owner_order
+    ON flashcard_review_sets (owner, sort_order, name);
+
 CREATE TABLE tasks (
     id TEXT PRIMARY KEY NOT NULL DEFAULT ('r' || lower(hex(randomblob(7)))),
     owner TEXT NOT NULL,
@@ -57,12 +105,15 @@ CREATE TABLE tasks (
     entry_note_suggestions_enabled BOOLEAN NOT NULL DEFAULT FALSE,
     sort_order NUMERIC NOT NULL DEFAULT 0,
     color TEXT NOT NULL DEFAULT '',
-    interval_template TEXT NOT NULL DEFAULT ''
+    interval_template TEXT NOT NULL DEFAULT '',
+    flashcard_review_set TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX idx_tasks_owner_active ON tasks (owner, active);
 CREATE INDEX idx_tasks_owner_interval_template
     ON tasks (owner, interval_template);
+CREATE INDEX idx_tasks_owner_flashcard_review_set
+    ON tasks (owner, flashcard_review_set);
 
 CREATE TABLE program_steps (
     id TEXT PRIMARY KEY NOT NULL DEFAULT ('r' || lower(hex(randomblob(7)))),
@@ -79,12 +130,15 @@ CREATE TABLE program_steps (
     custom_unit TEXT NOT NULL DEFAULT '',
     quick_amounts JSON DEFAULT NULL,
     active BOOLEAN NOT NULL DEFAULT FALSE,
-    interval_template TEXT NOT NULL DEFAULT ''
+    interval_template TEXT NOT NULL DEFAULT '',
+    flashcard_review_set TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX idx_program_steps_task_order ON program_steps (task, sort_order);
 CREATE INDEX idx_program_steps_owner_interval_template
     ON program_steps (owner, interval_template);
+CREATE INDEX idx_program_steps_owner_flashcard_review_set
+    ON program_steps (owner, flashcard_review_set);
 
 CREATE TABLE occurrences (
     id TEXT PRIMARY KEY NOT NULL DEFAULT ('r' || lower(hex(randomblob(7)))),
@@ -167,6 +221,62 @@ CREATE INDEX idx_interval_sessions_owner_task_date
     ON interval_sessions (owner, task, task_date);
 CREATE INDEX idx_interval_sessions_owner_program_step_date
     ON interval_sessions (owner, program_step, task_date);
+
+CREATE TABLE flashcard_review_sessions (
+    id TEXT PRIMARY KEY NOT NULL DEFAULT ('r' || lower(hex(randomblob(7)))),
+    owner TEXT NOT NULL,
+    review_set TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'running',
+    snapshot_name VARCHAR(160) NOT NULL DEFAULT '',
+    mode_snapshot TEXT NOT NULL DEFAULT 'manual',
+    sort_snapshot TEXT NOT NULL DEFAULT 'difficult',
+    tags_snapshot JSON NOT NULL DEFAULT '[]',
+    front_seconds_snapshot INTEGER NOT NULL DEFAULT 5,
+    back_seconds_snapshot INTEGER NOT NULL DEFAULT 5,
+    speech_enabled_snapshot BOOLEAN NOT NULL DEFAULT FALSE,
+    front_language_snapshot VARCHAR(35) NOT NULL DEFAULT '',
+    back_language_snapshot VARCHAR(35) NOT NULL DEFAULT '',
+    queue_state JSON NOT NULL DEFAULT '[]',
+    started_at TEXT NOT NULL DEFAULT '',
+    ended_at TEXT NOT NULL DEFAULT '',
+    updated_at TEXT NOT NULL DEFAULT '',
+    elapsed_seconds INTEGER NOT NULL DEFAULT 0,
+    total_cards INTEGER NOT NULL DEFAULT 0,
+    viewed_count INTEGER NOT NULL DEFAULT 0,
+    success_count INTEGER NOT NULL DEFAULT 0,
+    error_count INTEGER NOT NULL DEFAULT 0,
+    ejected_count INTEGER NOT NULL DEFAULT 0,
+    task TEXT NOT NULL DEFAULT '',
+    program_step TEXT NOT NULL DEFAULT '',
+    task_date TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX idx_flashcard_review_sessions_owner_started
+    ON flashcard_review_sessions (owner, started_at DESC);
+CREATE INDEX idx_flashcard_review_sessions_owner_status
+    ON flashcard_review_sessions (owner, status);
+CREATE INDEX idx_flashcard_review_sessions_owner_task_date
+    ON flashcard_review_sessions (owner, task, task_date);
+CREATE UNIQUE INDEX idx_flashcard_review_sessions_one_active
+    ON flashcard_review_sessions (owner)
+    WHERE status IN ('running', 'paused');
+
+CREATE TABLE flashcard_review_events (
+    id TEXT PRIMARY KEY NOT NULL DEFAULT ('r' || lower(hex(randomblob(7)))),
+    owner TEXT NOT NULL,
+    session TEXT NOT NULL DEFAULT '',
+    card TEXT NOT NULL DEFAULT '',
+    outcome TEXT NOT NULL DEFAULT '',
+    reviewed_at TEXT NOT NULL DEFAULT '',
+    front_snapshot TEXT NOT NULL DEFAULT '',
+    back_snapshot TEXT NOT NULL DEFAULT '',
+    tags_snapshot JSON NOT NULL DEFAULT '[]'
+);
+
+CREATE INDEX idx_flashcard_review_events_owner_session
+    ON flashcard_review_events (owner, session, reviewed_at);
+CREATE INDEX idx_flashcard_review_events_owner_card
+    ON flashcard_review_events (owner, card, reviewed_at DESC);
 
 CREATE TABLE tracking_trackers (
     id TEXT PRIMARY KEY NOT NULL DEFAULT ('r' || lower(hex(randomblob(7)))),

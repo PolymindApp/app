@@ -3,6 +3,7 @@ import { defineStore } from 'pinia'
 import { format, subDays } from 'date-fns'
 import { api } from '@/lib/api'
 import { aggregateTrackingEntries } from '@/services/tracking'
+import { useSnackbarStore } from '@/stores/snackbar'
 import type {
   TrackingEntry,
   TrackingEntryDraft,
@@ -165,6 +166,7 @@ export const useTrackingStore = defineStore('tracking', () => {
   async function deleteEntry(id: string) {
     await api.collection('tracking_entries').delete(id)
     entries.value = entries.value.filter((entry) => entry.id !== id)
+    useSnackbarStore().showDeletion('Log')
   }
 
   async function archiveTracker(id: string) {
@@ -178,6 +180,7 @@ export const useTrackingStore = defineStore('tracking', () => {
     await api.collection('tracking_trackers').delete(id)
     trackers.value = trackers.value.filter((tracker) => tracker.id !== id)
     entries.value = entries.value.filter((entry) => entry.tracker !== id)
+    useSnackbarStore().showDeletion('Tracker')
   }
 
   return {

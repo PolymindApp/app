@@ -1,6 +1,7 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import { api } from '@/lib/api'
+import { useSnackbarStore } from '@/stores/snackbar'
 import type { JournalEntry, JournalEntryDraft } from '@/types/domain'
 
 export function mapJournalEntry(record: Record<string, any>): JournalEntry {
@@ -79,6 +80,7 @@ export const useJournalStore = defineStore('journal', () => {
   async function deleteEntry(id: string) {
     await api.collection('journal_entries').delete(id)
     entries.value = entries.value.filter((entry) => entry.id !== id)
+    useSnackbarStore().showDeletion('Reflection')
   }
 
   return {

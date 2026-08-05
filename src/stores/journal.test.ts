@@ -19,6 +19,7 @@ vi.mock('@/lib/api', () => ({
 }))
 
 import { useJournalStore } from './journal'
+import { useSnackbarStore } from './snackbar'
 
 function record(id: string, date = '2026-08-02') {
   return {
@@ -102,5 +103,40 @@ describe('journal store', () => {
     await olderLoad
 
     expect(store.entries.map(entry => entry.id)).toEqual(['newer-week'])
+  })
+
+  it('shows a confirmation only after a reflection is successfully deleted', async () => {
+    apiMocks.delete.mockResolvedValue(true)
+    const store = useJournalStore()
+    const snackbar = useSnackbarStore()
+    store.entries = [{
+      id: 'journal-1',
+      title: 'A reflection',
+      body: 'What I noticed.',
+      occurredAt: '2026-08-02T16:00:00.000Z',
+      localDate: '2026-08-02',
+      timezoneOffset: 240,
+      taskSnapshot: '',
+      trackerSnapshot: '',
+      createdAt: '2026-08-02T16:00:00.000Z',
+      updatedAt: '2026-08-02T16:00:00.000Z',
+    }]
+
+    await store.deleteEntry('journal-1')
+
+    expect(store.entries).toEqual([])
+    expect(snackbar.visible).toBe(true)
+    expect(snackbar.message).toBe('Reflection deleted.')
+  })
+
+  it('does not confirm a reflection deletion when the request fails', async () => {
+    apiMocks.delete.mockRejectedValue(new Error('Delete failed.'))
+    const store = useJournalStore()
+    const snackbar = useSnackbarStore()
+
+    await expect(store.deleteEntry('journal-1')).rejects.toThrow('Delete failed.')
+
+    expect(snackbar.visible).toBe(false)
+    expect(snackbar.message).toBe('')
   })
 })

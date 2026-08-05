@@ -88,6 +88,32 @@ final class Api
             ) {
                 $this->completeIntervalSession($intervalMatches[1], $this->authenticate());
             }
+            if (
+                $method === 'POST'
+                && preg_match(
+                    '#^/flashcard-review-sets/([a-zA-Z0-9_-]{1,64})/sessions/?$#',
+                    $path,
+                    $flashcardSetMatches,
+                ) === 1
+            ) {
+                $this->startFlashcardReviewSession(
+                    $flashcardSetMatches[1],
+                    $this->authenticate(),
+                );
+            }
+            if (
+                $method === 'POST'
+                && preg_match(
+                    '#^/flashcard-review-sessions/([a-zA-Z0-9_-]{1,64})/actions/?$#',
+                    $path,
+                    $flashcardSessionMatches,
+                ) === 1
+            ) {
+                $this->actOnFlashcardReviewSession(
+                    $flashcardSessionMatches[1],
+                    $this->authenticate(),
+                );
+            }
 
             if (preg_match('#^/collections/([a-z_]+)/records/?$#', $path, $matches) === 1) {
                 $collection = $this->requireCollection($matches[1]);
@@ -1268,11 +1294,23 @@ final class Api
     private function createRecord(array $collection, array $user): never
     {
         $body = $this->jsonBody();
+        if (in_array($collection['name'], ['flashcard_review_sessions', 'flashcard_review_events'], true)) {
+            throw new ApiException(405, 'This collection is written through the review session endpoints.');
+        }
         if ($collection['name'] === 'tasks') {
             $body += [
                 'entry_notes_enabled' => false,
                 'entry_note_suggestions_enabled' => false,
             ];
+        }
+        if ($collection['name'] === 'flashcards') {
+            $this->rejectFields($body, [
+                'created_at', 'updated_at', 'last_reviewed_at',
+                'passive_views', 'success_count', 'error_count',
+            ]);
+        }
+        if ($collection['name'] === 'flashcard_review_sets') {
+            $this->rejectFields($body, ['created_at', 'updated_at']);
         }
         $values = $this->validateRecordInput($collection, $body, true);
         $values['id'] = $this->newId();
@@ -1286,6 +1324,33 @@ final class Api
         }
         if ($collection['name'] === 'entries') {
             $values['created_at'] = (new DateTimeImmutable('now'))->format('Y-m-d\TH:i:s.v\Z');
+        }
+        if ($collection['name'] === 'flashcards') {
+            $now = (new DateTimeImmutable('now'))->format('Y-m-d\TH:i:s.v\Z');
+            $values += [
+                'tags' => [],
+                'created_at' => $now,
+                'updated_at' => $now,
+                'last_reviewed_at' => '',
+                'passive_views' => 0,
+                'success_count' => 0,
+                'error_count' => 0,
+            ];
+        }
+        if ($collection['name'] === 'flashcard_review_sets') {
+            $now = (new DateTimeImmutable('now'))->format('Y-m-d\TH:i:s.v\Z');
+            $values += [
+                'tags' => [],
+                'front_seconds' => 5,
+                'back_seconds' => 5,
+                'speech_enabled' => false,
+                'front_language' => '',
+                'back_language' => '',
+                'sort_order' => 0,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ];
+            $this->validateFlashcardSpeechSettings($values);
         }
         $this->validateRelations($collection['name'], $values, (string) $user['id']);
         if ($collection['name'] === 'journal_entries') {
@@ -1324,6 +1389,19 @@ final class Api
     {
         $existing = $this->ownedRecord($collection['name'], $id, (string) $user['id']);
         $body = $this->jsonBody();
+        if (in_array($collection['name'], ['flashcard_review_sessions', 'flashcard_review_events'], true)) {
+            throw new ApiException(405, 'This collection is written through the review session endpoints.');
+        }
+        if ($collection['name'] === 'flashcards') {
+            $this->allowOnlyFields($body, ['front', 'back', 'tags']);
+        }
+        if ($collection['name'] === 'flashcard_review_sets') {
+            $this->allowOnlyFields($body, [
+                'name', 'tags', 'mode', 'front_seconds', 'back_seconds',
+                'speech_enabled', 'front_language', 'back_language',
+                'sort_mode', 'sort_order',
+            ]);
+        }
         if ($collection['name'] === 'interval_sessions') {
             if (
                 array_key_exists('task', $body)
@@ -1345,6 +1423,9 @@ final class Api
         }
 
         $combined = array_merge($this->normalizeRecord($collection, $existing), $values);
+        if ($collection['name'] === 'flashcard_review_sets') {
+            $this->validateFlashcardSpeechSettings($combined);
+        }
         $this->validateRelations($collection['name'], $combined, (string) $user['id']);
         if ($collection['name'] === 'journal_entries') {
             if (array_key_exists('task', $values)) {
@@ -1361,6 +1442,9 @@ final class Api
                     (string) $user['id'],
                 );
             }
+            $values['updated_at'] = (new DateTimeImmutable('now'))->format('Y-m-d\TH:i:s.v\Z');
+        }
+        if (in_array($collection['name'], ['flashcards', 'flashcard_review_sets'], true)) {
             $values['updated_at'] = (new DateTimeImmutable('now'))->format('Y-m-d\TH:i:s.v\Z');
         }
         $assignments = array_map(
@@ -1387,6 +1471,468 @@ final class Api
 
         $record = $this->ownedRecord($collection['name'], $id, (string) $user['id']);
         $this->respond($this->normalizeRecord($collection, $record));
+    }
+
+    private function validateFlashcardSpeechSettings(array $values): void
+    {
+        foreach (['front_language', 'back_language'] as $field) {
+            $language = (string) ($values[$field] ?? '');
+            if (
+                $language !== ''
+                && preg_match('/^[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8})*$/', $language) !== 1
+            ) {
+                throw new ApiException(422, 'The speech language is invalid.', [
+                    $field => 'language-tag',
+                ]);
+            }
+            if ((bool) ($values['speech_enabled'] ?? false) && $language === '') {
+                throw new ApiException(422, 'Select a language for both card sides.', [
+                    $field => 'required',
+                ]);
+            }
+        }
+    }
+
+    private function startFlashcardReviewSession(string $reviewSetId, array $user): never
+    {
+        $body = $this->jsonBody();
+        $this->allowOnlyFields($body, ['task', 'program_step', 'task_date']);
+
+        $sessionCollection = $this->requireCollection('flashcard_review_sessions');
+        $fields = $sessionCollection['config']['fields'];
+        $taskId = $this->validateField('task', $body['task'] ?? '', $fields['task']);
+        $programStepId = $this->validateField(
+            'program_step',
+            $body['program_step'] ?? '',
+            $fields['program_step'],
+        );
+        $taskDate = $this->validateField(
+            'task_date',
+            $body['task_date'] ?? '',
+            $fields['task_date'],
+        );
+
+        $owner = (string) $user['id'];
+        $reviewSet = $this->ownedRecord('flashcard_review_sets', $reviewSetId, $owner);
+        if ($taskId === '') {
+            if ($programStepId !== '' || $taskDate !== '') {
+                throw new ApiException(422, 'Task details require an attached flashcard task.');
+            }
+        } else {
+            if ($taskDate === '') {
+                $taskDate = (new DateTimeImmutable('now', new DateTimeZone((string) $user['timezone'])))
+                    ->format('Y-m-d');
+            }
+            if (!$this->flashcardAttributionMatchesReviewSet(
+                $taskId,
+                $programStepId,
+                $reviewSetId,
+                $owner,
+            )) {
+                throw new ApiException(
+                    422,
+                    'The selected task or program step is not attached to this Review set.',
+                );
+            }
+            $task = $this->ownedRecord('tasks', $taskId, $owner);
+            if (
+                !(bool) $task['active']
+                || !$this->intervalAttributionIsOpenOnDate($task, $programStepId, $taskDate, $owner)
+            ) {
+                throw new ApiException(409, 'The selected task or program step is not open for this date.');
+            }
+        }
+
+        $statement = $this->database->pdo->prepare(
+            "SELECT id FROM flashcard_review_sessions
+             WHERE owner = :owner AND status IN ('running', 'paused')
+             ORDER BY started_at DESC LIMIT 1",
+        );
+        $statement->execute(['owner' => $owner]);
+        $activeSession = $statement->fetchColumn();
+        if ($activeSession !== false) {
+            throw new ApiException(409, 'Another flashcard review is already active.', [
+                'activeSession' => (string) $activeSession,
+            ]);
+        }
+
+        $selectedTags = $this->decodeJsonColumn($reviewSet['tags'] ?? '[]');
+        if (!is_array($selectedTags)) {
+            $selectedTags = [];
+        }
+        $statement = $this->database->pdo->prepare(
+            'SELECT * FROM flashcards WHERE owner = :owner',
+        );
+        $statement->execute(['owner' => $owner]);
+        $cards = array_values(array_filter(
+            $statement->fetchAll(),
+            function (array $card) use ($selectedTags): bool {
+                if ($selectedTags === []) {
+                    return true;
+                }
+                $cardTags = $this->decodeJsonColumn($card['tags'] ?? '[]');
+                return is_array($cardTags) && array_intersect($selectedTags, $cardTags) !== [];
+            },
+        ));
+        if ($cards === []) {
+            throw new ApiException(409, 'No flashcards match this Review set.');
+        }
+
+        $sortMode = (string) $reviewSet['sort_mode'];
+        $this->sortFlashcardsForReview($cards, $sortMode);
+        $queue = array_map(function (array $card): array {
+            $tags = $this->decodeJsonColumn($card['tags'] ?? '[]');
+            return [
+                'id' => (string) $card['id'],
+                'front' => (string) $card['front'],
+                'back' => (string) $card['back'],
+                'tags' => is_array($tags) ? array_values($tags) : [],
+            ];
+        }, $cards);
+
+        $now = (new DateTimeImmutable('now'))->format('Y-m-d\TH:i:s.v\Z');
+        $sessionId = $this->newId();
+        try {
+            $statement = $this->database->pdo->prepare(
+                'INSERT INTO flashcard_review_sessions (
+                    id, owner, review_set, status, snapshot_name, mode_snapshot, sort_snapshot,
+                    tags_snapshot, front_seconds_snapshot, back_seconds_snapshot,
+                    speech_enabled_snapshot, front_language_snapshot, back_language_snapshot, queue_state,
+                    started_at, ended_at, updated_at, elapsed_seconds, total_cards, viewed_count,
+                    success_count, error_count, ejected_count, task, program_step, task_date
+                 ) VALUES (
+                    :id, :owner, :review_set, :status, :snapshot_name, :mode_snapshot, :sort_snapshot,
+                    :tags_snapshot, :front_seconds_snapshot, :back_seconds_snapshot,
+                    :speech_enabled_snapshot, :front_language_snapshot, :back_language_snapshot, :queue_state,
+                    :started_at, :ended_at, :updated_at, 0, :total_cards, 0, 0, 0, 0,
+                    :task, :program_step, :task_date
+                 )',
+            );
+            $statement->execute([
+                'id' => $sessionId,
+                'owner' => $owner,
+                'review_set' => $reviewSetId,
+                'status' => 'running',
+                'snapshot_name' => (string) $reviewSet['name'],
+                'mode_snapshot' => (string) $reviewSet['mode'],
+                'sort_snapshot' => $sortMode,
+                'tags_snapshot' => json_encode(array_values($selectedTags), JSON_THROW_ON_ERROR),
+                'front_seconds_snapshot' => (int) $reviewSet['front_seconds'],
+                'back_seconds_snapshot' => (int) $reviewSet['back_seconds'],
+                'speech_enabled_snapshot' => (bool) $reviewSet['speech_enabled'],
+                'front_language_snapshot' => (string) $reviewSet['front_language'],
+                'back_language_snapshot' => (string) $reviewSet['back_language'],
+                'queue_state' => json_encode($queue, JSON_THROW_ON_ERROR),
+                'started_at' => $now,
+                'ended_at' => '',
+                'updated_at' => $now,
+                'total_cards' => count($queue),
+                'task' => $taskId,
+                'program_step' => $programStepId,
+                'task_date' => $taskDate,
+            ]);
+        } catch (PDOException $exception) {
+            if ($this->isConstraintViolation($exception)) {
+                throw new ApiException(409, 'Another flashcard review is already active.');
+            }
+            throw $exception;
+        }
+
+        $session = $this->ownedRecord('flashcard_review_sessions', $sessionId, $owner);
+        $this->respond($this->normalizeRecord($sessionCollection, $session), 201);
+    }
+
+    private function actOnFlashcardReviewSession(string $id, array $user): never
+    {
+        $body = $this->jsonBody();
+        $this->allowOnlyFields($body, ['action', 'elapsed_seconds']);
+        if (!array_key_exists('action', $body) || !array_key_exists('elapsed_seconds', $body)) {
+            throw new ApiException(422, 'The action and elapsed_seconds fields are required.');
+        }
+        if (!is_string($body['action'])) {
+            throw new ApiException(422, 'The action field must be a string.');
+        }
+        $action = $body['action'];
+        $validActions = ['success', 'error', 'view', 'push', 'eject', 'pause', 'resume', 'end'];
+        if (!in_array($action, $validActions, true)) {
+            throw new ApiException(422, 'The review action is invalid.');
+        }
+        $elapsedSeconds = $this->validateInteger(
+            $body['elapsed_seconds'],
+            'elapsed_seconds',
+            ['min' => 0, 'max' => null],
+        );
+
+        $owner = (string) $user['id'];
+        $pdo = $this->database->pdo;
+        $pdo->beginTransaction();
+        try {
+            $session = $this->ownedRecord('flashcard_review_sessions', $id, $owner);
+            $status = (string) $session['status'];
+            if (in_array($status, ['completed', 'ended'], true)) {
+                throw new ApiException(409, 'This flashcard review has already ended.');
+            }
+            if ($elapsedSeconds < (int) $session['elapsed_seconds']) {
+                throw new ApiException(422, 'Review time cannot move backwards.');
+            }
+
+            $mode = (string) $session['mode_snapshot'];
+            if (in_array($action, ['success', 'error'], true) && $mode !== 'manual') {
+                throw new ApiException(422, 'Passive reviews are viewed rather than graded.');
+            }
+            if ($action === 'view' && $mode !== 'passive') {
+                throw new ApiException(422, 'Manual reviews must be graded as Success or Error.');
+            }
+
+            $queue = $this->decodeJsonColumn($session['queue_state'] ?? '[]');
+            if (!is_array($queue) || !array_is_list($queue)) {
+                throw new ApiException(500, 'The review queue is invalid.');
+            }
+            $now = (new DateTimeImmutable('now'))->format('Y-m-d\TH:i:s.v\Z');
+            $endedAt = '';
+            $viewedCount = (int) $session['viewed_count'];
+            $successCount = (int) $session['success_count'];
+            $errorCount = (int) $session['error_count'];
+            $ejectedCount = (int) $session['ejected_count'];
+            $occurrence = null;
+
+            if ($action === 'pause') {
+                if ($status !== 'running') {
+                    throw new ApiException(409, 'This flashcard review is already paused.');
+                }
+                $status = 'paused';
+            } elseif ($action === 'resume') {
+                if ($status !== 'paused') {
+                    throw new ApiException(409, 'This flashcard review is already running.');
+                }
+                $status = 'running';
+            } elseif ($action === 'end') {
+                $status = 'ended';
+                $endedAt = $now;
+            } else {
+                if ($status !== 'running') {
+                    throw new ApiException(409, 'Resume this flashcard review before continuing.');
+                }
+                if ($queue === []) {
+                    throw new ApiException(409, 'This flashcard review has no remaining cards.');
+                }
+
+                if ($action === 'push') {
+                    if (count($queue) > 1) {
+                        $current = array_shift($queue);
+                        $queue[] = $current;
+                    }
+                } else {
+                    $current = array_shift($queue);
+                    if (!is_array($current)) {
+                        throw new ApiException(500, 'The current review card is invalid.');
+                    }
+                    if ($action === 'eject') {
+                        $ejectedCount++;
+                    } else {
+                        $viewedCount++;
+                        if ($action === 'success') {
+                            $successCount++;
+                        } elseif ($action === 'error') {
+                            $errorCount++;
+                        }
+                        $this->recordFlashcardReviewEvent(
+                            $id,
+                            $current,
+                            $action === 'view' ? 'passive' : $action,
+                            $now,
+                            $owner,
+                        );
+                    }
+                    if ($queue === []) {
+                        $status = 'completed';
+                        $endedAt = $now;
+                    }
+                }
+            }
+
+            $statement = $pdo->prepare(
+                'UPDATE flashcard_review_sessions SET
+                    status = :status,
+                    queue_state = :queue_state,
+                    updated_at = :updated_at,
+                    ended_at = :ended_at,
+                    elapsed_seconds = :elapsed_seconds,
+                    viewed_count = :viewed_count,
+                    success_count = :success_count,
+                    error_count = :error_count,
+                    ejected_count = :ejected_count
+                 WHERE id = :id AND owner = :owner',
+            );
+            $statement->execute([
+                'status' => $status,
+                'queue_state' => json_encode(array_values($queue), JSON_THROW_ON_ERROR),
+                'updated_at' => $now,
+                'ended_at' => $endedAt,
+                'elapsed_seconds' => $elapsedSeconds,
+                'viewed_count' => $viewedCount,
+                'success_count' => $successCount,
+                'error_count' => $errorCount,
+                'ejected_count' => $ejectedCount,
+                'id' => $id,
+                'owner' => $owner,
+            ]);
+            if ($status === 'completed') {
+                $occurrence = $this->completeAttributedIntervalTask($session, $owner, $endedAt);
+            }
+            $session = $this->ownedRecord('flashcard_review_sessions', $id, $owner);
+            $pdo->commit();
+        } catch (Throwable $exception) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $exception;
+        }
+
+        $this->respond([
+            'session' => $this->normalizeRecord(
+                $this->requireCollection('flashcard_review_sessions'),
+                $session,
+            ),
+            'occurrence' => $occurrence,
+        ]);
+    }
+
+    private function recordFlashcardReviewEvent(
+        string $sessionId,
+        array $card,
+        string $outcome,
+        string $reviewedAt,
+        string $owner,
+    ): void {
+        $cardId = (string) ($card['id'] ?? '');
+        $tags = is_array($card['tags'] ?? null) ? array_values($card['tags']) : [];
+        $statement = $this->database->pdo->prepare(
+            'INSERT INTO flashcard_review_events (
+                id, owner, session, card, outcome, reviewed_at,
+                front_snapshot, back_snapshot, tags_snapshot
+             ) VALUES (
+                :id, :owner, :session, :card, :outcome, :reviewed_at,
+                :front_snapshot, :back_snapshot, :tags_snapshot
+             )',
+        );
+        $statement->execute([
+            'id' => $this->newId(),
+            'owner' => $owner,
+            'session' => $sessionId,
+            'card' => $cardId,
+            'outcome' => $outcome,
+            'reviewed_at' => $reviewedAt,
+            'front_snapshot' => (string) ($card['front'] ?? ''),
+            'back_snapshot' => (string) ($card['back'] ?? ''),
+            'tags_snapshot' => json_encode($tags, JSON_THROW_ON_ERROR),
+        ]);
+
+        $counter = match ($outcome) {
+            'success' => 'success_count',
+            'error' => 'error_count',
+            default => 'passive_views',
+        };
+        $statement = $this->database->pdo->prepare(
+            "UPDATE flashcards SET
+                {$counter} = {$counter} + 1,
+                last_reviewed_at = :reviewed_at,
+                updated_at = :reviewed_at
+             WHERE id = :id AND owner = :owner",
+        );
+        $statement->execute([
+            'reviewed_at' => $reviewedAt,
+            'id' => $cardId,
+            'owner' => $owner,
+        ]);
+    }
+
+    private function sortFlashcardsForReview(array &$cards, string $sortMode): void
+    {
+        if ($sortMode === 'random') {
+            shuffle($cards);
+            return;
+        }
+
+        usort($cards, static function (array $left, array $right) use ($sortMode): int {
+            $leftCreated = (string) ($left['created_at'] ?? '');
+            $rightCreated = (string) ($right['created_at'] ?? '');
+            $leftReviewed = (string) ($left['last_reviewed_at'] ?? '');
+            $rightReviewed = (string) ($right['last_reviewed_at'] ?? '');
+
+            if ($sortMode === 'recently_added') {
+                return strcmp($rightCreated, $leftCreated) ?: strcmp((string) $left['id'], (string) $right['id']);
+            }
+            if ($sortMode === 'least_recent') {
+                if (($leftReviewed === '') !== ($rightReviewed === '')) {
+                    return $leftReviewed === '' ? -1 : 1;
+                }
+                return strcmp($leftReviewed, $rightReviewed)
+                    ?: strcmp($rightCreated, $leftCreated);
+            }
+            if ($sortMode === 'never_reviewed') {
+                if (($leftReviewed === '') !== ($rightReviewed === '')) {
+                    return $leftReviewed === '' ? -1 : 1;
+                }
+                return $leftReviewed === ''
+                    ? strcmp($rightCreated, $leftCreated)
+                    : strcmp($leftReviewed, $rightReviewed);
+            }
+
+            $leftAttempts = (int) $left['success_count'] + (int) $left['error_count'];
+            $rightAttempts = (int) $right['success_count'] + (int) $right['error_count'];
+            $leftDifficulty = $leftAttempts > 0 ? (int) $left['error_count'] / $leftAttempts : -1;
+            $rightDifficulty = $rightAttempts > 0 ? (int) $right['error_count'] / $rightAttempts : -1;
+            return ($rightDifficulty <=> $leftDifficulty)
+                ?: ((int) $right['error_count'] <=> (int) $left['error_count'])
+                ?: strcmp($leftReviewed, $rightReviewed)
+                ?: strcmp((string) $left['id'], (string) $right['id']);
+        });
+    }
+
+    private function flashcardAttributionMatchesReviewSet(
+        string $taskId,
+        string $programStepId,
+        string $reviewSetId,
+        string $owner,
+    ): bool {
+        if ($taskId === '' || $reviewSetId === '') {
+            return false;
+        }
+        if ($programStepId === '') {
+            $statement = $this->database->pdo->prepare(
+                "SELECT 1 FROM tasks
+                 WHERE id = :id AND owner = :owner AND type = 'flashcards'
+                   AND flashcard_review_set = :review_set
+                 LIMIT 1",
+            );
+            $statement->execute([
+                'id' => $taskId,
+                'owner' => $owner,
+                'review_set' => $reviewSetId,
+            ]);
+            return $statement->fetchColumn() !== false;
+        }
+
+        $statement = $this->database->pdo->prepare(
+            "SELECT 1 FROM program_steps
+             JOIN tasks ON tasks.id = program_steps.task AND tasks.owner = program_steps.owner
+             WHERE program_steps.id = :program_step
+               AND program_steps.task = :task
+               AND program_steps.owner = :owner
+               AND program_steps.active = TRUE
+               AND program_steps.completion_type = 'flashcards'
+               AND program_steps.flashcard_review_set = :review_set
+               AND tasks.type = 'program'
+             LIMIT 1",
+        );
+        $statement->execute([
+            'program_step' => $programStepId,
+            'task' => $taskId,
+            'owner' => $owner,
+            'review_set' => $reviewSetId,
+        ]);
+        return $statement->fetchColumn() !== false;
     }
 
     private function completeIntervalSession(string $id, array $user): never
@@ -1553,6 +2099,9 @@ final class Api
     {
         $owner = (string) $user['id'];
         $this->ownedRecord($collection['name'], $id, $owner);
+        if (in_array($collection['name'], ['flashcard_review_sessions', 'flashcard_review_events'], true)) {
+            throw new ApiException(405, 'Flashcard review history cannot be deleted directly.');
+        }
         $pdo = $this->database->pdo;
         $pdo->beginTransaction();
         try {
@@ -1561,6 +2110,9 @@ final class Api
                 'program_steps' => $this->deleteProgramStep($id, $owner),
                 'occurrences' => $this->deleteOccurrence($id, $owner),
                 'tags' => $this->deleteTag($id, $owner),
+                'flashcard_tags' => $this->deleteFlashcardTag($id, $owner),
+                'flashcards' => $this->deleteFlashcard($id, $owner),
+                'flashcard_review_sets' => $this->deleteFlashcardReviewSet($id, $owner),
                 'interval_templates' => $this->deleteIntervalTemplate($id, $owner),
                 'tracking_trackers' => $this->deleteTrackingTracker($id, $owner),
                 default => $this->deleteOwnedRow($collection['name'], $id, $owner),
@@ -1587,6 +2139,11 @@ final class Api
              WHERE task = :id AND owner = :owner",
         );
         $statement->execute(['id' => $id, 'owner' => $owner]);
+        $statement = $this->database->pdo->prepare(
+            "UPDATE flashcard_review_sessions SET task = '', program_step = ''
+             WHERE task = :id AND owner = :owner",
+        );
+        $statement->execute(['id' => $id, 'owner' => $owner]);
         foreach (['entries', 'occurrences', 'program_steps'] as $table) {
             $statement = $this->database->pdo->prepare(
                 "DELETE FROM {$table} WHERE task = :id AND owner = :owner",
@@ -1600,6 +2157,11 @@ final class Api
     {
         $statement = $this->database->pdo->prepare(
             "UPDATE interval_sessions SET program_step = ''
+             WHERE program_step = :id AND owner = :owner",
+        );
+        $statement->execute(['id' => $id, 'owner' => $owner]);
+        $statement = $this->database->pdo->prepare(
+            "UPDATE flashcard_review_sessions SET program_step = ''
              WHERE program_step = :id AND owner = :owner",
         );
         $statement->execute(['id' => $id, 'owner' => $owner]);
@@ -1643,6 +2205,86 @@ final class Api
             ]);
         }
         $this->deleteOwnedRow('tags', $id, $owner);
+    }
+
+    private function deleteFlashcardTag(string $id, string $owner): void
+    {
+        foreach (['flashcards', 'flashcard_review_sets'] as $table) {
+            $statement = $this->database->pdo->prepare(
+                "SELECT id, tags FROM {$table} WHERE owner = :owner",
+            );
+            $statement->execute(['owner' => $owner]);
+            $update = $this->database->pdo->prepare(
+                "UPDATE {$table} SET tags = :tags WHERE id = :id AND owner = :owner",
+            );
+            foreach ($statement->fetchAll() as $record) {
+                $tags = $this->decodeJsonColumn($record['tags'] ?? '[]');
+                if (!is_array($tags) || !in_array($id, $tags, true)) {
+                    continue;
+                }
+                $update->execute([
+                    'tags' => json_encode(
+                        array_values(array_filter($tags, static fn (mixed $tag): bool => $tag !== $id)),
+                        JSON_THROW_ON_ERROR,
+                    ),
+                    'id' => $record['id'],
+                    'owner' => $owner,
+                ]);
+            }
+        }
+        $this->deleteOwnedRow('flashcard_tags', $id, $owner);
+    }
+
+    private function deleteFlashcard(string $id, string $owner): void
+    {
+        $statement = $this->database->pdo->prepare(
+            "UPDATE flashcard_review_events SET card = '' WHERE card = :id AND owner = :owner",
+        );
+        $statement->execute(['id' => $id, 'owner' => $owner]);
+        $this->deleteOwnedRow('flashcards', $id, $owner);
+    }
+
+    private function deleteFlashcardReviewSet(string $id, string $owner): void
+    {
+        $statement = $this->database->pdo->prepare(
+            'SELECT id, name FROM tasks
+             WHERE flashcard_review_set = :id AND owner = :owner
+             ORDER BY sort_order, name',
+        );
+        $statement->execute(['id' => $id, 'owner' => $owner]);
+        $attachedTasks = $statement->fetchAll();
+        $statement = $this->database->pdo->prepare(
+            'SELECT program_steps.id, program_steps.name, tasks.name AS task_name
+             FROM program_steps
+             JOIN tasks ON tasks.id = program_steps.task AND tasks.owner = program_steps.owner
+             WHERE program_steps.flashcard_review_set = :id AND program_steps.owner = :owner
+             ORDER BY tasks.sort_order, program_steps.sort_order, program_steps.name',
+        );
+        $statement->execute(['id' => $id, 'owner' => $owner]);
+        $attachedProgramSteps = $statement->fetchAll();
+        if ($attachedTasks !== [] || $attachedProgramSteps !== []) {
+            throw new ApiException(
+                409,
+                'This Review set is attached to one or more tasks or program steps. Reassign them first.',
+                [
+                    'tasks' => array_map(static fn (array $task): array => [
+                        'id' => (string) $task['id'],
+                        'name' => (string) $task['name'],
+                    ], $attachedTasks),
+                    'programSteps' => array_map(static fn (array $step): array => [
+                        'id' => (string) $step['id'],
+                        'name' => (string) $step['name'],
+                        'taskName' => (string) $step['task_name'],
+                    ], $attachedProgramSteps),
+                ],
+            );
+        }
+        $statement = $this->database->pdo->prepare(
+            "UPDATE flashcard_review_sessions SET review_set = ''
+             WHERE review_set = :id AND owner = :owner",
+        );
+        $statement->execute(['id' => $id, 'owner' => $owner]);
+        $this->deleteOwnedRow('flashcard_review_sets', $id, $owner);
     }
 
     private function deleteIntervalTemplate(string $id, string $owner): void
@@ -1706,6 +2348,26 @@ final class Api
             "DELETE FROM {$table} WHERE id = :id AND owner = :owner",
         );
         $statement->execute(['id' => $id, 'owner' => $owner]);
+    }
+
+    private function rejectFields(array $body, array $fields): void
+    {
+        $rejected = array_values(array_intersect(array_keys($body), $fields));
+        if ($rejected !== []) {
+            throw new ApiException(422, 'The request contains read-only fields.', [
+                'fields' => $rejected,
+            ]);
+        }
+    }
+
+    private function allowOnlyFields(array $body, array $fields): void
+    {
+        $rejected = array_values(array_diff(array_keys($body), [...$fields, 'id', 'owner']));
+        if ($rejected !== []) {
+            throw new ApiException(422, 'The request contains read-only fields.', [
+                'fields' => $rejected,
+            ]);
+        }
     }
 
     private function validateRecordInput(array $collection, array $body, bool $creating): array
@@ -1947,6 +2609,15 @@ final class Api
 
     private function validateRelations(string $collection, array $record, string $owner): void
     {
+        if (in_array($collection, ['flashcards', 'flashcard_review_sets'], true)) {
+            foreach (($record['tags'] ?? []) as $tag) {
+                if (!is_string($tag) || !$this->relationExists('flashcard_tags', $tag, $owner)) {
+                    throw new ApiException(422, 'A selected flashcard tag is invalid.');
+                }
+            }
+            return;
+        }
+
         if ($collection === 'tracking_trackers') {
             $kind = (string) ($record['kind'] ?? '');
             $aggregation = (string) ($record['daily_aggregation'] ?? '');
@@ -1977,12 +2648,20 @@ final class Api
                 }
             }
             $intervalTemplate = (string) ($record['interval_template'] ?? '');
+            $flashcardReviewSet = (string) ($record['flashcard_review_set'] ?? '');
             if (($record['type'] ?? '') === 'interval') {
                 if (!$this->relationExists('interval_templates', $intervalTemplate, $owner)) {
                     throw new ApiException(422, 'Select a valid interval for this task.');
                 }
             } elseif ($intervalTemplate !== '') {
                 throw new ApiException(422, 'Only interval tasks may have an attached interval.');
+            }
+            if (($record['type'] ?? '') === 'flashcards') {
+                if (!$this->relationExists('flashcard_review_sets', $flashcardReviewSet, $owner)) {
+                    throw new ApiException(422, 'Select a valid Review set for this task.');
+                }
+            } elseif ($flashcardReviewSet !== '') {
+                throw new ApiException(422, 'Only flashcard tasks may have an attached Review set.');
             }
             return;
         }
@@ -1999,6 +2678,7 @@ final class Api
 
             $completionType = (string) ($record['completion_type'] ?? '');
             $intervalTemplate = (string) ($record['interval_template'] ?? '');
+            $flashcardReviewSet = (string) ($record['flashcard_review_set'] ?? '');
             $active = (bool) ($record['active'] ?? false);
             if ($completionType === 'interval') {
                 if ($active && !$this->relationExists('interval_templates', $intervalTemplate, $owner)) {
@@ -2009,6 +2689,25 @@ final class Api
                 }
             } elseif ($intervalTemplate !== '') {
                 throw new ApiException(422, 'Only interval program steps may have an attached interval.');
+            }
+            if ($completionType === 'flashcards') {
+                if (
+                    $active
+                    && !$this->relationExists('flashcard_review_sets', $flashcardReviewSet, $owner)
+                ) {
+                    throw new ApiException(422, 'Select a valid Review set for this program step.');
+                }
+                if (
+                    $flashcardReviewSet !== ''
+                    && !$this->relationExists('flashcard_review_sets', $flashcardReviewSet, $owner)
+                ) {
+                    throw new ApiException(422, 'The selected Review set is invalid.');
+                }
+            } elseif ($flashcardReviewSet !== '') {
+                throw new ApiException(
+                    422,
+                    'Only flashcard program steps may have an attached Review set.',
+                );
             }
             return;
         }

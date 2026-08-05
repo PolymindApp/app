@@ -5,6 +5,7 @@ import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import { nextScheduledDates } from '@/services/schedule'
+import { useFlashcardStore } from '@/stores/flashcards'
 import { useIntervalStore } from '@/stores/intervals'
 import { useTaskStore } from '@/stores/tasks'
 import type { LongPressDragResult } from '@/directives/longPressDrag'
@@ -12,6 +13,7 @@ import type { Task, TaskType } from '@/types/domain'
 
 const store = useTaskStore()
 const intervalStore = useIntervalStore()
+const flashcardStore = useFlashcardStore()
 const router = useRouter()
 const { tasks, steps, loading, error } = storeToRefs(store)
 const filter = ref<'active' | 'paused'>('active')
@@ -36,15 +38,21 @@ const typeInfo: Record<TaskType, { label: string; icon: string; color: string }>
   step_counter: { label: 'Step counter', icon: 'mdi-shoe-print', color: '#7ED6A5' },
   program: { label: 'Program', icon: 'mdi-repeat-variant', color: '#C7F464' },
   interval: { label: 'Interval', icon: 'mdi-timer-play-outline', color: '#66D9C8' },
+  flashcards: { label: 'Flashcards', icon: 'mdi-cards-outline', color: '#C7F464' },
 }
 
 onMounted(() => {
   if (!tasks.value.length) store.load().catch(() => undefined)
   if (!intervalStore.loaded) intervalStore.load().catch(() => undefined)
+  if (!flashcardStore.loaded) flashcardStore.load().catch(() => undefined)
 })
 
 function attachedIntervalName(task: Task) {
   return intervalStore.templates.find((item) => item.id === task.intervalTemplate)?.name || 'Attached interval'
+}
+
+function attachedReviewSetName(task: Task) {
+  return flashcardStore.reviewSets.find(item => item.id === task.flashcardReviewSet)?.name || 'Attached Review set'
 }
 
 function scheduleLabel(task: Task) {
@@ -149,6 +157,10 @@ async function confirmStatusChange() {
                   <p v-else-if="task.type === 'interval'" class="target-copy mt-3">
                     <v-icon icon="mdi-timer-play-outline" size="15" class="mr-1" />
                     {{ attachedIntervalName(task) }}
+                  </p>
+                  <p v-else-if="task.type === 'flashcards'" class="target-copy mt-3">
+                    <v-icon icon="mdi-cards-playing-outline" size="15" class="mr-1" />
+                    {{ attachedReviewSetName(task) }}
                   </p>
                   <p v-else-if="task.targetValue" class="target-copy mt-3">
                     Target: <strong>{{ task.targetValue }} {{ task.customUnit || task.unit }}</strong>

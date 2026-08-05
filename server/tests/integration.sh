@@ -57,7 +57,7 @@ suffix="$(php -r 'echo bin2hex(random_bytes(5));')"
 password="correct-horse-battery"
 
 migration_count="$(sqlite3 "$test_db" 'SELECT COUNT(*) FROM mom_schema_migrations;')"
-[[ "$migration_count" == 12 ]] || {
+[[ "$migration_count" == 14 ]] || {
   echo "The API did not apply the complete database migration sequence." >&2
   exit 1
 }
@@ -794,6 +794,187 @@ invalid_reminder_status="$(curl --silent --output /dev/null --write-out '%{http_
   exit 1
 }
 
+flashcard_tag_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"name":"Algebra"}' \
+  "$api_url/collections/flashcard_tags/records")"
+flashcard_tag_id="$(json_field id <<<"$flashcard_tag_response")"
+duplicate_flashcard_tag_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"name":"algebra"}' \
+  "$api_url/collections/flashcard_tags/records")"
+[[ "$duplicate_flashcard_tag_status" == 409 ]] || {
+  echo "Flashcard tag names were not enforced case-insensitively." >&2
+  exit 1
+}
+
+flashcard_payload="$(php -r '
+  echo json_encode([
+    "front" => "What is 2 + 2?", "back" => "4", "tags" => [$argv[1]],
+  ], JSON_THROW_ON_ERROR);
+' "$flashcard_tag_id")"
+flashcard_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "$flashcard_payload" \
+  "$api_url/collections/flashcards/records")"
+flashcard_id="$(json_field id <<<"$flashcard_response")"
+flashcard_created_at="$(json_field created_at <<<"$flashcard_response")"
+[[ "$flashcard_created_at" =~ T ]] || {
+  echo "A new flashcard did not receive server-owned timestamps." >&2
+  exit 1
+}
+
+manual_review_set_payload="$(php -r '
+  echo json_encode([
+    "name" => "Daily algebra", "tags" => [$argv[1]], "mode" => "manual",
+    "front_seconds" => 5, "back_seconds" => 5,
+    "sort_mode" => "difficult", "sort_order" => 0,
+  ], JSON_THROW_ON_ERROR);
+' "$flashcard_tag_id")"
+manual_review_set_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "$manual_review_set_payload" \
+  "$api_url/collections/flashcard_review_sets/records")"
+manual_review_set_id="$(json_field id <<<"$manual_review_set_response")"
+
+manual_session_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"task":"","program_step":"","task_date":""}' \
+  "$api_url/flashcard-review-sets/$manual_review_set_id/sessions")"
+manual_session_id="$(json_field id <<<"$manual_session_response")"
+manual_session_total="$(json_field total_cards <<<"$manual_session_response")"
+[[ "$manual_session_total" == 1 ]] || {
+  echo "A Review set did not snapshot its matching card queue." >&2
+  exit 1
+}
+
+manual_complete_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"action":"success","elapsed_seconds":7}' \
+  "$api_url/flashcard-review-sessions/$manual_session_id/actions")"
+manual_complete_status="$(php -r '$data=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); echo $data["session"]["status"];' <<<"$manual_complete_response")"
+[[ "$manual_complete_status" == completed ]] || {
+  echo "A graded flashcard did not complete its one-card review." >&2
+  exit 1
+}
+
+passive_review_set_payload="$(php -r '
+  echo json_encode([
+    "name" => "Passive algebra", "tags" => [$argv[1]], "mode" => "passive",
+    "front_seconds" => 3, "back_seconds" => 4,
+    "speech_enabled" => true, "front_language" => "en-US", "back_language" => "fr-CA",
+    "sort_mode" => "recently_added", "sort_order" => 1,
+  ], JSON_THROW_ON_ERROR);
+' "$flashcard_tag_id")"
+passive_review_set_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "$passive_review_set_payload" \
+  "$api_url/collections/flashcard_review_sets/records")"
+passive_review_set_id="$(json_field id <<<"$passive_review_set_response")"
+passive_session_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"task":"","program_step":"","task_date":""}' \
+  "$api_url/flashcard-review-sets/$passive_review_set_id/sessions")"
+passive_session_id="$(json_field id <<<"$passive_session_response")"
+passive_session_speech="$(php -r '
+  $data=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+  echo ((int) $data["speech_enabled_snapshot"]) . ":" . $data["front_language_snapshot"] . ":" . $data["back_language_snapshot"];
+' <<<"$passive_session_response")"
+[[ "$passive_session_speech" == "1:en-US:fr-CA" ]] || {
+  echo "A Review set did not snapshot its speech synthesis settings." >&2
+  exit 1
+}
+passive_grade_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"action":"success","elapsed_seconds":2}' \
+  "$api_url/flashcard-review-sessions/$passive_session_id/actions")"
+[[ "$passive_grade_status" == 422 ]] || {
+  echo "A Passive review accepted a graded result." >&2
+  exit 1
+}
+invalid_speech_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  -X PATCH -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"front_language":""}' \
+  "$api_url/collections/flashcard_review_sets/records/$passive_review_set_id")"
+[[ "$invalid_speech_status" == 422 ]] || {
+  echo "An enabled Review set accepted an incomplete speech language configuration." >&2
+  exit 1
+}
+curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"action":"view","elapsed_seconds":8}' \
+  "$api_url/flashcard-review-sessions/$passive_session_id/actions" >/dev/null
+
+flashcard_today="$(TZ=America/Toronto date +%F)"
+flashcard_task_payload="$(php -r '
+  echo json_encode([
+    "name" => "Review algebra", "description" => "", "type" => "flashcards",
+    "tags" => [], "mandatory" => true, "review_when_missed" => false,
+    "active" => true, "start_date" => $argv[2], "end_date" => "",
+    "recurrence_type" => "daily", "weekdays" => [], "interval_weeks" => 1,
+    "target_value" => 1, "target_operator" => "gte", "unit" => "",
+    "custom_unit" => "", "goal_period" => "occurrence", "quick_amounts" => [],
+    "cycle_length" => 0, "program_repeat" => true, "program_strict" => false,
+    "entry_notes_enabled" => false, "entry_note_suggestions_enabled" => false,
+    "sort_order" => 10, "color" => "#C7F464", "interval_template" => "",
+    "flashcard_review_set" => $argv[1],
+  ], JSON_THROW_ON_ERROR);
+' "$manual_review_set_id" "$flashcard_today")"
+flashcard_task_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "$flashcard_task_payload" \
+  "$api_url/collections/tasks/records")"
+flashcard_task_id="$(json_field id <<<"$flashcard_task_response")"
+attached_flashcard_session_payload="$(php -r '
+  echo json_encode(["task" => $argv[1], "program_step" => "", "task_date" => $argv[2]], JSON_THROW_ON_ERROR);
+' "$flashcard_task_id" "$flashcard_today")"
+attached_flashcard_session_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "$attached_flashcard_session_payload" \
+  "$api_url/flashcard-review-sets/$manual_review_set_id/sessions")"
+attached_flashcard_session_id="$(json_field id <<<"$attached_flashcard_session_response")"
+curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"action":"eject","elapsed_seconds":3}' \
+  "$api_url/flashcard-review-sessions/$attached_flashcard_session_id/actions" >/dev/null
+flashcard_occurrence_count="$(sqlite3 "$test_db" \
+  "SELECT COUNT(*) FROM occurrences WHERE task = '$flashcard_task_id' AND scheduled_date = '$flashcard_today' AND status = 'completed';")"
+[[ "$flashcard_occurrence_count" == 1 ]] || {
+  echo "Exhausting an attached flashcard queue did not complete its task occurrence." >&2
+  exit 1
+}
+
+flashcard_counts="$(sqlite3 "$test_db" \
+  "SELECT success_count || ':' || error_count || ':' || passive_views FROM flashcards WHERE id = '$flashcard_id';")"
+flashcard_event_count="$(sqlite3 "$test_db" \
+  "SELECT COUNT(*) FROM flashcard_review_events WHERE card = '$flashcard_id';")"
+[[ "$flashcard_counts" == "1:0:1" && "$flashcard_event_count" == 2 ]] || {
+  echo "Flashcard aggregate and immutable event statistics drifted apart." >&2
+  exit 1
+}
+
+attached_review_set_delete_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  -X DELETE -H "Authorization: Bearer $alice_token" \
+  "$api_url/collections/flashcard_review_sets/records/$manual_review_set_id")"
+[[ "$attached_review_set_delete_status" == 409 ]] || {
+  echo "The API deleted a Review set that is still attached to a task." >&2
+  exit 1
+}
+
 register "Bob API" "$bob_email" >/dev/null
 bob_login="$(login "$bob_email")"
 bob_token="$(json_field token <<<"$bob_login")"
@@ -824,6 +1005,67 @@ cross_user_journal_status="$(curl --silent --output /dev/null --write-out '%{htt
   "$api_url/collections/journal_entries/records")"
 [[ "$cross_user_journal_status" == 422 ]] || {
   echo "Cross-user journal context isolation failed." >&2
+  exit 1
+}
+
+cross_user_flashcard_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  -H "Authorization: Bearer $bob_token" \
+  "$api_url/collections/flashcards/records/$flashcard_id")"
+cross_user_review_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $bob_token" \
+  --data '{"task":"","program_step":"","task_date":""}' \
+  "$api_url/flashcard-review-sets/$manual_review_set_id/sessions")"
+[[ "$cross_user_flashcard_status" == 404 && "$cross_user_review_status" == 404 ]] || {
+  echo "Cross-user flashcard and Review set isolation failed." >&2
+  exit 1
+}
+
+flashcard_tag_delete_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  -X DELETE -H "Authorization: Bearer $alice_token" \
+  "$api_url/collections/flashcard_tags/records/$flashcard_tag_id")"
+flashcard_tags_after_delete="$(sqlite3 "$test_db" \
+  "SELECT json_array_length(tags) FROM flashcards WHERE id = '$flashcard_id';")"
+review_set_tags_after_delete="$(sqlite3 "$test_db" \
+  "SELECT SUM(json_array_length(tags)) FROM flashcard_review_sets WHERE id IN ('$manual_review_set_id', '$passive_review_set_id');")"
+[[ "$flashcard_tag_delete_status" == 204 && "$flashcard_tags_after_delete" == 0 && "$review_set_tags_after_delete" == 0 ]] || {
+  echo "Flashcard tag deletion did not detach cards and Review sets safely." >&2
+  exit 1
+}
+
+flashcard_delete_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  -X DELETE -H "Authorization: Bearer $alice_token" \
+  "$api_url/collections/flashcards/records/$flashcard_id")"
+flashcard_history_snapshot="$(sqlite3 "$test_db" \
+  "SELECT COUNT(*) FROM flashcard_review_events WHERE card = '' AND front_snapshot = 'What is 2 + 2?' AND back_snapshot = '4';")"
+[[ "$flashcard_delete_status" == 204 && "$flashcard_history_snapshot" == 2 ]] || {
+  echo "Deleting a flashcard did not preserve and detach its review history snapshots." >&2
+  exit 1
+}
+
+flashcard_task_delete_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  -X DELETE -H "Authorization: Bearer $alice_token" \
+  "$api_url/collections/tasks/records/$flashcard_task_id")"
+detached_flashcard_session_count="$(sqlite3 "$test_db" \
+  "SELECT COUNT(*) FROM flashcard_review_sessions WHERE id = '$attached_flashcard_session_id' AND task = '' AND program_step = '';")"
+[[ "$flashcard_task_delete_status" == 204 && "$detached_flashcard_session_count" == 1 ]] || {
+  echo "Deleting a flashcard task did not preserve and detach its session history." >&2
+  exit 1
+}
+
+for review_set_id in "$manual_review_set_id" "$passive_review_set_id"; do
+  review_set_delete_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+    -X DELETE -H "Authorization: Bearer $alice_token" \
+    "$api_url/collections/flashcard_review_sets/records/$review_set_id")"
+  [[ "$review_set_delete_status" == 204 ]] || {
+    echo "Deleting an unattached Review set failed." >&2
+    exit 1
+  }
+done
+detached_review_set_sessions="$(sqlite3 "$test_db" \
+  "SELECT COUNT(*) FROM flashcard_review_sessions WHERE id IN ('$manual_session_id', '$passive_session_id', '$attached_flashcard_session_id') AND review_set = '';")"
+[[ "$detached_review_set_sessions" == 3 ]] || {
+  echo "Review set deletion did not preserve and detach session history." >&2
   exit 1
 }
 

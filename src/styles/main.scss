@@ -138,7 +138,7 @@ html.platform-android .app-page {
 }
 
 .app-page--editor {
-  padding-bottom: 8.5rem;
+  padding-bottom: 6rem;
 }
 
 .surface-card {
@@ -220,6 +220,12 @@ body.long-press-drag-active {
 
 /* Vuetify snackbars are teleported outside AppShell, so they do not inherit
    the custom bottom navigation or native system-bar spacing. */
+.v-snackbar {
+  /* Keep transient feedback above the bottom navigation (1000), but below
+     the app bar (1002) so its full-screen overlay cannot intercept app-bar taps. */
+  z-index: 1001 !important;
+}
+
 .v-snackbar--bottom {
   padding-bottom: calc(
     var(--v-layout-bottom, 0px)

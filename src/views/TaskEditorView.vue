@@ -10,6 +10,7 @@ import DatePickerField from '@/components/DatePickerField.vue'
 import FormActionBar from '@/components/FormActionBar.vue'
 import type { LongPressDragResult } from '@/directives/longPressDrag'
 import { formatIntervalDuration, intervalDuration, intervalStepCount } from '@/services/intervals'
+import { useFlashcardStore } from '@/stores/flashcards'
 import { useIntervalStore } from '@/stores/intervals'
 import { useTaskStore } from '@/stores/tasks'
 import type { ProgramStepDraft, TaskDraft, TaskType } from '@/types/domain'
@@ -19,6 +20,7 @@ const route = useRoute()
 const router = useRouter()
 const store = useTaskStore()
 const intervalStore = useIntervalStore()
+const flashcardStore = useFlashcardStore()
 const form = ref()
 const saving = ref(false)
 const deleting = ref(false)
@@ -37,6 +39,7 @@ const typeOptions: Array<{ type: TaskType; title: string; subtitle: string; icon
   { type: 'step_counter', title: 'Step counter', subtitle: 'Sync progress from Health Connect', icon: 'mdi-shoe-print', color: '#7ED6A5' },
   { type: 'program', title: 'Program', subtitle: 'A flexible sequence', icon: 'mdi-repeat-variant', color: '#C7F464' },
   { type: 'interval', title: 'Interval', subtitle: 'Complete a saved interval', icon: 'mdi-timer-play-outline', color: '#66D9C8' },
+  { type: 'flashcards', title: 'Flashcards', subtitle: 'Complete a saved Review set', icon: 'mdi-cards-outline', color: '#C7F464' },
 ]
 
 const weekdays = [
@@ -76,6 +79,7 @@ const draft = reactive<TaskDraft>({
   entryNoteSuggestionsEnabled: false,
   sortOrder: 0,
   intervalTemplate: undefined,
+  flashcardReviewSet: undefined,
   steps: [],
 })
 
@@ -94,6 +98,14 @@ const intervalItems = computed(() => intervalStore.templates.map((item) => ({
     subtitle: `${formatIntervalDuration(intervalDuration(item.definition))} · ${intervalStepCount(item.definition)} intervals`,
   },
 })))
+const selectedReviewSet = computed(() => flashcardStore.reviewSets.find(item => item.id === draft.flashcardReviewSet))
+const reviewSetItems = computed(() => flashcardStore.reviewSets.map(item => ({
+  title: item.name,
+  value: item.id,
+  props: {
+    subtitle: `${item.mode === 'passive' ? 'Passive' : 'Manual'} · ${flashcardStore.matchingCards(item.tags).length} cards`,
+  },
+})))
 
 function intervalForStep(step: ProgramStepDraft) {
   return intervalStore.templates.find((item) => item.id === step.intervalTemplate)
@@ -103,6 +115,16 @@ function intervalSummaryForStep(step: ProgramStepDraft) {
   const interval = intervalForStep(step)
   if (!interval) return ''
   return `${formatIntervalDuration(intervalDuration(interval.definition))} · ${intervalStepCount(interval.definition)} intervals`
+}
+
+function reviewSetForStep(step: ProgramStepDraft) {
+  return flashcardStore.reviewSets.find(item => item.id === step.flashcardReviewSet)
+}
+
+function reviewSetSummary(reviewSetId?: string) {
+  const reviewSet = flashcardStore.reviewSets.find(item => item.id === reviewSetId)
+  if (!reviewSet) return ''
+  return `${reviewSet.mode === 'passive' ? 'Passive' : 'Manual'} · ${flashcardStore.matchingCards(reviewSet.tags).length} cards`
 }
 
 watch(() => draft.type, (type) => {
@@ -120,6 +142,7 @@ onMounted(async () => {
   await Promise.all([
     store.tasks.length ? Promise.resolve() : store.load(),
     intervalStore.loaded ? Promise.resolve() : intervalStore.load(),
+    flashcardStore.loaded ? Promise.resolve() : flashcardStore.load(),
   ])
   if (!route.params.id) {
     if (draft.type === 'program' && !draft.steps.length) addStep(false)
@@ -150,6 +173,7 @@ async function addStep(focusName = true) {
     customUnit: '',
     active: true,
     intervalTemplate: undefined,
+    flashcardReviewSet: undefined,
   })
   openStep.value = draft.steps.length - 1
   if (focusName && allowAutomaticFocus) {
@@ -221,12 +245,24 @@ async function save() {
     error.value = 'Select an interval for this task.'
     return
   }
+  if (draft.type === 'flashcards' && !draft.flashcardReviewSet) {
+    error.value = 'Select a Review set for this task.'
+    return
+  }
   const incompleteIntervalStep = draft.type === 'program'
     ? draft.steps.findIndex(step => step.completionType === 'interval' && !step.intervalTemplate)
     : -1
   if (incompleteIntervalStep >= 0) {
     openStep.value = incompleteIntervalStep
     error.value = 'Select an interval for every interval program step.'
+    return
+  }
+  const incompleteFlashcardStep = draft.type === 'program'
+    ? draft.steps.findIndex(step => step.completionType === 'flashcards' && !step.flashcardReviewSet)
+    : -1
+  if (incompleteFlashcardStep >= 0) {
+    openStep.value = incompleteFlashcardStep
+    error.value = 'Select a Review set for every flashcard program step.'
     return
   }
   saving.value = true
@@ -346,6 +382,32 @@ async function removeTask() {
           <h2 class="text-body-1 font-weight-black">Create an interval first</h2>
           <p class="text-body-2 muted mt-2 mb-4">Interval tasks need a saved interval to run.</p>
           <v-btn color="secondary" variant="tonal" to="/intervals/new">Create interval</v-btn>
+        </div>
+      </v-card>
+
+      <v-card v-if="draft.type === 'flashcards'" class="surface-card field-stack pa-5 mb-4">
+        <template v-if="flashcardStore.reviewSets.length">
+          <v-select
+            v-model="draft.flashcardReviewSet"
+            label="Attached Review set"
+            :items="reviewSetItems"
+            :rules="[v => Boolean(v) || 'Select a Review set']"
+          />
+          <div v-if="selectedReviewSet" class="interval-attachment-summary">
+            <div class="flashcard-attachment-icon">
+              <v-icon icon="mdi-cards-playing-outline" />
+            </div>
+            <div class="min-width-0">
+              <strong class="d-block text-truncate">{{ selectedReviewSet.name }}</strong>
+              <p class="text-caption muted">{{ reviewSetSummary(selectedReviewSet.id) }}</p>
+            </div>
+          </div>
+        </template>
+        <div v-else class="text-center py-3">
+          <v-icon icon="mdi-cards-outline" size="36" class="mb-3" />
+          <h2 class="text-body-1 font-weight-black">Create a Review set first</h2>
+          <p class="text-body-2 muted mt-2 mb-4">Flashcard tasks need a saved Review set to run.</p>
+          <v-btn color="secondary" variant="tonal" to="/flashcards/review-sets/new">Create Review set</v-btn>
         </div>
       </v-card>
 
@@ -481,6 +543,7 @@ async function removeTask() {
                     { title: 'Check-off', value: 'check' },
                     { title: 'Quantity target', value: 'quantity' },
                     { title: 'Complete a saved interval', value: 'interval' },
+                    { title: 'Complete a Review set', value: 'flashcards' },
                   ]"
                 />
               </div>
@@ -518,6 +581,28 @@ async function removeTask() {
                 </template>
                 <v-alert v-else type="warning" variant="tonal" density="compact">
                   Create a saved interval before using this completion style.
+                </v-alert>
+              </div>
+              <div v-if="step.completionType === 'flashcards'" class="field-stack mb-4">
+                <template v-if="flashcardStore.reviewSets.length">
+                  <v-select
+                    v-model="step.flashcardReviewSet"
+                    label="Attached Review set"
+                    :items="reviewSetItems"
+                    :rules="[v => Boolean(v) || 'Select a Review set']"
+                  />
+                  <div v-if="reviewSetForStep(step)" class="interval-attachment-summary">
+                    <div class="flashcard-attachment-icon">
+                      <v-icon icon="mdi-cards-playing-outline" />
+                    </div>
+                    <div class="min-width-0">
+                      <strong class="d-block text-truncate">{{ reviewSetForStep(step)?.name }}</strong>
+                      <p class="text-caption muted">{{ reviewSetSummary(step.flashcardReviewSet) }}</p>
+                    </div>
+                  </div>
+                </template>
+                <v-alert v-else type="warning" variant="tonal" density="compact">
+                  Create a Review set before using this completion style.
                 </v-alert>
               </div>
               <label class="field-label">Place on cycle days</label>
@@ -622,6 +707,7 @@ async function removeTask() {
 .step-panels :deep(.program-step-panel--draggable .program-step__drag-handle) { cursor: grab; }
 .interval-attachment-summary { display: flex; align-items: center; gap: .75rem; padding: .85rem; border-radius: 16px; background: rgb(var(--v-theme-surface-variant)); }
 .interval-attachment-icon { display: grid; width: 42px; height: 42px; flex: 0 0 auto; place-items: center; border-radius: 14px; color: #17200f; }
+.flashcard-attachment-icon { display: grid; width: 42px; height: 42px; flex: 0 0 auto; place-items: center; border-radius: 14px; background: rgb(var(--v-theme-secondary)); color: rgb(var(--v-theme-on-secondary)); }
 .step-number { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 11px; background: rgb(var(--v-theme-secondary)); color: rgb(var(--v-theme-on-secondary)); font-size: .75rem; font-weight: 900; }
 .cycle-day-picker { max-height: 145px; overflow-y: auto; }
 .step-actions { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }

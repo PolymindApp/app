@@ -1,28 +1,54 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Capacitor } from '@capacitor/core'
 import { useDisplay } from 'vuetify'
 import { useRouter } from 'vue-router'
 import AccountMenu from '@/components/AccountMenu.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import MainNavigationIcon from '@/components/MainNavigationIcon.vue'
 import {
+  bottomNavigationFontSize,
   MAIN_MENU_ORDER_CHANGED_EVENT,
   orderedMainNavItems,
   readStoredMainMenuOrder,
 } from '@/services/navigation'
+import {
+  formatRunningSessionTitle,
+  RUNNING_SESSION_TITLE_INTERVAL_MS,
+} from '@/services/runningSessionTitle'
 import { useAuthStore } from '@/stores/auth'
+import { useFlashcardStore } from '@/stores/flashcards'
+import { useIntervalStore } from '@/stores/intervals'
+import { useSnackbarStore } from '@/stores/snackbar'
 
 const { mdAndUp } = useDisplay()
 const router = useRouter()
 const auth = useAuthStore()
+const flashcardStore = useFlashcardStore()
+const intervalStore = useIntervalStore()
+const snackbar = useSnackbarStore()
 const logoutDialog = ref(false)
 const pageTransition = ref('page-level-forward')
 const isIos = Capacitor.getPlatform() === 'ios'
+const isBrowser = Capacitor.getPlatform() === 'web'
 const storedMenuOrder = ref(readStoredMainMenuOrder())
+const reducedMotion = ref(
+  typeof window !== 'undefined'
+  && typeof window.matchMedia === 'function'
+  && window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+)
+const documentTitle = typeof document === 'undefined'
+  ? 'Mom — Management of Me'
+  : document.title
+let documentTitleFrame = 0
+let documentTitleTimer: number | undefined
 
 const items = computed(() => orderedMainNavItems(
   storedMenuOrder.value ?? auth.user?.settings?.mainMenuOrder,
 ))
+const intervalIsRunning = computed(() => intervalStore.activeSession?.status === 'running')
+const flashcardIsRunning = computed(() => flashcardStore.activeSession?.status === 'running')
+const sessionIsRunning = computed(() => intervalIsRunning.value || flashcardIsRunning.value)
 
 const immersive = computed(() => Boolean(router.currentRoute.value.meta.immersive))
 const pageTitle = computed(() => String(router.currentRoute.value.meta.title || 'Mom'))
@@ -43,6 +69,7 @@ const current = computed({
   get: () => {
     const path = router.currentRoute.value.path
     if (path.startsWith('/intervals')) return '/intervals'
+    if (path.startsWith('/flashcards')) return '/flashcards'
     if (path.startsWith('/tracking')) return '/tracking'
     if (path.startsWith('/journal')) return '/journal'
     if (path.startsWith('/tasks')) return '/tasks'
@@ -50,6 +77,50 @@ const current = computed({
   },
   set: (path: string) => router.push(path),
 })
+
+function menuItemIsRunning(itemId: string) {
+  if (itemId === 'intervals') return intervalIsRunning.value
+  if (itemId === 'flashcards') return flashcardIsRunning.value
+  return false
+}
+
+function menuItemLabel(item: { id: string; title: string }) {
+  return menuItemIsRunning(item.id) ? `${item.title}, session running` : item.title
+}
+
+function stopDocumentTitleAnimation(restoreTitle = true) {
+  if (documentTitleTimer !== undefined) {
+    window.clearInterval(documentTitleTimer)
+    documentTitleTimer = undefined
+  }
+  if (restoreTitle && typeof document !== 'undefined') document.title = documentTitle
+}
+
+function renderDocumentTitleFrame() {
+  if (typeof document === 'undefined') return
+  document.title = formatRunningSessionTitle(
+    documentTitle,
+    documentTitleFrame,
+    reducedMotion.value,
+  )
+  documentTitleFrame += 1
+}
+
+function syncDocumentTitle() {
+  if (!isBrowser || typeof window === 'undefined') return
+  stopDocumentTitleAnimation()
+  if (!sessionIsRunning.value) return
+  documentTitleFrame = 0
+  renderDocumentTitleFrame()
+  if (!reducedMotion.value) {
+    documentTitleTimer = window.setInterval(
+      renderDocumentTitleFrame,
+      RUNNING_SESSION_TITLE_INTERVAL_MS,
+    )
+  }
+}
+
+watch([sessionIsRunning, reducedMotion], syncDocumentTitle, { immediate: true })
 
 const removeTransitionGuard = router.beforeEach((to, from) => {
   const toDepth = Number(to.meta.pageDepth ?? 0)
@@ -73,9 +144,14 @@ function refreshStoredMenuOrder() {
 onMounted(() => {
   window.addEventListener(MAIN_MENU_ORDER_CHANGED_EVENT, refreshStoredMenuOrder)
   window.addEventListener('storage', refreshStoredMenuOrder)
+  void Promise.allSettled([
+    !intervalStore.loading ? intervalStore.load() : Promise.resolve(),
+    !flashcardStore.loading ? flashcardStore.load() : Promise.resolve(),
+  ])
 })
 
 onBeforeUnmount(() => {
+  stopDocumentTitleAnimation()
   removeTransitionGuard()
   window.removeEventListener(MAIN_MENU_ORDER_CHANGED_EVENT, refreshStoredMenuOrder)
   window.removeEventListener('storage', refreshStoredMenuOrder)
@@ -121,13 +197,21 @@ function releaseLeavingPage(element: Element) {
           v-for="item in items"
           :key="item.to"
           :to="item.to"
-          :prepend-icon="item.icon"
           :title="item.title"
+          :aria-label="menuItemLabel(item)"
           :active="current === item.to"
           rounded="xl"
           class="mb-2"
           color="secondary"
-        />
+        >
+          <template #prepend>
+            <MainNavigationIcon
+              :icon="item.icon"
+              :running="menuItemIsRunning(item.id)"
+              badge-surface="background"
+            />
+          </template>
+        </v-list-item>
       </v-list>
 
       <template #append>
@@ -199,6 +283,7 @@ function releaseLeavingPage(element: Element) {
       <nav
         v-if="!mdAndUp && !immersive"
         class="bottom-nav"
+        :style="{ '--bottom-nav-font-size': bottomNavigationFontSize(items.length) }"
         aria-label="Primary navigation"
       >
         <router-link
@@ -208,8 +293,13 @@ function releaseLeavingPage(element: Element) {
           class="bottom-nav__link"
           :class="{ 'bottom-nav__link--active': current === item.to }"
           :aria-current="current === item.to ? 'page' : undefined"
+          :aria-label="menuItemLabel(item)"
         >
-          <v-icon :icon="item.icon" size="24" />
+          <MainNavigationIcon
+            :icon="item.icon"
+            :running="menuItemIsRunning(item.id)"
+            badge-surface="surface"
+          />
           <span>{{ item.title }}</span>
         </router-link>
       </nav>
@@ -223,6 +313,27 @@ function releaseLeavingPage(element: Element) {
       icon="mdi-logout"
       @confirm="logout"
     />
+
+    <v-snackbar
+      :key="snackbar.revision"
+      v-model="snackbar.visible"
+      color="success"
+      location="bottom"
+      :timeout="4000"
+    >
+      <div class="d-flex align-center ga-2">
+        <v-icon icon="mdi-check-circle-outline" />
+        <span>{{ snackbar.message }}</span>
+      </div>
+      <template #actions>
+        <v-btn
+          icon="mdi-close"
+          variant="text"
+          aria-label="Dismiss confirmation"
+          @click="snackbar.dismiss"
+        />
+      </template>
+    </v-snackbar>
   </v-app>
 </template>
 
@@ -372,11 +483,13 @@ function releaseLeavingPage(element: Element) {
   justify-content: center;
   gap: 2px;
   color: rgb(var(--v-theme-on-surface) / .62);
-  font-size: 0.68rem;
+  font-size: var(--bottom-nav-font-size, .68rem);
   font-weight: 800;
   line-height: 1.25;
   text-decoration: none;
-  transition: color 160ms ease;
+  transition:
+    color 160ms ease,
+    font-size 160ms ease;
 }
 
 .bottom-nav__link--active {

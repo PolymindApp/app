@@ -7,6 +7,7 @@ withDefaults(defineProps<{
   showDelete?: boolean
   deleteLabel?: string
   deleteDisabled?: boolean
+  embedded?: boolean
 }>(), {
   primaryText: 'Save',
   loading: false,
@@ -15,6 +16,7 @@ withDefaults(defineProps<{
   showDelete: false,
   deleteLabel: 'Delete',
   deleteDisabled: false,
+  embedded: false,
 })
 
 const emit = defineEmits<{
@@ -25,7 +27,7 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <div class="form-action-bar page-action-area">
+  <div class="form-action-bar page-action-area" :class="{ 'form-action-bar--embedded': embedded }">
     <div class="form-action-bar__inner">
       <v-btn
         v-if="showDelete"
@@ -100,6 +102,14 @@ const emit = defineEmits<{
 
 .form-action-bar__cancel {
   margin-left: auto;
+}
+
+.form-action-bar--embedded {
+  position: static;
+  padding: .75rem 0 0;
+  border-top: .0625rem solid rgba(var(--v-theme-on-surface), .08);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 @media (min-width: 60rem) {

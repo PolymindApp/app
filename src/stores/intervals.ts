@@ -1,6 +1,7 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { ApiError, api } from '@/lib/api'
+import { useSnackbarStore } from '@/stores/snackbar'
 import { useTaskStore } from '@/stores/tasks'
 import {
   cloneIntervalTemplateDraft,
@@ -151,6 +152,7 @@ export const useIntervalStore = defineStore('intervals', () => {
       sessions.value.forEach((session) => {
         if (session.template === templateId) session.template = undefined
       })
+      useSnackbarStore().showDeletion('Interval')
     } catch (cause) {
       const attachedTasks = cause instanceof ApiError && Array.isArray(cause.details.tasks)
         ? cause.details.tasks

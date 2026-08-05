@@ -22,6 +22,7 @@ const taskStore = useTaskStore()
 const trackingStore = useTrackingStore()
 const selectedDate = ref(initialDate())
 const visibleWeekStart = ref(startOfWeek(selectedDate.value, { weekStartsOn: 1 }))
+const dateDirection = ref<'forward' | 'back'>('forward')
 const vRipple = Ripple
 
 const taskId = computed(() => typeof route.query.task === 'string' ? route.query.task : '')
@@ -89,6 +90,11 @@ watch(visibleWeekStart, async (weekStart) => {
   ).catch(() => undefined)
 }, { immediate: true })
 
+watch(selectedDate, (date, previousDate) => {
+  if (date.getTime() === previousDate.getTime()) return
+  dateDirection.value = date > previousDate ? 'forward' : 'back'
+})
+
 watch(() => route.query.date, (date) => {
   if (typeof date !== 'string') return
   const parsed = parseISO(date)
@@ -112,131 +118,139 @@ onMounted(async () => {
       class="mb-5"
     />
 
-    <div v-if="taskId || trackerId" class="d-flex flex-wrap ga-2">
-      <v-chip
-        v-if="taskId"
-        closable
-        color="secondary"
-        variant="tonal"
-        prepend-icon="mdi-lightning-bolt-outline"
-        @click:close="clearSourceFilter('task')"
-      >
-        {{ filteredTask?.name || 'Task reflections' }}
-      </v-chip>
-      <v-chip
-        v-if="trackerId"
-        closable
-        :color="filteredTracker?.color || 'secondary'"
-        variant="tonal"
-        :prepend-icon="filteredTracker?.icon || 'mdi-chart-timeline-variant'"
-        @click:close="clearSourceFilter('tracker')"
-      >
-        {{ filteredTracker?.name || 'Tracker reflections' }}
-      </v-chip>
-    </div>
+    <div class="journal-date-stage">
+      <transition :name="`page-level-${dateDirection}`">
+        <div :key="selectedDateKey" class="journal-date-content">
+          <div v-if="taskId || trackerId" class="d-flex flex-wrap ga-2">
+            <v-chip
+              v-if="taskId"
+              closable
+              color="secondary"
+              variant="tonal"
+              prepend-icon="mdi-lightning-bolt-outline"
+              @click:close="clearSourceFilter('task')"
+            >
+              {{ filteredTask?.name || 'Task reflections' }}
+            </v-chip>
+            <v-chip
+              v-if="trackerId"
+              closable
+              :color="filteredTracker?.color || 'secondary'"
+              variant="tonal"
+              :prepend-icon="filteredTracker?.icon || 'mdi-chart-timeline-variant'"
+              @click:close="clearSourceFilter('tracker')"
+            >
+              {{ filteredTracker?.name || 'Tracker reflections' }}
+            </v-chip>
+          </div>
 
-    <v-alert v-if="journalStore.error" type="error" variant="tonal" class="mt-5">
-      {{ journalStore.error }}
-      <template #append>
-        <v-btn
-          size="small"
-          variant="text"
-          @click="journalStore.loadRange(format(visibleWeekStart, 'yyyy-MM-dd'), format(addDays(visibleWeekStart, 6), 'yyyy-MM-dd'))"
-        >
-          Retry
-        </v-btn>
-      </template>
-    </v-alert>
+          <v-alert v-if="journalStore.error" type="error" variant="tonal" class="mt-5">
+            {{ journalStore.error }}
+            <template #append>
+              <v-btn
+                size="small"
+                variant="text"
+                @click="journalStore.loadRange(format(visibleWeekStart, 'yyyy-MM-dd'), format(addDays(visibleWeekStart, 6), 'yyyy-MM-dd'))"
+              >
+                Retry
+              </v-btn>
+            </template>
+          </v-alert>
 
-    <div v-if="journalStore.loading" class="journal-loading py-12">
-      <v-progress-circular indeterminate color="secondary" size="34" />
-      <span class="text-body-2 muted">Loading reflections…</span>
-    </div>
+          <div v-if="journalStore.loading" class="journal-loading py-12">
+            <v-progress-circular indeterminate color="secondary" size="34" />
+            <span class="text-body-2 muted">Loading reflections…</span>
+          </div>
 
-    <div v-else-if="groups.length" class="journal-groups mt-5">
-      <section v-for="group in groups" :key="group.context">
-        <div class="section-heading">
-          <h2>{{ groupTitles[group.context] }}</h2>
-          <span class="muted text-caption">{{ group.entries.length }}</span>
-        </div>
-        <div class="journal-entry-list">
-          <v-card
-            v-for="entry in group.entries"
-            :key="entry.id"
-            v-ripple
-            class="journal-entry surface-card pa-4"
-            role="link"
-            tabindex="0"
-            :aria-label="`Edit ${journalEntryHeading(entry)}`"
-            @click="router.push({ name: 'journal-edit', params: { id: entry.id } })"
-            @keydown.enter="router.push({ name: 'journal-edit', params: { id: entry.id } })"
-            @keydown.space.prevent="router.push({ name: 'journal-edit', params: { id: entry.id } })"
-          >
-            <div class="d-flex align-start justify-space-between ga-3">
-              <div class="min-width-0">
-                <h3 class="text-body-1 font-weight-black journal-entry__title">
-                  {{ journalEntryHeading(entry) }}
-                </h3>
-                <p v-if="entry.title" class="journal-entry__body mt-2">{{ entry.body }}</p>
+          <div v-else-if="groups.length" class="journal-groups mt-5">
+            <section v-for="group in groups" :key="group.context">
+              <div class="section-heading">
+                <h2>{{ groupTitles[group.context] }}</h2>
+                <span class="muted text-caption">{{ group.entries.length }}</span>
               </div>
-              <span class="text-caption muted flex-shrink-0">
-                {{ format(new Date(entry.occurredAt), 'h:mm a') }}
-              </span>
-            </div>
-            <div v-if="taskName(entry) || trackerName(entry)" class="d-flex flex-wrap ga-2 mt-3">
-              <v-chip
-                v-if="taskName(entry)"
-                size="small"
-                variant="tonal"
-                :color="sourceTask(entry)?.color || undefined"
-                prepend-icon="mdi-lightning-bolt-outline"
-              >
-                {{ taskName(entry) }}
-              </v-chip>
-              <v-chip
-                v-if="trackerName(entry)"
-                size="small"
-                variant="tonal"
-                :color="sourceTracker(entry)?.color || undefined"
-                :prepend-icon="sourceTracker(entry)?.icon || 'mdi-chart-timeline-variant'"
-              >
-                {{ trackerName(entry) }}
-              </v-chip>
-            </div>
+              <div class="journal-entry-list">
+                <v-card
+                  v-for="entry in group.entries"
+                  :key="entry.id"
+                  v-ripple
+                  class="journal-entry surface-card pa-4"
+                  role="link"
+                  tabindex="0"
+                  :aria-label="`Edit ${journalEntryHeading(entry)}`"
+                  @click="router.push({ name: 'journal-edit', params: { id: entry.id } })"
+                  @keydown.enter="router.push({ name: 'journal-edit', params: { id: entry.id } })"
+                  @keydown.space.prevent="router.push({ name: 'journal-edit', params: { id: entry.id } })"
+                >
+                  <div class="d-flex align-start justify-space-between ga-3">
+                    <div class="min-width-0">
+                      <h3 class="text-body-1 font-weight-black journal-entry__title">
+                        {{ journalEntryHeading(entry) }}
+                      </h3>
+                      <p v-if="entry.title" class="journal-entry__body mt-2">{{ entry.body }}</p>
+                    </div>
+                    <span class="text-caption muted flex-shrink-0">
+                      {{ format(new Date(entry.occurredAt), 'h:mm a') }}
+                    </span>
+                  </div>
+                  <div v-if="taskName(entry) || trackerName(entry)" class="d-flex flex-wrap ga-2 mt-3">
+                    <v-chip
+                      v-if="taskName(entry)"
+                      size="small"
+                      variant="tonal"
+                      :color="sourceTask(entry)?.color || undefined"
+                      prepend-icon="mdi-lightning-bolt-outline"
+                    >
+                      {{ taskName(entry) }}
+                    </v-chip>
+                    <v-chip
+                      v-if="trackerName(entry)"
+                      size="small"
+                      variant="tonal"
+                      :color="sourceTracker(entry)?.color || undefined"
+                      :prepend-icon="sourceTracker(entry)?.icon || 'mdi-chart-timeline-variant'"
+                    >
+                      {{ trackerName(entry) }}
+                    </v-chip>
+                  </div>
+                </v-card>
+              </div>
+            </section>
+          </div>
+
+          <v-card v-else-if="showEmptyState" class="surface-card pa-8 mt-5 text-center">
+            <v-icon icon="mdi-notebook-outline" size="42" color="secondary" class="mb-3" />
+            <h2 class="text-h6 font-weight-black">No reflections for this day</h2>
+            <p class="text-body-2 muted mt-2 mb-5">
+              {{ taskId || trackerId
+                ? 'Choose another day or clear the filter.'
+                : 'Capture what happened, what you noticed, or what you want to remember.' }}
+            </p>
+            <v-btn color="secondary" :to="{ name: 'journal-new', query: newEntryQuery() }">
+              Write a reflection
+            </v-btn>
           </v-card>
+
+          <v-btn
+            v-if="!journalStore.loading && groups.length"
+            block
+            size="large"
+            class="mt-5"
+            color="secondary"
+            prepend-icon="mdi-notebook-plus-outline"
+            :to="{ name: 'journal-new', query: newEntryQuery() }"
+          >
+            New reflection
+          </v-btn>
         </div>
-      </section>
+      </transition>
     </div>
-
-    <v-card v-else-if="showEmptyState" class="surface-card pa-8 mt-5 text-center">
-      <v-icon icon="mdi-notebook-outline" size="42" color="secondary" class="mb-3" />
-      <h2 class="text-h6 font-weight-black">No reflections for this day</h2>
-      <p class="text-body-2 muted mt-2 mb-5">
-        {{ taskId || trackerId
-          ? 'Choose another day or clear the filter.'
-          : 'Capture what happened, what you noticed, or what you want to remember.' }}
-      </p>
-      <v-btn color="secondary" :to="{ name: 'journal-new', query: newEntryQuery() }">
-        Write a reflection
-      </v-btn>
-    </v-card>
-
-    <v-btn
-      v-if="!journalStore.loading && groups.length"
-      block
-      size="large"
-      class="mt-5"
-      color="secondary"
-      prepend-icon="mdi-notebook-plus-outline"
-      :to="{ name: 'journal-new', query: newEntryQuery() }"
-    >
-      New reflection
-    </v-btn>
   </main>
 </template>
 
 <style scoped>
 .journal-page { padding-bottom: 2rem; }
+.journal-date-stage { display: grid; min-width: 0; overflow-x: clip; }
+.journal-date-content { min-width: 0; grid-area: 1 / 1; align-self: start; }
 .journal-loading { display: flex; align-items: center; justify-content: center; gap: .75rem; }
 .journal-groups,
 .journal-entry-list { display: grid; gap: .75rem; }

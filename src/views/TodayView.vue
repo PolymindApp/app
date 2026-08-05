@@ -21,12 +21,14 @@ import {
   taskEntryNoteOptions,
 } from '@/services/taskEntryNotes'
 import { useIntervalStore } from '@/stores/intervals'
+import { useFlashcardStore } from '@/stores/flashcards'
 import { useTaskStore } from '@/stores/tasks'
 import type { Entry, TaskProgress } from '@/types/domain'
 
 const allowAutomaticFocus = Capacitor.getPlatform() !== 'android'
 const store = useTaskStore()
 const intervalStore = useIntervalStore()
+const flashcardStore = useFlashcardStore()
 const router = useRouter()
 const { smAndUp } = useDisplay()
 const {
@@ -60,6 +62,7 @@ const taskLogError = ref('')
 let taskLogRequest = 0
 const activeIntervalSheet = ref(false)
 const intervalStartError = ref('')
+const flashcardStartError = ref('')
 const valuePulseVersions = ref<Record<string, number>>({})
 const exactAmount = computed(() => {
   if (!exactAmountInput.value || exactAmountInput.value === '.') return null
@@ -116,7 +119,7 @@ let appStateListener: Awaited<ReturnType<typeof App.addListener>> | undefined
 
 onMounted(async () => {
   try {
-    await Promise.all([store.load(), intervalStore.load()])
+    await Promise.all([store.load(), intervalStore.load(), flashcardStore.load()])
   } catch { /* Store error states are displayed in the view. */ }
   await loadVisibleTaskProgress()
   if (!isNativeHealthConnectSupported()) await store.refreshStepCount(selectedDate.value)
@@ -344,6 +347,51 @@ function intervalMeta(progress: TaskProgress) {
   }
 }
 
+function reviewSetMeta(progress: TaskProgress) {
+  const reviewSetId = progress.programStep?.flashcardReviewSet || progress.task.flashcardReviewSet
+  const reviewSet = flashcardStore.reviewSets.find(item => item.id === reviewSetId)
+  if (!reviewSet) return undefined
+  return {
+    name: reviewSet.name,
+    mode: reviewSet.mode,
+    cardCount: flashcardStore.matchingCards(reviewSet.tags).length,
+  }
+}
+
+function reviewSessionMatchesProgress(progress: TaskProgress) {
+  const active = flashcardStore.activeSession
+  return active?.task === progress.task.id
+    && (active.programStep || '') === (progress.programStep?.id || '')
+}
+
+async function startFlashcardTask(progress: TaskProgress) {
+  flashcardStartError.value = ''
+  const active = flashcardStore.activeSession
+  if (active) {
+    await router.push({
+      name: 'flashcard-review-runner',
+      params: { sessionId: active.id },
+      query: { from: 'tasks' },
+    })
+    return
+  }
+  const reviewSetId = progress.programStep?.flashcardReviewSet || progress.task.flashcardReviewSet
+  if (!reviewSetId) {
+    flashcardStartError.value = 'This task or program step does not have an attached Review set.'
+    return
+  }
+  await router.push({
+    name: 'flashcard-review-set-runner',
+    params: { reviewSetId },
+    query: {
+      task: progress.task.id,
+      ...(progress.programStep ? { step: progress.programStep.id } : {}),
+      date: toDateKey(selectedDate.value),
+      from: 'tasks',
+    },
+  })
+}
+
 function sessionMatchesProgress(progress: TaskProgress) {
   const active = intervalStore.activeSession
   return active?.task === progress.task.id
@@ -479,6 +527,9 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
     <v-alert v-if="intervalStartError" type="error" variant="tonal" class="mt-4">
       {{ intervalStartError }}
     </v-alert>
+    <v-alert v-if="flashcardStartError" type="error" variant="tonal" class="mt-4">
+      {{ flashcardStartError }}
+    </v-alert>
     <v-alert
       v-if="hasStepCounter && stepCountError"
       type="warning"
@@ -505,11 +556,15 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
             :interval="intervalMeta(item)"
             :can-start-interval="selectedDateIsToday && item.status === 'pending'"
             :interval-active="sessionMatchesProgress(item)"
+            :review-set="reviewSetMeta(item)"
+            :can-start-review="selectedDateIsToday && item.status === 'pending'"
+            :review-active="reviewSessionMatchesProgress(item)"
             @toggle="(progress, complete) => runForProgress(progress, () => store.toggleComplete(progress, complete))"
             @seal="progress => runForProgress(progress, () => store.setDailyTotalSealed(progress))"
             @log-amount="openExact"
             @log-time="openTimeLogger"
             @start-interval="startIntervalTask"
+            @start-review="startFlashcardTask"
             @actions="openTaskActions"
           />
         </div>
@@ -528,11 +583,15 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
             :interval="intervalMeta(item)"
             :can-start-interval="selectedDateIsToday && item.status === 'pending'"
             :interval-active="sessionMatchesProgress(item)"
+            :review-set="reviewSetMeta(item)"
+            :can-start-review="selectedDateIsToday && item.status === 'pending'"
+            :review-active="reviewSessionMatchesProgress(item)"
             @toggle="(progress, complete) => runForProgress(progress, () => store.toggleComplete(progress, complete))"
             @seal="progress => runForProgress(progress, () => store.setDailyTotalSealed(progress))"
             @log-amount="openExact"
             @log-time="openTimeLogger"
             @start-interval="startIntervalTask"
+            @start-review="startFlashcardTask"
             @actions="openTaskActions"
           />
         </div>
