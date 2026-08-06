@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Capacitor } from '@capacitor/core'
 import { useDisplay } from 'vuetify'
 import { useRouter } from 'vue-router'
+import packageMetadata from '../../package.json'
 import AccountMenu from '@/components/AccountMenu.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import MainNavigationIcon from '@/components/MainNavigationIcon.vue'
@@ -30,6 +31,7 @@ const auth = useAuthStore()
 const flashcardStore = useFlashcardStore()
 const intervalStore = useIntervalStore()
 const snackbar = useSnackbarStore()
+const appVersion = packageMetadata.version
 const logoutDialog = ref(false)
 const pageTransition = ref('page-level-forward')
 const isIos = Capacitor.getPlatform() === 'ios'
@@ -241,6 +243,9 @@ function releaseLeavingPage(element: Element) {
       <template #append>
         <div class="pa-4">
           <v-btn block variant="text" prepend-icon="mdi-logout" @click="logoutDialog = true">Sign out</v-btn>
+          <p class="sidebar-version mt-2" :aria-label="`Application version ${appVersion}`">
+            Version {{ appVersion }}
+          </p>
         </div>
       </template>
     </v-navigation-drawer>
@@ -482,6 +487,15 @@ function releaseLeavingPage(element: Element) {
   height: 36px;
   object-fit: contain;
   object-position: left center;
+}
+
+.sidebar-version {
+  margin-bottom: 0;
+  color: rgb(var(--v-theme-on-surface) / .4);
+  font-size: .625rem;
+  font-weight: 750;
+  letter-spacing: .04em;
+  text-align: center;
 }
 
 .bottom-nav {

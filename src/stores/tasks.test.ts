@@ -198,7 +198,7 @@ describe('quantitative task completion', () => {
     expect(store.reviewProgressForDate(new Date(2026, 7, 6))).toEqual([])
   })
 
-  it('excludes an unlocked daily total from the daily percentage denominator', () => {
+  it('reserves an unlocked daily total in the daily percentage denominator at zero progress', () => {
     const store = useTaskStore()
     const dailyTotal: Task = {
       ...task,
@@ -215,7 +215,57 @@ describe('quantitative task completion', () => {
       { ...entry('daily-total-entry', 5), task: dailyTotal.id },
     ]
 
-    expect(store.completionRate).toBe(50)
+    expect(store.completionRate).toBe(25)
+  })
+
+  it('awards a locked daily total its full equal share among eight scheduled tasks', () => {
+    const store = useTaskStore()
+    const calories: Task = {
+      ...task,
+      id: 'calories-task',
+      name: 'Calories',
+      type: 'daily_total',
+      targetValue: 2200,
+      targetOperator: 'lte',
+      unit: 'calories',
+      sortOrder: 7,
+    }
+    const completedTasks = Array.from({ length: 7 }, (_, index): Task => ({
+      ...task,
+      id: `check-task-${index}`,
+      name: `Check task ${index + 1}`,
+      type: 'check',
+      sortOrder: index,
+    }))
+    store.selectedDate = selectedDate
+    store.tasks = [...completedTasks, calories]
+    store.occurrences = completedTasks.map((completedTask, index) => ({
+      ...completedOccurrence,
+      id: `check-occurrence-${index}`,
+      task: completedTask.id,
+      snapshotName: completedTask.name,
+    }))
+    store.entries = [{
+      ...entry('calories-entry', 2100),
+      task: calories.id,
+      occurrence: 'calories-occurrence',
+      kind: 'quantity',
+      unit: 'calories',
+    }]
+
+    expect(store.completionRate).toBe(88)
+
+    store.occurrences.push({
+      ...completedOccurrence,
+      id: 'calories-occurrence',
+      task: calories.id,
+      sealed: true,
+      snapshotName: calories.name,
+      snapshotTarget: 2200,
+      snapshotUnit: 'calories',
+    })
+
+    expect(store.completionRate).toBe(100)
   })
 
   it('reopens a missed daily total without scoring it before it is locked', async () => {
@@ -289,7 +339,7 @@ describe('quantitative task completion', () => {
       status: 'pending',
       sealed: false,
     })
-    expect(store.completionRateForDate(selectedDate)).toBeUndefined()
+    expect(store.completionRateForDate(selectedDate)).toBe(0)
   })
 
   it('scores a locked at-most daily total by subtracting its proportional excess', () => {

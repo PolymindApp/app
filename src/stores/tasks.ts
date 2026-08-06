@@ -230,13 +230,11 @@ export const useTaskStore = defineStore('tasks', () => {
 
   function completionRateForDate(date: Date) {
     const progress = progressForDate(date)
-    const scoredProgress = progress.filter((item) =>
-      item.task.type !== 'daily_total' || item.sealed,
-    )
-    if (!scoredProgress.length) return undefined
-    const earnedProgress = scoredProgress.reduce(
+    if (!progress.length) return undefined
+    const earnedProgress = progress.reduce(
       (total, item) => {
         if (!item.programStep && item.task.type === 'daily_total') {
+          if (!item.sealed) return total
           return total + dailyTotalCompletionPercent(
             item.value,
             item.task.targetValue || 0,
@@ -247,7 +245,7 @@ export const useTaskStore = defineStore('tasks', () => {
       },
       0,
     )
-    return Math.round(earnedProgress / scoredProgress.length)
+    return Math.round(earnedProgress / progress.length)
   }
 
   function reviewProgressForDate(date: Date) {
