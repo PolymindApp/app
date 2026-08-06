@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
-import { useDisplay } from 'vuetify'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import {
@@ -21,11 +20,9 @@ const emit = defineEmits<{
   error: [message: string]
 }>()
 
-const { smAndDown } = useDisplay()
 const fileInput = ref<HTMLInputElement>()
 const cropImage = ref<HTMLImageElement>()
 const cropViewport = ref<HTMLElement>()
-const desktopMenu = ref(false)
 const actionsDrawer = ref(false)
 const cropDialog = ref(false)
 const removeDialog = ref(false)
@@ -99,7 +96,6 @@ onBeforeUnmount(() => {
 })
 
 function choosePhoto() {
-  desktopMenu.value = false
   actionsDrawer.value = false
   fileInput.value?.click()
 }
@@ -221,7 +217,6 @@ function releaseSourceUrl() {
 }
 
 function requestRemoval() {
-  desktopMenu.value = false
   actionsDrawer.value = false
   removeDialog.value = true
 }
@@ -251,7 +246,7 @@ function requestRemoval() {
   </button>
 
   <button
-    v-else-if="smAndDown"
+    v-else
     type="button"
     class="avatar-button"
     aria-label="Open avatar actions"
@@ -264,29 +259,7 @@ function requestRemoval() {
     <span class="avatar-edit-icon"><v-icon icon="mdi-camera-outline" size="17" /></span>
   </button>
 
-  <v-menu v-else v-model="desktopMenu" location="bottom start">
-    <template #activator="{ props: menuProps }">
-      <button
-        v-bind="menuProps"
-        type="button"
-        class="avatar-button"
-        aria-label="Open avatar actions"
-      >
-        <v-avatar color="secondary" size="72">
-          <v-img v-if="showImage" :src="avatarUrl" alt="" cover @error="imageFailed = true" />
-          <span v-else>{{ initials }}</span>
-        </v-avatar>
-        <span class="avatar-edit-icon"><v-icon icon="mdi-camera-outline" size="17" /></span>
-      </button>
-    </template>
-    <v-list density="compact">
-      <v-list-item prepend-icon="mdi-image-plus-outline" title="Upload new avatar" @click="choosePhoto" />
-      <v-list-item prepend-icon="mdi-delete-outline" title="Remove" base-color="error" @click="requestRemoval" />
-    </v-list>
-  </v-menu>
-
   <ActionBottomSheet
-    v-if="smAndDown"
     v-model="actionsDrawer"
     title="Avatar"
     aria-label="Avatar actions"

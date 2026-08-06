@@ -139,7 +139,7 @@ export function parseFlashcardCsv(input: string): FlashcardCsvParseResult {
   if (!parsed.records.length) return { rows: [], errors: ['Add a CSV header and at least one card.'] }
 
   const headers = recordHeaders(parsed.records[parsed.headerIndex])
-  const allowedHeaders = new Set(['front', 'back', 'tags'])
+  const allowedHeaders = new Set(['front', 'back', 'note', 'tags'])
   const unknownHeaders = headers.filter(header => header && !allowedHeaders.has(header))
   const duplicateHeaders = headers.filter((header, index) => header && headers.indexOf(header) !== index)
   const errors: string[] = []
@@ -148,6 +148,7 @@ export function parseFlashcardCsv(input: string): FlashcardCsvParseResult {
 
   const frontIndex = headers.indexOf('front')
   const backIndex = headers.indexOf('back')
+  const noteIndex = headers.indexOf('note')
   const tagsIndex = headers.indexOf('tags')
   if (frontIndex < 0) errors.push('The front header is required.')
   if (backIndex < 0) errors.push('The back header is required.')
@@ -161,6 +162,7 @@ export function parseFlashcardCsv(input: string): FlashcardCsvParseResult {
     }
     const front = (record.fields[frontIndex] || '').trim()
     const back = (record.fields[backIndex] || '').trim()
+    const note = noteIndex >= 0 ? (record.fields[noteIndex] || '').trim() : ''
     const tags = tagsIndex >= 0 ? distinctTags(record.fields[tagsIndex] || '') : []
     if (!front || !back) {
       errors.push(`Line ${record.line}: front and back are required.`)
@@ -170,11 +172,15 @@ export function parseFlashcardCsv(input: string): FlashcardCsvParseResult {
       errors.push(`Line ${record.line}: front and back must each be 5,000 characters or fewer.`)
       continue
     }
+    if (note.length > 2000) {
+      errors.push(`Line ${record.line}: note must be 2,000 characters or fewer.`)
+      continue
+    }
     if (tags.some(tag => tag.length > 50)) {
       errors.push(`Line ${record.line}: tag names must be 50 characters or fewer.`)
       continue
     }
-    rows.push({ front, back, tags })
+    rows.push({ front, back, note, tags })
   }
 
   if (rows.length > MAX_FLASHCARD_IMPORT_ROWS) {

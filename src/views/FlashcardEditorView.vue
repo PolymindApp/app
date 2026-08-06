@@ -23,13 +23,14 @@ const deleteDialog = ref(false)
 const error = ref('')
 const savedNotice = ref(false)
 const original = ref('')
-const draft = reactive<FlashcardDraft>({ front: '', back: '', tags: [] })
+const draft = reactive<FlashcardDraft>({ front: '', back: '', note: '', tags: [] })
 
 const cardId = computed(() => typeof route.params.id === 'string' ? route.params.id : '')
 const isEditing = computed(() => Boolean(cardId.value))
 const signature = computed(() => JSON.stringify({
   front: draft.front,
   back: draft.back,
+  note: draft.note,
   tags: draft.tags,
 }))
 const canSave = computed(() => (
@@ -51,6 +52,7 @@ onMounted(async () => {
         id: card.id,
         front: card.front,
         back: card.back,
+        note: card.note,
         tags: [...card.tags],
       })
     }
@@ -74,15 +76,16 @@ async function save() {
       id: draft.id,
       front: draft.front,
       back: draft.back,
+      note: draft.note,
       tags: draft.tags,
     })
     if (isEditing.value) {
-      await router.replace({ name: 'flashcards' })
+      await router.replace({ name: 'flashcard-cards' })
       return
     }
 
     const retainedTags = [...draft.tags]
-    Object.assign(draft, { id: undefined, front: '', back: '', tags: retainedTags })
+    Object.assign(draft, { id: undefined, front: '', back: '', note: '', tags: retainedTags })
     original.value = signature.value
     savedNotice.value = true
     await nextTick()
@@ -102,7 +105,7 @@ async function remove() {
   try {
     await store.deleteCard(cardId.value)
     deleteDialog.value = false
-    await router.replace({ name: 'flashcards' })
+    await router.replace({ name: 'flashcard-cards' })
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Could not delete this flashcard.'
     deleteDialog.value = false
@@ -159,6 +162,16 @@ async function remove() {
           >
             <template #label>Back <span class="required-mark">*</span></template>
           </v-textarea>
+          <v-textarea
+            v-model="draft.note"
+            label="Note"
+            hint="Shown as a subtitle beneath the back during reviews"
+            rows="2"
+            auto-grow
+            maxlength="2000"
+            counter
+            autocomplete="off"
+          />
           <FlashcardTagCombobox v-model="draft.tags" />
         </div>
       </v-card>

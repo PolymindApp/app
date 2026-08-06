@@ -44,6 +44,8 @@ const props = defineProps<{
   reviewSet?: { name: string; cardCount: number; mode: 'manual' | 'passive' }
   canStartReview?: boolean
   reviewActive?: boolean
+  trackers?: Array<{ id: string; name: string; icon: string; color: string; logged: boolean }>
+  canLogTracking?: boolean
   syncing?: boolean
   stepCountError?: string
 }>()
@@ -55,6 +57,7 @@ const emit = defineEmits<{
   review: [progress: TaskProgress]
   startInterval: [progress: TaskProgress]
   startReview: [progress: TaskProgress]
+  logTracking: [progress: TaskProgress, trackerId: string]
   actions: [progress: TaskProgress]
 }>()
 
@@ -75,6 +78,7 @@ const isInterval = computed(() =>
 const isFlashcards = computed(() =>
   (!step.value && task.value.type === 'flashcards') || step.value?.completionType === 'flashcards',
 )
+const isTracking = computed(() => !step.value && task.value.type === 'tracking')
 const isDailyTotal = computed(() => !step.value && task.value.type === 'daily_total')
 const isStepCounter = computed(() => !step.value && task.value.type === 'step_counter')
 const canLogAmount = computed(() => taskCanLogAmounts(props.progress))
@@ -82,13 +86,15 @@ const canLogTime = computed(() => !step.value && task.value.type === 'duration')
 const canToggleFromCard = computed(() =>
   isCheck.value && !togglePending.value && !props.busy && !props.progress.locked,
 )
-const target = computed(() => step.value?.targetValue ?? task.value.targetValue ?? 0)
+const target = computed(() => isTracking.value
+  ? task.value.trackingTrackers?.length ?? 0
+  : step.value?.targetValue ?? task.value.targetValue ?? 0)
 const unit = computed(() => step.value?.customUnit || step.value?.unit || task.value.customUnit || task.value.unit || '')
 const operator = computed(() => ({ gte: 'at least', lte: 'at most', eq: 'exactly' })[step.value?.targetOperator || task.value.targetOperator || 'gte'])
 const targetOperator = computed(() => step.value?.targetOperator || task.value.targetOperator || 'gte')
-const currentGoalState = computed(() => isCheck.value || isInterval.value || isFlashcards.value ? 'neutral' : goalState(props.progress.value, target.value, targetOperator.value))
+const currentGoalState = computed(() => isCheck.value || isInterval.value || isFlashcards.value || isTracking.value ? 'neutral' : goalState(props.progress.value, target.value, targetOperator.value))
 const numericGoalStatus = computed(() => {
-  if (isCheck.value || isInterval.value) return undefined
+  if (isCheck.value || isInterval.value || isFlashcards.value || isTracking.value) return undefined
   const difference = target.value - props.progress.value
   if (targetOperator.value === 'gte' && currentGoalState.value === 'not_enough' && difference > 0) {
     return {
@@ -164,6 +170,10 @@ const subtitle = computed(() => {
   if (isFlashcards.value) {
     if (!props.reviewSet) return 'Flashcards'
     return `${props.reviewSet.mode === 'passive' ? 'Passive' : 'Manual'} review · ${props.reviewSet.cardCount} cards`
+  }
+  if (isTracking.value) {
+    const total = target.value
+    return `${props.progress.value} of ${total} ${total === 1 ? 'tracker' : 'trackers'} logged`
   }
   return step.value ? `${task.value.name} · Program step` : task.value.description
 })
@@ -338,6 +348,48 @@ watch(() => props.valuePulse, async (pulse, previousPulse) => {
           </div>
         </template>
 
+        <template v-else-if="isTracking">
+          <v-progress-linear
+            :model-value="progress.percent"
+            color="secondary"
+            bg-color="surface-variant"
+            rounded
+            height="7"
+            class="mt-4"
+          />
+          <v-list v-if="trackers?.length" class="tracking-task-trackers pa-0 mt-3" bg-color="transparent">
+            <v-list-item
+              v-for="tracker in trackers"
+              :key="tracker.id"
+              class="tracking-task-tracker"
+              :title="tracker.name"
+              :subtitle="tracker.logged ? 'Logged for this date' : 'Not logged for this date'"
+              :disabled="!canLogTracking || busy || progress.locked"
+              rounded="lg"
+              @click="emit('logTracking', progress, tracker.id)"
+            >
+              <template #prepend>
+                <span class="tracking-task-tracker__icon" :style="{ background: tracker.color }">
+                  <v-icon :icon="tracker.icon" size="18" />
+                </span>
+              </template>
+              <template #append>
+                <v-icon
+                  v-if="tracker.logged"
+                  icon="mdi-check-circle"
+                  color="success"
+                  size="18"
+                  class="mr-2"
+                  aria-label="Logged"
+                />
+              </template>
+            </v-list-item>
+          </v-list>
+          <div v-if="!canLogTracking && !displayedComplete && progress.status === 'pending'" class="status-banner mt-3 muted">
+            <v-icon icon="mdi-calendar-today-outline" size="16" /> Select today or an earlier date to log tracking
+          </div>
+        </template>
+
         <template v-else>
             <div class="metric-row mt-4">
               <div>
@@ -469,6 +521,25 @@ watch(() => props.valuePulse, async (pulse, previousPulse) => {
 .task-menu-button {
   min-width: 2.75rem;
   min-height: 2.75rem;
+}
+
+.tracking-task-trackers {
+  display: grid;
+  gap: .4rem;
+}
+
+.tracking-task-tracker {
+  background: rgba(var(--v-theme-on-surface), .04);
+}
+
+.tracking-task-tracker__icon {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  margin-inline-end: .7rem;
+  place-items: center;
+  border-radius: .65rem;
+  color: #17200f;
 }
 
 .check-control {

@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useDisplay } from 'vuetify'
 import IntervalTypeIcon from '@/components/IntervalTypeIcon.vue'
 import LabeledSlider from '@/components/LabeledSlider.vue'
 import TimerWheelPicker from '@/components/TimerWheelPicker.vue'
@@ -16,7 +15,6 @@ import type { IntervalGroupNode, IntervalNode, IntervalStepKind } from '@/types/
 const props = defineProps<{
   node: IntervalNode
   index: number
-  siblingCount: number
   depth: number
   canIndent: boolean
   canOutdent: boolean
@@ -36,7 +34,6 @@ const props = defineProps<{
   }
 }>()
 
-const { smAndDown } = useDisplay()
 const sequenceDropTypes = ['interval-step', 'interval-group']
 
 const emptyKindPresentation = { icon: 'mdi-timer-outline', color: '#A9B0A7' }
@@ -131,27 +128,12 @@ function selectKind(kind: IntervalStepKind | null) {
         <strong class="node-title text-body-2 text-truncate">{{ nodeTitle }}</strong>
       </div>
       <v-btn
-        v-if="smAndDown"
         icon="mdi-dots-horizontal"
         variant="text"
         size="small"
         aria-label="Interval item actions"
         @click="actions.open(node.id)"
       />
-      <v-menu v-else>
-        <template #activator="{ props: menuProps }">
-          <v-btn v-bind="menuProps" icon="mdi-dots-horizontal" variant="text" size="small" aria-label="Interval item actions" />
-        </template>
-        <v-list density="compact">
-          <v-list-item prepend-icon="mdi-arrow-up" title="Move up" :disabled="index === 0" @click="actions.move(node.id, -1)" />
-          <v-list-item prepend-icon="mdi-arrow-down" title="Move down" :disabled="index === siblingCount - 1" @click="actions.move(node.id, 1)" />
-          <v-list-item prepend-icon="mdi-arrow-right" title="Indent into previous group" :disabled="!canIndent" @click="actions.indent(node.id)" />
-          <v-list-item prepend-icon="mdi-arrow-left" title="Move out of group" :disabled="!canOutdent" @click="actions.outdent(node.id)" />
-          <v-divider class="my-1" />
-          <v-list-item prepend-icon="mdi-content-copy" title="Duplicate" @click="actions.duplicate(node.id)" />
-          <v-list-item prepend-icon="mdi-delete-outline" title="Delete" base-color="error" @click="actions.remove(node.id)" />
-        </v-list>
-      </v-menu>
     </div>
 
     <v-expand-transition v-if="node.type === 'step'">
@@ -228,7 +210,6 @@ function selectKind(kind: IntervalStepKind | null) {
             :key="child.id"
             :node="child"
             :index="childIndex"
-            :sibling-count="node.children.length"
             :depth="depth + 1"
             :can-indent="childIndex > 0 && node.children[childIndex - 1]?.type === 'group'"
             :can-outdent="true"

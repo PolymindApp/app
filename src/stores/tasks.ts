@@ -4,12 +4,17 @@ import { addDays, endOfWeek, format, parseISO, startOfWeek, subDays } from 'date
 import { api } from '@/lib/api'
 import { readHealthConnectSteps } from '@/services/healthConnect'
 import { dailyTotalCompletionPercent, isTaskScheduled, meetsTarget, programCycleDay, progressPercent, stepsForDate, toDateKey } from '@/services/schedule'
+import { taskNeedsReview } from '@/services/taskCardActions'
 import { sanitizeTaskEntryNote } from '@/services/taskEntryNotes'
 import { useSnackbarStore } from '@/stores/snackbar'
+import { useTrackingStore } from '@/stores/tracking'
 import type { Entry, Occurrence, ProgramStep, Task, TaskDraft, TaskProgress } from '@/types/domain'
 
 const asNumberArray = (value: unknown, fallback: number[] = []) =>
   Array.isArray(value) ? value.map(Number) : fallback
+
+const asStringArray = (value: unknown) =>
+  Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
 
 function mapTask(record: Record<string, any>): Task {
   return {
@@ -39,6 +44,7 @@ function mapTask(record: Record<string, any>): Task {
     sortOrder: record.sort_order || 0,
     intervalTemplate: record.interval_template || undefined,
     flashcardReviewSet: record.flashcard_review_set || undefined,
+    trackingTrackers: asStringArray(record.tracking_trackers),
   }
 }
 
@@ -92,6 +98,7 @@ function mapEntry(record: Record<string, any>): Entry {
 }
 
 export const useTaskStore = defineStore('tasks', () => {
+  const trackingStore = useTrackingStore()
   const tasks = ref<Task[]>([])
   const steps = ref<ProgramStep[]>([])
   const occurrences = ref<Occurrence[]>([])
@@ -134,12 +141,25 @@ export const useTaskStore = defineStore('tasks', () => {
 
   function makeProgress(task: Task, date: Date, step?: ProgramStep): TaskProgress {
     const occurrence = occurrenceFor(task, date, step)
-    const value = !step && task.type === 'step_counter'
-      ? stepCounts.value[toDateKey(date)] || 0
-      : entriesFor(task, date, step).reduce((sum, entry) => sum + entry.value, 0)
-    const target = step?.targetValue || task.targetValue || 1
+    const dateKey = toDateKey(date)
+    const trackingTrackerIds = !step && task.type === 'tracking'
+      ? [...new Set(task.trackingTrackers ?? [])]
+      : []
+    const loggedTrackingTrackerIds = trackingTrackerIds.length
+      ? new Set(trackingStore.entries
+        .filter(entry => entry.localDate === dateKey && trackingTrackerIds.includes(entry.tracker))
+        .map(entry => entry.tracker))
+      : new Set<string>()
+    const value = trackingTrackerIds.length
+      ? loggedTrackingTrackerIds.size
+      : !step && task.type === 'step_counter'
+        ? stepCounts.value[dateKey] || 0
+        : entriesFor(task, date, step).reduce((sum, entry) => sum + entry.value, 0)
+    const target = trackingTrackerIds.length || step?.targetValue || task.targetValue || 1
     const operator = step?.targetOperator || task.targetOperator || 'gte'
-    const targetReached = meetsTarget(value, target, operator)
+    const targetReached = task.type === 'tracking' && !step
+      ? trackingTrackerIds.length > 0 && value === target
+      : meetsTarget(value, target, operator)
     const occurrenceComplete = occurrence?.status === 'completed'
     const isOccurrenceDriven = (step && ['check', 'interval', 'flashcards'].includes(step.completionType))
       || (!step && ['check', 'interval', 'flashcards'].includes(task.type))
@@ -228,6 +248,11 @@ export const useTaskStore = defineStore('tasks', () => {
       0,
     )
     return Math.round(earnedProgress / scoredProgress.length)
+  }
+
+  function reviewProgressForDate(date: Date) {
+    const currentDate = toDateKey(date)
+    return progressForDate(subDays(date, 1)).filter(item => taskNeedsReview(item, currentDate))
   }
 
   const completionRate = computed(() => completionRateForDate(selectedDate.value) || 0)
@@ -466,6 +491,7 @@ export const useTaskStore = defineStore('tasks', () => {
       sort_order: sortOrder,
       interval_template: draft.type === 'interval' ? draft.intervalTemplate || '' : '',
       flashcard_review_set: draft.type === 'flashcards' ? draft.flashcardReviewSet || '' : '',
+      tracking_trackers: draft.type === 'tracking' ? [...new Set(draft.trackingTrackers ?? [])] : [],
     }
     const record = draft.id
       ? await api.collection('tasks').update(draft.id, payload)
@@ -609,6 +635,7 @@ export const useTaskStore = defineStore('tasks', () => {
     completionRate,
     progressForDate,
     completionRateForDate,
+    reviewProgressForDate,
     load,
     loadProgressRange,
     refreshStepCount,

@@ -1,22 +1,23 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
-import { addDays, format, isToday, parseISO, startOfWeek } from 'date-fns'
+import { addDays, format, isValid, parseISO, startOfWeek } from 'date-fns'
 import { useRoute, useRouter } from 'vue-router'
 import { Ripple } from 'vuetify/directives'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
-import DateTimePickerField from '@/components/DateTimePickerField.vue'
-import LabeledSlider from '@/components/LabeledSlider.vue'
+import TrackingLogBottomSheet from '@/components/TrackingLogBottomSheet.vue'
 import TrackingTrackerCard from '@/components/TrackingTrackerCard.vue'
 import TrackingWeeklyBarChart from '@/components/TrackingWeeklyBarChart.vue'
 import WeekDateNavigator from '@/components/WeekDateNavigator.vue'
 import { TRACKING_PRESETS, trackerDraftFromPreset } from '@/services/tracking'
 import { reconcileTrackingReminders } from '@/services/trackingReminders'
 import { useTrackingStore } from '@/stores/tracking'
+import { useTaskStore } from '@/stores/tasks'
 import type { TrackingEntry, TrackingTracker } from '@/types/domain'
 
 const route = useRoute()
 const router = useRouter()
 const store = useTrackingStore()
+const taskStore = useTaskStore()
 const selectedDate = ref(new Date())
 const visibleWeekStart = ref(startOfWeek(selectedDate.value, { weekStartsOn: 1 }))
 const trackerActionsOpen = ref(false)
@@ -24,10 +25,6 @@ const actionTracker = ref<TrackingTracker>()
 const sheetOpen = ref(false)
 const sheetTracker = ref<TrackingTracker>()
 const editingEntry = ref<TrackingEntry>()
-const value = ref(1)
-const occurredLocal = ref('')
-const note = ref('')
-const saving = ref(false)
 const addingPreset = ref('')
 const error = ref('')
 const weeklyChartLoading = ref(false)
@@ -47,6 +44,21 @@ const trackingDateMarkers = computed(() => [...new Set(store.entries.map((entry)
 const outcomes = computed(() => store.activeTrackers.filter((tracker) => tracker.role === 'outcome'))
 const factors = computed(() => store.activeTrackers.filter((tracker) => tracker.role === 'factor'))
 const archivedTrackers = computed(() => store.trackers.filter((tracker) => !tracker.active))
+const requestedTask = computed(() => {
+  const id = typeof route.query.task === 'string' ? route.query.task : ''
+  return taskStore.tasks.find(task => task.id === id && task.type === 'tracking')
+})
+const requestedTaskTrackerIds = computed(() => [...new Set(requestedTask.value?.trackingTrackers ?? [])])
+const requestedTaskTracker = computed(() => {
+  const id = typeof route.query.tracker === 'string' ? route.query.tracker : ''
+  if (!requestedTaskTrackerIds.value.includes(id)) return undefined
+  return store.trackers.find(tracker => tracker.id === id)
+})
+const requestedTaskProgress = computed(() => {
+  const currentTrackerIndex = requestedTaskTrackerIds.value.indexOf(sheetTracker.value?.id || '')
+  if (!requestedTask.value || currentTrackerIndex < 0) return ''
+  return `${requestedTask.value.name} · Tracker ${currentTrackerIndex + 1} of ${requestedTaskTrackerIds.value.length}`
+})
 const dayEntriesByTracker = computed(() => {
   const grouped = new Map<string, TrackingEntry[]>()
   for (const entry of dayEntries.value) {
@@ -106,60 +118,21 @@ async function viewTrackerReflections() {
 function startLog(tracker: TrackingTracker, entry?: TrackingEntry) {
   sheetTracker.value = tracker
   editingEntry.value = entry
-  value.value = entry
-    ? tracker.kind === 'duration' ? entry.value / 60 : entry.value
-    : tracker.kind === 'rating' ? tracker.scaleMin : 1
-  const when = entry ? new Date(entry.occurredAt) : selectedLogTime()
-  occurredLocal.value = format(when, "yyyy-MM-dd'T'HH:mm")
-  note.value = entry?.note || ''
   sheetOpen.value = true
 }
 
-function selectedLogTime() {
-  const now = new Date()
-  if (isToday(selectedDate.value)) return now
-  const selected = new Date(selectedDate.value)
-  selected.setHours(12, 0, 0, 0)
-  return selected
-}
-
-async function saveLog(explicitValue?: number) {
-  const tracker = sheetTracker.value
-  if (!tracker || !occurredLocal.value) return
-  saving.value = true
-  error.value = ''
-  try {
-    const localDate = new Date(occurredLocal.value)
-    const storedValue = explicitValue ?? value.value
-    const draft = {
-      id: editingEntry.value?.id,
-      tracker: tracker.id,
-      occurredAt: localDate.toISOString(),
-      localDate: format(localDate, 'yyyy-MM-dd'),
-      timezoneOffset: localDate.getTimezoneOffset(),
-      value: tracker.kind === 'duration' ? storedValue * 60 : storedValue,
-      note: note.value.trim(),
-    }
-    if (draft.id) await store.updateEntry({ ...draft, id: draft.id })
-    else await store.addEntry(draft)
+async function handleLogSaved() {
+  if (requestedTask.value && requestedTaskTracker.value) {
     sheetOpen.value = false
-  } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : 'Could not save this log.'
-  } finally {
-    saving.value = false
+    await router.replace({ name: 'tasks' })
+    return
   }
-}
-
-async function removeEntry() {
-  if (!editingEntry.value) return
-  saving.value = true
-  try {
-    await store.deleteEntry(editingEntry.value.id)
+  if (!requestedTask.value) return
+  const nextTracker = nextRequestedTaskTracker()
+  if (nextTracker) startLog(nextTracker)
+  else {
     sheetOpen.value = false
-  } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : 'Could not delete this log.'
-  } finally {
-    saving.value = false
+    await router.replace({ name: 'tasks' })
   }
 }
 
@@ -177,7 +150,34 @@ async function addPreset(presetId: string) {
   }
 }
 
+function applyRequestedDate() {
+  const requestedDate = typeof route.query.date === 'string' ? route.query.date : ''
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(requestedDate)) return
+  const parsed = parseISO(requestedDate)
+  if (!isValid(parsed)) return
+  selectedDate.value = parsed
+  visibleWeekStart.value = startOfWeek(parsed, { weekStartsOn: 1 })
+}
+
+function nextRequestedTaskTracker() {
+  const trackerId = requestedTaskTrackerIds.value.find(id =>
+    !store.entries.some(entry => entry.tracker === id && entry.localDate === dateKey.value))
+  return trackerId ? store.trackers.find(tracker => tracker.id === trackerId) : undefined
+}
+
 function openRequestedTracker() {
+  applyRequestedDate()
+  if (requestedTask.value) {
+    if (typeof route.query.tracker === 'string') {
+      if (requestedTaskTracker.value) startLog(requestedTaskTracker.value)
+      else void router.replace({ name: 'tasks' })
+      return
+    }
+    const tracker = nextRequestedTaskTracker()
+    if (tracker) startLog(tracker)
+    else void router.replace({ name: 'tasks' })
+    return
+  }
   const id = typeof route.query.log === 'string' ? route.query.log : ''
   if (!id) return
   const tracker = store.activeTrackers.find((item) => item.id === id)
@@ -186,13 +186,17 @@ function openRequestedTracker() {
   void router.replace({ path: '/tracking' })
 }
 
-watch(() => route.query.log, () => nextTick(openRequestedTracker))
+watch(() => [route.query.log, route.query.task, route.query.tracker, route.query.date], () => nextTick(openRequestedTracker))
 watch(visibleWeekStart, () => {
   if (store.loaded) void loadVisibleWeekEntries()
 })
 
 onMounted(async () => {
-  await store.load().catch(() => undefined)
+  applyRequestedDate()
+  await Promise.all([
+    store.load().catch(() => undefined),
+    taskStore.tasks.length ? Promise.resolve() : taskStore.load().catch(() => undefined),
+  ])
   if (store.loaded) await loadVisibleWeekEntries()
   await reconcileTrackingReminders(store.trackers).catch(() => undefined)
   openRequestedTracker()
@@ -384,40 +388,15 @@ async function loadVisibleWeekEntries() {
       </template>
     </ActionBottomSheet>
 
-    <ActionBottomSheet
+    <TrackingLogBottomSheet
       v-model="sheetOpen"
-      :title="editingEntry ? `Edit ${sheetTracker?.name || 'log'}` : `Log ${sheetTracker?.name || ''}`"
-      :description="sheetTracker?.description"
-    >
-      <template #content>
-        <div v-if="sheetTracker" class="d-flex flex-column ga-4">
-          <LabeledSlider
-            v-if="sheetTracker.kind === 'rating'"
-            v-model="value"
-            title="Rating"
-            :value-label="`${value}${sheetTracker.unit ? ` ${sheetTracker.unit}` : ''}`"
-            :min="sheetTracker.scaleMin"
-            :max="sheetTracker.scaleMax"
-            :step="1"
-            :aria-label="`${sheetTracker.name} rating`"
-          />
-          <v-number-input v-else-if="sheetTracker.kind === 'number'" v-model="value" :label="sheetTracker.unit ? `Value (${sheetTracker.unit})` : 'Value'" variant="outlined" hide-details />
-          <v-number-input v-else-if="sheetTracker.kind === 'duration'" v-model="value" label="Minutes" :min="0" variant="outlined" hide-details />
-          <v-textarea v-model="note" label="Note (optional)" rows="2" auto-grow variant="outlined" hide-details />
-          <DateTimePickerField v-model="occurredLocal" label="When" />
-          <div v-if="sheetTracker.kind === 'yes_no'" class="sheet-buttons">
-            <v-btn color="secondary" :loading="saving" @click="saveLog(1)">Yes</v-btn>
-            <v-btn variant="tonal" :disabled="saving" @click="saveLog(0)">No</v-btn>
-          </div>
-          <div v-else-if="sheetTracker.kind === 'event'" class="sheet-buttons">
-            <v-btn color="secondary" :loading="saving" @click="saveLog(1)">Log occurrence</v-btn>
-            <v-btn variant="tonal" :disabled="saving" @click="saveLog(0)">None today</v-btn>
-          </div>
-          <v-btn v-else block color="secondary" :loading="saving" @click="saveLog()">Save log</v-btn>
-          <v-btn v-if="editingEntry" block color="error" variant="text" :disabled="saving" @click="removeEntry">Delete log</v-btn>
-        </div>
-      </template>
-    </ActionBottomSheet>
+      :tracker="sheetTracker"
+      :entry="editingEntry"
+      :date="dateKey"
+      :context="requestedTaskProgress"
+      :keep-open-on-save="Boolean(requestedTask && !requestedTaskTracker)"
+      @saved="handleLogSaved"
+    />
   </main>
 </template>
 
@@ -438,6 +417,5 @@ async function loadVisibleWeekEntries() {
 .preset-card__icon { display: grid; width: 38px; height: 38px; flex: 0 0 38px; place-items: center; border-radius: 12px; background: currentColor; }
 .preset-card__icon :deep(.v-icon) { color: rgb(var(--v-theme-background)); }
 .preset-card span { display: block; margin-top: .25rem; color: rgb(var(--v-theme-on-surface) / .58); font-size: .72rem; line-height: 1.45; }
-.sheet-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; }
 .min-width-0 { min-width: 0; }
 </style>

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
-import type { Entry, Occurrence, ProgramStep, Task } from '@/types/domain'
+import type { Entry, Occurrence, ProgramStep, Task, TrackingEntry } from '@/types/domain'
 
 const apiMocks = vi.hoisted(() => ({
   createOccurrence: vi.fn(),
@@ -36,6 +36,7 @@ vi.mock('@/services/healthConnect', () => ({
 }))
 
 import { useTaskStore } from './tasks'
+import { useTrackingStore } from './tracking'
 
 const selectedDate = new Date(2026, 6, 29)
 const task: Task = {
@@ -119,6 +120,82 @@ describe('quantitative task completion', () => {
       complete: false,
     })
     expect(store.completionRate).toBe(50)
+  })
+
+  it('treats a rounded duration target as complete despite an older missed status', () => {
+    const store = useTaskStore()
+    store.selectedDate = selectedDate
+    store.tasks = [{ ...task, reviewWhenMissed: true }]
+    store.occurrences = [{
+      ...completedOccurrence,
+      status: 'missed',
+      completedAt: undefined,
+    }]
+    store.entries = [
+      entry('duration-entry-1', 2),
+      entry('duration-entry-2', 0.278055555555556),
+      entry('duration-entry-3', -1.27805555555556),
+      entry('duration-entry-4', 3),
+    ]
+
+    const progress = store.makeProgress(store.tasks[0]!, selectedDate)
+
+    expect(progress.value).toBeLessThan(4)
+    expect(progress.value.toFixed(2)).toBe('4.00')
+    expect(progress).toMatchObject({
+      percent: 100,
+      complete: true,
+      status: 'completed',
+    })
+    expect(store.completionRate).toBe(100)
+  })
+
+  it('reviews unfinished work from the previous day instead of the current day', () => {
+    const store = useTaskStore()
+    const cardio: Task = {
+      ...task,
+      id: 'cardio-task',
+      name: 'Cardio',
+      type: 'interval',
+      reviewWhenMissed: true,
+      intervalTemplate: 'cardio-interval',
+    }
+    const currentDate = new Date(2026, 7, 6)
+    store.tasks = [cardio]
+
+    expect(store.reviewProgressForDate(currentDate)).toEqual([
+      expect.objectContaining({
+        task: cardio,
+        scheduledDate: '2026-08-05',
+        status: 'pending',
+        complete: false,
+      }),
+    ])
+    expect(store.reviewProgressForDate(currentDate)[0]?.scheduledDate).not.toBe('2026-08-06')
+  })
+
+  it('does not reopen previous-day work that was already resolved as missed', () => {
+    const store = useTaskStore()
+    const cardio: Task = {
+      ...task,
+      id: 'cardio-task',
+      name: 'Cardio',
+      type: 'interval',
+      reviewWhenMissed: true,
+      intervalTemplate: 'cardio-interval',
+    }
+    store.tasks = [cardio]
+    store.occurrences = [{
+      ...completedOccurrence,
+      id: 'cardio-occurrence',
+      task: cardio.id,
+      scheduledDate: '2026-08-05',
+      status: 'missed',
+      completedAt: undefined,
+      snapshotName: cardio.name,
+    }]
+
+    expect(store.reviewProgressForDate(new Date(2026, 7, 6))).toEqual([])
   })
 
   it('excludes an unlocked daily total from the daily percentage denominator', () => {
@@ -435,6 +512,56 @@ describe('quantitative task completion', () => {
       filter: `task = "${task.id}" && entry_date = "2026-07-29" && program_step = ""`,
       sort: '-created_at',
     })
+  })
+})
+
+describe('tracking task completion', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  it('counts each selected tracker once and completes after all are logged for the date', () => {
+    const store = useTaskStore()
+    const trackingStore = useTrackingStore()
+    const trackingTask: Task = {
+      ...task,
+      id: 'tracking-task',
+      name: 'Daily check-in',
+      type: 'tracking',
+      trackingTrackers: ['mood', 'energy'],
+    }
+    const trackingEntry = (id: string, tracker: string, localDate = '2026-07-29'): TrackingEntry => ({
+      id,
+      tracker,
+      occurredAt: `${localDate}T12:00:00.000Z`,
+      localDate,
+      timezoneOffset: 240,
+      value: 1,
+      note: '',
+    })
+    store.tasks = [trackingTask]
+    trackingStore.entries = [
+      trackingEntry('mood-1', 'mood'),
+      trackingEntry('mood-2', 'mood'),
+      trackingEntry('energy-other-day', 'energy', '2026-07-28'),
+    ]
+
+    expect(store.makeProgress(trackingTask, selectedDate)).toMatchObject({
+      value: 1,
+      percent: 50,
+      complete: false,
+      status: 'pending',
+    })
+
+    trackingStore.entries.push(trackingEntry('energy-1', 'energy'))
+
+    expect(store.makeProgress(trackingTask, selectedDate)).toMatchObject({
+      value: 2,
+      percent: 100,
+      complete: true,
+      status: 'completed',
+    })
+    expect(store.completionRateForDate(selectedDate)).toBe(100)
   })
 })
 

@@ -2,12 +2,13 @@
 import { Capacitor } from '@capacitor/core'
 import { App } from '@capacitor/app'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { addDays, format, isAfter, startOfDay, startOfWeek } from 'date-fns'
+import { addDays, format, isAfter, parseISO, startOfDay, startOfWeek } from 'date-fns'
 import { storeToRefs } from 'pinia'
 import { useDisplay } from 'vuetify'
 import { useRouter } from 'vue-router'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import TaskCard from '@/components/TaskCard.vue'
+import TrackingLogBottomSheet from '@/components/TrackingLogBottomSheet.vue'
 import WeekDateNavigator from '@/components/WeekDateNavigator.vue'
 import { isNativeHealthConnectSupported } from '@/services/healthConnect'
 import { formatIntervalDuration, intervalDuration } from '@/services/intervals'
@@ -23,12 +24,14 @@ import {
 import { useIntervalStore } from '@/stores/intervals'
 import { useFlashcardStore } from '@/stores/flashcards'
 import { useTaskStore } from '@/stores/tasks'
-import type { Entry, TaskProgress } from '@/types/domain'
+import { useTrackingStore } from '@/stores/tracking'
+import type { Entry, TaskProgress, TrackingTracker } from '@/types/domain'
 
 const allowAutomaticFocus = Capacitor.getPlatform() !== 'android'
 const store = useTaskStore()
 const intervalStore = useIntervalStore()
 const flashcardStore = useFlashcardStore()
+const trackingStore = useTrackingStore()
 const router = useRouter()
 const { smAndUp } = useDisplay()
 const {
@@ -63,6 +66,10 @@ let taskLogRequest = 0
 const activeIntervalSheet = ref(false)
 const intervalStartError = ref('')
 const flashcardStartError = ref('')
+const trackingSheetOpen = ref(false)
+const trackingSheetTracker = ref<TrackingTracker>()
+const trackingSheetDate = ref(toDateKey(new Date()))
+const trackingSheetContext = ref('')
 const valuePulseVersions = ref<Record<string, number>>({})
 const exactAmount = computed(() => {
   if (!exactAmountInput.value || exactAmountInput.value === '.') return null
@@ -109,15 +116,13 @@ const taskDateMarkers = computed(() => visibleWeekDates.value.flatMap((date) => 
 
 const required = computed(() => selectedProgress.value.filter((item) => item.task.mandatory))
 const optional = computed(() => selectedProgress.value.filter((item) => !item.task.mandatory))
-const reviewItems = computed(() =>
-  selectedProgress.value.filter((item) => item.task.reviewWhenMissed && item.status === 'pending' && !item.complete),
-)
+const reviewItems = computed(() => store.reviewProgressForDate(selectedDate.value))
 const doneCount = computed(() => selectedProgress.value.filter((item) => item.complete).length)
 let appStateListener: Awaited<ReturnType<typeof App.addListener>> | undefined
 
 onMounted(async () => {
   try {
-    await Promise.all([store.load(), intervalStore.load(), flashcardStore.load()])
+    await Promise.all([store.load(), intervalStore.load(), flashcardStore.load(), trackingStore.load()])
   } catch { /* Store error states are displayed in the view. */ }
   await loadVisibleTaskProgress()
   if (!isNativeHealthConnectSupported()) await store.refreshStepCount(selectedDate.value)
@@ -143,7 +148,12 @@ watch(visibleWeekStart, () => {
 
 async function loadVisibleTaskProgress() {
   const dates = visibleWeekDates.value
-  await store.loadProgressRange(toDateKey(dates[0]), toDateKey(dates[6])).catch(() => undefined)
+  const start = toDateKey(dates[0])
+  const end = toDateKey(dates[6])
+  await Promise.all([
+    store.loadProgressRange(start, end).catch(() => undefined),
+    trackingStore.loaded ? trackingStore.loadRange(start, end).catch(() => undefined) : Promise.resolve(),
+  ])
   if (!isNativeHealthConnectSupported()) return
   for (const date of dates) {
     if (isAfter(date, startOfDay(new Date()))) continue
@@ -165,6 +175,36 @@ function progressIsToday(progress: TaskProgress) {
 
 function intervalCanStart(progress: TaskProgress) {
   return taskIntervalCanStart(progress, toDateKey(new Date()))
+}
+
+function trackingCanLog(progress: TaskProgress) {
+  return progress.task.type === 'tracking'
+    && !isAfter(parseISO(progress.scheduledDate), startOfDay(new Date()))
+}
+
+function trackingMeta(progress: TaskProgress) {
+  const trackerIds = progress.task.trackingTrackers ?? []
+  return trackerIds.flatMap((trackerId) => {
+    const tracker = trackingStore.trackers.find(item => item.id === trackerId)
+    if (!tracker) return []
+    return [{
+      id: tracker.id,
+      name: tracker.name,
+      icon: tracker.icon,
+      color: tracker.color,
+      logged: trackingStore.entries.some(entry =>
+        entry.tracker === tracker.id && entry.localDate === progress.scheduledDate),
+    }]
+  })
+}
+
+function openTrackingLogger(progress: TaskProgress, trackerId: string) {
+  const tracker = trackingStore.trackers.find(item => item.id === trackerId)
+  if (!tracker) return
+  trackingSheetTracker.value = tracker
+  trackingSheetDate.value = progress.scheduledDate
+  trackingSheetContext.value = progress.programStep?.name || progress.task.name
+  trackingSheetOpen.value = true
 }
 
 function progressIsBusy(progress: TaskProgress) {
@@ -525,12 +565,15 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
             :review-set="reviewSetMeta(item)"
             :can-start-review="progressIsToday(item) && item.status === 'pending'"
             :review-active="reviewSessionMatchesProgress(item)"
+            :trackers="trackingMeta(item)"
+            :can-log-tracking="trackingCanLog(item)"
             @toggle="(progress, complete) => runForProgress(progress, () => store.toggleComplete(progress, complete))"
             @seal="progress => runForProgress(progress, () => store.setDailyTotalSealed(progress))"
             @log-amount="openExact"
             @log-time="openTimeLogger"
             @start-interval="startIntervalTask"
             @start-review="startFlashcardTask"
+            @log-tracking="openTrackingLogger"
             @actions="openTaskActions"
           />
         </div>
@@ -553,12 +596,15 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
             :review-set="reviewSetMeta(item)"
             :can-start-review="progressIsToday(item) && item.status === 'pending'"
             :review-active="reviewSessionMatchesProgress(item)"
+            :trackers="trackingMeta(item)"
+            :can-log-tracking="trackingCanLog(item)"
             @toggle="(progress, complete) => runForProgress(progress, () => store.toggleComplete(progress, complete))"
             @seal="progress => runForProgress(progress, () => store.setDailyTotalSealed(progress))"
             @log-amount="openExact"
             @log-time="openTimeLogger"
             @start-interval="startIntervalTask"
             @start-review="startFlashcardTask"
+            @log-tracking="openTrackingLogger"
             @actions="openTaskActions"
           />
         </div>
@@ -679,6 +725,13 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
         </div>
       </v-card>
     </v-dialog>
+
+    <TrackingLogBottomSheet
+      v-model="trackingSheetOpen"
+      :tracker="trackingSheetTracker"
+      :date="trackingSheetDate"
+      :context="trackingSheetContext"
+    />
 
     <ActionBottomSheet
       v-model="taskSheet"

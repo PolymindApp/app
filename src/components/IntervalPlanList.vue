@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { useDisplay } from 'vuetify'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import type { LongPressDragResult } from '@/directives/longPressDrag'
@@ -11,7 +10,6 @@ import type { IntervalTemplate } from '@/types/domain'
 
 const store = useIntervalStore()
 const router = useRouter()
-const { smAndDown } = useDisplay()
 const pendingDelete = ref<IntervalTemplate>()
 const selectedTemplate = ref<IntervalTemplate>()
 const primaryActionsDrawer = ref(false)
@@ -112,7 +110,7 @@ function requestDelete(template: IntervalTemplate) {
 <template>
   <div v-if="store.templates.length" class="interval-plan-list">
     <v-card
-      v-for="(template, index) in store.templates"
+      v-for="template in store.templates"
       :key="template.id"
       v-long-press-drag="{
         id: template.id,
@@ -148,30 +146,12 @@ function requestDelete(template: IntervalTemplate) {
           @click.stop
         >
           <v-btn
-            v-if="smAndDown"
             icon="mdi-dots-horizontal"
             variant="text"
             size="small"
             :aria-label="`${template.name} more actions`"
             @click="openOverflowActions(template)"
           />
-          <v-menu v-else location="bottom end">
-            <template #activator="{ props: menuProps }">
-              <v-btn
-                v-bind="menuProps"
-                icon="mdi-dots-horizontal"
-                variant="text"
-                size="small"
-                :aria-label="`${template.name} more actions`"
-              />
-            </template>
-            <v-list density="compact">
-              <v-list-item prepend-icon="mdi-content-copy" title="Duplicate" @click="duplicateTemplate(template)" />
-              <v-list-item prepend-icon="mdi-arrow-up" title="Move up" :disabled="index === 0" @click="moveTemplate(template, -1)" />
-              <v-list-item prepend-icon="mdi-arrow-down" title="Move down" :disabled="index === store.templates.length - 1" @click="moveTemplate(template, 1)" />
-              <v-list-item prepend-icon="mdi-delete-outline" title="Delete" base-color="error" @click="requestDelete(template)" />
-            </v-list>
-          </v-menu>
         </div>
       </div>
     </v-card>
@@ -197,7 +177,6 @@ function requestDelete(template: IntervalTemplate) {
   </ActionBottomSheet>
 
   <ActionBottomSheet
-    v-if="smAndDown"
     v-model="overflowActionsDrawer"
     :title="selectedTemplate?.name || 'Interval actions'"
     hide-title

@@ -50,6 +50,7 @@ public class BackgroundFlashcardService extends Service {
     private boolean speechReady;
     private boolean running;
     private boolean finished;
+    private boolean indefinite;
     private String sessionId = "";
     private String sessionName = "Review";
     private String side = "front";
@@ -65,16 +66,14 @@ public class BackgroundFlashcardService extends Service {
     private String pendingSpeechText = "";
     private String pendingSpeechLanguage = "";
     private long lastNotificationSecond = -1L;
-    private boolean appWasVisible;
 
     private final Runnable ticker = new Runnable() {
         @Override
         public void run() {
             if (!running) return;
             long now = SystemClock.elapsedRealtime();
-            boolean appVisible = MainActivity.isAppVisible();
-            if (appWasVisible && !appVisible) speakCurrentSide();
-            appWasVisible = appVisible;
+            // The foreground runner already spoke the current side. Preserve its remaining
+            // duration during handoff and speak only when advance() reaches the next side.
             advance(now);
             if (!running) return;
             long notificationSecond = Math.max(0L, deadlineElapsedMs - now) / 1000L;
@@ -150,6 +149,7 @@ public class BackgroundFlashcardService extends Service {
         if (sessionId.isEmpty()) throw new IllegalArgumentException("A session ID is required.");
         sessionName = config.optString("sessionName", "Review").trim();
         if (sessionName.isEmpty()) sessionName = "Review";
+        indefinite = config.optBoolean("indefinite", false);
         side = "back".equals(config.optString("side")) ? "back" : "front";
         frontDurationMs = Math.max(1000L, config.optLong("frontSeconds", 5L) * 1000L);
         backDurationMs = Math.max(1000L, config.optLong("backSeconds", 5L) * 1000L);
@@ -163,7 +163,6 @@ public class BackgroundFlashcardService extends Service {
         lastNotificationSecond = -1L;
         pendingSpeechText = "";
         pendingSpeechLanguage = "";
-        appWasVisible = MainActivity.isAppVisible();
         if (speech != null) speech.stop();
         persistState();
     }
@@ -178,8 +177,12 @@ public class BackgroundFlashcardService extends Service {
                 completedCards += 1;
                 cardIndex += 1;
                 if (cardIndex >= cards.size()) {
-                    finishReview();
-                    return;
+                    if (indefinite) {
+                        cardIndex = 0;
+                    } else {
+                        finishReview();
+                        return;
+                    }
                 }
                 side = "front";
                 deadlineElapsedMs += frontDurationMs;

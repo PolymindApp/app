@@ -14,6 +14,7 @@ import { TASK_TYPE_OPTIONS } from '@/services/taskTypes'
 import { useFlashcardStore } from '@/stores/flashcards'
 import { useIntervalStore } from '@/stores/intervals'
 import { useTaskStore } from '@/stores/tasks'
+import { useTrackingStore } from '@/stores/tracking'
 import type { ProgramStepDraft, TaskDraft } from '@/types/domain'
 
 const allowAutomaticFocus = Capacitor.getPlatform() !== 'android'
@@ -22,6 +23,7 @@ const router = useRouter()
 const store = useTaskStore()
 const intervalStore = useIntervalStore()
 const flashcardStore = useFlashcardStore()
+const trackingStore = useTrackingStore()
 const form = ref()
 const saving = ref(false)
 const deleting = ref(false)
@@ -71,6 +73,7 @@ const draft = reactive<TaskDraft>({
   sortOrder: 0,
   intervalTemplate: undefined,
   flashcardReviewSet: undefined,
+  trackingTrackers: [],
   steps: [],
 })
 
@@ -97,6 +100,26 @@ const reviewSetItems = computed(() => flashcardStore.reviewSets.map(item => ({
     subtitle: `${item.mode === 'passive' ? 'Passive' : 'Manual'} · ${flashcardStore.matchingCards(item.tags).length} cards`,
   },
 })))
+const trackingTrackerItems = computed(() => trackingStore.trackers
+  .filter(tracker => tracker.active || draft.trackingTrackers?.includes(tracker.id))
+  .sort((a, b) => Number(b.active) - Number(a.active) || a.sortOrder - b.sortOrder || a.name.localeCompare(b.name))
+  .map(tracker => ({
+    title: tracker.name,
+    value: tracker.id,
+    icon: tracker.icon,
+    color: tracker.color,
+    props: {
+      subtitle: `${tracker.role === 'factor' ? 'Factor' : 'Outcome'} · ${tracker.category}${tracker.active ? '' : ' · Archived'}`,
+    },
+  })))
+
+function removeTrackingTracker(id: string) {
+  draft.trackingTrackers = (draft.trackingTrackers ?? []).filter(trackerId => trackerId !== id)
+}
+
+function trackingTrackerFor(id: string) {
+  return trackingStore.trackers.find(tracker => tracker.id === id)
+}
 
 function intervalForStep(step: ProgramStepDraft) {
   return intervalStore.templates.find((item) => item.id === step.intervalTemplate)
@@ -134,6 +157,7 @@ onMounted(async () => {
     store.tasks.length ? Promise.resolve() : store.load(),
     intervalStore.loaded ? Promise.resolve() : intervalStore.load(),
     flashcardStore.loaded ? Promise.resolve() : flashcardStore.load(),
+    trackingStore.loaded ? Promise.resolve() : trackingStore.load(),
   ])
   if (!route.params.id) {
     if (draft.type === 'program' && !draft.steps.length) addStep(false)
@@ -238,6 +262,10 @@ async function save() {
   }
   if (draft.type === 'flashcards' && !draft.flashcardReviewSet) {
     error.value = 'Select a Review set for this task.'
+    return
+  }
+  if (draft.type === 'tracking' && !draft.trackingTrackers?.length) {
+    error.value = 'Select at least one tracker for this task.'
     return
   }
   const incompleteIntervalStep = draft.type === 'program'
@@ -382,6 +410,7 @@ async function removeTask() {
             v-model="draft.flashcardReviewSet"
             label="Attached Review set"
             :items="reviewSetItems"
+            autocomplete="off"
             :rules="[v => Boolean(v) || 'Select a Review set']"
           />
           <div v-if="selectedReviewSet" class="interval-attachment-summary">
@@ -399,6 +428,50 @@ async function removeTask() {
           <h2 class="text-body-1 font-weight-black">Create a Review set first</h2>
           <p class="text-body-2 muted mt-2 mb-4">Flashcard tasks need a saved Review set to run.</p>
           <v-btn color="secondary" variant="tonal" to="/flashcards/review-sets/new">Create Review set</v-btn>
+        </div>
+      </v-card>
+
+      <v-card v-if="draft.type === 'tracking'" class="surface-card field-stack pa-5 mb-4">
+        <template v-if="trackingTrackerItems.length">
+          <v-select
+            v-model="draft.trackingTrackers"
+            label="Trackers to log"
+            :items="trackingTrackerItems"
+            autocomplete="off"
+            multiple
+            chips
+            :rules="[value => Boolean(value?.length) || 'Select at least one tracker']"
+            hint="This task completes after every selected tracker is logged for the scheduled date."
+            persistent-hint
+          >
+            <template #item="{ props: itemProps, item }">
+              <v-list-item v-bind="itemProps">
+                <template #prepend>
+                  <span class="tracking-attachment-icon mr-3" :style="{ background: item.raw.color }">
+                    <v-icon :icon="item.raw.icon" size="18" />
+                  </span>
+                </template>
+              </v-list-item>
+            </template>
+            <template #selection="{ item }">
+              <v-chip size="small" closable @click:close.stop="removeTrackingTracker(item.value)">
+                <span
+                  v-if="trackingTrackerFor(item.value)"
+                  class="tracking-selection-icon mr-1"
+                  :style="{ background: trackingTrackerFor(item.value)?.color }"
+                >
+                  <v-icon :icon="trackingTrackerFor(item.value)?.icon" size="14" />
+                </span>
+                {{ item.title }}
+              </v-chip>
+            </template>
+          </v-select>
+        </template>
+        <div v-else class="text-center py-3">
+          <v-icon icon="mdi-chart-box-plus-outline" size="36" class="mb-3" />
+          <h2 class="text-body-1 font-weight-black">Create a tracker first</h2>
+          <p class="text-body-2 muted mt-2 mb-4">Tracking tasks need at least one tracker to log.</p>
+          <v-btn color="secondary" variant="tonal" to="/tracking/new">Create tracker</v-btn>
         </div>
       </v-card>
 
@@ -580,6 +653,7 @@ async function removeTask() {
                     v-model="step.flashcardReviewSet"
                     label="Attached Review set"
                     :items="reviewSetItems"
+                    autocomplete="off"
                     :rules="[v => Boolean(v) || 'Select a Review set']"
                   />
                   <div v-if="reviewSetForStep(step)" class="interval-attachment-summary">
@@ -699,6 +773,8 @@ async function removeTask() {
 .interval-attachment-summary { display: flex; align-items: center; gap: .75rem; padding: .85rem; border-radius: 16px; background: rgb(var(--v-theme-surface-variant)); }
 .interval-attachment-icon { display: grid; width: 42px; height: 42px; flex: 0 0 auto; place-items: center; border-radius: 14px; color: #17200f; }
 .flashcard-attachment-icon { display: grid; width: 42px; height: 42px; flex: 0 0 auto; place-items: center; border-radius: 14px; background: rgb(var(--v-theme-secondary)); color: rgb(var(--v-theme-on-secondary)); }
+.tracking-attachment-icon { display: grid; width: 34px; height: 34px; flex: 0 0 auto; place-items: center; border-radius: 11px; color: #17200f; }
+.tracking-selection-icon { display: inline-grid; width: 1.25rem; height: 1.25rem; flex: 0 0 auto; place-items: center; border-radius: .4rem; color: #17200f; }
 .step-number { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 11px; background: rgb(var(--v-theme-secondary)); color: rgb(var(--v-theme-on-secondary)); font-size: .75rem; font-weight: 900; }
 .cycle-day-picker { max-height: 145px; overflow-y: auto; }
 .step-actions { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }

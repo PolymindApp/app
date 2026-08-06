@@ -1377,6 +1377,7 @@ final class Api
         if ($collection['name'] === 'flashcards') {
             $now = (new DateTimeImmutable('now'))->format('Y-m-d\TH:i:s.v\Z');
             $values += [
+                'note' => '',
                 'tags' => [],
                 'created_at' => $now,
                 'updated_at' => $now,
@@ -1390,6 +1391,8 @@ final class Api
             $now = (new DateTimeImmutable('now'))->format('Y-m-d\TH:i:s.v\Z');
             $values += [
                 'tags' => [],
+                'indefinite' => false,
+                'max_cards' => 20,
                 'front_seconds' => 5,
                 'back_seconds' => 5,
                 'speech_enabled' => false,
@@ -1448,11 +1451,11 @@ final class Api
             throw new ApiException(405, 'This collection is written through the review session endpoints.');
         }
         if ($collection['name'] === 'flashcards') {
-            $this->allowOnlyFields($body, ['front', 'back', 'tags']);
+            $this->allowOnlyFields($body, ['front', 'back', 'note', 'tags']);
         }
         if ($collection['name'] === 'flashcard_review_sets') {
             $this->allowOnlyFields($body, [
-                'name', 'tags', 'mode', 'front_seconds', 'back_seconds',
+                'name', 'tags', 'mode', 'indefinite', 'max_cards', 'front_seconds', 'back_seconds',
                 'speech_enabled', 'front_language', 'back_language',
                 'sort_mode', 'sort_order',
             ]);
@@ -1531,6 +1534,11 @@ final class Api
 
     private function validateFlashcardSpeechSettings(array $values): void
     {
+        if ((bool) ($values['indefinite'] ?? false) && ($values['mode'] ?? '') !== 'passive') {
+            throw new ApiException(422, 'Only Passive Review sets can run indefinitely.', [
+                'indefinite' => 'passive-only',
+            ]);
+        }
         foreach (['front_language', 'back_language'] as $field) {
             $language = (string) ($values[$field] ?? '');
             if (
@@ -1572,7 +1580,7 @@ final class Api
             if (!is_array($row) || array_is_list($row)) {
                 throw new ApiException(422, "Flashcard row {$rowNumber} is invalid.");
             }
-            $unknown = array_values(array_diff(array_keys($row), ['front', 'back', 'tags']));
+            $unknown = array_values(array_diff(array_keys($row), ['front', 'back', 'note', 'tags']));
             if ($unknown !== []) {
                 throw new ApiException(422, "Flashcard row {$rowNumber} contains unknown fields.", [
                     'fields' => $unknown,
@@ -1580,6 +1588,7 @@ final class Api
             }
             $front = $this->validateText($row['front'] ?? null, 'front', 5000, true);
             $back = $this->validateText($row['back'] ?? null, 'back', 5000, true);
+            $note = $this->validateText($row['note'] ?? '', 'note', 2000);
             $rowTags = $row['tags'] ?? [];
             if (!is_array($rowTags) || !array_is_list($rowTags) || count($rowTags) > 50) {
                 throw new ApiException(422, "Flashcard row {$rowNumber} has invalid tags.");
@@ -1595,6 +1604,7 @@ final class Api
             $validatedRows[] = [
                 'front' => $front,
                 'back' => $back,
+                'note' => $note,
                 'tag_keys' => array_keys($normalizedTags),
             ];
         }
@@ -1634,10 +1644,10 @@ final class Api
 
             $insertCard = $pdo->prepare(
                 'INSERT INTO flashcards (
-                    id, owner, front, back, tags, created_at, updated_at,
+                    id, owner, front, back, note, tags, created_at, updated_at,
                     last_reviewed_at, passive_views, success_count, error_count
                  ) VALUES (
-                    :id, :owner, :front, :back, :tags, :created_at, :updated_at,
+                    :id, :owner, :front, :back, :note, :tags, :created_at, :updated_at,
                     :last_reviewed_at, :passive_views, :success_count, :error_count
                  )',
             );
@@ -1652,6 +1662,7 @@ final class Api
                     'owner' => $owner,
                     'front' => $row['front'],
                     'back' => $row['back'],
+                    'note' => $row['note'],
                     'tags' => json_encode($tagIds, JSON_THROW_ON_ERROR),
                     'created_at' => $now,
                     'updated_at' => $now,
@@ -1894,13 +1905,13 @@ final class Api
             $statement = $this->database->pdo->prepare(
                 'INSERT INTO flashcard_review_sessions (
                     id, owner, review_set, status, snapshot_name, mode_snapshot, sort_snapshot,
-                    tags_snapshot, front_seconds_snapshot, back_seconds_snapshot,
+                    indefinite_snapshot, tags_snapshot, front_seconds_snapshot, back_seconds_snapshot,
                     speech_enabled_snapshot, front_language_snapshot, back_language_snapshot, queue_state,
                     started_at, ended_at, updated_at, elapsed_seconds, total_cards, viewed_count,
                     success_count, error_count, ejected_count, task, program_step, task_date
                  ) VALUES (
                     :id, :owner, :review_set, :status, :snapshot_name, :mode_snapshot, :sort_snapshot,
-                    :tags_snapshot, :front_seconds_snapshot, :back_seconds_snapshot,
+                    :indefinite_snapshot, :tags_snapshot, :front_seconds_snapshot, :back_seconds_snapshot,
                     :speech_enabled_snapshot, :front_language_snapshot, :back_language_snapshot, :queue_state,
                     :started_at, :ended_at, :updated_at, 0, :total_cards, 0, 0, 0, 0,
                     :task, :program_step, :task_date
@@ -1914,6 +1925,7 @@ final class Api
                 'snapshot_name' => (string) $reviewSet['name'],
                 'mode_snapshot' => (string) $reviewSet['mode'],
                 'sort_snapshot' => $sortMode,
+                'indefinite_snapshot' => (bool) $reviewSet['indefinite'],
                 'tags_snapshot' => json_encode(array_values($selectedTags), JSON_THROW_ON_ERROR),
                 'front_seconds_snapshot' => (int) $reviewSet['front_seconds'],
                 'back_seconds_snapshot' => (int) $reviewSet['back_seconds'],
@@ -1977,6 +1989,7 @@ final class Api
             }
 
             $mode = (string) $session['mode_snapshot'];
+            $indefinite = $mode === 'passive' && (bool) $session['indefinite_snapshot'];
             if (in_array($action, ['success', 'error'], true) && $mode !== 'manual') {
                 throw new ApiException(422, 'Passive reviews are viewed rather than graded.');
             }
@@ -2048,6 +2061,9 @@ final class Api
                             $now,
                             $owner,
                         );
+                        if ($action === 'view' && $indefinite) {
+                            $queue[] = $current;
+                        }
                     }
                     if ($queue === []) {
                         $status = 'completed';
@@ -2221,12 +2237,14 @@ final class Api
 
         $sortMode = (string) $reviewSet['sort_mode'];
         $this->sortFlashcardsForReview($cards, $sortMode);
+        $cards = array_slice($cards, 0, (int) $reviewSet['max_cards']);
         $queue = array_map(function (array $card): array {
             $tags = $this->decodeJsonColumn($card['tags'] ?? '[]');
             return [
                 'id' => (string) $card['id'],
                 'front' => (string) $card['front'],
                 'back' => (string) $card['back'],
+                'note' => (string) ($card['note'] ?? ''),
                 'tags' => is_array($tags) ? array_values($tags) : [],
             ];
         }, $cards);
@@ -2719,6 +2737,26 @@ final class Api
     private function deleteTrackingTracker(string $id, string $owner): void
     {
         $statement = $this->database->pdo->prepare(
+            "SELECT tasks.id, tasks.name
+             FROM tasks, json_each(tasks.tracking_trackers)
+             WHERE tasks.owner = :owner AND json_each.value = :id
+             ORDER BY tasks.sort_order, tasks.name",
+        );
+        $statement->execute(['id' => $id, 'owner' => $owner]);
+        $attachedTasks = $statement->fetchAll();
+        if ($attachedTasks !== []) {
+            throw new ApiException(
+                409,
+                'This tracker is attached to one or more tasks. Reassign them first.',
+                [
+                    'tasks' => array_map(static fn (array $task): array => [
+                        'id' => (string) $task['id'],
+                        'name' => (string) $task['name'],
+                    ], $attachedTasks),
+                ],
+            );
+        }
+        $statement = $this->database->pdo->prepare(
             "UPDATE journal_entries SET tracker = '' WHERE tracker = :id AND owner = :owner",
         );
         $statement->execute(['id' => $id, 'owner' => $owner]);
@@ -3047,6 +3085,7 @@ final class Api
             }
             $intervalTemplate = (string) ($record['interval_template'] ?? '');
             $flashcardReviewSet = (string) ($record['flashcard_review_set'] ?? '');
+            $trackingTrackers = $record['tracking_trackers'] ?? [];
             if (($record['type'] ?? '') === 'interval') {
                 if (!$this->relationExists('interval_templates', $intervalTemplate, $owner)) {
                     throw new ApiException(422, 'Select a valid interval for this task.');
@@ -3060,6 +3099,21 @@ final class Api
                 }
             } elseif ($flashcardReviewSet !== '') {
                 throw new ApiException(422, 'Only flashcard tasks may have an attached Review set.');
+            }
+            if (($record['type'] ?? '') === 'tracking') {
+                if (!is_array($trackingTrackers) || $trackingTrackers === []) {
+                    throw new ApiException(422, 'Select at least one tracker for this task.');
+                }
+                foreach ($trackingTrackers as $tracker) {
+                    if (!is_string($tracker) || !$this->relationExists('tracking_trackers', $tracker, $owner)) {
+                        throw new ApiException(422, 'A selected tracker is invalid.');
+                    }
+                }
+                if (count($trackingTrackers) !== count(array_unique($trackingTrackers))) {
+                    throw new ApiException(422, 'Each tracker may only be selected once.');
+                }
+            } elseif ($trackingTrackers !== []) {
+                throw new ApiException(422, 'Only tracking tasks may have attached trackers.');
             }
             return;
         }

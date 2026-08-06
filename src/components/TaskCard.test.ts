@@ -10,6 +10,11 @@ const VBtnStub = defineComponent({
   template: '<button :disabled="disabled" @click="$emit(\'click\', $event)"><slot /></button>',
 })
 
+const VListItemStub = defineComponent({
+  props: { title: String, subtitle: String },
+  template: '<div><slot name="prepend" /><span>{{ title }}</span><small>{{ subtitle }}</small><slot name="append" /></div>',
+})
+
 const progress: TaskProgress = {
   task: {
     id: 'water',
@@ -44,6 +49,56 @@ beforeEach(() => {
 })
 
 describe('TaskCard amount actions', () => {
+  it('opens a tracker log by clicking its list item', async () => {
+    const trackingProgress: TaskProgress = {
+      ...progress,
+      task: {
+        ...progress.task,
+        id: 'daily-check-in',
+        name: 'Daily check-in',
+        type: 'tracking',
+        trackingTrackers: ['mood', 'energy'],
+      },
+      value: 1,
+      percent: 50,
+    }
+    const wrapper = mount(TaskCard, {
+      props: {
+        progress: trackingProgress,
+        canLogTracking: true,
+        trackers: [
+          { id: 'mood', name: 'Mood', icon: 'mdi-emoticon-outline', color: '#D4A5FF', logged: true },
+          { id: 'energy', name: 'Energy', icon: 'mdi-lightning-bolt-outline', color: '#FFB86B', logged: false },
+        ],
+      },
+      global: {
+        stubs: {
+          VBtn: VBtnStub,
+          VCard: { template: '<div><slot /></div>' },
+          VList: { template: '<div><slot /></div>' },
+          VListItem: VListItemStub,
+          VExpandTransition: { template: '<div><slot /></div>' },
+          ExpandTransition: { template: '<div><slot /></div>' },
+          VIcon: true,
+          VProgressCircular: { template: '<div><slot /></div>' },
+          VProgressLinear: true,
+        },
+      },
+    })
+
+    expect(wrapper.text()).toContain('1 of 2 trackers logged')
+    expect(wrapper.text()).toContain('Mood')
+    expect(wrapper.text()).toContain('Energy')
+    expect(wrapper.text()).toContain('Logged for this date')
+    expect(wrapper.text()).toContain('Not logged for this date')
+
+    expect(wrapper.findAll('button').filter(item => item.text() === 'Log')).toHaveLength(0)
+    const trackerItems = wrapper.findAllComponents(VListItemStub)
+    expect(trackerItems).toHaveLength(2)
+    await trackerItems[1]!.trigger('click')
+    expect(wrapper.emitted('logTracking')).toEqual([[trackingProgress, 'energy']])
+  })
+
   it('offers one Log amount action without quick-add buttons', async () => {
     const wrapper = mount(TaskCard, {
       props: { progress },

@@ -11,7 +11,13 @@ import {
   syncBackgroundFlashcardReview,
 } from '@/services/flashcardSpeech'
 import { playReviewCompleteCue } from '@/services/intervalCues'
-import { formatReviewDuration, sessionAccuracy } from '@/services/flashcards'
+import { requestScreenWakeLock } from '@/services/screenWakeLock'
+import {
+  flashcardSideFromSwipe,
+  flashcardTextFontSize,
+  formatReviewDuration,
+  sessionAccuracy,
+} from '@/services/flashcards'
 import { useFlashcardStore } from '@/stores/flashcards'
 import type {
   BackgroundFlashcardReviewState,
@@ -45,6 +51,11 @@ let passiveAdvancing = false
 let visibilityWork: Promise<void> = Promise.resolve()
 let lastSpokenKey = ''
 let speechRequest = 0
+let wakeLock: { release: () => Promise<void> } | undefined
+let acquiringWakeLock = false
+let manualSwipeStart: { pointerId: number; x: number; y: number } | undefined
+let suppressManualCardTap = false
+let manualCardTapResetTimer: number | undefined
 
 const currentSessionId = ref('')
 const session = computed(() => store.sessions.find(item => item.id === currentSessionId.value))
@@ -58,8 +69,14 @@ const elapsedSeconds = computed(() => {
 const completedCards = computed(() => session.value
   ? session.value.totalCards - session.value.queue.length
   : 0)
+const progressCards = computed(() => {
+  if (!session.value?.totalCards) return 0
+  return session.value.indefinite
+    ? session.value.viewedCount % session.value.totalCards
+    : completedCards.value
+})
 const progress = computed(() => session.value?.totalCards
-  ? Math.round(completedCards.value / session.value.totalCards * 100)
+  ? Math.round(progressCards.value / session.value.totalCards * 100)
   : 0)
 const passiveDurationMs = computed(() => {
   if (!session.value) return 1000
@@ -99,6 +116,11 @@ watch([
   void speakCurrentSide()
 }, { flush: 'post' })
 
+watch(isRunning, (running) => {
+  if (running && document.visibilityState === 'visible') void acquireWakeLock()
+  else void releaseWakeLock()
+})
+
 onMounted(async () => {
   mounted = true
   try {
@@ -132,6 +154,7 @@ onMounted(async () => {
     if (!restoredBackground) await syncNativeBackground()
     tickTimer = setInterval(tick, 100)
     document.addEventListener('visibilitychange', handleVisibilityChange)
+    if (isRunning.value && document.visibilityState === 'visible') void acquireWakeLock()
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Could not start this review.'
   } finally {
@@ -151,9 +174,33 @@ onBeforeRouteLeave(async () => {
 onBeforeUnmount(() => {
   mounted = false
   if (tickTimer) clearInterval(tickTimer)
+  if (manualCardTapResetTimer) window.clearTimeout(manualCardTapResetTimer)
   document.removeEventListener('visibilitychange', handleVisibilityChange)
+  void releaseWakeLock()
   void stopFlashcardSpeech()
 })
+
+async function acquireWakeLock() {
+  if (wakeLock || acquiringWakeLock || !mounted || !isRunning.value || document.visibilityState !== 'visible') return
+  acquiringWakeLock = true
+  try {
+    const lock = await requestScreenWakeLock()
+    if (!lock) return
+    if (!mounted || !isRunning.value || document.visibilityState !== 'visible') {
+      await lock.release()
+      return
+    }
+    wakeLock = lock
+  } finally {
+    acquiringWakeLock = false
+  }
+}
+
+async function releaseWakeLock() {
+  const lock = wakeLock
+  wakeLock = undefined
+  await lock?.release()
+}
 
 function initializeLocalState(value: FlashcardReviewSession) {
   localElapsedMs.value = value.elapsedSeconds * 1000
@@ -317,6 +364,7 @@ function handleVisibilityChange() {
   visibilityWork = visibilityWork.then(async () => {
     if (!mounted || isFinished.value) return
     if (document.visibilityState === 'hidden') {
+      await releaseWakeLock()
       lastSpokenKey = speechKey()
       await stopFlashcardSpeech()
       if (canUseNativeBackground.value && nativeBackgroundReady.value) {
@@ -334,6 +382,7 @@ function handleVisibilityChange() {
     if (visibilityPaused.value && session.value?.status === 'paused') {
       await resumeReview()
     }
+    if (isRunning.value) await acquireWakeLock()
     await speakCurrentSide()
   })
 }
@@ -383,6 +432,72 @@ function retrySpeech() {
   void speakCurrentSide()
 }
 
+function replayCurrentSide() {
+  if (
+    !session.value?.speechEnabled
+    || session.value.status !== 'running'
+    || !currentCard.value
+    || busy.value
+    || document.visibilityState !== 'visible'
+  ) return false
+
+  lastSpokenKey = ''
+  speechPlaybackWarning.value = ''
+  void speakCurrentSide()
+  return true
+}
+
+function handleManualCardTap() {
+  if (suppressManualCardTap) {
+    suppressManualCardTap = false
+    return
+  }
+  if (replayCurrentSide()) return
+  if (!revealed.value && session.value?.status === 'running' && !busy.value) revealed.value = true
+}
+
+function beginManualCardSwipe(event: PointerEvent) {
+  if (
+    session.value?.mode !== 'manual'
+    || session.value.status !== 'running'
+    || busy.value
+    || (event.pointerType === 'mouse' && event.button !== 0)
+  ) return
+
+  manualSwipeStart = {
+    pointerId: event.pointerId,
+    x: event.clientX,
+    y: event.clientY,
+  }
+  try {
+    const target = event.currentTarget as HTMLElement
+    target.setPointerCapture(event.pointerId)
+  } catch {
+    // Pointer capture is optional; touch input still reports its final position without it.
+  }
+}
+
+function finishManualCardSwipe(event: PointerEvent) {
+  const start = manualSwipeStart
+  if (!start || start.pointerId !== event.pointerId) return
+  manualSwipeStart = undefined
+
+  const side = flashcardSideFromSwipe(start, { x: event.clientX, y: event.clientY })
+  if (!side) return
+
+  suppressManualCardTap = true
+  if (manualCardTapResetTimer) window.clearTimeout(manualCardTapResetTimer)
+  manualCardTapResetTimer = window.setTimeout(() => {
+    suppressManualCardTap = false
+    manualCardTapResetTimer = undefined
+  }, 250)
+  revealed.value = side === 'back'
+}
+
+function cancelManualCardSwipe(event: PointerEvent) {
+  if (manualSwipeStart?.pointerId === event.pointerId) manualSwipeStart = undefined
+}
+
 async function syncNativeBackground() {
   const value = session.value
   if (!value || !canUseNativeBackground.value) {
@@ -429,7 +544,9 @@ async function reconcileBackgroundReview(
   lastTickAt = Date.now()
 
   let replayedAll = true
-  const completed = Math.min(Math.max(0, state.completedCards), value.queue.length)
+  const completed = value.indefinite
+    ? Math.max(0, state.completedCards)
+    : Math.min(Math.max(0, state.completedCards), value.queue.length)
   for (let index = 0; index < completed; index += 1) {
     if (session.value?.status !== 'running') break
     const queueLength = session.value.queue.length
@@ -437,7 +554,7 @@ async function reconcileBackgroundReview(
       syncNative: false,
       playCompletionCue: false,
     })
-    if (!succeeded || session.value?.queue.length === queueLength) {
+    if (!succeeded || (!value.indefinite && session.value?.queue.length === queueLength)) {
       replayedAll = false
       break
     }
@@ -499,7 +616,8 @@ function tagName(id: string) {
         />
         <div class="runner-header__title min-width-0">
           <strong class="text-truncate">{{ session.name }}</strong>
-          <span>{{ completedCards }} of {{ session.totalCards }}</span>
+          <span v-if="session.indefinite">{{ session.viewedCount }} viewed · looping</span>
+          <span v-else>{{ completedCards }} of {{ session.totalCards }}</span>
         </div>
         <v-btn
           icon="mdi-stop-circle-outline"
@@ -513,10 +631,12 @@ function tagName(id: string) {
 
       <v-progress-linear
         :model-value="progress"
-        color="secondary"
+        color="primary"
         bg-color="surface-variant"
         height="5"
-        :aria-label="`${progress}% of review complete`"
+        :aria-label="session.indefinite
+          ? `${progress}% through the current loop`
+          : `${progress}% of review complete`"
       />
 
       <v-alert v-if="error" type="error" variant="tonal" density="compact" class="runner-alert">
@@ -578,30 +698,93 @@ function tagName(id: string) {
 
         <button
           v-if="session.mode === 'manual'"
+          v-ripple
           type="button"
           class="review-card"
           :class="{ 'review-card--revealed': revealed }"
-          :aria-label="revealed ? 'Answer shown' : 'Show answer'"
+          :aria-label="session.speechEnabled
+            ? `Replay ${revealed ? 'back' : 'front'} speech`
+            : revealed ? 'Answer shown' : 'Show answer'"
           :disabled="session.status === 'paused' || busy"
-          @click="revealed = true"
+          @pointerdown="beginManualCardSwipe"
+          @pointerup="finishManualCardSwipe"
+          @pointercancel="cancelManualCardSwipe"
+          @click="handleManualCardTap"
         >
           <span class="review-card__inner">
             <span class="review-card__face review-card__front">
               <small>Front</small>
-              <strong>{{ currentCard.front }}</strong>
-              <span v-if="!revealed" class="review-card__hint"><v-icon icon="mdi-gesture-tap" size="18" /> Tap to reveal</span>
+              <strong :style="{ fontSize: flashcardTextFontSize(currentCard.front) }">
+                {{ currentCard.front }}
+              </strong>
+              <span v-if="session.speechEnabled" class="review-card__hint">
+                <v-icon icon="mdi-volume-high" size="18" /> Tap to replay
+              </span>
+              <span v-else-if="!revealed" class="review-card__hint">
+                <v-icon icon="mdi-gesture-tap" size="18" /> Tap to reveal
+              </span>
             </span>
             <span class="review-card__face review-card__back">
               <small>Back</small>
-              <strong>{{ currentCard.back }}</strong>
+              <span class="review-card__answer">
+                <strong
+                  class="text-secondary"
+                  :style="{ fontSize: flashcardTextFontSize(currentCard.back) }"
+                >
+                  {{ currentCard.back }}
+                </strong>
+                <span
+                  v-if="currentCard.note"
+                  class="review-card__note"
+                  :style="{ fontSize: flashcardTextFontSize(currentCard.note, 'note') }"
+                >
+                  {{ currentCard.note }}
+                </span>
+              </span>
+              <span v-if="session.speechEnabled" class="review-card__hint">
+                <v-icon icon="mdi-volume-high" size="18" /> Tap to replay
+              </span>
             </span>
           </span>
         </button>
 
-        <div v-else class="passive-card">
+        <div
+          v-else
+          v-ripple="session.speechEnabled && session.status === 'running' && !busy"
+          class="passive-card"
+          :class="{ 'passive-card--interactive': session.speechEnabled && session.status === 'running' && !busy }"
+          :role="session.speechEnabled ? 'button' : undefined"
+          :tabindex="session.speechEnabled && session.status === 'running' && !busy ? 0 : undefined"
+          :aria-label="session.speechEnabled ? `Replay ${passiveSide} speech` : undefined"
+          :aria-disabled="session.speechEnabled ? session.status !== 'running' || busy : undefined"
+          @click="replayCurrentSide"
+          @keydown.enter="replayCurrentSide"
+          @keydown.space.prevent="replayCurrentSide"
+        >
           <div class="passive-card__content">
             <small>{{ passiveSide === 'front' ? 'Front' : 'Back' }}</small>
-            <strong>{{ passiveSide === 'front' ? currentCard.front : currentCard.back }}</strong>
+            <span class="review-card__answer">
+              <strong
+                :class="{ 'text-secondary': passiveSide === 'back' }"
+                :style="{
+                  fontSize: flashcardTextFontSize(
+                    passiveSide === 'front' ? currentCard.front : currentCard.back,
+                  ),
+                }"
+              >
+                {{ passiveSide === 'front' ? currentCard.front : currentCard.back }}
+              </strong>
+              <span
+                v-if="passiveSide === 'back' && currentCard.note"
+                class="review-card__note"
+                :style="{ fontSize: flashcardTextFontSize(currentCard.note, 'note') }"
+              >
+                {{ currentCard.note }}
+              </span>
+            </span>
+            <span v-if="session.speechEnabled" class="review-card__hint">
+              <v-icon icon="mdi-volume-high" size="18" /> Tap to replay
+            </span>
           </div>
           <v-progress-linear
             :model-value="passiveProgress"
@@ -628,7 +811,7 @@ function tagName(id: string) {
               size="large"
               color="error"
               variant="tonal"
-              prepend-icon="mdi-close-bold"
+              prepend-icon="mdi-close-thick"
               :loading="busy"
               @click="performAction('error')"
             >
@@ -682,7 +865,7 @@ function tagName(id: string) {
 
         <div class="queue-actions">
           <v-btn
-            variant="tonal"
+            variant="text"
             prepend-icon="mdi-arrow-down-bold-box-outline"
             :disabled="busy || session.status === 'paused'"
             @click="performAction('push')"
@@ -690,7 +873,7 @@ function tagName(id: string) {
             Push later
           </v-btn>
           <v-btn
-            variant="tonal"
+            variant="text"
             color="warning"
             prepend-icon="mdi-eject-outline"
             :disabled="busy || session.status === 'paused'"
@@ -727,7 +910,8 @@ function tagName(id: string) {
 .runner-meta { display: flex; align-items: center; justify-content: space-between; gap: 1rem; color: rgba(var(--v-theme-on-surface), .68); font-size: .75rem; font-weight: 850; }
 .runner-meta > div { display: flex; align-items: center; gap: .4rem; }
 .tag-row { display: flex; min-height: 2rem; flex-wrap: wrap; justify-content: center; gap: .4rem; }
-.review-card { width: 100%; min-height: min(38dvh, 22rem); border: 0; border-radius: 1.5rem; flex: 1 1 auto; background: transparent; color: inherit; cursor: pointer; perspective: 80rem; }
+.review-card { position: relative; width: 100%; min-height: min(38dvh, 22rem); border: 0; border-radius: 1.5rem; flex: 1 1 auto; overflow: hidden; background: transparent; color: inherit; cursor: pointer; perspective: 80rem; touch-action: pan-y; }
+.review-card :deep(.v-ripple__container) { z-index: 2; }
 .review-card:focus-visible { outline: .1875rem solid rgba(var(--v-theme-secondary), .72); outline-offset: .25rem; }
 .review-card__inner { position: relative; display: grid; min-height: inherit; transform-style: preserve-3d; transition: transform 240ms cubic-bezier(.22, 1, .36, 1); }
 .review-card--revealed .review-card__inner { transform: rotateY(180deg); }
@@ -736,9 +920,12 @@ function tagName(id: string) {
 .passive-card small { color: rgba(var(--v-theme-on-surface), .48); font-size: .68rem; font-weight: 900; letter-spacing: .12em; text-transform: uppercase; }
 .review-card__face strong,
 .passive-card strong { max-width: 34rem; overflow-wrap: anywhere; font-size: clamp(1.3rem, 5vw, 2.1rem); font-weight: 850; line-height: 1.35; white-space: pre-wrap; }
+.review-card__answer { display: flex; align-items: center; flex-direction: column; gap: .45rem; }
+.review-card__note { max-width: 32rem; color: rgba(var(--v-theme-on-surface), .6); font-size: .82rem; font-weight: 650; line-height: 1.5; white-space: pre-wrap; }
 .review-card__back { border-color: rgba(var(--v-theme-secondary), .34); transform: rotateY(180deg); }
 .review-card__hint { display: flex; align-items: center; gap: .4rem; color: rgba(var(--v-theme-on-surface), .48); font-size: .72rem; font-weight: 800; }
-.passive-card { display: flex; min-height: min(38dvh, 22rem); padding: 2rem; border: .0625rem solid rgba(var(--v-theme-secondary), .28); border-radius: 1.5rem; align-items: center; flex: 1 1 auto; flex-direction: column; gap: 1.5rem; background: rgb(var(--v-theme-surface)); text-align: center; box-shadow: 0 1rem 2.5rem rgba(0, 0, 0, .26); }
+.passive-card { position: relative; display: flex; width: 100%; min-height: min(38dvh, 22rem); padding: 2rem; border: .0625rem solid rgba(var(--v-theme-secondary), .28); border-radius: 1.5rem; align-items: center; flex: 1 1 auto; flex-direction: column; gap: 1.5rem; overflow: hidden; background: rgb(var(--v-theme-surface)); color: inherit; font: inherit; text-align: center; box-shadow: 0 1rem 2.5rem rgba(0, 0, 0, .26); }
+.passive-card--interactive { cursor: pointer; }
 .passive-card__content { display: flex; width: 100%; flex: 1 1 auto; align-items: center; justify-content: center; flex-direction: column; gap: 1.5rem; }
 .passive-card .v-progress-linear { width: min(20rem, 100%); flex: 0 0 auto; }
 .review-navigation { display: grid; margin-top: auto; padding-top: .25rem; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: center; justify-items: center; gap: 1rem; }

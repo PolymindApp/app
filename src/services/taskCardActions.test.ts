@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { TASK_CARD_ACTION_ITEMS, taskCanLogAmounts, taskIntervalCanStart } from './taskCardActions'
+import { TASK_CARD_ACTION_ITEMS, taskCanLogAmounts, taskIntervalCanStart, taskNeedsReview } from './taskCardActions'
 import type { ProgramStep, Task, TaskProgress, TaskType } from '@/types/domain'
 
 function progress(type: TaskType, completionType?: ProgramStep['completionType']) {
@@ -40,5 +40,70 @@ describe('task card actions', () => {
       status: 'completed',
       complete: true,
     }, '2026-08-05')).toBe(false)
+  })
+
+  it('does not review an unlocked daily total whose rounded value meets its target', () => {
+    const dailyTotal = {
+      ...progress('daily_total'),
+      task: {
+        ...progress('daily_total').task,
+        reviewWhenMissed: true,
+        targetValue: 4,
+        targetOperator: 'gte',
+      },
+      scheduledDate: '2026-08-05',
+      status: 'pending',
+      complete: false,
+      sealed: false,
+      value: 3.999,
+    } as TaskProgress
+
+    expect(taskNeedsReview(dailyTotal, '2026-08-06')).toBe(false)
+    expect(taskNeedsReview({ ...dailyTotal, value: 3.994 }, '2026-08-06')).toBe(true)
+  })
+
+  it('does not review a duration whose floating-point total rounds to its target', () => {
+    const displayedFourHours = [
+      2,
+      0.278055555555556,
+      -1.27805555555556,
+      3,
+    ].reduce((total, value) => total + value, 0)
+    const duration = {
+      ...progress('duration'),
+      task: {
+        ...progress('duration').task,
+        reviewWhenMissed: true,
+        targetValue: 4,
+        targetOperator: 'gte',
+      },
+      scheduledDate: '2026-08-05',
+      status: 'pending',
+      complete: false,
+      value: displayedFourHours,
+    } as TaskProgress
+
+    expect(displayedFourHours).toBeLessThan(4)
+    expect(displayedFourHours.toFixed(2)).toBe('4.00')
+    expect(taskNeedsReview(duration, '2026-08-06')).toBe(false)
+  })
+
+  it('only reviews unfinished work after its scheduled day has passed', () => {
+    const currentWork = {
+      ...progress('duration'),
+      task: {
+        ...progress('duration').task,
+        reviewWhenMissed: true,
+        targetValue: 4,
+        targetOperator: 'gte',
+      },
+      scheduledDate: '2026-08-06',
+      status: 'pending',
+      complete: false,
+      value: 0,
+    } as TaskProgress
+
+    expect(taskNeedsReview(currentWork, '2026-08-06')).toBe(false)
+    expect(taskNeedsReview(currentWork, '2026-08-07')).toBe(true)
   })
 })

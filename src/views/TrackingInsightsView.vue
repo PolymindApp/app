@@ -8,6 +8,7 @@ import TrackingTimelineChart from '@/components/TrackingTimelineChart.vue'
 import {
   buildTrackingInsight,
   dateRangeKeys,
+  defaultTrackingInsightRangeDays,
   type TrackingInsightResult,
 } from '@/services/tracking'
 import { readHealthConnectStepsForDates } from '@/services/healthConnect'
@@ -28,8 +29,8 @@ const tasks = useTaskStore()
 const intervals = useIntervalStore()
 const factorId = ref('')
 const outcomeId = ref('')
-const datePreset = ref<DatePreset>('60')
-const rangeStart = ref(format(subDays(new Date(), 59), 'yyyy-MM-dd'))
+const datePreset = ref<DatePreset>('7')
+const rangeStart = ref(format(subDays(new Date(), 6), 'yyyy-MM-dd'))
 const rangeEnd = ref(format(new Date(), 'yyyy-MM-dd'))
 const insight = ref<TrackingInsightResult>()
 const loading = ref(false)
@@ -134,15 +135,14 @@ onMounted(async () => {
   })
   factorId.value ||= factorSources.value[0]?.id || ''
   outcomeId.value ||= outcomeSources.value[0]?.id || ''
+  setDefaultDateRange()
   initialized.value = true
   if (factorId.value && outcomeId.value) await analyze()
 })
 
 watch(datePreset, (preset) => {
   if (preset === 'custom') return
-  const days = Number(preset)
-  rangeEnd.value = format(new Date(), 'yyyy-MM-dd')
-  rangeStart.value = format(subDays(new Date(), days - 1), 'yyyy-MM-dd')
+  setPresetDateRange(preset)
 })
 
 watch([factorId, outcomeId, rangeStart, rangeEnd], () => {
@@ -162,6 +162,24 @@ function scheduleAnalysis() {
     analysisTimer = undefined
     void analyze()
   }, 120)
+}
+
+function setDefaultDateRange() {
+  const today = new Date()
+  const end = format(today, 'yyyy-MM-dd')
+  const start = format(subDays(today, 89), 'yyyy-MM-dd')
+  const dataPointCount = outcomeId.value
+    ? trackerDailyValues(outcomeId.value, start, end).length
+    : 0
+  const preset = String(defaultTrackingInsightRangeDays(dataPointCount)) as DatePreset
+  datePreset.value = preset
+  setPresetDateRange(preset, today)
+}
+
+function setPresetDateRange(preset: Exclude<DatePreset, 'custom'>, today = new Date()) {
+  const days = Number(preset)
+  rangeEnd.value = format(today, 'yyyy-MM-dd')
+  rangeStart.value = format(subDays(today, days - 1), 'yyyy-MM-dd')
 }
 
 async function analyze() {

@@ -275,7 +275,6 @@ function showNotice(color: 'success' | 'error', text: string) {
 <style scoped>
 .account-page {
   display: grid;
-  max-width: 720px;
   gap: 1rem;
 }
 

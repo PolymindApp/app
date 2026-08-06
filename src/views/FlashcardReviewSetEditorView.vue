@@ -1,11 +1,17 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppForm from '@/components/AppForm.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import FlashcardTagCombobox from '@/components/FlashcardTagCombobox.vue'
 import FormActionBar from '@/components/FormActionBar.vue'
-import { FLASHCARD_REVIEW_SORT_OPTIONS } from '@/services/flashcards'
+import LabeledSlider from '@/components/LabeledSlider.vue'
+import {
+  DEFAULT_FLASHCARD_SESSION_CARDS,
+  FLASHCARD_REVIEW_SORT_OPTIONS,
+  MAX_FLASHCARD_SESSION_CARDS,
+  MIN_FLASHCARD_SESSION_CARDS,
+} from '@/services/flashcards'
 import {
   defaultFlashcardSpeechLanguage,
   loadFlashcardSpeechSupport,
@@ -31,6 +37,8 @@ const draft = reactive<FlashcardReviewSetDraft>({
   name: '',
   tags: [],
   mode: 'manual',
+  indefinite: false,
+  maxCards: DEFAULT_FLASHCARD_SESSION_CARDS,
   frontSeconds: 5,
   backSeconds: 5,
   speechEnabled: false,
@@ -45,6 +53,8 @@ function serializedDraft() {
     name: draft.name,
     tags: draft.tags,
     mode: draft.mode,
+    indefinite: draft.indefinite,
+    maxCards: draft.maxCards,
     frontSeconds: draft.frontSeconds,
     backSeconds: draft.backSeconds,
     speechEnabled: draft.speechEnabled,
@@ -59,6 +69,9 @@ const changed = computed(() => ready.value && serializedDraft() !== original.val
 const canSave = computed(() => (
   changed.value
   && Boolean(draft.name.trim())
+  && Number.isInteger(draft.maxCards)
+  && draft.maxCards >= MIN_FLASHCARD_SESSION_CARDS
+  && draft.maxCards <= MAX_FLASHCARD_SESSION_CARDS
   && (!draft.speechEnabled || Boolean(draft.frontLanguage && draft.backLanguage))
 ))
 const matchingCardCount = computed(() => store.matchingCards(draft.tags).length)
@@ -78,6 +91,10 @@ function updateSpeechEnabled(enabled: boolean | null) {
   if (enabled) ensureSpeechLanguages()
 }
 
+watch(() => draft.mode, (mode) => {
+  if (mode !== 'passive') draft.indefinite = false
+})
+
 onMounted(async () => {
   try {
     const supportPromise = loadFlashcardSpeechSupport()
@@ -95,6 +112,8 @@ onMounted(async () => {
         name: reviewSet.name,
         tags: [...reviewSet.tags],
         mode: reviewSet.mode,
+        indefinite: reviewSet.indefinite,
+        maxCards: reviewSet.maxCards,
         frontSeconds: reviewSet.frontSeconds,
         backSeconds: reviewSet.backSeconds,
         speechEnabled: reviewSet.speechEnabled,
@@ -219,6 +238,19 @@ async function remove() {
               :step="1"
               :rules="[value => value >= 1 && value <= 60 || 'Use 1–60 seconds']"
             />
+            <div class="setting-row passive-settings__indefinite">
+              <div>
+                <strong>Run indefinitely</strong>
+                <p>Loop through these cards until you end the review; it will not finish on its own</p>
+              </div>
+              <v-switch
+                v-model="draft.indefinite"
+                color="secondary"
+                hide-details="auto"
+                inset
+                aria-label="Run review indefinitely"
+              />
+            </div>
           </div>
         </v-expand-transition>
       </v-card>
@@ -285,6 +317,22 @@ async function remove() {
             <v-list-item v-bind="itemProps" :title="item.raw.title" :subtitle="item.raw.subtitle" />
           </template>
         </v-select>
+        <v-divider class="my-5" />
+        <LabeledSlider
+          v-model="draft.maxCards"
+          title="Max cards per session"
+          :min="MIN_FLASHCARD_SESSION_CARDS"
+          :max="MAX_FLASHCARD_SESSION_CARDS"
+          :step="1"
+          :value-label="`${draft.maxCards} cards`"
+          min-label="1 card"
+          :max-label="`${MAX_FLASHCARD_SESSION_CARDS} cards`"
+          aria-label="Maximum cards per Review set session"
+        />
+        <p class="mode-hint mt-3">
+          <v-icon icon="mdi-information-outline" size="18" />
+          Cards are filtered and ordered first, then up to {{ draft.maxCards }} are included in each session.
+        </p>
       </v-card>
     </AppForm>
 
@@ -329,6 +377,7 @@ async function remove() {
 .mode-hint { display: flex; align-items: flex-start; gap: .5rem; color: rgba(var(--v-theme-on-surface), .58); font-size: .72rem; line-height: 1.5; }
 .mode-hint .v-icon { flex: 0 0 auto; }
 .passive-settings { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.passive-settings__indefinite { grid-column: 1 / -1; }
 .setting-row { display: grid; min-height: 4rem; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 1rem; }
 .setting-row > div { min-width: 0; }
 .setting-row p { margin-top: .15rem; color: rgba(var(--v-theme-on-surface), .5); font-size: .7rem; }

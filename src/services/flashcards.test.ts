@@ -2,6 +2,8 @@ import {
   cardMatchesTags,
   createIntervalFlashcardReviewSnapshot,
   flashcardAccuracy,
+  flashcardSideFromSwipe,
+  flashcardTextFontSize,
   flashcardDifficulty,
   formatReviewDuration,
   intervalFlashcardPhase,
@@ -15,6 +17,7 @@ const cards: Flashcard[] = [
     id: 'new',
     front: 'New front',
     back: 'New back',
+    note: 'Newest card note',
     tags: ['math'],
     createdAt: '2026-08-05T12:00:00Z',
     updatedAt: '2026-08-05T12:00:00Z',
@@ -26,6 +29,7 @@ const cards: Flashcard[] = [
     id: 'difficult',
     front: 'Hard front',
     back: 'Hard back',
+    note: '',
     tags: ['math'],
     createdAt: '2026-08-01T12:00:00Z',
     updatedAt: '2026-08-04T12:00:00Z',
@@ -41,6 +45,8 @@ const reviewSet: FlashcardReviewSet = {
   name: 'Math',
   tags: ['math'],
   mode: 'passive',
+  indefinite: false,
+  maxCards: 20,
   frontSeconds: 3,
   backSeconds: 4,
   speechEnabled: true,
@@ -53,6 +59,27 @@ const reviewSet: FlashcardReviewSet = {
 }
 
 describe('flashcard review helpers', () => {
+  it('maps horizontal swipes to card sides without intercepting short or vertical gestures', () => {
+    expect(flashcardSideFromSwipe({ x: 120, y: 100 }, { x: 40, y: 105 })).toBe('back')
+    expect(flashcardSideFromSwipe({ x: 40, y: 100 }, { x: 120, y: 95 })).toBe('front')
+    expect(flashcardSideFromSwipe({ x: 100, y: 100 }, { x: 70, y: 100 })).toBeUndefined()
+    expect(flashcardSideFromSwipe({ x: 100, y: 40 }, { x: 160, y: 140 })).toBeUndefined()
+  })
+
+  it('scales flashcard faces and notes down as their text becomes longer', () => {
+    const shortFace = parseFloat(flashcardTextFontSize('Wood'))
+    const mediumFace = parseFloat(flashcardTextFontSize('A moderately detailed flashcard answer'))
+    const longFace = parseFloat(flashcardTextFontSize('A'.repeat(500)))
+    const shortNote = parseFloat(flashcardTextFontSize('Remember this', 'note'))
+    const longNote = parseFloat(flashcardTextFontSize('N'.repeat(500), 'note'))
+
+    expect(shortFace).toBeGreaterThan(mediumFace)
+    expect(mediumFace).toBeGreaterThan(longFace)
+    expect(shortNote).toBeGreaterThan(longNote)
+    expect(shortNote).toBeLessThan(shortFace)
+    expect(parseFloat(flashcardTextFontSize('Wood', 'face', 'compact'))).toBeLessThan(shortFace)
+  })
+
   it('matches any selected tag and treats an empty filter as all cards', () => {
     const card = { tags: ['math', 'algebra'] }
 
@@ -87,6 +114,16 @@ describe('flashcard review helpers', () => {
 
     expect(passive).toMatchObject({ frontSeconds: 3, backSeconds: 4, speechEnabled: true })
     expect(manual).toMatchObject({ frontSeconds: 5, backSeconds: 5, speechEnabled: true })
+  })
+
+  it('limits interval Review set snapshots after sorting the matching cards', () => {
+    const snapshot = createIntervalFlashcardReviewSnapshot(
+      { ...reviewSet, maxCards: 1 },
+      cards,
+    )
+
+    expect(snapshot?.cards.map(card => card.id)).toEqual(['new'])
+    expect(snapshot?.cards[0]?.note).toBe('Newest card note')
   })
 
   it('loops attached cards indefinitely based on interval elapsed time', () => {

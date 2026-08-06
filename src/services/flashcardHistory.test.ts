@@ -9,6 +9,7 @@ function session(overrides: Partial<FlashcardReviewSession> = {}): FlashcardRevi
     status: 'ended',
     name: 'French vocabulary',
     mode: 'manual',
+    indefinite: false,
     sortMode: 'difficult',
     tags: [],
     frontSeconds: 5,

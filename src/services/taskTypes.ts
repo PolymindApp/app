@@ -16,6 +16,7 @@ export const TASK_TYPE_OPTIONS: TaskTypePresentation[] = [
   { type: 'program', title: 'Program', subtitle: 'A flexible sequence', icon: 'mdi-repeat-variant', color: '#C7F464' },
   { type: 'interval', title: 'Interval', subtitle: 'Complete a saved interval', icon: 'mdi-timer-play-outline', color: '#66D9C8' },
   { type: 'flashcards', title: 'Flashcards', subtitle: 'Complete a saved Review set', icon: 'mdi-cards-outline', color: '#C7F464' },
+  { type: 'tracking', title: 'Tracking', subtitle: 'Log one or more trackers', icon: 'mdi-chart-box-plus-outline', color: '#FF9EAE' },
 ]
 
 export const TASK_TYPE_PRESENTATION = Object.fromEntries(

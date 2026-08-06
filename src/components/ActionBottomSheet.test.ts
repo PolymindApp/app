@@ -2,6 +2,15 @@ import { defineComponent, Fragment, h, nextTick, ref } from 'vue'
 import { mount } from '@vue/test-utils'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 
+const displayState = vi.hoisted(() => ({ mobile: true }))
+
+vi.mock('vuetify', async () => {
+  const { computed } = await import('vue')
+  return {
+    useDisplay: () => ({ smAndDown: computed(() => displayState.mobile) }),
+  }
+})
+
 const NavigationDrawerStub = defineComponent({
   inheritAttrs: false,
   props: {
@@ -24,6 +33,19 @@ const NavigationDrawerStub = defineComponent({
   },
 })
 
+const MenuStub = defineComponent({
+  inheritAttrs: false,
+  props: {
+    modelValue: Boolean,
+    target: [String, Object],
+  },
+  setup(props, { attrs, slots }) {
+    return () => props.modelValue
+      ? h('section', { ...attrs, class: 'desktop-action-menu' }, slots.default?.())
+      : null
+  },
+})
+
 function pointerEvent(type: string, clientY: number) {
   const event = new MouseEvent(type, {
     bubbles: true,
@@ -41,6 +63,10 @@ function pointerEvent(type: string, clientY: number) {
 }
 
 describe('ActionBottomSheet', () => {
+  beforeEach(() => {
+    displayState.mobile = true
+  })
+
   it('moves with a downward drag and closes after crossing the threshold', async () => {
     const Harness = defineComponent({
       components: { ActionBottomSheet },
@@ -92,6 +118,45 @@ describe('ActionBottomSheet', () => {
     const leavingScrim = document.querySelector<HTMLElement>('.drawer-scrim')!
     expect(leavingScrim.classList.contains('fade-transition-leave-active')).toBe(true)
     expect(getComputedStyle(leavingScrim).pointerEvents).toBe('none')
+    wrapper.unmount()
+  })
+
+  it('uses an anchored menu instead of a bottom drawer on desktop', async () => {
+    displayState.mobile = false
+    const Harness = defineComponent({
+      components: { ActionBottomSheet },
+      setup() {
+        const open = ref(false)
+        return { open }
+      },
+      template: `
+        <button class="actions-trigger" @click="open = true">Open</button>
+        <ActionBottomSheet v-model="open" title="Actions" hide-title>
+          <div class="menu-option">Option</div>
+        </ActionBottomSheet>
+      `,
+    })
+    const wrapper = mount(Harness, {
+      attachTo: document.body,
+      global: {
+        stubs: {
+          VCard: { template: '<div><slot /></div>' },
+          VList: { template: '<div><slot /></div>' },
+          VMenu: MenuStub,
+          VNavigationDrawer: NavigationDrawerStub,
+        },
+      },
+    })
+
+    const trigger = wrapper.get('.actions-trigger')
+    trigger.element.dispatchEvent(pointerEvent('pointerdown', 20))
+    await trigger.trigger('click')
+    await nextTick()
+
+    expect(wrapper.find('.desktop-action-menu').exists()).toBe(true)
+    expect(wrapper.find('.action-bottom-sheet').exists()).toBe(false)
+    expect(wrapper.find('.menu-option').text()).toBe('Option')
+    expect(wrapper.findComponent(MenuStub).props('target')).toBe(trigger.element)
     wrapper.unmount()
   })
 })

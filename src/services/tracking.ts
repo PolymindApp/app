@@ -68,6 +68,15 @@ export interface TrackingInsightResult {
   trend?: TrackingTrendResult
 }
 
+export type TrackingInsightRangeDays = 7 | 14 | 30 | 60 | 90
+
+const TRACKING_INSIGHT_RANGE_DAYS: TrackingInsightRangeDays[] = [7, 14, 30, 60, 90]
+
+export function defaultTrackingInsightRangeDays(dataPointCount: number): TrackingInsightRangeDays {
+  const count = Math.max(0, Number.isFinite(dataPointCount) ? dataPointCount : 0)
+  return TRACKING_INSIGHT_RANGE_DAYS.find((days) => count < days) ?? 90
+}
+
 export const TRACKING_PRESETS: TrackingPreset[] = [
   { id: 'meditation', name: 'Meditation', description: 'Record each meditation session.', role: 'factor', kind: 'event', category: 'mindfulness', unit: 'sessions', scaleMin: 0, scaleMax: 0, favorableDirection: 'neutral', color: '#66D9C8', icon: 'mdi-meditation' },
   { id: 'medication', name: 'Medication taken', description: 'Record whether you took a medication. This is a log, not medical advice.', role: 'factor', kind: 'yes_no', category: 'medication', unit: '', scaleMin: 0, scaleMax: 1, favorableDirection: 'neutral', color: '#8FB8FF', icon: 'mdi-pill' },

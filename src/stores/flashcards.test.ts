@@ -52,6 +52,7 @@ describe('flashcard store', () => {
       id: 'card-1',
       front: 'Question',
       back: 'Answer',
+      note: 'Explanation',
       tags: [],
       createdAt: '2026-08-05T10:00:00Z',
       updatedAt: '2026-08-05T10:00:00Z',
@@ -65,11 +66,12 @@ describe('flashcard store', () => {
       status: 'running',
       name: 'Daily review',
       mode: 'manual',
+      indefinite: false,
       sortMode: 'difficult',
       tags: [],
       frontSeconds: 5,
       backSeconds: 5,
-      queue: [{ id: 'card-1', front: 'Question', back: 'Answer', tags: [] }],
+      queue: [{ id: 'card-1', front: 'Question', back: 'Answer', note: 'Explanation', tags: [] }],
       startedAt: '2026-08-05T10:00:00Z',
       updatedAt: '2026-08-05T10:00:00Z',
       elapsedSeconds: 0,
@@ -85,6 +87,7 @@ describe('flashcard store', () => {
       session: {
         id: 'session-1', review_set: 'set-1', status: 'completed',
         snapshot_name: 'Daily review', mode_snapshot: 'manual', sort_snapshot: 'difficult',
+        indefinite_snapshot: false,
         tags_snapshot: [], front_seconds_snapshot: 5, back_seconds_snapshot: 5,
         queue_state: [], started_at: '2026-08-05T10:00:00Z',
         ended_at: '2026-08-05T10:00:07Z', updated_at: '2026-08-05T10:00:07Z',
@@ -115,18 +118,18 @@ describe('flashcard store', () => {
     apiMocks.importCards.mockResolvedValue({
       tags: [{ id: 'tag-new', name: 'Woodworking' }],
       cards: [{
-        id: 'card-imported', front: 'chisel', back: 'formón', tags: ['tag-new'],
+        id: 'card-imported', front: 'chisel', back: 'formón', note: 'A carving tool', tags: ['tag-new'],
         created_at: '2026-08-05T10:00:00Z', updated_at: '2026-08-05T10:00:00Z',
         last_reviewed_at: '', passive_views: 0, success_count: 0, error_count: 0,
       }],
     })
 
     const imported = await store.importCards([
-      { front: 'chisel', back: 'formón', tags: ['Woodworking'] },
+      { front: 'chisel', back: 'formón', note: 'A carving tool', tags: ['Woodworking'] },
     ])
 
     expect(apiMocks.importCards).toHaveBeenCalledWith([
-      { front: 'chisel', back: 'formón', tags: ['Woodworking'] },
+      { front: 'chisel', back: 'formón', note: 'A carving tool', tags: ['Woodworking'] },
     ])
     expect(imported).toHaveLength(1)
     expect(store.cards[0]).toEqual(expect.objectContaining({ id: 'card-imported', front: 'chisel' }))
@@ -139,6 +142,7 @@ describe('flashcard store', () => {
       id: 'card-1',
       front: 'Question',
       back: 'Answer',
+      note: '',
       tags: ['tag-old'],
       createdAt: '2026-08-05T10:00:00Z',
       updatedAt: '2026-08-05T10:00:00Z',
@@ -149,6 +153,7 @@ describe('flashcard store', () => {
       id: 'card-2',
       front: 'Keep',
       back: 'This card',
+      note: '',
       tags: [],
       createdAt: '2026-08-05T10:00:00Z',
       updatedAt: '2026-08-05T10:00:00Z',
@@ -158,7 +163,7 @@ describe('flashcard store', () => {
     }]
     apiMocks.bulkUpdateCards.mockResolvedValueOnce({
       cards: [{
-        id: 'card-1', front: 'Question', back: 'Answer', tags: ['tag-new'],
+        id: 'card-1', front: 'Question', back: 'Answer', note: '', tags: ['tag-new'],
         created_at: '2026-08-05T10:00:00Z', updated_at: '2026-08-05T10:05:00Z',
         last_reviewed_at: '', passive_views: 0, success_count: 0, error_count: 0,
       }],

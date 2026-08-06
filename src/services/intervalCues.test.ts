@@ -39,6 +39,10 @@ beforeEach(() => {
   vi.resetModules()
   vi.restoreAllMocks()
   audioContexts.length = 0
+  Object.defineProperty(navigator, 'wakeLock', {
+    configurable: true,
+    value: undefined,
+  })
   vi.stubGlobal('AudioContext', FakeAudioContext)
   vi.stubGlobal('fetch', vi.fn(async () => ({
     ok: true,
@@ -47,6 +51,19 @@ beforeEach(() => {
 })
 
 describe('interval cue audio', () => {
+  it('requests a screen wake lock when the device supports it', async () => {
+    const release = vi.fn(async () => undefined)
+    const request = vi.fn(async () => ({ release }))
+    Object.defineProperty(navigator, 'wakeLock', {
+      configurable: true,
+      value: { request },
+    })
+    const { requestIntervalWakeLock } = await import('./intervalCues')
+
+    await expect(requestIntervalWakeLock()).resolves.toEqual({ release })
+    expect(request).toHaveBeenCalledWith('screen')
+  })
+
   it('preloads and decodes each cue once, including concurrent requests', async () => {
     const { preloadIntervalCueAudio } = await import('./intervalCues')
 
@@ -102,5 +119,16 @@ describe('interval cue audio', () => {
 
     await vi.waitFor(() => expect(audioContexts[0]?.sources[0]?.start).toHaveBeenCalledOnce())
     expect(audioContexts[0].sources[0].buffer).toMatchObject({ marker: 3 })
+  })
+
+  it('prepares and plays the completion sound for a task time target', async () => {
+    const { playTaskCompleteCue, prepareTaskCompleteCue } = await import('./intervalCues')
+
+    await prepareTaskCompleteCue()
+    playTaskCompleteCue()
+
+    await vi.waitFor(() => expect(audioContexts[0]?.sources[0]?.start).toHaveBeenCalledOnce())
+    expect(fetch).toHaveBeenCalledWith('/sounds/complete.mp3')
+    expect(audioContexts[0].resume).toHaveBeenCalledOnce()
   })
 })

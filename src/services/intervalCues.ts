@@ -1,5 +1,6 @@
 import type { IntervalCueSettings } from '@/types/domain'
 import { nativeBackgroundIntervalOwnsCues } from '@/services/backgroundInterval'
+export { requestScreenWakeLock as requestIntervalWakeLock } from '@/services/screenWakeLock'
 
 let audioContext: AudioContext | undefined
 const cueUrls = {
@@ -63,6 +64,12 @@ async function prepareIntervalAudio() {
   if (audioContext?.state === 'suspended') await audioContext.resume()
 }
 
+async function prepareAudioCue(name: CueName) {
+  const buffer = await loadCue(name)
+  if (audioContext?.state === 'suspended') await audioContext.resume()
+  return buffer
+}
+
 export async function prepareIntervalCues(cues: IntervalCueSettings) {
   try {
     if (cues.soundEnabled) await prepareIntervalAudio()
@@ -84,8 +91,8 @@ function playCue(name: CueName, cues: IntervalCueSettings) {
 }
 
 function playAudioCue(name: CueName) {
-  void Promise.all([loadCue(name), prepareIntervalAudio()])
-    .then(([buffer]) => {
+  void prepareAudioCue(name)
+    .then((buffer) => {
       if (!audioContext) return
       const source = audioContext.createBufferSource()
       source.buffer = buffer
@@ -119,6 +126,18 @@ export function playReviewCompleteCue() {
   playAudioCue('complete')
 }
 
+export async function prepareTaskCompleteCue() {
+  try {
+    await prepareAudioCue('complete')
+  } catch {
+    // Task completion audio remains best-effort when playback is unavailable.
+  }
+}
+
+export function playTaskCompleteCue() {
+  playAudioCue('complete')
+}
+
 export async function notifyIntervalTransition(title: string, body: string) {
   if (!('Notification' in window) || Notification.permission !== 'granted' || document.visibilityState === 'visible') return
   const options = {
@@ -134,13 +153,5 @@ export async function notifyIntervalTransition(title: string, body: string) {
     else new Notification(title, options)
   } catch {
     // Notifications are best-effort and must never interrupt the timer.
-  }
-}
-
-export async function requestIntervalWakeLock() {
-  try {
-    return await (navigator as Navigator & { wakeLock?: { request: (type: 'screen') => Promise<{ release: () => Promise<void> }> } }).wakeLock?.request('screen')
-  } catch {
-    return undefined
   }
 }

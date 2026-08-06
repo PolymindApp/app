@@ -43,6 +43,7 @@ CREATE TABLE flashcards (
     owner TEXT NOT NULL,
     front TEXT NOT NULL DEFAULT '',
     back TEXT NOT NULL DEFAULT '',
+    note VARCHAR(2000) NOT NULL DEFAULT '',
     tags JSON NOT NULL DEFAULT '[]',
     created_at TEXT NOT NULL DEFAULT '',
     updated_at TEXT NOT NULL DEFAULT '',
@@ -63,6 +64,8 @@ CREATE TABLE flashcard_review_sets (
     name VARCHAR(160) NOT NULL DEFAULT '',
     tags JSON NOT NULL DEFAULT '[]',
     mode TEXT NOT NULL DEFAULT 'manual',
+    indefinite BOOLEAN NOT NULL DEFAULT FALSE,
+    max_cards INTEGER NOT NULL DEFAULT 20,
     front_seconds INTEGER NOT NULL DEFAULT 5,
     back_seconds INTEGER NOT NULL DEFAULT 5,
     speech_enabled BOOLEAN NOT NULL DEFAULT FALSE,
@@ -106,7 +109,8 @@ CREATE TABLE tasks (
     sort_order NUMERIC NOT NULL DEFAULT 0,
     color TEXT NOT NULL DEFAULT '',
     interval_template TEXT NOT NULL DEFAULT '',
-    flashcard_review_set TEXT NOT NULL DEFAULT ''
+    flashcard_review_set TEXT NOT NULL DEFAULT '',
+    tracking_trackers JSON NOT NULL DEFAULT '[]'
 );
 
 CREATE INDEX idx_tasks_owner_active ON tasks (owner, active);
@@ -233,6 +237,7 @@ CREATE TABLE flashcard_review_sessions (
     status TEXT NOT NULL DEFAULT 'running',
     snapshot_name VARCHAR(160) NOT NULL DEFAULT '',
     mode_snapshot TEXT NOT NULL DEFAULT 'manual',
+    indefinite_snapshot BOOLEAN NOT NULL DEFAULT FALSE,
     sort_snapshot TEXT NOT NULL DEFAULT 'difficult',
     tags_snapshot JSON NOT NULL DEFAULT '[]',
     front_seconds_snapshot INTEGER NOT NULL DEFAULT 5,

@@ -7,6 +7,13 @@ import type {
   IntervalFlashcardReviewSnapshot,
 } from '@/types/domain'
 
+export const MIN_FLASHCARD_SESSION_CARDS = 1
+export const MAX_FLASHCARD_SESSION_CARDS = 100
+export const DEFAULT_FLASHCARD_SESSION_CARDS = 20
+
+const MIN_FLASHCARD_SWIPE_DISTANCE = 56
+const FLASHCARD_SWIPE_AXIS_RATIO = 1.2
+
 export const FLASHCARD_REVIEW_SORT_OPTIONS: Array<{
   title: string
   value: FlashcardReviewSort
@@ -18,6 +25,38 @@ export const FLASHCARD_REVIEW_SORT_OPTIONS: Array<{
   { title: 'Recently added', value: 'recently_added', subtitle: 'Newest cards first' },
   { title: 'Random', value: 'random', subtitle: 'Shuffle once when the review starts' },
 ]
+
+export function flashcardSideFromSwipe(
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+): FlashcardReviewSide | undefined {
+  const horizontalDistance = end.x - start.x
+  const verticalDistance = end.y - start.y
+  if (
+    Math.abs(horizontalDistance) < MIN_FLASHCARD_SWIPE_DISTANCE
+    || Math.abs(horizontalDistance) < Math.abs(verticalDistance) * FLASHCARD_SWIPE_AXIS_RATIO
+  ) return undefined
+  return horizontalDistance < 0 ? 'back' : 'front'
+}
+
+export function flashcardTextFontSize(
+  value: string,
+  role: 'face' | 'note' = 'face',
+  density: 'full' | 'compact' = 'full',
+) {
+  const length = [...value.trim().replace(/\s+/g, ' ')].length
+  const settings = role === 'note'
+    ? density === 'compact'
+      ? { maximum: .9, minimum: .68, startsShrinkingAt: 24, reachesMinimumAt: 360 }
+      : { maximum: 1.25, minimum: .72, startsShrinkingAt: 24, reachesMinimumAt: 420 }
+    : density === 'compact'
+      ? { maximum: 2, minimum: 1, startsShrinkingAt: 8, reachesMinimumAt: 240 }
+      : { maximum: 3.6, minimum: 1.1, startsShrinkingAt: 8, reachesMinimumAt: 280 }
+  const range = settings.reachesMinimumAt - settings.startsShrinkingAt
+  const progress = Math.max(0, Math.min(1, (length - settings.startsShrinkingAt) / range))
+  const size = settings.maximum - (settings.maximum - settings.minimum) * Math.sqrt(progress)
+  return `${Number(size.toFixed(3))}rem`
+}
 
 export function flashcardDifficulty(card: Pick<Flashcard, 'successCount' | 'errorCount'>) {
   const attempts = card.successCount + card.errorCount
@@ -123,12 +162,15 @@ export function createIntervalFlashcardReviewSnapshot(
     speechEnabled: reviewSet.speechEnabled,
     frontLanguage: reviewSet.frontLanguage,
     backLanguage: reviewSet.backLanguage,
-    cards: sortFlashcardsForReview(matching, reviewSet.sortMode, random).map(card => ({
-      id: card.id,
-      front: card.front,
-      back: card.back,
-      tags: [...card.tags],
-    })),
+    cards: sortFlashcardsForReview(matching, reviewSet.sortMode, random)
+      .slice(0, reviewSet.maxCards)
+      .map(card => ({
+        id: card.id,
+        front: card.front,
+        back: card.back,
+        note: card.note,
+        tags: [...card.tags],
+      })),
   }
 }
 

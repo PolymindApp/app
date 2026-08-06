@@ -1,18 +1,24 @@
 <script setup lang="ts">
-import { onBeforeUnmount, useId, watch } from 'vue'
+import { onBeforeUnmount, onMounted, shallowRef, useId, watch } from 'vue'
+import { useDisplay } from 'vuetify'
 
-withDefaults(defineProps<{
+const props = withDefaults(defineProps<{
   title: string
   description?: string
   ariaLabel?: string
   hideTitle?: boolean
+  menuTarget?: string | Element | [number, number]
 }>(), {
   ariaLabel: 'Actions',
   hideTitle: false,
 })
 
 const model = defineModel<boolean>({ default: false })
+const { smAndDown } = useDisplay()
 const sheetId = useId()
+const desktopTarget = shallowRef<string | Element | [number, number]>()
+let lastInteractionElement: Element | undefined
+let lastPointerPosition: [number, number] | undefined
 
 interface SheetDrag {
   pointerId: number
@@ -151,8 +157,35 @@ function onWindowBlur() {
   finishDrag(true)
 }
 
+function closestInteractionElement(target: EventTarget | null) {
+  if (!(target instanceof Element)) return undefined
+  return target.closest('button, a, [role="button"], [tabindex]') || target
+}
+
+function rememberPointerTarget(event: PointerEvent) {
+  lastInteractionElement = closestInteractionElement(event.target)
+  lastPointerPosition = [event.clientX, event.clientY]
+}
+
+function rememberKeyboardTarget(event: KeyboardEvent) {
+  if (event.key !== 'Enter' && event.key !== ' ') return
+  lastInteractionElement = closestInteractionElement(event.target)
+}
+
+function resolveDesktopTarget() {
+  if (props.menuTarget) return props.menuTarget
+  if (lastInteractionElement?.isConnected) return lastInteractionElement
+  if (lastPointerPosition) return lastPointerPosition
+  const focused = document.activeElement
+  if (focused instanceof Element && focused !== document.body && focused !== document.documentElement) return focused
+  return [Math.round(window.innerWidth / 2), Math.min(Math.round(window.innerHeight / 2), 320)] as [number, number]
+}
+
 watch(model, (open) => {
-  if (open) return
+  if (open) {
+    if (!smAndDown.value) desktopTarget.value = resolveDesktopTarget()
+    return
+  }
   drag = undefined
   clearPointerListeners()
   clearSettleTimer()
@@ -166,16 +199,68 @@ watch(model, (open) => {
   else scrim.style.setProperty('pointer-events', 'none', 'important')
 }, { flush: 'post' })
 
+watch(smAndDown, (mobile) => {
+  if (!model.value) return
+  if (mobile) desktopTarget.value = undefined
+  else desktopTarget.value = resolveDesktopTarget()
+})
+
+onMounted(() => {
+  document.addEventListener('pointerdown', rememberPointerTarget, true)
+  document.addEventListener('keydown', rememberKeyboardTarget, true)
+  if (model.value && !smAndDown.value) desktopTarget.value = resolveDesktopTarget()
+})
+
 onBeforeUnmount(() => {
   drag = undefined
   clearPointerListeners()
   clearSettleTimer()
   clearInlineGestureStyles()
+  document.removeEventListener('pointerdown', rememberPointerTarget, true)
+  document.removeEventListener('keydown', rememberKeyboardTarget, true)
 })
 </script>
 
 <template>
+  <v-menu
+    v-if="!smAndDown"
+    v-model="model"
+    :target="desktopTarget"
+    location="bottom end"
+    :close-on-content-click="false"
+    :max-width="430"
+    :aria-label="ariaLabel"
+  >
+    <v-list
+      v-if="hideTitle && !$slots.content"
+      density="compact"
+      class="action-menu pa-1"
+    >
+      <slot />
+    </v-list>
+    <v-card
+      v-else
+      class="action-menu"
+      :class="{ 'action-menu--content': $slots.content }"
+      rounded="lg"
+    >
+      <div v-if="!hideTitle" class="action-menu__header px-4 py-3">
+        <strong class="d-block text-truncate">{{ title }}</strong>
+        <p v-if="description" class="action-bottom-sheet__description mt-1 mb-0">
+          {{ description }}
+        </p>
+      </div>
+      <div v-if="$slots.content" class="action-menu__content pa-4">
+        <slot name="content" />
+      </div>
+      <v-list v-if="$slots.default" density="compact" class="action-menu__list pa-1">
+        <slot />
+      </v-list>
+    </v-card>
+  </v-menu>
+
   <v-navigation-drawer
+    v-else
     :id="sheetId"
     v-model="model"
     temporary
@@ -198,25 +283,39 @@ onBeforeUnmount(() => {
         </p>
       </div>
     </div>
-    <div v-if="$slots.content" class="px-4 pt-2 pb-4">
+    <div v-if="$slots.content" class="action-bottom-sheet__content px-4 pt-2 pb-4">
       <slot name="content" />
     </div>
-    <v-list v-if="$slots.default" class="px-2 pb-4">
+    <v-list v-if="$slots.default" class="action-bottom-sheet__content px-2 pb-4">
       <slot />
     </v-list>
   </v-navigation-drawer>
 </template>
 
 <style scoped>
+.action-menu {
+  min-width: 14rem;
+  max-height: calc(100dvh - 2rem);
+  overflow-y: auto;
+  border: .0625rem solid rgb(var(--v-theme-on-surface) / .1);
+  background: rgb(var(--v-theme-surface));
+}
+
+.action-menu--content { width: min(26.875rem, calc(100vw - 2rem)); }
+.action-menu__header { border-bottom: .0625rem solid rgb(var(--v-theme-on-surface) / .08); }
+.action-menu__content + .action-menu__list { border-top: .0625rem solid rgb(var(--v-theme-on-surface) / .08); }
+
 .action-bottom-sheet {
   bottom: max(
     env(safe-area-inset-bottom, 0px),
     var(--safe-area-inset-bottom, 0px)
   ) !important;
   height: auto !important;
-  max-height: min(80dvh, 430px);
+  max-height: 80dvh;
   overflow: hidden;
   border-radius: 24px 24px 0 0;
+  background: rgb(var(--v-theme-surface));
+  isolation: isolate;
 }
 
 .action-bottom-sheet__header {
@@ -226,6 +325,12 @@ onBeforeUnmount(() => {
   background: rgb(var(--v-theme-surface));
   cursor: grab;
   touch-action: none;
+  padding-top: 10px;
+}
+
+.action-bottom-sheet__content {
+  position: relative;
+  z-index: 0;
 }
 
 .action-bottom-sheet--dragging .action-bottom-sheet__header { cursor: grabbing; }
@@ -247,7 +352,7 @@ onBeforeUnmount(() => {
 .action-bottom-sheet__handle {
   width: 42px;
   height: 5px;
-  margin: 10px auto 0;
+  margin: 0 auto 0;
   border-radius: 999px;
   background: rgba(var(--v-theme-on-surface), .42);
 }

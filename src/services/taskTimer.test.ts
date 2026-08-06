@@ -5,6 +5,7 @@ import {
   pauseTaskTimer,
   resetTaskTimer,
   resumeTaskTimer,
+  shouldPlayTaskTimerCompleteCue,
   taskTimerElapsedMs,
 } from './taskTimer'
 
@@ -31,5 +32,12 @@ describe('task time logger', () => {
     expect(formatTaskTimer(0)).toBe('00:00')
     expect(formatTaskTimer(65_900)).toBe('01:05')
     expect(formatTaskTimer(3_665_000)).toBe('01:01:05')
+  })
+
+  it('plays completion only when the live total first reaches a previously unmet target', () => {
+    expect(shouldPlayTaskTimerCompleteCue(2, 4, 4, false)).toBe(true)
+    expect(shouldPlayTaskTimerCompleteCue(4, 5, 4, false)).toBe(false)
+    expect(shouldPlayTaskTimerCompleteCue(2, 5, 4, true)).toBe(false)
+    expect(shouldPlayTaskTimerCompleteCue(2, 3.99, 4, false)).toBe(false)
   })
 })

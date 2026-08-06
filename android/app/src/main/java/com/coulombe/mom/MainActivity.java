@@ -19,6 +19,7 @@ public class MainActivity extends BridgeActivity {
     protected void onCreate(Bundle savedInstanceState) {
         registerPlugin(BackgroundIntervalPlugin.class);
         registerPlugin(FlashcardSpeechPlugin.class);
+        registerPlugin(ScreenWakeLockPlugin.class);
         registerPlugin(HealthConnectPlugin.class);
         registerPlugin(PasskeyPlugin.class);
         super.onCreate(savedInstanceState);

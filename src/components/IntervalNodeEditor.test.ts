@@ -55,7 +55,6 @@ function editorProps(node: IntervalStepNode, overrides: Record<string, unknown> 
   return {
     node,
     index: 0,
-    siblingCount: 1,
     depth: 0,
     canIndent: false,
     canOutdent: false,

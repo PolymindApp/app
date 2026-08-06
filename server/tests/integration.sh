@@ -57,7 +57,7 @@ suffix="$(php -r 'echo bin2hex(random_bytes(5));')"
 password="correct-horse-battery"
 
 migration_count="$(sqlite3 "$test_db" 'SELECT COUNT(*) FROM mom_schema_migrations;')"
-[[ "$migration_count" == 15 ]] || {
+[[ "$migration_count" == 19 ]] || {
   echo "The API did not apply the complete database migration sequence." >&2
   exit 1
 }
@@ -726,6 +726,59 @@ tracker_response="$(curl --silent --show-error --fail \
   "$api_url/collections/tracking_trackers/records")"
 tracker_id="$(json_field id <<<"$tracker_response")"
 
+tracking_task_payload="$(php -r '
+  echo json_encode([
+    "name" => "Log wellbeing", "description" => "Complete the daily check-in",
+    "type" => "tracking", "tags" => [], "mandatory" => true,
+    "review_when_missed" => false, "active" => true,
+    "start_date" => "2026-07-29", "end_date" => "",
+    "recurrence_type" => "daily", "weekdays" => [], "interval_weeks" => 1,
+    "target_value" => 1, "target_operator" => "gte", "unit" => "",
+    "custom_unit" => "", "goal_period" => "occurrence", "quick_amounts" => [],
+    "cycle_length" => 0, "program_repeat" => true, "program_strict" => false,
+    "entry_notes_enabled" => false, "entry_note_suggestions_enabled" => false,
+    "sort_order" => 9, "color" => "#FF9EAE", "interval_template" => "",
+    "flashcard_review_set" => "", "tracking_trackers" => [$argv[1]],
+  ], JSON_THROW_ON_ERROR);
+' "$tracker_id")"
+tracking_task_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "$tracking_task_payload" \
+  "$api_url/collections/tasks/records")"
+tracking_task_id="$(json_field id <<<"$tracking_task_response")"
+php -r '
+  $task = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+  if (($task["type"] ?? "") !== "tracking" || ($task["tracking_trackers"] ?? []) !== [$argv[1]]) {
+      fwrite(STDERR, "A tracking task did not retain its selected trackers.\n");
+      exit(1);
+  }
+' "$tracker_id" <<<"$tracking_task_response"
+
+empty_tracking_task_payload="$(php -r '
+  $task = json_decode($argv[1], true, 512, JSON_THROW_ON_ERROR);
+  $task["name"] = "Invalid empty tracking task";
+  $task["tracking_trackers"] = [];
+  echo json_encode($task, JSON_THROW_ON_ERROR);
+' "$tracking_task_payload")"
+empty_tracking_task_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "$empty_tracking_task_payload" \
+  "$api_url/collections/tasks/records")"
+[[ "$empty_tracking_task_status" == 422 ]] || {
+  echo "The API accepted a tracking task without trackers." >&2
+  exit 1
+}
+
+attached_tracker_delete_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  -X DELETE -H "Authorization: Bearer $alice_token" \
+  "$api_url/collections/tracking_trackers/records/$tracker_id")"
+[[ "$attached_tracker_delete_status" == 409 ]] || {
+  echo "The API deleted a tracker that is still attached to a task." >&2
+  exit 1
+}
+
 journal_payload="$(php -r '
   echo json_encode([
     "title" => "After training", "body" => "I felt calmer after the final round.\nKeep the slower pace.",
@@ -832,7 +885,8 @@ duplicate_flashcard_tag_status="$(curl --silent --output /dev/null --write-out '
 
 flashcard_payload="$(php -r '
   echo json_encode([
-    "front" => "What is 2 + 2?", "back" => "4", "tags" => [$argv[1]],
+    "front" => "What is 2 + 2?", "back" => "4",
+    "note" => "Basic addition", "tags" => [$argv[1]],
   ], JSON_THROW_ON_ERROR);
 ' "$flashcard_tag_id")"
 flashcard_response="$(curl --silent --show-error --fail \
@@ -847,7 +901,7 @@ flashcard_created_at="$(json_field created_at <<<"$flashcard_response")"
   exit 1
 }
 
-flashcard_import_payload='{"rows":[{"front":"Imported chisel","back":"formón","tags":["algebra","Imported"]},{"front":"Imported plane","back":"cepillo","tags":[]}]}'
+flashcard_import_payload='{"rows":[{"front":"Imported chisel","back":"formón","note":"Carving tool","tags":["algebra","Imported"]},{"front":"Imported plane","back":"cepillo","note":"","tags":[]}]}'
 flashcard_import_response="$(curl --silent --show-error --fail \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $alice_token" \
@@ -856,9 +910,10 @@ flashcard_import_response="$(curl --silent --show-error --fail \
 flashcard_import_summary="$(php -r '
   $data = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
   echo count($data["cards"]) . ":" . count($data["tags"]) . ":"
-    . $data["cards"][0]["tags"][0] . ":" . count($data["cards"][1]["tags"]);
+    . $data["cards"][0]["tags"][0] . ":" . count($data["cards"][1]["tags"])
+    . ":" . $data["cards"][0]["note"];
 ' <<<"$flashcard_import_response")"
-[[ "$flashcard_import_summary" == "2:1:$flashcard_tag_id:0" ]] || {
+[[ "$flashcard_import_summary" == "2:1:$flashcard_tag_id:0:Carving tool" ]] || {
   echo "Bulk flashcard import did not reuse tags or preserve optional tags." >&2
   exit 1
 }
@@ -1011,10 +1066,16 @@ navigation_card_two_response="$(curl --silent --show-error --fail \
   --data "{\"front\":\"Navigation two\",\"back\":\"Second back\",\"tags\":[\"$navigation_tag_id\"]}" \
   "$api_url/collections/flashcards/records")"
 navigation_card_two_id="$(json_field id <<<"$navigation_card_two_response")"
+navigation_card_three_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "{\"front\":\"Navigation three\",\"back\":\"Third back\",\"tags\":[\"$navigation_tag_id\"]}" \
+  "$api_url/collections/flashcards/records")"
+navigation_card_three_id="$(json_field id <<<"$navigation_card_three_response")"
 navigation_review_set_response="$(curl --silent --show-error --fail \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $alice_token" \
-  --data "{\"name\":\"Navigation test\",\"tags\":[\"$navigation_tag_id\"],\"mode\":\"manual\",\"front_seconds\":5,\"back_seconds\":5,\"sort_mode\":\"recently_added\",\"sort_order\":99}" \
+  --data "{\"name\":\"Navigation test\",\"tags\":[\"$navigation_tag_id\"],\"mode\":\"manual\",\"max_cards\":2,\"front_seconds\":5,\"back_seconds\":5,\"sort_mode\":\"recently_added\",\"sort_order\":99}" \
   "$api_url/collections/flashcard_review_sets/records")"
 navigation_review_set_id="$(json_field id <<<"$navigation_review_set_response")"
 navigation_session_response="$(curl --silent --show-error --fail \
@@ -1023,6 +1084,11 @@ navigation_session_response="$(curl --silent --show-error --fail \
   --data '{"task":"","program_step":"","task_date":""}' \
   "$api_url/flashcard-review-sets/$navigation_review_set_id/sessions")"
 navigation_session_id="$(json_field id <<<"$navigation_session_response")"
+navigation_session_total="$(json_field total_cards <<<"$navigation_session_response")"
+[[ "$navigation_session_total" == 2 ]] || {
+  echo "A Review set session did not enforce its maximum card count." >&2
+  exit 1
+}
 navigation_initial_front="$(php -r '
   $data = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
   echo $data["queue_state"][0]["id"];
@@ -1061,7 +1127,7 @@ curl --silent --show-error --fail \
 curl --silent --show-error --fail \
   -X DELETE -H "Authorization: Bearer $alice_token" \
   "$api_url/collections/flashcard_review_sets/records/$navigation_review_set_id" >/dev/null
-for navigation_card_id in "$navigation_card_one_id" "$navigation_card_two_id"; do
+for navigation_card_id in "$navigation_card_one_id" "$navigation_card_two_id" "$navigation_card_three_id"; do
   curl --silent --show-error --fail \
     -X DELETE -H "Authorization: Bearer $alice_token" \
     "$api_url/collections/flashcards/records/$navigation_card_id" >/dev/null
@@ -1090,8 +1156,11 @@ manual_session_response="$(curl --silent --show-error --fail \
   --data '{"task":"","program_step":"","task_date":""}' \
   "$api_url/flashcard-review-sets/$manual_review_set_id/sessions")"
 manual_session_id="$(json_field id <<<"$manual_session_response")"
-manual_session_total="$(json_field total_cards <<<"$manual_session_response")"
-[[ "$manual_session_total" == 1 ]] || {
+manual_session_summary="$(php -r '
+  $data = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+  echo $data["total_cards"] . ":" . $data["queue_state"][0]["note"];
+' <<<"$manual_session_response")"
+[[ "$manual_session_summary" == "1:Basic addition" ]] || {
   echo "A Review set did not snapshot its matching card queue." >&2
   exit 1
 }
@@ -1110,6 +1179,7 @@ manual_complete_status="$(php -r '$data=json_decode(stream_get_contents(STDIN), 
 passive_review_set_payload="$(php -r '
   echo json_encode([
     "name" => "Passive algebra", "tags" => [$argv[1]], "mode" => "passive",
+    "indefinite" => true,
     "front_seconds" => 3, "back_seconds" => 4,
     "speech_enabled" => true, "front_language" => "en-US", "back_language" => "fr-CA",
     "sort_mode" => "recently_added", "sort_order" => 1,
@@ -1129,10 +1199,10 @@ passive_session_response="$(curl --silent --show-error --fail \
 passive_session_id="$(json_field id <<<"$passive_session_response")"
 passive_session_speech="$(php -r '
   $data=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
-  echo ((int) $data["speech_enabled_snapshot"]) . ":" . $data["front_language_snapshot"] . ":" . $data["back_language_snapshot"];
+  echo ((int) $data["speech_enabled_snapshot"]) . ":" . $data["front_language_snapshot"] . ":" . $data["back_language_snapshot"] . ":" . ((int) $data["indefinite_snapshot"]);
 ' <<<"$passive_session_response")"
-[[ "$passive_session_speech" == "1:en-US:fr-CA" ]] || {
-  echo "A Review set did not snapshot its speech synthesis settings." >&2
+[[ "$passive_session_speech" == "1:en-US:fr-CA:1" ]] || {
+  echo "A Review set did not snapshot its speech synthesis and looping settings." >&2
   exit 1
 }
 passive_grade_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
@@ -1153,10 +1223,23 @@ invalid_speech_status="$(curl --silent --output /dev/null --write-out '%{http_co
   echo "An enabled Review set accepted an incomplete speech language configuration." >&2
   exit 1
 }
-curl --silent --show-error --fail \
+passive_view_response="$(curl --silent --show-error --fail \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $alice_token" \
   --data '{"action":"view","elapsed_seconds":8}' \
+  "$api_url/flashcard-review-sessions/$passive_session_id/actions")"
+passive_loop_summary="$(php -r '
+  $data=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR)["session"];
+  echo $data["status"] . ":" . count($data["queue_state"]) . ":" . $data["viewed_count"];
+' <<<"$passive_view_response")"
+[[ "$passive_loop_summary" == "running:1:1" ]] || {
+  echo "An indefinite Passive review did not rotate its card back into the queue." >&2
+  exit 1
+}
+curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"action":"end","elapsed_seconds":8}' \
   "$api_url/flashcard-review-sessions/$passive_session_id/actions" >/dev/null
 
 curl --silent --show-error --fail \
@@ -1401,6 +1484,14 @@ detached_review_set_sessions="$(sqlite3 "$test_db" \
   "SELECT COUNT(*) FROM flashcard_review_sessions WHERE id IN ('$manual_session_id', '$passive_session_id', '$attached_flashcard_session_id') AND review_set = '';")"
 [[ "$detached_review_set_sessions" == 3 ]] || {
   echo "Review set deletion did not preserve and detach session history." >&2
+  exit 1
+}
+
+tracking_task_delete_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  -X DELETE -H "Authorization: Bearer $alice_token" \
+  "$api_url/collections/tasks/records/$tracking_task_id")"
+[[ "$tracking_task_delete_status" == 204 ]] || {
+  echo "Deleting a tracking task failed." >&2
   exit 1
 }
 

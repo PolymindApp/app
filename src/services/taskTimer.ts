@@ -7,6 +7,7 @@ export interface TaskTimerState {
   status: TaskTimerStatus
   accumulatedMs: number
   startedAt?: string
+  completionCuePlayed: boolean
   updatedAt: string
 }
 
@@ -23,6 +24,7 @@ export function createTaskTimer(
     dateKey,
     status: 'paused',
     accumulatedMs: 0,
+    completionCuePlayed: false,
     updatedAt: now.toISOString(),
   }
 }
@@ -72,6 +74,18 @@ export function formatTaskTimer(ms: number) {
   return hours ? `${String(hours).padStart(2, '0')}:${clock}` : clock
 }
 
+export function shouldPlayTaskTimerCompleteCue(
+  previouslyLoggedHours: number,
+  currentTotalHours: number,
+  targetHours: number,
+  alreadyPlayed: boolean,
+) {
+  return !alreadyPlayed
+    && targetHours > 0
+    && previouslyLoggedHours < targetHours
+    && currentTotalHours >= targetHours
+}
+
 export function loadTaskTimer(taskId: string, dateKey: string) {
   try {
     const saved = JSON.parse(localStorage.getItem(storageKey(taskId, dateKey)) || '')
@@ -82,10 +96,14 @@ export function loadTaskTimer(taskId: string, dateKey: string) {
       || !['running', 'paused'].includes(saved.status)
       || !Number.isFinite(saved.accumulatedMs)
       || saved.accumulatedMs < 0
+      || (saved.completionCuePlayed !== undefined && typeof saved.completionCuePlayed !== 'boolean')
       || typeof saved.updatedAt !== 'string'
       || (saved.startedAt !== undefined && typeof saved.startedAt !== 'string')
     ) return undefined
-    return saved as TaskTimerState
+    return {
+      ...saved,
+      completionCuePlayed: saved.completionCuePlayed === true,
+    } as TaskTimerState
   } catch {
     return undefined
   }

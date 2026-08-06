@@ -6,10 +6,10 @@ import FormActionBar from '@/components/FormActionBar.vue'
 import { parseFlashcardCsv } from '@/services/flashcardCsv'
 import { useFlashcardStore } from '@/stores/flashcards'
 
-const AI_PROMPT = 'Generate 50 rows of English-to-Spanish vocabulary about woodworking as CSV with the headers front,back,tags. Use | between multiple tags, keep tags optional, quote any value containing a comma, and include no text outside the CSV.'
-const CSV_EXAMPLE = `front,back,tags
-chisel,formón,woodworking|tools
-wood grain,veta de la madera,woodworking|materials`
+const AI_PROMPT = 'Generate 50 rows of English-to-Spanish vocabulary about woodworking as CSV with the headers front,back,note,tags. Use note for a short optional learning hint, use | between multiple tags, keep note and tags optional, quote any value containing a comma, and include no text outside the CSV.'
+const CSV_EXAMPLE = `front,back,note,tags
+chisel,formón,Hand tool for carving wood,woodworking|tools
+wood grain,veta de la madera,,woodworking|materials`
 
 const router = useRouter()
 const store = useFlashcardStore()
@@ -96,7 +96,7 @@ async function importCards() {
   try {
     const rows = parsed.value.rows
     await store.importCards(rows)
-    await router.replace({ name: 'flashcards' })
+    await router.replace({ name: 'flashcard-cards' })
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Could not import these flashcards.'
   } finally {
@@ -138,7 +138,7 @@ async function importCards() {
       <v-card class="surface-card pa-5">
         <h2 class="text-h6 font-weight-black">Paste your CSV table</h2>
         <p class="text-body-2 muted mt-2 mb-4">
-          Front and back are required. The tags column is optional; separate multiple tags with a vertical bar (|).
+          Front and back are required. Note and tags are optional; separate multiple tags with a vertical bar (|).
         </p>
         <pre class="flashcard-import-example mb-4">{{ CSV_EXAMPLE }}</pre>
 
@@ -148,7 +148,7 @@ async function importCards() {
           auto-grow
           autocomplete="off"
           spellcheck="false"
-          placeholder="front,back,tags"
+          placeholder="front,back,note,tags"
           :rules="[
             value => Boolean(value?.trim()) || 'CSV is required',
             () => parsed.errors[0] || true,
@@ -182,6 +182,7 @@ async function importCards() {
               <tr>
                 <th scope="col">Front</th>
                 <th scope="col">Back</th>
+                <th scope="col">Note</th>
                 <th scope="col">Tags</th>
               </tr>
             </thead>
@@ -189,6 +190,7 @@ async function importCards() {
               <tr v-for="(row, index) in previewRows" :key="`${row.front}-${index}`">
                 <td>{{ row.front }}</td>
                 <td>{{ row.back }}</td>
+                <td>{{ row.note || '—' }}</td>
                 <td>
                   <div class="flashcard-import-tags">
                     <v-chip v-for="tag in row.tags" :key="tag" size="x-small" variant="tonal">
@@ -228,8 +230,9 @@ async function importCards() {
 .flashcard-import-preview :deep(.v-table__wrapper) { overflow-x: hidden; }
 .flashcard-import-preview :deep(table) { table-layout: fixed; }
 .flashcard-import-preview th:nth-child(1),
-.flashcard-import-preview th:nth-child(2) { width: 36%; }
-.flashcard-import-preview th:nth-child(3) { width: 28%; }
+.flashcard-import-preview th:nth-child(2) { width: 28%; }
+.flashcard-import-preview th:nth-child(3) { width: 26%; }
+.flashcard-import-preview th:nth-child(4) { width: 18%; }
 .flashcard-import-preview th { color: rgba(var(--v-theme-on-surface), .56); font-size: .66rem; font-weight: 900 !important; letter-spacing: .08em; text-transform: uppercase; }
 .flashcard-import-preview td { overflow-wrap: anywhere; font-size: .75rem; }
 .flashcard-import-tags { display: flex; min-width: 0; flex-wrap: wrap; gap: .25rem; }

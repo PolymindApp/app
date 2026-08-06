@@ -1,3 +1,4 @@
+import { meetsTarget } from '@/services/schedule'
 import type { TaskProgress } from '@/types/domain'
 
 export const TASK_CARD_ACTION_ITEMS = [
@@ -24,4 +25,25 @@ export function taskIntervalCanStart(progress: TaskProgress, currentDate: string
     && progress.scheduledDate === currentDate
     && !progress.complete
     && (progress.status === 'pending' || progress.status === 'missed')
+}
+
+export function taskNeedsReview(progress: TaskProgress, currentDate: string) {
+  if (
+    !progress.task.reviewWhenMissed
+    || progress.status !== 'pending'
+    || progress.scheduledDate >= currentDate
+  ) {
+    return false
+  }
+
+  const isQuantitative = progress.programStep
+    ? progress.programStep.completionType === 'quantity'
+    : ['duration', 'daily_total', 'step_counter'].includes(progress.task.type)
+  const targetMet = isQuantitative && meetsTarget(
+    progress.value,
+    progress.programStep?.targetValue ?? progress.task.targetValue ?? 0,
+    progress.programStep?.targetOperator ?? progress.task.targetOperator ?? 'gte',
+  )
+
+  return !progress.complete && !targetMet
 }

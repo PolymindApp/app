@@ -1,7 +1,7 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { ApiError, api } from '@/lib/api'
-import { cardMatchesTags } from '@/services/flashcards'
+import { cardMatchesTags, DEFAULT_FLASHCARD_SESSION_CARDS } from '@/services/flashcards'
 import { useSnackbarStore } from '@/stores/snackbar'
 import { useTaskStore } from '@/stores/tasks'
 import type {
@@ -26,6 +26,7 @@ function mapCard(record: Record<string, any>): Flashcard {
     id: record.id,
     front: record.front,
     back: record.back,
+    note: record.note || '',
     tags: Array.isArray(record.tags) ? record.tags : [],
     createdAt: record.created_at,
     updatedAt: record.updated_at,
@@ -42,6 +43,8 @@ function mapReviewSet(record: Record<string, any>): FlashcardReviewSet {
     name: record.name,
     tags: Array.isArray(record.tags) ? record.tags : [],
     mode: record.mode,
+    indefinite: Boolean(record.indefinite),
+    maxCards: Number(record.max_cards || DEFAULT_FLASHCARD_SESSION_CARDS),
     frontSeconds: Number(record.front_seconds || 5),
     backSeconds: Number(record.back_seconds || 5),
     speechEnabled: Boolean(record.speech_enabled),
@@ -61,6 +64,7 @@ function mapSession(record: Record<string, any>): FlashcardReviewSession {
     status: record.status,
     name: record.snapshot_name,
     mode: record.mode_snapshot,
+    indefinite: Boolean(record.indefinite_snapshot),
     sortMode: record.sort_snapshot,
     tags: Array.isArray(record.tags_snapshot) ? record.tags_snapshot : [],
     frontSeconds: Number(record.front_seconds_snapshot || 5),
@@ -197,6 +201,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       owner: api.authStore.record!.id,
       front: draft.front,
       back: draft.back,
+      note: draft.note,
       tags: draft.tags,
     }
     const record = draft.id
@@ -256,6 +261,8 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       name: draft.name,
       tags: draft.tags,
       mode: draft.mode,
+      indefinite: draft.mode === 'passive' && draft.indefinite,
+      max_cards: draft.maxCards,
       front_seconds: draft.frontSeconds,
       back_seconds: draft.backSeconds,
       speech_enabled: draft.speechEnabled,

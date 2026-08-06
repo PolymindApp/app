@@ -14,6 +14,7 @@ import {
 import {
   createIntervalFlashcardReviewSnapshot,
   intervalFlashcardPhase,
+  flashcardTextFontSize,
 } from '@/services/flashcards'
 import { createIntervalCueHandoff } from '@/services/intervalCueHandoff'
 import {
@@ -76,7 +77,6 @@ const pendingCompletion = ref<{
   endedAt: string
 }>()
 const backgroundError = ref('')
-const speechWarning = ref('')
 const timerEffect = ref<'count' | ''>('')
 const timerEffectKey = ref(0)
 let ticker: number | undefined
@@ -85,7 +85,6 @@ let runnerMounted = false
 let lastCountCue = ''
 let timerEffectTimeout: number | undefined
 let lastSpokenFlashcardKey = ''
-let speechRequest = 0
 const cueHandoff = createIntervalCueHandoff(document.visibilityState)
 
 const previewSession = ref<IntervalSession>()
@@ -299,7 +298,6 @@ onBeforeUnmount(() => {
 })
 
 async function speakCurrentFlashcardSide() {
-  const request = ++speechRequest
   const item = session.value
   const review = item?.flashcardReview
   const phase = flashcardPhase.value
@@ -323,11 +321,8 @@ async function speakCurrentFlashcardSide() {
       phase.side === 'front' ? phase.card.front : phase.card.back,
       phase.side === 'front' ? review.frontLanguage : review.backLanguage,
     )
-    if (request === speechRequest) speechWarning.value = ''
   } catch {
-    if (request === speechRequest) {
-      speechWarning.value = 'This attached card could not be spoken in the selected language.'
-    }
+    // Speech is optional during intervals; timer playback continues without an inline warning.
   }
 }
 
@@ -366,6 +361,8 @@ function mirrorCurrentRuntime() {
 function handlePageHide() {
   cueHandoff.recordVisibility('hidden')
   mirrorCurrentRuntime()
+  void wakeLock?.release()
+  wakeLock = undefined
   void stopFlashcardSpeech()
 }
 
@@ -377,6 +374,8 @@ async function handleVisibility() {
     lastSpokenFlashcardKey = ''
     await speakCurrentFlashcardSide()
   } else if (document.visibilityState !== 'visible') {
+    await wakeLock?.release()
+    wakeLock = undefined
     await stopFlashcardSpeech()
   }
 }
@@ -821,7 +820,6 @@ async function runAgain(repetitions?: number) {
 <template>
   <main class="runner-page" :class="{ 'runner-page--finished': finished }">
     <v-alert v-if="backgroundError" type="warning" variant="tonal" class="mb-3">{{ backgroundError }}</v-alert>
-    <v-alert v-if="speechWarning" type="warning" variant="tonal" class="mb-3">{{ speechWarning }}</v-alert>
     <v-alert v-if="completionError" type="error" variant="tonal" class="mb-3">
       {{ completionError }}
       <template #append>
@@ -962,7 +960,29 @@ async function runAgain(repetitions?: number) {
                       <span>{{ flashcardPhase.cardIndex + 1 }}/{{ session.flashcardReview.cards.length }}</span>
                     </div>
                   </div>
-                  <strong>{{ flashcardPhase.side === 'front' ? flashcardPhase.card.front : flashcardPhase.card.back }}</strong>
+                  <strong
+                    :class="{ 'text-secondary': flashcardPhase.side === 'back' }"
+                    :style="{
+                      fontSize: flashcardTextFontSize(
+                        flashcardPhase.side === 'front'
+                          ? flashcardPhase.card.front
+                          : flashcardPhase.card.back,
+                        'face',
+                        'compact',
+                      ),
+                    }"
+                  >
+                    {{ flashcardPhase.side === 'front' ? flashcardPhase.card.front : flashcardPhase.card.back }}
+                  </strong>
+                  <span
+                    v-if="flashcardPhase.side === 'back' && flashcardPhase.card.note"
+                    class="interval-review-card__note"
+                    :style="{
+                      fontSize: flashcardTextFontSize(flashcardPhase.card.note, 'note', 'compact'),
+                    }"
+                  >
+                    {{ flashcardPhase.card.note }}
+                  </span>
                 </div>
                 <v-progress-linear
                   :model-value="flashcardPhase.progress"
@@ -1248,6 +1268,7 @@ async function runAgain(repetitions?: number) {
 .interval-review-card__set > .text-truncate { min-width: 0; }
 .interval-review-card__content small { color: rgba(var(--v-theme-on-surface), .58); font-size: .62rem; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
 .interval-review-card__content strong { overflow-wrap: anywhere; font-size: clamp(1.05rem, 4.5vw, 1.5rem); line-height: 1.3; white-space: pre-wrap; }
+.interval-review-card__note { color: rgba(var(--v-theme-on-surface), .58); font-size: .74rem; font-weight: 650; line-height: 1.45; white-space: pre-wrap; }
 .interval-review-card :deep(.v-progress-linear) { border-radius: 0; }
 .runner-progress {
   display: flex;

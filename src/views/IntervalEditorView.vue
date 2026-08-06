@@ -483,7 +483,6 @@ async function removeTemplate() {
             :key="node.id"
             :node="node"
             :index="index"
-            :sibling-count="draft.definition.children.length"
             :depth="0"
             :can-indent="index > 0 && draft.definition.children[index - 1]?.type === 'group'"
             :can-outdent="false"

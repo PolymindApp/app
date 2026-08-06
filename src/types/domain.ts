@@ -1,4 +1,4 @@
-export type TaskType = 'check' | 'duration' | 'daily_total' | 'step_counter' | 'program' | 'interval' | 'flashcards'
+export type TaskType = 'check' | 'duration' | 'daily_total' | 'step_counter' | 'program' | 'interval' | 'flashcards' | 'tracking'
 export type StepSource = 'health_connect'
 export type RecurrenceType = 'daily' | 'weekdays' | 'interval_weeks'
 export type GoalPeriod = 'occurrence' | 'week'
@@ -43,6 +43,7 @@ export interface Task {
   sortOrder: number
   intervalTemplate?: string
   flashcardReviewSet?: string
+  trackingTrackers?: string[]
 }
 
 export interface ProgramStep {
@@ -244,6 +245,7 @@ export interface Flashcard {
   id: string
   front: string
   back: string
+  note: string
   tags: string[]
   createdAt: string
   updatedAt: string
@@ -257,12 +259,14 @@ export interface FlashcardDraft {
   id?: string
   front: string
   back: string
+  note: string
   tags: string[]
 }
 
 export interface FlashcardImportRow {
   front: string
   back: string
+  note: string
   tags: string[]
 }
 
@@ -276,6 +280,8 @@ export interface FlashcardReviewSet {
   name: string
   tags: string[]
   mode: FlashcardReviewMode
+  indefinite: boolean
+  maxCards: number
   frontSeconds: number
   backSeconds: number
   speechEnabled: boolean
@@ -295,6 +301,7 @@ export interface FlashcardReviewQueueCard {
   id: string
   front: string
   back: string
+  note: string
   tags: string[]
 }
 
@@ -304,6 +311,7 @@ export interface FlashcardReviewSession {
   status: FlashcardReviewStatus
   name: string
   mode: FlashcardReviewMode
+  indefinite: boolean
   sortMode: FlashcardReviewSort
   tags: string[]
   frontSeconds: number

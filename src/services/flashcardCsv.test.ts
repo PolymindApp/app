@@ -10,8 +10,8 @@ describe('flashcard CSV parsing', () => {
 
     expect(result.errors).toEqual([])
     expect(result.rows).toEqual([
-      { front: 'chisel', back: 'formón', tags: ['woodworking', 'tools'] },
-      { front: 'grain', back: 'veta', tags: ['woodworking', 'materials'] },
+      { front: 'chisel', back: 'formón', note: '', tags: ['woodworking', 'tools'] },
+      { front: 'grain', back: 'veta', note: '', tags: ['woodworking', 'materials'] },
     ])
   })
 
@@ -27,6 +27,7 @@ describe('flashcard CSV parsing', () => {
     expect(result.rows[0]).toEqual({
       front: 'plane, hand tool',
       back: 'cepillo "manual"',
+      note: '',
       tags: [],
     })
   })
@@ -48,6 +49,7 @@ describe('flashcard CSV parsing', () => {
     expect(result.rows[0]).toEqual({
       front: 'chisel',
       back: 'formón',
+      note: '',
       tags: ['woodworking', 'tools'],
     })
   })
@@ -57,7 +59,7 @@ describe('flashcard CSV parsing', () => {
 
     expect(result.errors).toEqual([])
     expect(result.rows).toEqual([
-      { front: 'chisel', back: 'formón', tags: ['tools'] },
+      { front: 'chisel', back: 'formón', note: '', tags: ['tools'] },
     ])
   })
 
@@ -81,7 +83,21 @@ describe('flashcard CSV parsing', () => {
 
     expect(result.errors).toEqual([])
     expect(result.rows).toEqual([
-      { front: 'chisel', back: 'formón', tags: ['woodworking', 'tools'] },
+      { front: 'chisel', back: 'formón', note: '', tags: ['woodworking', 'tools'] },
+    ])
+  })
+
+  it('parses an optional note column', () => {
+    const result = parseFlashcardCsv([
+      'front,back,note,tags',
+      'chisel,formón,Hand tool for carving wood,tools',
+      'grain,veta,,materials',
+    ].join('\n'))
+
+    expect(result.errors).toEqual([])
+    expect(result.rows).toEqual([
+      { front: 'chisel', back: 'formón', note: 'Hand tool for carving wood', tags: ['tools'] },
+      { front: 'grain', back: 'veta', note: '', tags: ['materials'] },
     ])
   })
 

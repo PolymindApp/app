@@ -4,7 +4,11 @@ import { format, isValid, parseISO } from 'date-fns'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import type { NavigationGuardNext } from 'vue-router'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
-import { requestIntervalWakeLock } from '@/services/intervalCues'
+import {
+  playTaskCompleteCue,
+  prepareTaskCompleteCue,
+  requestIntervalWakeLock,
+} from '@/services/intervalCues'
 import { progressPercent, toDateKey } from '@/services/schedule'
 import {
   clearTaskTimer,
@@ -15,6 +19,7 @@ import {
   resetTaskTimer,
   resumeTaskTimer,
   saveTaskTimer,
+  shouldPlayTaskTimerCompleteCue,
   taskTimerElapsedMs,
 } from '@/services/taskTimer'
 import { useTaskStore } from '@/stores/tasks'
@@ -38,6 +43,7 @@ let ticker: number | undefined
 let wakeLock: { release: () => Promise<void> } | undefined
 let mounted = false
 let allowLeave = false
+let completionCueReady = false
 let pendingNavigation: NavigationGuardNext | undefined
 
 const elapsedMs = computed(() => timer.value
@@ -48,17 +54,11 @@ const elapsedHours = computed(() => elapsedMs.value / 3_600_000)
 const running = computed(() => timer.value?.status === 'running')
 const target = computed(() => task.value?.targetValue || 0)
 const projectedValue = computed(() => (progress.value?.value || 0) + elapsedHours.value)
-const currentPercent = computed(() => progressPercent(
-  progress.value?.value || 0,
-  target.value,
-  task.value?.targetOperator,
-))
 const projectedPercent = computed(() => progressPercent(
   projectedValue.value,
   target.value,
   task.value?.targetOperator,
 ))
-const timerColor = computed(() => task.value?.color || 'secondary')
 const dateLabel = computed(() => format(logDate.value, 'EEEE, MMMM d'))
 const logMessage = computed(() =>
   `${formatTaskTimer(elapsedMs.value)} will be added to ${task.value?.name || 'this task'} for ${format(logDate.value, 'MMMM d')}.`,
@@ -69,9 +69,11 @@ const progressSummary = computed(() => {
   return `${current} logged · ${formatHours(target.value)} goal`
 })
 const projectedSummary = computed(() => {
-  if (!target.value) return `${formatHours(projectedValue.value)} after logging`
-  return `${formatHours(projectedValue.value)} of ${formatHours(target.value)} after logging`
+  if (!target.value) return `${formatHours(projectedValue.value)} total with this timer`
+  return `${formatHours(projectedValue.value)} of ${formatHours(target.value)} total`
 })
+
+watch(projectedValue, () => checkTaskTimerCompleteCue())
 
 onMounted(async () => {
   mounted = true
@@ -94,12 +96,21 @@ onMounted(async () => {
     const dateKey = toDateKey(logDate.value)
     timer.value = loadTaskTimer(found.id, dateKey)
       || createTaskTimer(found.id, dateKey)
+    if (progress.value.value >= target.value && target.value > 0 && !timer.value.completionCuePlayed) {
+      timer.value = { ...timer.value, completionCuePlayed: true }
+      saveTaskTimer(timer.value)
+    }
+    completionCueReady = true
     nowMs.value = Date.now()
     ticker = window.setInterval(() => {
       nowMs.value = Date.now()
     }, 250)
     document.addEventListener('visibilitychange', handleVisibility)
-    if (timer.value.status === 'running') void acquireWakeLock()
+    if (timer.value.status === 'running') {
+      void prepareTaskCompleteCue()
+      void acquireWakeLock()
+    }
+    checkTaskTimerCompleteCue()
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Could not open the timer.'
   } finally {
@@ -139,6 +150,23 @@ function formatHours(value: number) {
   return minutes ? `${hours}h ${minutes}m` : `${hours}h`
 }
 
+function checkTaskTimerCompleteCue() {
+  if (
+    !completionCueReady
+    || !timer.value
+    || !shouldPlayTaskTimerCompleteCue(
+      progress.value?.value || 0,
+      projectedValue.value,
+      target.value,
+      timer.value.completionCuePlayed,
+    )
+  ) return
+
+  timer.value = { ...timer.value, completionCuePlayed: true }
+  saveTaskTimer(timer.value)
+  playTaskCompleteCue()
+}
+
 async function acquireWakeLock() {
   const lock = await requestIntervalWakeLock()
   if (!lock) return
@@ -157,6 +185,7 @@ async function releaseWakeLock() {
 function handleVisibility() {
   nowMs.value = Date.now()
   if (document.visibilityState === 'visible' && running.value) void acquireWakeLock()
+  else if (document.visibilityState !== 'visible') void releaseWakeLock()
 }
 
 function start() {
@@ -165,6 +194,7 @@ function start() {
   timer.value = resumeTaskTimer(timer.value, now)
   nowMs.value = now.getTime()
   saveTaskTimer(timer.value)
+  void prepareTaskCompleteCue()
   void acquireWakeLock()
 }
 
@@ -266,31 +296,21 @@ function leave() {
           <div class="timer-ring">
             <div class="timer-ring__stack">
               <v-progress-circular
-                class="timer-ring__projected"
+                class="timer-ring__progress"
                 :model-value="projectedPercent"
                 :size="260"
                 :width="12"
-                :color="timerColor"
+                color="secondary"
                 bg-color="surface-variant"
-                :aria-label="`After logging: ${projectedSummary}`"
-              />
-              <div class="timer-ring__current">
-                <v-progress-circular
-                  :model-value="currentPercent"
-                  :size="218"
-                  :width="7"
-                  color="secondary"
-                  bg-color="surface-variant"
-                  :aria-label="`Current total: ${formatHours(progress.value)}`"
-                >
-                  <div class="timer-readout">
-                    <span class="timer-value">{{ elapsedLabel }}</span>
-                    <span class="timer-current-total">
-                      Current total <strong>{{ formatHours(progress.value) }}</strong>
-                    </span>
-                  </div>
-                </v-progress-circular>
-              </div>
+                :aria-label="`Current total with timer: ${projectedSummary}`"
+              >
+                <div class="timer-readout">
+                  <span class="timer-value">{{ elapsedLabel }}</span>
+                  <span class="timer-live-total">
+                    Total <strong>{{ formatHours(projectedValue) }}</strong>
+                  </span>
+                </div>
+              </v-progress-circular>
             </div>
           </div>
 
@@ -308,7 +328,7 @@ function leave() {
           />
           <v-btn
             :icon="running ? 'mdi-pause' : 'mdi-play'"
-            :color="timerColor"
+            color="secondary"
             size="x-large"
             :aria-label="running ? 'Pause timer' : 'Start timer'"
             @touchstart.stop
@@ -341,7 +361,7 @@ function leave() {
           />
           <v-btn
             :icon="running ? 'mdi-pause' : 'mdi-play'"
-            :color="timerColor"
+            color="secondary"
             class="timer-play-button"
             :aria-label="running ? 'Pause timer' : 'Start timer'"
             @touchstart.stop
@@ -484,22 +504,9 @@ function leave() {
   aspect-ratio: 1;
 }
 
-.timer-ring__stack :deep(.timer-ring__projected) {
+.timer-ring__stack :deep(.timer-ring__progress) {
   width: 100% !important;
   height: 100% !important;
-}
-
-.timer-ring__current {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  pointer-events: none;
-}
-
-.timer-ring__current :deep(.v-progress-circular) {
-  width: 84% !important;
-  height: 84% !important;
 }
 
 .timer-readout {
@@ -516,7 +523,7 @@ function leave() {
   letter-spacing: -.04em;
 }
 
-.timer-current-total {
+.timer-live-total {
   display: flex;
   margin-top: .2rem;
   align-items: baseline;
@@ -528,7 +535,7 @@ function leave() {
   text-transform: uppercase;
 }
 
-.timer-current-total strong {
+.timer-live-total strong {
   color: rgb(var(--v-theme-secondary));
   font-size: .75rem;
   letter-spacing: 0;

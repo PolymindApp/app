@@ -4,6 +4,7 @@ import {
   buildTrackingInsight,
   compareDateRanges,
   comparePresentAbsent,
+  defaultTrackingInsightRangeDays,
   linearTrend,
   trackerDraftFromPreset,
   TRACKING_PRESETS,
@@ -24,6 +25,19 @@ const entry = (date: string, value: number, suffix = value): TrackingEntry => ({
 })
 
 describe('tracking analysis', () => {
+  it('chooses a compact default insight range from the amount of data', () => {
+    expect(defaultTrackingInsightRangeDays(0)).toBe(7)
+    expect(defaultTrackingInsightRangeDays(6)).toBe(7)
+    expect(defaultTrackingInsightRangeDays(7)).toBe(14)
+    expect(defaultTrackingInsightRangeDays(13)).toBe(14)
+    expect(defaultTrackingInsightRangeDays(14)).toBe(30)
+    expect(defaultTrackingInsightRangeDays(29)).toBe(30)
+    expect(defaultTrackingInsightRangeDays(30)).toBe(60)
+    expect(defaultTrackingInsightRangeDays(59)).toBe(60)
+    expect(defaultTrackingInsightRangeDays(60)).toBe(90)
+    expect(defaultTrackingInsightRangeDays(180)).toBe(90)
+  })
+
   it('aggregates repeated daily ratings using the tracker rule', () => {
     const result = aggregateTrackingEntries(tracker, [
       entry('2026-07-01', 4, 1), entry('2026-07-01', 8, 2), entry('2026-07-02', 7),

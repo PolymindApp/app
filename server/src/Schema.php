@@ -40,6 +40,7 @@ final class Schema
                 'fields' => [
                     'front' => self::text(5000, true),
                     'back' => self::text(5000, true),
+                    'note' => self::text(2000),
                     'tags' => self::jsonArray(5000),
                     'created_at' => self::timestamp(false, true),
                     'updated_at' => self::timestamp(false, true),
@@ -60,6 +61,8 @@ final class Schema
                     'name' => self::text(160, true),
                     'tags' => self::jsonArray(5000),
                     'mode' => self::choice(['manual', 'passive'], true),
+                    'indefinite' => self::boolean(),
+                    'max_cards' => self::integer(1, 100),
                     'front_seconds' => self::integer(1, 60),
                     'back_seconds' => self::integer(1, 60),
                     'speech_enabled' => self::boolean(),
@@ -83,7 +86,7 @@ final class Schema
                     'type' => self::choice(
                         [
                             'check', 'duration', 'daily_total', 'step_counter',
-                            'program', 'interval', 'flashcards',
+                            'program', 'interval', 'flashcards', 'tracking',
                         ],
                         true,
                     ),
@@ -111,6 +114,7 @@ final class Schema
                     'color' => self::text(20),
                     'interval_template' => self::relation(false, true),
                     'flashcard_review_set' => self::relation(false, true),
+                    'tracking_trackers' => self::jsonArray(5000),
                 ],
                 'required' => ['name', 'type', 'start_date', 'recurrence_type'],
                 'sort' => ['name', 'sort_order', 'start_date'],
@@ -229,6 +233,7 @@ final class Schema
                     'status' => self::choice(['running', 'paused', 'completed', 'ended'], true),
                     'snapshot_name' => self::text(160, true),
                     'mode_snapshot' => self::choice(['manual', 'passive'], true),
+                    'indefinite_snapshot' => self::boolean(),
                     'sort_snapshot' => self::choice([
                         'difficult', 'never_reviewed', 'least_recent', 'recently_added', 'random',
                     ], true),

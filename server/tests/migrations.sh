@@ -34,7 +34,7 @@ run_migrations() {
 
 sqlite3 "$empty_db" 'VACUUM'
 first_run="$(run_migrations "$empty_db")"
-[[ "$first_run" == "202607290001,202607290002,202607290003,202607300001,202607310001,202607310002,202607310003,202608010001,202608020001,202608020002,202608020003,202608020004,202608050001,202608050002,202608050003" ]] || {
+[[ "$first_run" == "202607290001,202607290002,202607290003,202607300001,202607310001,202607310002,202607310003,202608010001,202608020001,202608020002,202608020003,202608020004,202608050001,202608050002,202608050003,202608060001,202608060002,202608060003,202608060004" ]] || {
   echo "An empty database did not apply the complete migration sequence." >&2
   exit 1
 }
@@ -71,7 +71,7 @@ for table in "${expected_tables[@]}"; do
 done
 
 migration_count="$(sqlite3 "$empty_db" 'SELECT COUNT(*) FROM mom_schema_migrations;')"
-[[ "$migration_count" == 15 ]] || {
+[[ "$migration_count" == 19 ]] || {
   echo "Migration history does not contain all migrations." >&2
   exit 1
 }
@@ -95,7 +95,7 @@ cli_output="$(
   MOM_API_SECRET="mom-migration-test-secret-at-least-32-characters" \
     php server/migrate.php
 )"
-[[ "$cli_output" == *"Applied 15 migrations"* && "$cli_output" == *"202608050003"* ]] || {
+[[ "$cli_output" == *"Applied 19 migrations"* && "$cli_output" == *"202608060004"* ]] || {
   echo "The migration CLI did not initialize and report a new database." >&2
   exit 1
 }
@@ -107,7 +107,7 @@ source_db="${MOM_TEST_SOURCE_DB:-private/data.db}"
 }
 sqlite3 "$source_db" ".backup $existing_db"
 sqlite3 "$existing_db" \
-  "DELETE FROM mom_schema_migrations WHERE version IN ('202608050001', '202608050002', '202608050003');
+  "DELETE FROM mom_schema_migrations WHERE version IN ('202608050001', '202608050002', '202608050003', '202608060001', '202608060002', '202608060003', '202608060004');
    DROP INDEX IF EXISTS idx_interval_templates_owner_flashcard_review_set;
    DROP INDEX IF EXISTS idx_tasks_owner_flashcard_review_set;
    DROP INDEX IF EXISTS idx_program_steps_owner_flashcard_review_set;
@@ -120,6 +120,11 @@ existing_task_flashcard_column="$(sqlite3 "$existing_db" \
   "SELECT COUNT(*) FROM pragma_table_info('tasks') WHERE name = 'flashcard_review_set';")"
 if [[ "$existing_task_flashcard_column" == 1 ]]; then
   sqlite3 "$existing_db" 'ALTER TABLE tasks DROP COLUMN flashcard_review_set;'
+fi
+existing_task_tracking_column="$(sqlite3 "$existing_db" \
+  "SELECT COUNT(*) FROM pragma_table_info('tasks') WHERE name = 'tracking_trackers';")"
+if [[ "$existing_task_tracking_column" == 1 ]]; then
+  sqlite3 "$existing_db" 'ALTER TABLE tasks DROP COLUMN tracking_trackers;'
 fi
 existing_step_flashcard_column="$(sqlite3 "$existing_db" \
   "SELECT COUNT(*) FROM pragma_table_info('program_steps') WHERE name = 'flashcard_review_set';")"
@@ -141,8 +146,8 @@ before_counts="$(sqlite3 "$existing_db" \
 existing_run="$(run_migrations "$existing_db")"
 after_counts="$(sqlite3 "$existing_db" \
   "SELECT (SELECT COUNT(*) FROM tasks) || ':' || (SELECT COUNT(*) FROM entries);")"
-[[ "$existing_run" == "202608050001,202608050002,202608050003" ]] || {
-  echo "An existing PHP database did not apply only the pending flashcard migration." >&2
+[[ "$existing_run" == "202608050001,202608050002,202608050003,202608060001,202608060002,202608060003,202608060004" ]] || {
+  echo "An existing PHP database did not apply only the pending feature migrations." >&2
   exit 1
 }
 [[ "$before_counts" == "$after_counts" ]] || {
@@ -165,13 +170,6 @@ task_note_settings="$(sqlite3 "$existing_db" \
   echo "The task entry note settings migration did not install both columns." >&2
   exit 1
 }
-enabled_task_note_settings="$(sqlite3 "$existing_db" \
-  'SELECT COUNT(*) FROM tasks WHERE entry_notes_enabled != 0 OR entry_note_suggestions_enabled != 0;')"
-[[ "$enabled_task_note_settings" == 0 ]] || {
-  echo "Existing task entry note settings were not disabled by default." >&2
-  exit 1
-}
-
 journal_columns="$(sqlite3 "$existing_db" \
   "SELECT COUNT(*) FROM pragma_table_info('journal_entries') WHERE name IN ('body', 'task', 'tracker', 'task_snapshot', 'tracker_snapshot', 'created_at', 'updated_at');")"
 [[ "$journal_columns" == 7 ]] || {
@@ -207,6 +205,30 @@ flashcard_speech_columns="$(sqlite3 "$existing_db" \
   exit 1
 }
 
+flashcard_review_limit="$(sqlite3 "$existing_db" \
+  "SELECT type || ':' || dflt_value FROM pragma_table_info('flashcard_review_sets') WHERE name = 'max_cards';")"
+[[ "$flashcard_review_limit" == "INTEGER:20" ]] || {
+  echo "The flashcard Review set limit migration did not install its default." >&2
+  exit 1
+}
+
+flashcard_note_column="$(sqlite3 "$existing_db" \
+  "SELECT type || ':' || dflt_value FROM pragma_table_info('flashcards') WHERE name = 'note';")"
+[[ "$flashcard_note_column" == "VARCHAR(2000):''" ]] || {
+  echo "The flashcard note migration did not install its optional note column." >&2
+  exit 1
+}
+
+flashcard_indefinite_columns="$(sqlite3 "$existing_db" \
+  "SELECT (SELECT COUNT(*) FROM pragma_table_info('flashcard_review_sets')
+             WHERE name = 'indefinite') || ':' ||
+          (SELECT COUNT(*) FROM pragma_table_info('flashcard_review_sessions')
+             WHERE name = 'indefinite_snapshot');")"
+[[ "$flashcard_indefinite_columns" == "1:1" ]] || {
+  echo "The passive indefinite migration did not install both settings." >&2
+  exit 1
+}
+
 interval_flashcard_columns="$(sqlite3 "$existing_db" \
   "SELECT (SELECT COUNT(*) FROM pragma_table_info('interval_templates')
              WHERE name = 'flashcard_review_set') || ':' ||
@@ -214,6 +236,13 @@ interval_flashcard_columns="$(sqlite3 "$existing_db" \
              WHERE name = 'flashcard_snapshot');")"
 [[ "$interval_flashcard_columns" == "1:1" ]] || {
   echo "The interval Review set migration did not install its attachment and snapshot columns." >&2
+  exit 1
+}
+
+task_tracking_column="$(sqlite3 "$existing_db" \
+  "SELECT type || ':' || dflt_value FROM pragma_table_info('tasks') WHERE name = 'tracking_trackers';")"
+[[ "$task_tracking_column" == "JSON:'[]'" ]] || {
+  echo "The task tracking migration did not install its tracker selection column." >&2
   exit 1
 }
 

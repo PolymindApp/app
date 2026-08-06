@@ -20,6 +20,7 @@ interface FlashcardSpeechPlugin {
     sessionId: string
     sessionName: string
     cards: Array<{ front: string; back: string }>
+    indefinite: boolean
     side: FlashcardReviewSide
     remainingMs: number
     frontSeconds: number
@@ -234,6 +235,7 @@ export async function syncBackgroundFlashcardReview(
       sessionId: session.id,
       sessionName: session.name,
       cards: session.queue.map(card => ({ front: card.front, back: card.back })),
+      indefinite: session.indefinite,
       side,
       remainingMs: Math.max(1, Math.round(remainingMs)),
       frontSeconds: session.frontSeconds,

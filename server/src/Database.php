@@ -47,7 +47,8 @@ final class Database
                 'target_operator', 'unit', 'custom_unit', 'goal_period',
                 'quick_amounts', 'cycle_length', 'program_repeat', 'program_strict',
                 'entry_notes_enabled', 'entry_note_suggestions_enabled', 'sort_order',
-                'color', 'interval_template',
+                'color', 'interval_template', 'flashcard_review_set',
+                'tracking_trackers',
             ],
             'program_steps' => [
                 'id', 'owner', 'task', 'name', 'description', 'sort_order',
