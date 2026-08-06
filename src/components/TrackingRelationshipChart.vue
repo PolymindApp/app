@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { format, parseISO } from 'date-fns'
+import { useResponsiveChartWidth } from '@/services/responsiveChart'
 import { formatNumber } from '@/services/tracking'
 import type { TrackingInsightResult } from '@/services/tracking'
 import type { TrackingRelationshipPoint } from '@/types/domain'
@@ -20,13 +21,14 @@ const props = defineProps<{
 }>()
 
 const selectedIndex = ref<number>()
-const chartWidth = 720
+const { chartRoot, chartWidth } = useResponsiveChartWidth()
 const chartHeight = 300
-const plotLeft = 64
-const plotRight = 24
+const compactLayout = computed(() => chartWidth.value < 420)
+const plotLeft = computed(() => compactLayout.value ? 52 : 64)
+const plotRight = computed(() => compactLayout.value ? 12 : 24)
 const plotTop = 18
 const plotBottom = 48
-const plotWidth = chartWidth - plotLeft - plotRight
+const plotWidth = computed(() => Math.max(1, chartWidth.value - plotLeft.value - plotRight.value))
 const plotHeight = chartHeight - plotTop - plotBottom
 
 const outcomeRange = computed(() => valueRange(
@@ -54,13 +56,13 @@ const ariaLabel = computed(() => props.insight.mode === 'presence'
   : `${props.outcomeName} plotted against ${props.factorName} for ${props.insight.matched.length} paired days. Use left and right arrow keys to inspect points.`)
 
 function presenceX(point: TrackingRelationshipPoint, index: number) {
-  const center = point.factorValue > 0 ? plotLeft + plotWidth * .72 : plotLeft + plotWidth * .28
+  const center = point.factorValue > 0 ? plotLeft.value + plotWidth.value * .72 : plotLeft.value + plotWidth.value * .28
   const jitter = ((index * 37) % 43 - 21) * .75
   return center + jitter
 }
 
 function xAt(value: number) {
-  return plotLeft + (value - factorRange.value[0]) / (factorRange.value[1] - factorRange.value[0]) * plotWidth
+  return plotLeft.value + (value - factorRange.value[0]) / (factorRange.value[1] - factorRange.value[0]) * plotWidth.value
 }
 
 function yAt(value: number) {
@@ -98,7 +100,7 @@ function selectFromPointer(event: PointerEvent) {
   if (!plottedPoints.value.length) return
   const rect = (event.currentTarget as SVGElement).getBoundingClientRect()
   if (!rect.width || !rect.height) return
-  const pointerX = (event.clientX - rect.left) / rect.width * chartWidth
+  const pointerX = (event.clientX - rect.left) / rect.width * chartWidth.value
   const pointerY = (event.clientY - rect.top) / rect.height * chartHeight
   const closest = plottedPoints.value.reduce(
     (best, candidate, index) => {
@@ -146,6 +148,7 @@ function displayValue(value: number, unit: string) {
 
 <template>
   <div
+    ref="chartRoot"
     class="relationship-chart"
     :style="{ '--factor-color': factorColor, '--outcome-color': outcomeColor }"
     tabindex="0"
@@ -163,7 +166,7 @@ function displayValue(value: number, unit: string) {
     </div>
 
     <svg
-      viewBox="0 0 720 300"
+      :viewBox="`0 0 ${chartWidth} ${chartHeight}`"
       aria-hidden="true"
       @pointerdown="selectFromPointer"
       @pointermove="selectFromPointer"
@@ -236,8 +239,8 @@ function displayValue(value: number, unit: string) {
 .relationship-chart {
   --factor-color: rgb(var(--v-theme-info));
   --outcome-color: rgb(var(--v-theme-secondary));
-  --factor-contrast: color-mix(in srgb, var(--factor-color) 78%, white);
-  --outcome-contrast: color-mix(in srgb, var(--outcome-color) 78%, white);
+  --factor-contrast: color-mix(in srgb, var(--factor-color) 72%, rgb(var(--v-theme-on-surface)));
+  --outcome-contrast: color-mix(in srgb, var(--outcome-color) 72%, rgb(var(--v-theme-on-surface)));
 
   outline: none;
 }
@@ -259,7 +262,7 @@ function displayValue(value: number, unit: string) {
 }
 
 .chart-readout strong { color: rgb(var(--v-theme-on-surface)); }
-svg { display: block; width: 100%; height: auto; min-height: 14rem; touch-action: pan-y; }
+svg { display: block; width: 100%; height: auto; touch-action: pan-y; }
 .grid-line { stroke: rgb(var(--v-theme-on-surface) / .18); stroke-width: 1; }
 .axis-value,
 .axis-category,
@@ -283,7 +286,6 @@ svg { display: block; width: 100%; height: auto; min-height: 14rem; touch-action
 
 @media (max-width: 30rem) {
   .chart-readout { align-items: flex-start; flex-direction: column; gap: .15rem; }
-  svg { min-height: 16rem; }
 }
 
 @media (prefers-reduced-motion: reduce) {

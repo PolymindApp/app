@@ -13,6 +13,33 @@ const timelineProps = {
 }
 
 describe('TrackingTimelineChart', () => {
+  it('uses the rendered mobile width so chart labels do not scale down from a desktop canvas', async () => {
+    let resize = () => undefined
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(callback: () => void) { resize = callback }
+      observe() {}
+      disconnect() {}
+    })
+    const wrapper = mount(TrackingTimelineChart, {
+      props: {
+        ...timelineProps,
+        points: [
+          { date: '2026-07-01', factorValue: 20, outcomeValue: 5 },
+          { date: '2026-07-02', factorValue: 30, outcomeValue: 6 },
+        ],
+      },
+    })
+    Object.defineProperty(wrapper.element, 'clientWidth', { configurable: true, value: 320 })
+    resize()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('svg').attributes('viewBox')).toBe('0 0 320 294')
+    expect(wrapper.find('.axis-line--outcome').attributes('x1')).toBe('276')
+
+    wrapper.unmount()
+    vi.unstubAllGlobals()
+  })
+
   it('draws gaps for missing values and exposes keyboard date inspection', async () => {
     const wrapper = mount(TrackingTimelineChart, {
       props: {
@@ -43,6 +70,41 @@ describe('TrackingTimelineChart', () => {
 })
 
 describe('TrackingRelationshipChart', () => {
+  it('keeps a full-height plot with mobile-width coordinates', async () => {
+    let resize = () => undefined
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(callback: () => void) { resize = callback }
+      observe() {}
+      disconnect() {}
+    })
+    const insight: TrackingInsightResult = {
+      points: [],
+      matched: [
+        { date: '2026-07-01', factorValue: 10, outcomeValue: 4 },
+        { date: '2026-07-02', factorValue: 20, outcomeValue: 6 },
+      ],
+      mode: 'quantity',
+      ready: false,
+      earlySignal: false,
+      direction: 'mixed',
+      summary: '',
+      caution: '',
+      trend: { count: 2, slope: .2, intercept: 2, correlation: 1, hasVariation: true },
+    }
+    const wrapper = mount(TrackingRelationshipChart, {
+      props: { ...timelineProps, insight },
+    })
+    Object.defineProperty(wrapper.element, 'clientWidth', { configurable: true, value: 320 })
+    resize()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('svg').attributes('viewBox')).toBe('0 0 320 300')
+    expect(wrapper.find('.grid-line').attributes('x2')).toBe('308')
+
+    wrapper.unmount()
+    vi.unstubAllGlobals()
+  })
+
   it('renders actual factor amounts and a quantitative trend line', () => {
     const insight: TrackingInsightResult = {
       points: [],

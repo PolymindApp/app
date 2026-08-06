@@ -5,9 +5,9 @@ import TrackingRatingValue from '@/components/TrackingRatingValue.vue'
 import TrackingWeeklyBarChart from '@/components/TrackingWeeklyBarChart.vue'
 import type { TrackingEntry, TrackingTracker } from '@/types/domain'
 
-const VRatingStub = defineComponent({
+const VProgressLinearStub = defineComponent({
   props: { modelValue: Number },
-  template: '<div class="v-rating-stub" />',
+  template: '<div class="v-progress-linear-stub" />',
 })
 
 function tracker(overrides: Partial<TrackingTracker>): TrackingTracker {
@@ -74,7 +74,7 @@ describe('TrackingWeeklyBarChart', () => {
           entry('outside', 'meditation', '2026-07-20', 1),
         ],
       },
-      global: { stubs: { VRating: VRatingStub } },
+      global: { stubs: { VProgressLinear: VProgressLinearStub } },
     })
 
     expect(wrapper.find('.chart-legend').text()).toContain('Meditation')
@@ -95,7 +95,7 @@ describe('TrackingWeeklyBarChart', () => {
         trackers: [tracker({})],
         entries: [],
       },
-      global: { stubs: { VIcon: true, VRating: VRatingStub } },
+      global: { stubs: { VIcon: true, VProgressLinear: VProgressLinearStub } },
     })
 
     expect(wrapper.find('.weekly-chart-empty').text()).toContain('No entries logged in this week.')

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { format, parseISO } from 'date-fns'
+import { useResponsiveChartWidth } from '@/services/responsiveChart'
 import { formatNumber } from '@/services/tracking'
 import type { TrackingInsightPoint } from '@/types/domain'
 
@@ -19,10 +20,11 @@ const props = defineProps<{
 }>()
 
 const selectedIndex = ref<number>()
-const chartWidth = 720
-const plotLeft = 58
-const plotRight = 62
-const plotWidth = chartWidth - plotLeft - plotRight
+const { chartRoot, chartWidth } = useResponsiveChartWidth()
+const compactLayout = computed(() => chartWidth.value < 420)
+const plotLeft = computed(() => compactLayout.value ? 44 : 58)
+const plotRight = computed(() => compactLayout.value ? 44 : 62)
+const plotWidth = computed(() => Math.max(1, chartWidth.value - plotLeft.value - plotRight.value))
 const plotTop = 42
 const plotHeight = 210
 
@@ -53,7 +55,7 @@ const ariaLabel = computed(() => {
 })
 
 function xAt(index: number) {
-  return plotLeft + (props.points.length <= 1 ? plotWidth / 2 : index / (props.points.length - 1) * plotWidth)
+  return plotLeft.value + (props.points.length <= 1 ? plotWidth.value / 2 : index / (props.points.length - 1) * plotWidth.value)
 }
 
 function yAt(value: number, range: [number, number]) {
@@ -83,10 +85,10 @@ function selectFromPointer(event: PointerEvent) {
   if (!props.points.length) return
   const rect = (event.currentTarget as SVGElement).getBoundingClientRect()
   if (!rect.width) return
-  const svgX = (event.clientX - rect.left) / rect.width * chartWidth
+  const svgX = (event.clientX - rect.left) / rect.width * chartWidth.value
   selectedIndex.value = Math.max(
     0,
-    Math.min(props.points.length - 1, Math.round((svgX - plotLeft) / plotWidth * (props.points.length - 1))),
+    Math.min(props.points.length - 1, Math.round((svgX - plotLeft.value) / plotWidth.value * (props.points.length - 1))),
   )
 }
 
@@ -126,6 +128,7 @@ function displayValue(value: number | null, unit: string) {
 
 <template>
   <div
+    ref="chartRoot"
     class="timeline-chart"
     :style="{ '--factor-color': factorColor, '--outcome-color': outcomeColor }"
     tabindex="0"
@@ -148,7 +151,7 @@ function displayValue(value: number | null, unit: string) {
     </div>
 
     <svg
-      viewBox="0 0 720 294"
+      :viewBox="`0 0 ${chartWidth} 294`"
       aria-hidden="true"
       @pointerdown="selectFromPointer"
       @pointermove="selectFromPointer"
@@ -232,6 +235,8 @@ function displayValue(value: number | null, unit: string) {
 .timeline-chart {
   --factor-color: rgb(var(--v-theme-info));
   --outcome-color: rgb(var(--v-theme-secondary));
+  --factor-contrast: color-mix(in srgb, var(--factor-color) 72%, rgb(var(--v-theme-on-surface)));
+  --outcome-contrast: color-mix(in srgb, var(--outcome-color) 72%, rgb(var(--v-theme-on-surface)));
 
   outline: none;
 }
@@ -252,8 +257,8 @@ function displayValue(value: number | null, unit: string) {
 
 .chart-legend { color: rgba(var(--v-theme-on-surface), .86); font-size: .72rem; font-weight: 800; }
 .chart-legend span { display: inline-flex; align-items: center; gap: .4rem; }
-.legend-mark { width: .7rem; height: .7rem; border-radius: 50%; background: var(--factor-color); }
-.legend-mark--outcome { border-radius: .15rem; background: var(--outcome-color); }
+.legend-mark { width: .7rem; height: .7rem; border-radius: 50%; background: var(--factor-contrast); }
+.legend-mark--outcome { border-radius: .15rem; background: var(--outcome-contrast); }
 .chart-readout { min-height: 2.75rem; margin-top: .65rem; color: rgba(var(--v-theme-on-surface), .76); font-size: .7rem; }
 .chart-readout strong { color: rgb(var(--v-theme-on-surface)); }
 
@@ -266,25 +271,25 @@ svg { display: block; width: 100%; height: auto; touch-action: pan-y; }
 .axis-value--outcome { text-anchor: start; }
 .axis-label { fill: rgba(var(--v-theme-on-surface), .94); font-size: .75rem; font-weight: 800; }
 .axis-label--factor,
-.axis-value--factor { fill: var(--factor-color); }
+.axis-value--factor { fill: var(--factor-contrast); }
 .axis-label--outcome,
-.axis-value--outcome { fill: var(--outcome-color); }
+.axis-value--outcome { fill: var(--outcome-contrast); }
 .axis-line,
 .axis-tick { fill: none; stroke-width: 1.5; }
-.axis-line--factor { stroke: var(--factor-color); }
+.axis-line--factor { stroke: var(--factor-contrast); }
 .axis-line--outcome,
-.axis-tick--outcome { stroke: var(--outcome-color); }
+.axis-tick--outcome { stroke: var(--outcome-contrast); }
 .series-line { fill: none; stroke-width: 3.5; stroke-linecap: round; stroke-linejoin: round; }
 .series-line--outline { stroke: rgba(var(--v-theme-on-surface), .54); stroke-width: 6.5; }
-.series-line--factor { stroke: var(--factor-color); }
-.series-line--outcome { stroke: var(--outcome-color); }
+.series-line--factor { stroke: var(--factor-contrast); }
+.series-line--outcome { stroke: var(--outcome-contrast); }
 .series-dot { stroke: rgba(var(--v-theme-on-surface), .82); stroke-width: 2.5; }
-.series-dot--factor { fill: var(--factor-color); }
-.series-dot--outcome { fill: var(--outcome-color); }
+.series-dot--factor { fill: var(--factor-contrast); }
+.series-dot--outcome { fill: var(--outcome-contrast); }
 .cursor-line { stroke: rgba(var(--v-theme-on-surface), .7); stroke-width: 1.5; stroke-dasharray: 4 4; }
 .selected-dot { fill: rgb(var(--v-theme-surface)); stroke-width: 3; }
-.selected-dot--factor { stroke: var(--factor-color); }
-.selected-dot--outcome { stroke: var(--outcome-color); }
+.selected-dot--factor { stroke: var(--factor-contrast); }
+.selected-dot--outcome { stroke: var(--outcome-contrast); }
 
 @media (max-width: 30rem) {
   .chart-readout { align-items: flex-start; flex-direction: column; gap: .15rem; }

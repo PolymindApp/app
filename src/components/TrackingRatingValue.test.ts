@@ -3,22 +3,21 @@ import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import TrackingRatingValue from '@/components/TrackingRatingValue.vue'
 
-const VRatingStub = defineComponent({
+const VProgressLinearStub = defineComponent({
   inheritAttrs: false,
   props: {
     modelValue: Number,
-    length: Number,
-    activeColor: String,
-    readonly: Boolean,
-    halfIncrements: Boolean,
-    density: String,
-    size: String,
+    color: String,
+    bgColor: String,
+    bgOpacity: Number,
+    height: [Number, String],
+    rounded: Boolean,
   },
-  template: '<div class="v-rating-stub" v-bind="$attrs" />',
+  template: '<div class="v-progress-linear-stub" v-bind="$attrs" />',
 })
 
 describe('TrackingRatingValue', () => {
-  it('renders a compact read-only rating with an accessible numeric value', () => {
+  it('renders a compact progress bar with a visible and accessible numeric value', () => {
     const wrapper = mount(TrackingRatingValue, {
       props: {
         value: 7.5,
@@ -26,19 +25,20 @@ describe('TrackingRatingValue', () => {
         color: '#D4A5FF',
         label: 'Mood',
       },
-      global: { stubs: { VRating: VRatingStub } },
+      global: { stubs: { VProgressLinear: VProgressLinearStub } },
     })
-    const rating = wrapper.findComponent(VRatingStub)
+    const progress = wrapper.findComponent(VProgressLinearStub)
 
-    expect(rating.props()).toMatchObject({
-      modelValue: 7.5,
-      length: 10,
-      activeColor: '#D4A5FF',
-      readonly: true,
-      halfIncrements: true,
-      density: 'compact',
-      size: 'x-small',
+    expect(progress.props()).toMatchObject({
+      modelValue: 75,
+      color: '#D4A5FF',
+      bgColor: 'surface-variant',
+      bgOpacity: 1,
+      height: 7,
+      rounded: true,
     })
-    expect(rating.attributes('aria-label')).toBe('Mood: 7.5 out of 10')
+    expect(progress.attributes('aria-label')).toBe('Mood: 7.5 out of 10')
+    expect(progress.attributes('aria-valuetext')).toBe('Mood: 7.5 out of 10')
+    expect(wrapper.get('span').text()).toBe('7.5 / 10')
   })
 })
