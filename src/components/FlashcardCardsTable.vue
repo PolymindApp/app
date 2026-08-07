@@ -40,14 +40,14 @@ const displayedCards = computed(() => {
   const start = (cardPage.value - 1) * PAGE_SIZE
   return props.cards.slice(start, start + PAGE_SIZE)
 })
-const displayedCardIds = computed(() => displayedCards.value.map(card => card.id))
-const allDisplayedCardsSelected = computed(() =>
-  displayedCardIds.value.length > 0
-  && displayedCardIds.value.every(id => selectedCardIds.value.includes(id)),
+const allCardIds = computed(() => props.cards.map(card => card.id))
+const allCardsSelected = computed(() =>
+  allCardIds.value.length > 0
+  && allCardIds.value.every(id => selectedCardIds.value.includes(id)),
 )
-const someDisplayedCardsSelected = computed(() =>
-  !allDisplayedCardsSelected.value
-  && displayedCardIds.value.some(id => selectedCardIds.value.includes(id)),
+const someCardsSelected = computed(() =>
+  !allCardsSelected.value
+  && allCardIds.value.some(id => selectedCardIds.value.includes(id)),
 )
 const hasMoreCards = computed(() => usesInfiniteScroll.value && displayedCards.value.length < props.cards.length)
 const tagNames = computed(() => new Map(props.tags.map(tag => [tag.id, tag.name])))
@@ -71,9 +71,9 @@ watch(usesInfiniteScroll, () => {
   visibleCardCount.value = PAGE_SIZE
 })
 
-function toggleDisplayedSelection(selected: boolean) {
+function toggleAllSelection(selected: boolean) {
   const next = new Set(selectedCardIds.value)
-  displayedCardIds.value.forEach(id => selected ? next.add(id) : next.delete(id))
+  allCardIds.value.forEach(id => selected ? next.add(id) : next.delete(id))
   selectedCardIds.value = [...next]
 }
 
@@ -104,13 +104,13 @@ function cardTagNames(card: Flashcard) {
           <tr>
             <th scope="col" class="card-library-table__select">
               <v-checkbox-btn
-                :model-value="allDisplayedCardsSelected"
-                :indeterminate="someDisplayedCardsSelected"
+                :model-value="allCardsSelected"
+                :indeterminate="someCardsSelected"
                 color="secondary"
                 density="compact"
                 hide-details="auto"
-                :aria-label="usesInfiniteScroll ? 'Select all loaded cards' : 'Select all cards on this page'"
-                @update:model-value="toggleDisplayedSelection(Boolean($event))"
+                :aria-label="`Select all ${cards.length} cards`"
+                @update:model-value="toggleAllSelection(Boolean($event))"
               />
             </th>
             <th scope="col">Faces</th>

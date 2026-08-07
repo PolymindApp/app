@@ -68,7 +68,11 @@ function mountTable(cards: Flashcard[]) {
         ExpandTransition: { template: '<div><slot /></div>' },
         VAlert: { template: '<div><slot /></div>' },
         VBtn: { template: '<button><slot /></button>' },
-        VCheckboxBtn: true,
+        VCheckboxBtn: {
+          props: ['modelValue'],
+          emits: ['update:modelValue'],
+          template: '<button class="checkbox-stub" @click="$emit(\'update:modelValue\', !modelValue)" />',
+        },
         VExpandTransition: { template: '<div><slot /></div>' },
         VPagination: { template: '<nav class="pagination-stub" />' },
         VProgressCircular: true,
@@ -138,5 +142,21 @@ describe('FlashcardCardsTable', () => {
     await nextTick()
 
     expect(wrapper.findAll('tbody tr')).toHaveLength(20)
+  })
+
+  it.each([
+    { name: 'desktop pagination', configure: () => undefined },
+    { name: 'mobile infinite scrolling', configure: () => { display.smAndDown = true } },
+  ])('selects the complete result set with $name', async ({ configure }) => {
+    configure()
+    const cards = Array.from({ length: 25 }, (_, index) => card(index + 1))
+    const wrapper = mountTable(cards)
+
+    expect(wrapper.findAll('tbody tr')).toHaveLength(10)
+    await wrapper.get('.checkbox-stub').trigger('click')
+
+    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([
+      cards.map(item => item.id),
+    ])
   })
 })
