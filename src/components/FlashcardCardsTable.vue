@@ -113,6 +113,7 @@ function cardTagNames(card: Flashcard) {
                 @update:model-value="toggleAllSelection(Boolean($event))"
               />
             </th>
+            <th scope="col" class="card-library-table__image-heading">Image</th>
             <th scope="col">Faces</th>
             <th scope="col">Tags</th>
           </tr>
@@ -139,22 +140,31 @@ function cardTagNames(card: Flashcard) {
                 @update:model-value="toggleCardSelection(card.id, Boolean($event))"
               />
             </td>
-            <td>
-              <span v-ripple class="card-library-table__row-ripple" aria-hidden="true" />
-              <div class="flashcard-table__face-cell">
+            <td class="card-library-table__image-cell">
+              <div class="flashcard-table__image-frame">
                 <v-img
                   v-if="card.image"
                   :src="card.image"
                   alt=""
-                  width="48"
-                  height="48"
                   cover
                   class="flashcard-table__image"
-                />
-                <div class="flashcard-table__faces">
-                  <strong class="flashcard-table__text flashcard-table__front">{{ card.front }}</strong>
-                  <span class="flashcard-table__text flashcard-table__back">{{ card.back }}</span>
+                >
+                  <template #error>
+                    <div class="flashcard-table__image-placeholder" aria-label="Image unavailable">
+                      <v-icon icon="mdi-image-off-outline" size="24" aria-hidden="true" />
+                    </div>
+                  </template>
+                </v-img>
+                <div v-else class="flashcard-table__image-placeholder" aria-label="No image">
+                  <v-icon icon="mdi-image-outline" size="24" aria-hidden="true" />
                 </div>
+              </div>
+            </td>
+            <td>
+              <span v-ripple class="card-library-table__row-ripple" aria-hidden="true" />
+              <div class="flashcard-table__faces">
+                <strong class="flashcard-table__text flashcard-table__front">{{ card.front }}</strong>
+                <span class="flashcard-table__text flashcard-table__back">{{ card.back }}</span>
               </div>
             </td>
             <td>
@@ -199,12 +209,15 @@ function cardTagNames(card: Flashcard) {
 .card-library-table :deep(table) { table-layout: fixed; }
 .card-library-table th { position: sticky; z-index: 3; top: calc(3.75rem + max(env(safe-area-inset-top, 0rem), var(--safe-area-inset-top, 0rem))); height: 2.25rem !important; padding: 0 .75rem !important; background: rgb(var(--v-theme-surface)); box-shadow: 0 .0625rem 0 rgba(var(--v-theme-on-surface), .1); color: rgba(var(--v-theme-on-surface), .52); font-size: .64rem !important; font-weight: 900 !important; letter-spacing: .08em; text-transform: uppercase; }
 .card-library-table th:nth-child(1) { width: 3rem; }
-.card-library-table th:nth-child(2) { width: 64%; }
-.card-library-table th:nth-child(3) { width: auto; }
+.card-library-table th:nth-child(2) { width: 5rem; }
+.card-library-table th:nth-child(3) { width: 54%; }
+.card-library-table th:nth-child(4) { width: auto; }
 .card-library-table th.card-library-table__select,
 .card-library-table td.card-library-table__select { padding-right: .25rem !important; padding-left: .25rem !important; text-align: center; }
+.card-library-table th.card-library-table__image-heading,
+.card-library-table td.card-library-table__image-cell { padding-right: .5rem !important; padding-left: .5rem !important; }
 .card-library-table__select :deep(.v-selection-control) { position: relative; z-index: 2; justify-content: center; }
-.card-library-table td { height: 4rem !important; padding: .5rem .75rem !important; vertical-align: middle; }
+.card-library-table td { height: 5rem !important; padding: .5rem .75rem !important; vertical-align: middle; }
 .card-library-table tbody tr { position: relative; overflow: hidden; cursor: pointer; transition: background-color 160ms ease; }
 .card-library-table__row-ripple { position: absolute; z-index: 1; inset: 0; display: block; overflow: hidden; }
 .card-library-table tbody tr:hover { background: rgba(var(--v-theme-on-surface), .045); }
@@ -213,9 +226,10 @@ function cardTagNames(card: Flashcard) {
 .card-library-load-more { display: flex; min-height: 2.75rem; align-items: center; justify-content: center; gap: .5rem; color: rgba(var(--v-theme-on-surface), .52); font-size: .68rem; font-weight: 800; }
 .card-library-pagination :deep(.v-btn) { min-width: 2.75rem; min-height: 2.75rem; }
 .flashcard-table__text { display: -webkit-box; overflow: hidden; overflow-wrap: anywhere; font-size: .78rem; line-height: 1.35; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-.flashcard-table__face-cell { display: flex; min-width: 0; align-items: center; gap: .65rem; }
 .flashcard-table__faces { display: grid; min-width: 0; gap: .2rem; }
-.flashcard-table__image { flex: 0 0 auto; border-radius: .6rem; background: rgba(var(--v-theme-on-surface), .05); }
+.flashcard-table__image-frame { width: 4rem; height: 4rem; overflow: hidden; border: .0625rem solid rgba(var(--v-theme-on-surface), .08); border-radius: .6rem; background: rgba(var(--v-theme-on-surface), .05); }
+.flashcard-table__image { width: 100%; height: 100%; }
+.flashcard-table__image-placeholder { display: grid; width: 100%; height: 100%; color: rgba(var(--v-theme-on-surface), .3); place-items: center; background: rgba(var(--v-theme-on-surface), .025); }
 .flashcard-table__front { color: rgb(var(--v-theme-on-surface)); font-weight: 900; }
 .flashcard-table__back { color: rgba(var(--v-theme-on-surface), .72); }
 .flashcard-table__tags { color: rgba(var(--v-theme-on-surface), .56); font-size: .7rem; }
@@ -225,6 +239,7 @@ function cardTagNames(card: Flashcard) {
   .card-library-table td { padding-right: .5rem !important; padding-left: .5rem !important; }
   .card-library-table th.card-library-table__select,
   .card-library-table td.card-library-table__select { padding-right: .125rem !important; padding-left: .125rem !important; }
-  .card-library-table th:nth-child(2) { width: 62%; }
+  .card-library-table th:nth-child(2) { width: 4.75rem; }
+  .card-library-table th:nth-child(3) { width: 52%; }
 }
 </style>

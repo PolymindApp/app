@@ -41,12 +41,14 @@ vi.mock('vuetify/directives', () => ({
   },
 }))
 
-function card(index: number): Flashcard {
+function card(index: number, image = ''): Flashcard {
   return {
     id: `card-${index}`,
     front: `Front ${index}`,
     back: `Back ${index}`,
     note: '',
+    image,
+    imageSource: image ? 'url' : 'none',
     tags: index % 2 ? ['tag-1'] : [],
     createdAt: '2026-08-07T12:00:00.000Z',
     updatedAt: '2026-08-07T12:00:00.000Z',
@@ -74,6 +76,11 @@ function mountTable(cards: Flashcard[]) {
           template: '<button class="checkbox-stub" @click="$emit(\'update:modelValue\', !modelValue)" />',
         },
         VExpandTransition: { template: '<div><slot /></div>' },
+        VIcon: true,
+        VImg: {
+          props: ['src'],
+          template: '<img class="image-stub" :src="src" />',
+        },
         VPagination: { template: '<nav class="pagination-stub" />' },
         VProgressCircular: true,
         VTable: { template: '<table><slot /></table>' },
@@ -103,6 +110,24 @@ describe('FlashcardCardsTable', () => {
 
     await wrapper.get('.card-library-table__row-ripple').trigger('click')
     expect(wrapper.emitted('open-card')).toEqual([[cards[0]]])
+  })
+
+  it('shows a 64-pixel image cell with an empty placeholder by default', () => {
+    const cards = [
+      card(1, 'https://images.example.test/card.jpg'),
+      card(2),
+    ]
+    const wrapper = mountTable(cards)
+
+    expect(wrapper.findAll('thead th').map(heading => heading.text())).toEqual([
+      '',
+      'Image',
+      'Faces',
+      'Tags',
+    ])
+    expect(wrapper.findAll('.flashcard-table__image-frame')).toHaveLength(2)
+    expect(wrapper.get('.image-stub').attributes('src')).toBe(cards[0]?.image)
+    expect(wrapper.get('[aria-label="No image"]').exists()).toBe(true)
   })
 
   it('loads cards incrementally on Android without rendering pagination', async () => {
