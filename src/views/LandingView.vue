@@ -63,7 +63,7 @@ const screenshots = [
           <div class="hero-glow" aria-hidden="true" />
           <v-row class="hero-grid" align="center">
             <v-col cols="12" lg="5" class="hero-copy">
-              <h1>Program your life. Your way<span class="text-secondary">.</span></h1>
+              <h1>Program your life. Tune every detail<span class="text-secondary">.</span></h1>
               <p class="mt-6">
                 Management of Me [MOM] turns what matters to you into a system you can fine-tune, from daily actions and multi-step routines to precise timers, learning, tracking, and reflection.
               </p>
