@@ -3,17 +3,24 @@ set -euo pipefail
 
 source_db="${MOM_TEST_SOURCE_DB:-private/data.db}"
 test_port="${MOM_TEST_PORT:-$((18100 + RANDOM % 800))}"
+pexels_port="$((test_port + 1000))"
 test_secret="mom-api-integration-secret-at-least-32-characters"
 test_root="${TMPDIR:-/tmp}"
 test_dir="$(mktemp -d "$test_root/mom-api-test.XXXXXX")"
 test_db="$test_dir/data.db"
 test_log="$test_dir/server.log"
+pexels_log="$test_dir/pexels.log"
 server_pid=""
+pexels_pid=""
 
 cleanup() {
   if [[ -n "$server_pid" ]]; then
     kill "$server_pid" >/dev/null 2>&1 || true
     wait "$server_pid" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "$pexels_pid" ]]; then
+    kill "$pexels_pid" >/dev/null 2>&1 || true
+    wait "$pexels_pid" >/dev/null 2>&1 || true
   fi
   case "$test_dir" in
     "$test_root"/mom-api-test.*) rm -rf -- "$test_dir" ;;
@@ -34,9 +41,26 @@ done
 }
 
 sqlite3 "$source_db" ".backup $test_db"
+php -S "127.0.0.1:$pexels_port" server/tests/fixtures/pexels-router.php >"$pexels_log" 2>&1 &
+pexels_pid=$!
+
+for _attempt in {1..50}; do
+  curl --silent --fail \
+    -H "Authorization: test-pexels-key" \
+    "http://127.0.0.1:$pexels_port/v1/search?query=health&per_page=30&orientation=square" \
+    >/dev/null && break
+  kill -0 "$pexels_pid" >/dev/null 2>&1 || {
+    sed -n '1,200p' "$pexels_log" >&2
+    exit 1
+  }
+  sleep .1
+done
+
 MOM_DB_PATH="$test_db" \
 MOM_API_SECRET="$test_secret" \
 MOM_ALLOWED_ORIGINS="http://localhost:5173" \
+MOM_PEXELS_API_KEY="test-pexels-key" \
+MOM_PEXELS_API_BASE_URL="http://127.0.0.1:$pexels_port/v1/search" \
 MOM_PASSKEY_RP_ID="mom.example.test" \
 MOM_PASSKEY_ANDROID_PACKAGE="dev.coulombe.mom" \
 MOM_PASSKEY_ANDROID_KEY_HASHES="q9nLBq6siknwb9S8EaFfsZ-C1d5y_mHhbfaYSRnGE0k" \
@@ -1000,6 +1024,92 @@ image_library_summary="$(php -r '
 ' <<<"$image_library_response")"
 [[ "$image_library_summary" == "1:900001:Integration Photographer:bicycle" ]] || {
   echo "The multilingual image library search did not return cached attribution data." >&2
+  exit 1
+}
+
+pending_image_search="pendingimage$suffix"
+php -r '
+  $pdo = new PDO("sqlite:" . $argv[1]);
+  $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+  $statement = $pdo->prepare(<<<SQL
+    INSERT INTO image_concepts (
+      id, source_key, canonical_name, part_of_speech, semantic_category,
+      definition, search_query, search_text
+    ) VALUES (
+      900002, :source_key, :name, "noun", "integration.pending",
+      "An image concept waiting for its first Pexels search.", :name, :name
+    )
+    SQL);
+  $statement->execute([
+    "source_key" => "integration:" . $argv[2],
+    "name" => $argv[2],
+  ]);
+' "$test_db" "$pending_image_search"
+pending_image_response="$(curl --silent --show-error --fail --get \
+  -H "Authorization: Bearer $alice_token" \
+  --data-urlencode "query=$pending_image_search" \
+  "$api_url/image-library/search")"
+pending_image_summary="$(php -r '
+  $data = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+  $image = $data["items"][0] ?? [];
+  echo implode(":", [
+    $data["totalItems"] ?? 0,
+    $image["photographer"] ?? "",
+    $image["concept"]["name"] ?? "",
+  ]);
+' <<<"$pending_image_response")"
+pending_database_summary="$(sqlite3 "$test_db" \
+  'SELECT pexels_searched || ":" || pexels_result_count || ":" ||
+    (SELECT COUNT(*) FROM image_concept_assets WHERE concept_id = 900002)
+   FROM image_concepts WHERE id = 900002;')"
+[[ "$pending_image_summary" == "1:Mock Photographer:$pending_image_search" \
+  && "$pending_database_summary" == "1:1:1" ]] || {
+  echo "A pending image concept was not fetched and returned on a cache miss." >&2
+  exit 1
+}
+
+on_demand_search="ondemandimage$suffix"
+on_demand_response="$(curl --silent --show-error --fail --get \
+  -H "Authorization: Bearer $alice_token" \
+  --data-urlencode "query=$on_demand_search" \
+  "$api_url/image-library/search")"
+on_demand_repeat="$(curl --silent --show-error --fail --get \
+  -H "Authorization: Bearer $alice_token" \
+  --data-urlencode "query=$on_demand_search" \
+  "$api_url/image-library/search")"
+on_demand_summary="$(php -r '
+  $first = json_decode($argv[1], true, 512, JSON_THROW_ON_ERROR);
+  $second = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+  echo ($first["totalItems"] ?? 0) . ":" . ($second["totalItems"] ?? 0) . ":"
+    . ($first["items"][0]["photographer"] ?? "");
+' "$on_demand_response" <<<"$on_demand_repeat")"
+on_demand_database_summary="$(sqlite3 "$test_db" \
+  "SELECT COUNT(*) || ':' || MAX(pexels_searched) || ':' || MAX(pexels_result_count)
+   FROM image_concepts WHERE canonical_name = '$on_demand_search'
+     AND source_key LIKE 'on-demand:%';")"
+[[ "$on_demand_summary" == "1:1:Mock Photographer" \
+  && "$on_demand_database_summary" == "1:1:1" ]] || {
+  echo "An unknown image query did not create, fetch, and reuse its cache concept." >&2
+  exit 1
+}
+
+zero_result_search="noresults$suffix"
+for _attempt in 1 2; do
+  zero_result_response="$(curl --silent --show-error --fail --get \
+    -H "Authorization: Bearer $alice_token" \
+    --data-urlencode "query=$zero_result_search" \
+    "$api_url/image-library/search")"
+  [[ "$(json_field totalItems <<<"$zero_result_response")" == 0 ]] || {
+    echo "A zero-result Pexels search unexpectedly returned an image." >&2
+    exit 1
+  }
+done
+zero_result_database_summary="$(sqlite3 "$test_db" \
+  "SELECT COUNT(*) || ':' || MAX(pexels_searched) || ':' || MAX(pexels_result_count)
+   FROM image_concepts WHERE canonical_name = '$zero_result_search'
+     AND source_key LIKE 'on-demand:%';")"
+[[ "$zero_result_database_summary" == "1:1:0" ]] || {
+  echo "A searched zero-result image concept was duplicated or left pending." >&2
   exit 1
 }
 

@@ -35,22 +35,23 @@ $photoId = (int) sprintf('%u', crc32($query));
 header('Content-Type: application/json');
 header('X-Ratelimit-Remaining: 199');
 header('X-Ratelimit-Reset: 1800000000');
+$photos = str_starts_with($query, 'noresults') ? [] : [[
+    'id' => $photoId,
+    'width' => 480,
+    'height' => 320,
+    'url' => 'https://www.pexels.com/photo/' . $photoId . '/',
+    'photographer' => 'Mock Photographer',
+    'photographer_url' => 'https://www.pexels.com/@mock-photographer',
+    'photographer_id' => 42,
+    'avg_color' => '#274b5b',
+    'alt' => 'Mock Pexels result for ' . $query,
+    'src' => [
+        'medium' => "http://127.0.0.1:{$port}/photo.jpg",
+    ],
+]];
 echo json_encode([
     'page' => 1,
     'per_page' => 30,
-    'total_results' => 1,
-    'photos' => [[
-        'id' => $photoId,
-        'width' => 480,
-        'height' => 320,
-        'url' => 'https://www.pexels.com/photo/' . $photoId . '/',
-        'photographer' => 'Mock Photographer',
-        'photographer_url' => 'https://www.pexels.com/@mock-photographer',
-        'photographer_id' => 42,
-        'avg_color' => '#274b5b',
-        'alt' => 'Mock Pexels result for ' . $query,
-        'src' => [
-            'medium' => "http://127.0.0.1:{$port}/photo.jpg",
-        ],
-    ]],
+    'total_results' => count($photos),
+    'photos' => $photos,
 ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);

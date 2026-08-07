@@ -836,6 +836,11 @@ final class Api
         );
         $count->execute(['query' => $match]);
         $totalItems = (int) $count->fetchColumn();
+        if ($totalItems === 0) {
+            $this->populateImageLibrarySearch($query, $match, $user);
+            $count->execute(['query' => $match]);
+            $totalItems = (int) $count->fetchColumn();
+        }
         $offset = ($page - 1) * $perPage;
         $statement = $this->database->pdo->prepare(
             $rankedSql .
@@ -871,6 +876,134 @@ final class Api
             'totalPages' => max(1, (int) ceil($totalItems / $perPage)),
             'items' => $items,
         ]);
+    }
+
+    private function populateImageLibrarySearch(string $query, string $match, array $user): void
+    {
+        $pending = $this->database->pdo->prepare(
+            'SELECT image_concepts.id
+             FROM image_concepts_fts
+             JOIN image_concepts ON image_concepts.id = image_concepts_fts.rowid
+             WHERE image_concepts_fts MATCH :query
+               AND image_concepts.active = TRUE
+               AND image_concepts.pexels_searched = FALSE
+             ORDER BY bm25(image_concepts_fts, 8.0, 1.0), image_concepts.id
+             LIMIT 1',
+        );
+        $pending->execute(['query' => $match]);
+        $conceptId = $pending->fetchColumn();
+
+        if ($conceptId === false) {
+            $existing = $this->database->pdo->prepare(
+                'SELECT image_concepts.id
+                 FROM image_concepts_fts
+                 JOIN image_concepts ON image_concepts.id = image_concepts_fts.rowid
+                 WHERE image_concepts_fts MATCH :query
+                   AND image_concepts.active = TRUE
+                 LIMIT 1',
+            );
+            $existing->execute(['query' => $match]);
+            if ($existing->fetchColumn() !== false) {
+                return;
+            }
+        }
+
+        if ($this->config->pexelsApiKey === '') {
+            throw new ApiException(503, 'Pexels image fetching is not configured.');
+        }
+        $this->rateLimit('image-library-fetch:' . $user['id'], 60, 3600);
+
+        if ($conceptId === false) {
+            $conceptId = $this->createImageSearchConcept($query);
+        }
+
+        $configuredApiUrl = getenv('MOM_PEXELS_API_BASE_URL');
+        $apiUrl = is_string($configuredApiUrl) && trim($configuredApiUrl) !== ''
+            ? trim($configuredApiUrl)
+            : null;
+        $fetcher = new PexelsImageFetcher(
+            $this->database->pdo,
+            $this->config->pexelsApiKey,
+            $this->config->databasePath,
+            $apiUrl,
+        );
+        $summary = $fetcher->fetchConcept((int) $conceptId);
+        if (($summary['stopped'] ?? false) && (int) ($summary['searched_concepts'] ?? 0) === 0) {
+            error_log('[mom-api/image-library] ' . (string) ($summary['stop_reason'] ?? 'Unknown error'));
+            throw new ApiException(502, 'The image search could not be fetched from Pexels.');
+        }
+    }
+
+    private function createImageSearchConcept(string $query): int
+    {
+        $normalized = trim((string) preg_replace('/\s+/u', ' ', $query));
+        $sourceId = 'mom-on-demand-searches-1';
+        $sourceKey = 'on-demand:' . hash('sha256', mb_strtolower($normalized, 'UTF-8'));
+        $pdo = $this->database->pdo;
+        $pdo->beginTransaction();
+        try {
+            $source = $pdo->prepare(
+                'INSERT INTO image_sources (
+                    id, name, language, source_url, license_name, license_url, attribution
+                 ) VALUES (
+                    :id, :name, :language, :source_url, :license_name, :license_url, :attribution
+                 ) ON CONFLICT(id) DO NOTHING',
+            );
+            $source->execute([
+                'id' => $sourceId,
+                'name' => 'Mom on-demand image searches',
+                'language' => 'und',
+                'source_url' => '',
+                'license_name' => 'User-entered search terms',
+                'license_url' => '',
+                'attribution' => '',
+            ]);
+
+            $concept = $pdo->prepare(
+                'INSERT INTO image_concepts (
+                    source_key, canonical_name, part_of_speech, semantic_category,
+                    definition, search_query, search_text, active, pexels_searched
+                 ) VALUES (
+                    :source_key, :canonical_name, :part_of_speech, :semantic_category,
+                    :definition, :search_query, :search_text, TRUE, FALSE
+                 ) ON CONFLICT(source_key) DO UPDATE SET active = TRUE',
+            );
+            $concept->execute([
+                'source_key' => $sourceKey,
+                'canonical_name' => $normalized,
+                'part_of_speech' => 'noun',
+                'semantic_category' => 'on-demand search',
+                'definition' => 'Image search created on demand.',
+                'search_query' => $normalized,
+                'search_text' => $normalized,
+            ]);
+
+            $select = $pdo->prepare('SELECT id FROM image_concepts WHERE source_key = :source_key');
+            $select->execute(['source_key' => $sourceKey]);
+            $conceptId = $select->fetchColumn();
+            if ($conceptId === false) {
+                throw new ApiException(500, 'The image search cache could not be created.');
+            }
+
+            $term = $pdo->prepare(
+                'INSERT OR IGNORE INTO image_concept_terms (
+                    concept_id, language, term, source_id
+                 ) VALUES (:concept_id, :language, :term, :source_id)',
+            );
+            $term->execute([
+                'concept_id' => (int) $conceptId,
+                'language' => 'und',
+                'term' => $normalized,
+                'source_id' => $sourceId,
+            ]);
+            $pdo->commit();
+            return (int) $conceptId;
+        } catch (Throwable $exception) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $exception;
+        }
     }
 
     private function setFlashcardLibraryImage(string $id, array $user): never

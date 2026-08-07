@@ -19,6 +19,7 @@ try {
     require $serverRoot . '/src/MigrationRunner.php';
     require $serverRoot . '/src/Database.php';
     require $serverRoot . '/src/Schema.php';
+    require $serverRoot . '/src/PexelsImageFetcher.php';
     require $serverRoot . '/src/Api.php';
 
     $config = Config::load($serverRoot);

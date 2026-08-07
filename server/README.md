@@ -31,7 +31,7 @@ Configuration may be supplied through the root `.env`, process environment varia
 | `MOM_ALLOWED_ORIGINS` | Comma-separated exact browser/Capacitor origins | Same-origin only |
 | `MOM_TOKEN_TTL` | Token lifetime in seconds, 5 minutes–30 days | 604800 |
 | `MOM_MAX_BODY_BYTES` | Maximum JSON request size | 2500000 |
-| `MOM_PEXELS_API_KEY` | Server-side Pexels API key used only by the cache command | Disabled |
+| `MOM_PEXELS_API_KEY` | Server-side Pexels API key used by batch and on-demand cache fills | Disabled |
 | `MOM_PASSKEY_RP_ID` | Android passkey relying-party domain | Disabled |
 | `MOM_PASSKEY_ANDROID_PACKAGE` | Trusted Android application ID | Disabled |
 | `MOM_PASSKEY_ANDROID_KEY_HASHES` | Comma-separated base64url SHA-256 signing-certificate hashes | Disabled |
@@ -123,13 +123,15 @@ php scripts/seed-image-concepts.php
 
 The seed is idempotent. Existing Pexels results remain flagged as searched unless a concept's English search query changes. To rebuild the committed artifact from the upstream WordNet and OMW archives, run `php scripts/build-image-concept-seed.php`; this development-only command downloads its sources and requires cURL and Zip.
 
-Create a Pexels API key, set `MOM_PEXELS_API_KEY` in the server environment, then fill the cache in bounded batches:
+Create a Pexels API key and set `MOM_PEXELS_API_KEY` in the server environment. Local API runs also use that one value from the root `.env.prod` when it is absent from the environment, local server configuration, and `.env`; other production settings are not imported. Fill the cache in bounded batches:
 
 ```bash
 php scripts/fetch-pexels-images.php --limit=100
 ```
 
 The limit is the maximum number of unsearched concepts processed in that run; `--limit=0` processes every pending concept. Each Pexels search requests and stores up to 30 results. Successful searches, including zero-result searches, are flagged so later runs skip them. A failed search remains pending and records its error for a retry.
+
+Authenticated image-library searches also fill misses on demand. The API first fetches a matching pending concept. If the term is not in the concept catalog, it creates an on-demand concept and immediately stores up to 30 Pexels results. A matching concept already searched with zero results is not searched again. External fetches are rate-limited per account; ordinary cached searches do not consume that allowance.
 
 Downloaded photos are center-cropped to 256 × 256 JPEGs and stored in `flashcard-images` beside the configured database. `image_assets` retains the Pexels photo page, photographer, alt text, license, dimensions, content hash, and source URL. Flashcards keep an attribution snapshot when an image is selected, while the cached file remains shared. The picker links photographers and photos back to Pexels and displays “Photos provided by Pexels”; deployments remain responsible for following the current Pexels API and license terms.
 

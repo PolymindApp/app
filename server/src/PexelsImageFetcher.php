@@ -58,8 +58,35 @@ final class PexelsImageFetcher
             $statement->bindValue(':limit', $limit, PDO::PARAM_INT);
         }
         $statement->execute();
-        $concepts = $statement->fetchAll();
+        return $this->fetchConceptRows($statement->fetchAll(), $progress);
+    }
 
+    /**
+     * @param null|callable(string): void $progress
+     * @return array<string, int|string|bool|null>
+     */
+    public function fetchConcept(int $conceptId, ?callable $progress = null): array
+    {
+        if ($conceptId < 1) {
+            throw new RuntimeException('The image concept id must be positive.');
+        }
+        $statement = $this->pdo->prepare(
+            'SELECT id, canonical_name, search_query
+             FROM image_concepts
+             WHERE id = :id AND active = TRUE AND pexels_searched = FALSE
+             LIMIT 1',
+        );
+        $statement->execute(['id' => $conceptId]);
+        return $this->fetchConceptRows($statement->fetchAll(), $progress);
+    }
+
+    /**
+     * @param list<array<string, mixed>> $concepts
+     * @param null|callable(string): void $progress
+     * @return array<string, int|string|bool|null>
+     */
+    private function fetchConceptRows(array $concepts, ?callable $progress): array
+    {
         $summary = [
             'selected_concepts' => count($concepts),
             'searched_concepts' => 0,

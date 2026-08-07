@@ -70,6 +70,10 @@ final class Config
             explode(',', (string) $value('MOM_PASSKEY_ANDROID_KEY_HASHES', '')),
         ))));
         $pexelsApiKey = trim((string) $value('MOM_PEXELS_API_KEY', ''));
+        if ($pexelsApiKey === '') {
+            $productionDotenv = self::readDotenv($projectRoot . '/.env.prod');
+            $pexelsApiKey = trim((string) ($productionDotenv['MOM_PEXELS_API_KEY'] ?? ''));
+        }
         $debug = strtolower(trim((string) $value('DEBUG', ''))) === 'dev';
 
         if ($secret === '' || strlen($secret) < 32) {
