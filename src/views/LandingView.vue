@@ -64,9 +64,21 @@ function scrollToFeatures() {
         <router-link to="/" class="landing-brand" aria-label="Mom home">
           <img src="/brand/mom-wordmark.png" alt="Mom" />
         </router-link>
-        <v-btn color="secondary" size="large" to="/auth" append-icon="mdi-arrow-right">
-          Open Mom
-        </v-btn>
+        <div class="landing-header__actions">
+          <v-btn
+            variant="outlined"
+            size="large"
+            href="https://github.com/dannycoulombe/mom/releases/latest"
+            target="_blank"
+            rel="noopener noreferrer"
+            prepend-icon="mdi-cellphone-arrow-down"
+          >
+            Get the app
+          </v-btn>
+          <v-btn color="secondary" size="large" to="/auth" append-icon="mdi-arrow-right">
+            Open web app
+          </v-btn>
+        </div>
       </header>
 
       <main>
@@ -205,6 +217,13 @@ function scrollToFeatures() {
   width: 8.75rem;
   height: auto;
   display: block;
+}
+
+.landing-header__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: .75rem;
 }
 
 .hero-section {
@@ -486,10 +505,22 @@ function scrollToFeatures() {
 @media (max-width: 47.998rem) {
   .landing-header {
     min-height: 5.5rem;
+    align-items: flex-start;
+    flex-direction: column;
+    padding-block: 1.25rem;
   }
 
   .landing-brand img {
     width: 7.25rem;
+  }
+
+  .landing-header__actions {
+    width: 100%;
+  }
+
+  .landing-header__actions :deep(.v-btn) {
+    min-width: 0;
+    flex: 1 1 0;
   }
 
   .hero-section {
