@@ -4,7 +4,6 @@ import { Capacitor } from '@capacitor/core'
 import { useDisplay } from 'vuetify'
 import { useRouter } from 'vue-router'
 import AccountMenu from '@/components/AccountMenu.vue'
-import AppVersionLabel from '@/components/AppVersionLabel.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import MainNavigationIcon from '@/components/MainNavigationIcon.vue'
 import {
@@ -242,7 +241,6 @@ function releaseLeavingPage(element: Element) {
       <template #append>
         <div class="pa-4">
           <v-btn block variant="text" prepend-icon="mdi-logout" @click="logoutDialog = true">Sign out</v-btn>
-          <AppVersionLabel class="mt-2" />
         </div>
       </template>
     </v-navigation-drawer>

@@ -13,8 +13,8 @@ fail() {
   exit 1
 }
 
-if [[ ! "$release_version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
-  echo "Usage: pnpm release:android X.X.X" >&2
+if [[ -n "$release_version" && ! "$release_version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+  echo "Usage: pnpm release:android [X.X.X]" >&2
   exit 2
 fi
 
@@ -51,17 +51,17 @@ local_head="$(git rev-parse HEAD)"
 [[ "$local_head" == "$remote_head" ]] \
   || fail "$release_branch must exactly match $release_remote/$release_branch before releasing."
 
-release_tag="v$release_version"
-if git rev-parse --verify --quiet "refs/tags/$release_tag" >/dev/null; then
-  fail "tag $release_tag already exists."
-fi
-
 current_version="$(node -p "require('./$package_file').version")"
 if [[ ! "$current_version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
   fail "the current package version '$current_version' is not X.X.X."
 fi
 
 IFS=. read -r current_major current_minor current_patch <<<"$current_version"
+if [[ -z "$release_version" ]]; then
+  release_version="$current_major.$current_minor.$((current_patch + 1))"
+  echo "No version provided; using next patch version $release_version."
+fi
+
 IFS=. read -r release_major release_minor release_patch <<<"$release_version"
 if ! ((
   release_major > current_major
@@ -73,6 +73,11 @@ if ! ((
   )
 )); then
   fail "$release_version must be newer than the current version $current_version."
+fi
+
+release_tag="v$release_version"
+if git rev-parse --verify --quiet "refs/tags/$release_tag" >/dev/null; then
+  fail "tag $release_tag already exists."
 fi
 
 version_code_matches="$(grep -Ec '^[[:space:]]*versionCode[[:space:]]+[0-9]+[[:space:]]*$' "$gradle_file")"

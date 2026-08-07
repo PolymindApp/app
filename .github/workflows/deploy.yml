@@ -1,0 +1,109 @@
+name: Deploy to host
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-ftp-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: Web
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+          tools: composer:v2
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install PHP dependencies
+        run: composer install --no-dev --prefer-dist --no-interaction --no-progress --optimize-autoloader
+
+      - name: Build project
+        run: pnpm build:prod
+        env:
+          VITE_API_URL: /server
+
+      - name: Normalize FTP path
+        id: ftp_path
+        env:
+          FTP_PATH: ${{ secrets.FTP_PATH }}
+        run: |
+          if [[ -z "$FTP_PATH" ]]; then
+            echo "FTP_PATH is not configured." >&2
+            exit 1
+          fi
+
+          ftp_root="${FTP_PATH%/}/"
+          echo "root=$ftp_root" >> "$GITHUB_OUTPUT"
+          echo "server=${ftp_root}server/" >> "$GITHUB_OUTPUT"
+          echo "vendor=${ftp_root}vendor/" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy PHP dependencies
+        uses: SamKirkland/FTP-Deploy-Action@v4.4.0
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          protocol: ftps
+          local-dir: ./vendor/
+          server-dir: ${{ steps.ftp_path.outputs.vendor }}
+          state-name: .ftp-deploy-vendor-sync-state.json
+
+      - name: Deploy PHP server
+        uses: SamKirkland/FTP-Deploy-Action@v4.4.0
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          protocol: ftps
+          local-dir: ./server/
+          server-dir: ${{ steps.ftp_path.outputs.server }}
+          state-name: .ftp-deploy-server-sync-state.json
+          exclude: |
+            config.local.php
+            **/*.db
+            **/*.db-*
+
+      - name: Deploy web application
+        uses: SamKirkland/FTP-Deploy-Action@v4.4.0
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          protocol: ftps
+          local-dir: ./dist/
+          server-dir: ${{ steps.ftp_path.outputs.root }}
+          state-name: .ftp-deploy-web-sync-state.json
+          exclude: |
+            server/**
+            private/**
+            vendor/**
+            .env
+            .env.*
