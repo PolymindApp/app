@@ -63,7 +63,7 @@ const screenshots = [
           <div class="hero-glow" aria-hidden="true" />
           <v-row class="hero-grid" align="center">
             <v-col cols="12" lg="5" class="hero-copy">
-              <h1>Program your life. Precisely<span class="text-secondary">.</span></h1>
+              <h1>Program your life. <span class="text-secondary">Precisely.</span></h1>
               <p class="mt-6">
                 Management of Me [MOM] turns what matters to you into a system you can fine-tune, from daily actions and multi-step routines to precise timers, learning, tracking, and reflection.
               </p>
@@ -285,6 +285,10 @@ const screenshots = [
 }
 
 .phone-frame {
+  --phone-rest-y: 1.4rem;
+  --phone-rotation-y: 5deg;
+  --phone-rotation-z: 0deg;
+
   position: relative;
   width: min(28%, 12rem);
   aspect-ratio: 57 / 128;
@@ -294,23 +298,35 @@ const screenshots = [
   border-radius: 1.8rem;
   background: rgb(var(--v-theme-surface));
   box-shadow: 0 2rem 4rem rgba(0, 0, 0, .34);
-  transform: rotateY(5deg) translateY(1.4rem);
+  transform: rotateY(var(--phone-rotation-y)) rotateZ(var(--phone-rotation-z)) translateY(var(--phone-rest-y));
+  transition: transform 200ms cubic-bezier(.22, 1, .36, 1);
 }
 
 .phone-frame:first-child {
-  transform: rotateY(8deg) rotateZ(-3deg) translateY(2.2rem);
+  --phone-rest-y: 2.2rem;
+  --phone-rotation-y: 8deg;
+  --phone-rotation-z: -3deg;
 }
 
 .phone-frame:last-child {
-  transform: rotateY(-8deg) rotateZ(3deg) translateY(2.2rem);
+  --phone-rest-y: 2.2rem;
+  --phone-rotation-y: -8deg;
+  --phone-rotation-z: 3deg;
 }
 
 .phone-frame--featured {
+  --phone-rest-y: -1.2rem;
+  --phone-rotation-y: 0deg;
+  --phone-rotation-z: 0deg;
+
   width: min(32%, 13.5rem);
   z-index: 1;
   border-color: rgba(var(--v-theme-secondary), .48);
   box-shadow: 0 2.5rem 5rem rgba(0, 0, 0, .46), 0 0 0 .1rem rgba(var(--v-theme-secondary), .12);
-  transform: translateY(-1.2rem);
+}
+
+.phone-frame:hover {
+  transform: rotateY(var(--phone-rotation-y)) rotateZ(var(--phone-rotation-z)) translateY(calc(var(--phone-rest-y) - .55rem));
 }
 
 .phone-frame__image {
