@@ -876,7 +876,7 @@ final class Api
     private function setFlashcardLibraryImage(string $id, array $user): never
     {
         $owner = (string) $user['id'];
-        $this->rateLimit('flashcard-image-update:' . $owner, 60, 900);
+        $this->rateLimit('flashcard-library-image-update:' . $owner, 600, 900);
         $card = $this->ownedRecord('flashcards', $id, $owner);
         $body = $this->jsonBody();
         $this->allowOnlyFields($body, ['image_id']);
