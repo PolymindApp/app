@@ -89,6 +89,8 @@ onMounted(async () => {
         url: card.imageSource === 'url' ? card.image : '',
         existingUrl: card.image,
         existingSource: card.imageSource,
+        existingLibraryImageId: card.libraryImage?.id,
+        libraryImage: card.libraryImage,
       }
     }
     original.value = signature.value
@@ -229,6 +231,7 @@ async function remove() {
           <FlashcardImageField
             v-model="cardImage"
             :loading="saving"
+            :initial-search="draft.front || draft.back"
             @error="error = $event"
           />
           <FlashcardTagCombobox v-if="!isReviewSetCard" v-model="draft.tags" />

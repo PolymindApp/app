@@ -43,6 +43,8 @@ final class Schema
                     'note' => self::text(2000),
                     'image_url' => self::text(2048),
                     'image_file' => self::text(52),
+                    'library_image_id' => self::integer(0),
+                    'image_metadata' => self::json(8000),
                     'tags' => self::jsonArray(5000),
                     'created_at' => self::timestamp(false, true),
                     'updated_at' => self::timestamp(false, true),

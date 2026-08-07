@@ -42,9 +42,28 @@ final class Database
             'tags' => ['id', 'owner', 'name'],
             'flashcards' => [
                 'id', 'owner', 'front', 'back', 'note', 'image_url', 'image_file',
+                'library_image_id', 'image_metadata',
                 'tags', 'created_at', 'updated_at', 'last_reviewed_at',
                 'passive_views', 'success_count', 'error_count',
             ],
+            'image_sources' => [
+                'id', 'name', 'language', 'source_url', 'license_name',
+                'license_url', 'attribution',
+            ],
+            'image_concepts' => [
+                'id', 'source_key', 'canonical_name', 'part_of_speech',
+                'semantic_category', 'definition', 'search_query', 'search_text',
+                'active', 'pexels_searched', 'pexels_searched_at',
+                'pexels_result_count', 'last_search_error',
+            ],
+            'image_concept_terms' => ['concept_id', 'language', 'term', 'source_id'],
+            'image_assets' => [
+                'id', 'provider', 'provider_id', 'filename', 'content_sha256',
+                'source_url', 'download_url', 'photographer', 'photographer_url',
+                'photographer_id', 'alt', 'source_width', 'source_height',
+                'average_color', 'license_name', 'license_url', 'fetched_at',
+            ],
+            'image_concept_assets' => ['concept_id', 'image_id', 'result_rank', 'linked_at'],
             'tasks' => [
                 'id', 'owner', 'name', 'description', 'type', 'tags', 'mandatory',
                 'review_when_missed', 'active', 'start_date', 'end_date',

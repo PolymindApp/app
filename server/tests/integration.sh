@@ -57,7 +57,7 @@ suffix="$(php -r 'echo bin2hex(random_bytes(5));')"
 password="correct-horse-battery"
 
 migration_count="$(sqlite3 "$test_db" 'SELECT COUNT(*) FROM mom_schema_migrations;')"
-[[ "$migration_count" == 24 ]] || {
+[[ "$migration_count" == 25 ]] || {
   echo "The API did not apply the complete database migration sequence." >&2
   exit 1
 }
@@ -941,6 +941,85 @@ php -r '
       exit(1);
   }
 ' "$test_dir/flashcard.jpg"
+
+php -r '
+  $pdo = new PDO("sqlite:" . $argv[1]);
+  $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+  $pdo->exec(<<<SQL
+    INSERT INTO image_sources (id, name, language, source_url, license_name, license_url, attribution)
+    VALUES ("integration", "Integration seed", "mul", "https://example.test", "Test data", "https://example.test/license", "");
+    INSERT INTO image_concepts (
+      id, source_key, canonical_name, part_of_speech, semantic_category,
+      definition, search_query, search_text
+    ) VALUES (
+      900001, "integration:bicycle", "bicycle", "noun", "noun.artifact",
+      "A vehicle with two wheels.", "bicycle", "bicycle vélo bicicleta Fahrrad"
+    );
+    SQL);
+  $statement = $pdo->prepare(<<<SQL
+    INSERT INTO image_assets (
+      id, provider, provider_id, filename, content_sha256, source_url, download_url,
+      photographer, photographer_url, photographer_id, alt, source_width,
+      source_height, average_color, license_name, license_url, fetched_at
+    ) VALUES (
+      900001, "pexels", "integration-photo", :filename,
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "https://www.pexels.com/photo/integration-photo/",
+      "https://images.pexels.com/photos/integration-photo.jpeg",
+      "Integration Photographer", "https://www.pexels.com/@integration", "123",
+      "A bicycle used by the image library integration test.", 512, 512, "#445566",
+      "Pexels License", "https://www.pexels.com/license/", "2026-08-07T12:00:00.000Z"
+    );
+    SQL);
+  $statement->execute(["filename" => $argv[2]]);
+  $pdo->exec(<<<SQL
+    INSERT INTO image_concept_assets (concept_id, image_id, result_rank, linked_at)
+    VALUES (900001, 900001, 1, "2026-08-07T12:00:00.000Z");
+    SQL);
+' "$test_db" "$flashcard_image_file"
+
+unauthenticated_image_search_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  "$api_url/image-library/search?query=bicycle")"
+[[ "$unauthenticated_image_search_status" == 401 ]] || {
+  echo "The image library search endpoint allowed unauthenticated access." >&2
+  exit 1
+}
+
+image_library_response="$(curl --silent --show-error --fail \
+  -H "Authorization: Bearer $alice_token" \
+  "$api_url/image-library/search?query=v%C3%A9lo&perPage=30")"
+image_library_summary="$(php -r '
+  $data = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+  $image = $data["items"][0] ?? [];
+  echo implode(":", [
+    $data["totalItems"] ?? 0,
+    $image["id"] ?? 0,
+    $image["photographer"] ?? "",
+    $image["concept"]["name"] ?? "",
+  ]);
+' <<<"$image_library_response")"
+[[ "$image_library_summary" == "1:900001:Integration Photographer:bicycle" ]] || {
+  echo "The multilingual image library search did not return cached attribution data." >&2
+  exit 1
+}
+
+library_flashcard_response="$(curl --silent --show-error --fail \
+  -X POST -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"image_id":900001}' \
+  "$api_url/flashcards/$flashcard_id/library-image")"
+library_flashcard_summary="$(php -r '
+  $data = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+  echo implode(":", [
+    $data["library_image_id"] ?? 0,
+    $data["image_file"] ?? "",
+    $data["image_metadata"]["photographer"] ?? "",
+  ]);
+' <<<"$library_flashcard_response")"
+[[ "$library_flashcard_summary" == "900001:$flashcard_image_file:Integration Photographer" ]] || {
+  echo "Selecting a cached library image did not preserve its file and attribution." >&2
+  exit 1
+}
 
 flashcard_import_payload='{"rows":[{"front":"Imported chisel","back":"formón","note":"Carving tool","tags":["algebra","Imported"]},{"front":"Imported plane","back":"cepillo","note":"","tags":[]}]}'
 flashcard_import_response="$(curl --silent --show-error --fail \

@@ -11,7 +11,7 @@ import { useSnackbarStore } from '@/stores/snackbar'
 import { useTaskStore } from '@/stores/tasks'
 import type {
   Flashcard,
-  FlashcardBulkAction,
+  FlashcardBulkRecordAction,
   FlashcardDraft,
   FlashcardImportRow,
   FlashcardReviewAction,
@@ -32,13 +32,32 @@ function mapTag(record: Record<string, any>): FlashcardTag {
 function mapCard(record: Record<string, any>): Flashcard {
   const imageFile = typeof record.image_file === 'string' ? record.image_file : ''
   const imageUrl = typeof record.image_url === 'string' ? record.image_url : ''
+  const libraryImageId = Number(record.library_image_id || 0)
+  const imageMetadata = record.image_metadata && typeof record.image_metadata === 'object'
+    && !Array.isArray(record.image_metadata)
+    ? record.image_metadata
+    : {}
+  const resolvedImage = imageFile ? apiAssetUrl(`/flashcard-images/${imageFile}`) : imageUrl
+  const libraryImage = libraryImageId > 0
+    ? {
+        id: libraryImageId,
+        imageUrl: resolvedImage,
+        alt: String(imageMetadata.alt || ''),
+        photographer: String(imageMetadata.photographer || ''),
+        photographerUrl: String(imageMetadata.photographer_url || ''),
+        sourceUrl: String(imageMetadata.source_url || ''),
+        licenseName: String(imageMetadata.license_name || ''),
+        licenseUrl: String(imageMetadata.license_url || ''),
+      }
+    : undefined
   return {
     id: record.id,
     front: record.front,
     back: record.back,
     note: record.note || '',
-    image: imageFile ? apiAssetUrl(`/flashcard-images/${imageFile}`) : imageUrl,
-    imageSource: imageFile ? 'upload' : imageUrl ? 'url' : 'none',
+    image: resolvedImage,
+    imageSource: imageFile ? libraryImage ? 'library' : 'upload' : imageUrl ? 'url' : 'none',
+    libraryImage,
     tags: Array.isArray(record.tags) ? record.tags : [],
     tagDetails: Array.isArray(record.tag_details) ? record.tag_details.map(mapTag) : undefined,
     createdAt: record.created_at,
@@ -245,32 +264,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     useSnackbarStore().showDeletion('Tag')
   }
 
-  async function saveCard(draft: FlashcardDraft, image?: SquareImageSourceValue) {
-    const imageChanged = Boolean(image && (
-      image.upload
-      || image.source !== image.existingSource
-      || (image.source === 'url' && image.url.trim() !== image.existingUrl)
-    ))
-    const payload: Record<string, unknown> = {
-      owner: api.authStore.record!.id,
-      front: draft.front,
-      back: draft.back,
-      note: draft.note,
-      tags: draft.tags,
-    }
-    if (imageChanged && image?.source === 'url') payload.image_url = image.url.trim()
-
-    let record = draft.id
-      ? await api.collection('flashcards').update(draft.id, payload)
-      : await api.collection('flashcards').create(payload)
-    if (imageChanged && image) {
-      if (image.source === 'upload' && image.upload) {
-        record = await api.updateFlashcardImage(record.id, image.upload)
-      } else if (image.source === 'none' && draft.id) {
-        record = await api.removeFlashcardImage(record.id)
-      }
-    }
-    const card = mapCard(record)
+  function cacheCard(card: Flashcard, includeInActiveSessions = false) {
     const index = cards.value.findIndex(item => item.id === card.id)
     if (index >= 0) cards.value.splice(index, 1, card)
     else cards.value.unshift(card)
@@ -289,7 +283,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
         if (queueIndex >= 0) {
           session.queue.splice(queueIndex, 1, snapshot)
         } else if (
-          !draft.id
+          includeInActiveSessions
           && cardMatchesTags(card, session.tags)
           && session.totalCards < session.maxCards
         ) {
@@ -300,6 +294,43 @@ export const useFlashcardStore = defineStore('flashcards', () => {
         }
       })
     return card
+  }
+
+  async function saveCard(draft: FlashcardDraft, image?: SquareImageSourceValue) {
+    const imageChanged = Boolean(image && (
+      image.upload
+      || image.source !== image.existingSource
+      || (image.source === 'url' && image.url.trim() !== image.existingUrl)
+      || (image.source === 'library'
+        && image.libraryImage?.id !== image.existingLibraryImageId)
+    ))
+    const payload: Record<string, unknown> = {
+      owner: api.authStore.record!.id,
+      front: draft.front,
+      back: draft.back,
+      note: draft.note,
+      tags: draft.tags,
+    }
+    if (imageChanged && image?.source === 'url') payload.image_url = image.url.trim()
+
+    let record = draft.id
+      ? await api.collection('flashcards').update(draft.id, payload)
+      : await api.collection('flashcards').create(payload)
+    if (imageChanged && image) {
+      if (image.source === 'upload' && image.upload) {
+        record = await api.updateFlashcardImage(record.id, image.upload)
+      } else if (image.source === 'library' && image.libraryImage) {
+        record = await api.setFlashcardLibraryImage(record.id, image.libraryImage.id)
+      } else if (image.source === 'none' && draft.id) {
+        record = await api.removeFlashcardImage(record.id)
+      }
+    }
+    return cacheCard(mapCard(record), !draft.id)
+  }
+
+  async function assignLibraryImage(cardId: string, imageId: number) {
+    const record = await api.setFlashcardLibraryImage(cardId, imageId)
+    return cacheCard(mapCard(record))
   }
 
   async function deleteCard(id: string) {
@@ -323,7 +354,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
   }
 
   async function bulkUpdateCards(
-    action: FlashcardBulkAction,
+    action: FlashcardBulkRecordAction,
     cardIds: string[],
     tagIds: string[] = [],
   ) {
@@ -397,6 +428,8 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       image.upload
       || image.source !== image.existingSource
       || (image.source === 'url' && image.url.trim() !== image.existingUrl)
+      || (image.source === 'library'
+        && image.libraryImage?.id !== image.existingLibraryImageId)
     ))
     const payload: Record<string, unknown> = {
       front: draft.front,
@@ -410,6 +443,12 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     if (imageChanged && image) {
       if (image.source === 'upload' && image.upload) {
         record = await api.updateFlashcardReviewSetCardImage(reviewSetId, record.id, image.upload)
+      } else if (image.source === 'library' && image.libraryImage) {
+        record = await api.setFlashcardReviewSetCardLibraryImage(
+          reviewSetId,
+          record.id,
+          image.libraryImage.id,
+        )
       } else if (image.source === 'none' && draft.id) {
         record = await api.removeFlashcardReviewSetCardImage(reviewSetId, record.id)
       }
@@ -586,6 +625,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     renameTag,
     deleteTag,
     saveCard,
+    assignLibraryImage,
     deleteCard,
     importCards,
     bulkUpdateCards,

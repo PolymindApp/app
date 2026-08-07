@@ -9,6 +9,7 @@ const apiMocks = vi.hoisted(() => ({
   copyReviewSet: vi.fn(),
   getReviewSetCards: vi.fn(),
   importCards: vi.fn(),
+  setCardLibraryImage: vi.fn(),
   startReview: vi.fn(),
   updateCardImage: vi.fn(),
 }))
@@ -25,6 +26,7 @@ vi.mock('@/lib/api', () => ({
     copyFlashcardReviewSet: apiMocks.copyReviewSet,
     getFlashcardReviewSetCards: apiMocks.getReviewSetCards,
     importFlashcards: apiMocks.importCards,
+    setFlashcardLibraryImage: apiMocks.setCardLibraryImage,
     startFlashcardReviewSession: apiMocks.startReview,
     updateFlashcardImage: apiMocks.updateCardImage,
     collection: (name: string) => {
@@ -48,6 +50,7 @@ describe('flashcard store', () => {
     apiMocks.copyReviewSet.mockReset()
     apiMocks.getReviewSetCards.mockReset()
     apiMocks.importCards.mockReset()
+    apiMocks.setCardLibraryImage.mockReset()
     apiMocks.startReview.mockReset()
     apiMocks.updateCardImage.mockReset()
   })
@@ -197,6 +200,108 @@ describe('flashcard store', () => {
       imageSource: 'upload',
       image: `/api/flashcard-images/${'a'.repeat(48)}.jpg`,
     })
+  })
+
+  it('attaches a cached library image and maps its attribution', async () => {
+    const store = useFlashcardStore()
+    const created = {
+      id: 'card-library', front: 'Bicycle', back: 'Vélo', note: '', tags: [],
+      image_url: '', image_file: '', library_image_id: 0, image_metadata: {},
+      created_at: '2026-08-07T10:00:00Z', updated_at: '2026-08-07T10:00:00Z',
+      last_reviewed_at: '', passive_views: 0, success_count: 0, error_count: 0,
+    }
+    apiMocks.createCard.mockResolvedValue(created)
+    apiMocks.setCardLibraryImage.mockResolvedValue({
+      ...created,
+      image_file: 'b'.repeat(48) + '.jpg',
+      library_image_id: 42,
+      image_metadata: {
+        alt: 'A bicycle by a wall',
+        photographer: 'Alex Example',
+        photographer_url: 'https://www.pexels.com/@alex-example',
+        source_url: 'https://www.pexels.com/photo/42/',
+        license_name: 'Pexels License',
+        license_url: 'https://www.pexels.com/license/',
+      },
+    })
+
+    const card = await store.saveCard(
+      { front: 'Bicycle', back: 'Vélo', note: '', tags: [] },
+      {
+        source: 'library',
+        url: '',
+        existingUrl: '',
+        existingSource: 'none',
+        libraryImage: {
+          id: 42,
+          imageUrl: '/api/flashcard-images/cached.jpg',
+          alt: 'A bicycle by a wall',
+          photographer: 'Alex Example',
+          photographerUrl: 'https://www.pexels.com/@alex-example',
+          sourceUrl: 'https://www.pexels.com/photo/42/',
+          licenseName: 'Pexels License',
+          licenseUrl: 'https://www.pexels.com/license/',
+        },
+      },
+    )
+
+    expect(apiMocks.setCardLibraryImage).toHaveBeenCalledWith('card-library', 42)
+    expect(card).toMatchObject({
+      imageSource: 'library',
+      image: `/api/flashcard-images/${'b'.repeat(48)}.jpg`,
+      libraryImage: {
+        id: 42,
+        photographer: 'Alex Example',
+        alt: 'A bicycle by a wall',
+      },
+    })
+  })
+
+  it('assigns a library image directly and refreshes an active review queue', async () => {
+    const store = useFlashcardStore()
+    store.cards = [{
+      id: 'card-bulk',
+      front: 'Hammer',
+      back: 'Marteau',
+      note: '',
+      image: '',
+      imageSource: 'none',
+      tags: [],
+      createdAt: '2026-08-07T10:00:00Z',
+      updatedAt: '2026-08-07T10:00:00Z',
+      passiveViews: 0,
+      successCount: 0,
+      errorCount: 0,
+    }]
+    store.sessions = [{
+      id: 'session-bulk', reviewSet: 'set-1', status: 'paused', name: 'Review',
+      mode: 'manual', cardSides: 'both', indefinite: false, maxCards: 20,
+      sortMode: 'difficult', tags: [], frontSeconds: 5, backSeconds: 5,
+      backSpeechRepeatCount: 1, speechEnabled: false, frontLanguage: '', backLanguage: '',
+      queue: [{ id: 'card-bulk', front: 'Hammer', back: 'Marteau', note: '', image: '', tags: [] }],
+      startedAt: '2026-08-07T10:00:00Z', updatedAt: '2026-08-07T10:00:00Z',
+      elapsedSeconds: 0, totalCards: 1, viewedCount: 0, successCount: 0,
+      errorCount: 0, ejectedCount: 0,
+    }]
+    apiMocks.setCardLibraryImage.mockResolvedValue({
+      id: 'card-bulk', front: 'Hammer', back: 'Marteau', note: '', tags: [],
+      image_url: '', image_file: 'c'.repeat(48) + '.jpg', library_image_id: 84,
+      image_metadata: {
+        alt: 'A hammer', photographer: 'Pexels Maker',
+        photographer_url: 'https://www.pexels.com/@maker',
+        source_url: 'https://www.pexels.com/photo/84/',
+        license_name: 'Pexels License', license_url: 'https://www.pexels.com/license/',
+      },
+      created_at: '2026-08-07T10:00:00Z', updated_at: '2026-08-07T10:05:00Z',
+      last_reviewed_at: '', passive_views: 0, success_count: 0, error_count: 0,
+    })
+
+    const card = await store.assignLibraryImage('card-bulk', 84)
+
+    expect(apiMocks.setCardLibraryImage).toHaveBeenCalledWith('card-bulk', 84)
+    expect(card).toMatchObject({ imageSource: 'library', libraryImage: { id: 84 } })
+    expect(store.cards[0].image).toContain('/flashcard-images/')
+    expect(store.sessions[0].queue[0].image).toBe(store.cards[0].image)
   })
 
   it('applies bulk card updates and removes deleted cards from local state', async () => {

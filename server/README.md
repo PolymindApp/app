@@ -10,13 +10,14 @@ Install the locked WebAuthn dependency, then verify the host:
 composer install --no-dev --optimize-autoloader
 php -r 'var_export([
     "php" => PHP_VERSION,
+    "curl" => extension_loaded("curl"),
+    "gd" => extension_loaded("gd"),
     "pdo_sqlite" => extension_loaded("pdo_sqlite"),
     "openssl" => extension_loaded("openssl"),
 ]); echo PHP_EOL;'
 ```
 
-PDO_SQLITE and OpenSSL must be enabled. If the host has no Composer executable, run Composer locally and upload the generated root `vendor` directory with `server`.
-GD is required for validating avatar dimensions and file contents.
+cURL, GD, PDO_SQLITE, OpenSSL, and SQLite FTS5 must be enabled. If the host has no Composer executable, run Composer locally and upload the generated root `vendor` directory with `server`. The seed-builder command additionally requires PHP's Zip extension.
 
 ## Configuration
 
@@ -30,6 +31,7 @@ Configuration may be supplied through the root `.env`, process environment varia
 | `MOM_ALLOWED_ORIGINS` | Comma-separated exact browser/Capacitor origins | Same-origin only |
 | `MOM_TOKEN_TTL` | Token lifetime in seconds, 5 minutes–30 days | 604800 |
 | `MOM_MAX_BODY_BYTES` | Maximum JSON request size | 2500000 |
+| `MOM_PEXELS_API_KEY` | Server-side Pexels API key used only by the cache command | Disabled |
 | `MOM_PASSKEY_RP_ID` | Android passkey relying-party domain | Disabled |
 | `MOM_PASSKEY_ANDROID_PACKAGE` | Trusted Android application ID | Disabled |
 | `MOM_PASSKEY_ANDROID_KEY_HASHES` | Comma-separated base64url SHA-256 signing-certificate hashes | Disabled |
@@ -94,6 +96,7 @@ The reconstructed PHP-era history is:
 | `202607290001` | Baseline schema used when the standalone PHP server replaced the previous backend |
 | `202607290002` | API rate-limit storage |
 | `202607290003` | Android passkey credentials and one-time challenges |
+| `202608070005` | Multilingual image concepts, full-text search, Pexels cache metadata, and flashcard library image attribution |
 | `202608070006` | Live Review set sharing, recipient preferences, reviewer-specific card statistics, and source-owner session attribution |
 
 Existing PHP databases are safely baselined because these migrations use `IF NOT EXISTS`; application rows are not recreated or deleted. The schema is validated after migration, including required columns.
@@ -110,6 +113,28 @@ Recommended deployment order:
 
 The release workflow calls the authenticated endpoint after its upload job succeeds. Configure the same `MOM_MIGRATION_KEY` value in the host's root `.env` and the GitHub `Web` environment secret. `MIGRATION_URL` may be set as a `Web` environment variable when the default deployment URL is not appropriate. The first ordinary API request also applies pending migrations as a fallback. Keep the backup: migrations are forward-only and do not perform automatic rollbacks after a successful deployment.
 
+## Flashcard image library
+
+The committed seed contains more than 5,000 common WordNet concepts and localized Open Multilingual WordNet terms. Each source and its data license are recorded in `image_sources`. Load or refresh it after migrations:
+
+```bash
+php scripts/seed-image-concepts.php
+```
+
+The seed is idempotent. Existing Pexels results remain flagged as searched unless a concept's English search query changes. To rebuild the committed artifact from the upstream WordNet and OMW archives, run `php scripts/build-image-concept-seed.php`; this development-only command downloads its sources and requires cURL and Zip.
+
+Create a Pexels API key, set `MOM_PEXELS_API_KEY` in the server environment, then fill the cache in bounded batches:
+
+```bash
+php scripts/fetch-pexels-images.php --limit=100
+```
+
+The limit is the maximum number of unsearched concepts processed in that run; `--limit=0` processes every pending concept. Each Pexels search requests and stores up to 30 results. Successful searches, including zero-result searches, are flagged so later runs skip them. A failed search remains pending and records its error for a retry.
+
+Downloaded photos are center-cropped to 256 × 256 JPEGs and stored in `flashcard-images` beside the configured database. `image_assets` retains the Pexels photo page, photographer, alt text, license, dimensions, content hash, and source URL. Flashcards keep an attribution snapshot when an image is selected, while the cached file remains shared. The picker links photographers and photos back to Pexels and displays “Photos provided by Pexels”; deployments remain responsible for following the current Pexels API and license terms.
+
+The flashcard card list also offers **Bulk → Assign images**. It opens a safe-area fullscreen review where each selected card can receive a proposed cached image, use a refined multilingual search, or be skipped before moving to the next card.
+
 ## Review set sharing
 
 `GET /flashcard-review-sets` returns the authenticated account’s owned sets and sets shared with it. Each record includes its `access_role`, owner display metadata, resolved tag names, current matching-card count, and that account’s effective review settings.
@@ -118,7 +143,7 @@ Owners manage access through `/flashcard-review-sets/{id}/shares` and `/flashcar
 
 Review preferences and card statistics are keyed by account, so one recipient’s timing, speech, sorting, success, and error history do not alter another account’s experience. Sessions retain both the reviewer and source owner. Recipients may attach accessible sets to their tasks, program steps, and interval templates. Removing a share detaches those references transactionally while keeping immutable review events and session snapshots.
 
-`POST /flashcard-review-sets/{id}/copies` creates a recipient-owned set and copies every card currently matching the shared filter. Copied cards, tags, settings, and uploaded image files are independent; the original live share remains in place.
+`POST /flashcard-review-sets/{id}/copies` creates a recipient-owned set and copies every card currently matching the shared filter. Copied cards, tags, settings, and non-library image files are independent; the original live share remains in place.
 
 ## Apache/shared hosting
 

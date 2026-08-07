@@ -237,16 +237,38 @@ export type FlashcardReviewSort = 'difficult' | 'never_reviewed' | 'least_recent
 export type FlashcardReviewStatus = 'running' | 'paused' | 'completed' | 'ended'
 export type FlashcardReviewOutcome = 'success' | 'error' | 'passive' | 'ejected'
 export type FlashcardReviewAction = 'success' | 'error' | 'view' | 'previous' | 'next' | 'push' | 'eject' | 'pause' | 'resume' | 'end'
-export type FlashcardBulkAction = 'add_tags' | 'set_tags' | 'remove_tags' | 'clear_tags' | 'delete'
-export type SquareImageSource = 'none' | 'url' | 'upload'
+export type FlashcardBulkAction = 'assign_images' | 'add_tags' | 'set_tags' | 'remove_tags' | 'clear_tags' | 'delete'
+export type FlashcardBulkRecordAction = Exclude<FlashcardBulkAction, 'assign_images'>
 export type FlashcardReviewSetAccessRole = 'owner' | 'readonly' | 'editor'
+export type SquareImageSource = 'none' | 'url' | 'upload' | 'library'
+
+export interface ImageLibraryConcept {
+  id: number
+  name: string
+  partOfSpeech: string
+  definition: string
+}
+
+export interface ImageLibraryAsset {
+  id: number
+  imageUrl: string
+  alt: string
+  photographer: string
+  photographerUrl: string
+  sourceUrl: string
+  licenseName: string
+  licenseUrl: string
+  concept?: ImageLibraryConcept
+}
 
 export interface SquareImageSourceValue {
   source: SquareImageSource
   url: string
   existingUrl: string
   existingSource: SquareImageSource
+  existingLibraryImageId?: number
   upload?: Blob
+  libraryImage?: ImageLibraryAsset
 }
 
 export interface FlashcardTag {
@@ -261,6 +283,7 @@ export interface Flashcard {
   note: string
   image: string
   imageSource: SquareImageSource
+  libraryImage?: ImageLibraryAsset
   tags: string[]
   tagDetails?: FlashcardTag[]
   createdAt: string

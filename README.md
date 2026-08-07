@@ -6,7 +6,7 @@ A mobile-first personal management app for tasks, plans, habits, workouts, and p
 
 - Node.js 22+
 - pnpm 11+
-- PHP 8.1+ with PDO_SQLITE
+- PHP 8.1+ with cURL, GD, PDO_SQLITE, and SQLite FTS5
 - Composer 2
 - A writable Polymind SQLite database
 - Android Studio 2025.2.1+ and an Android SDK for Android builds
@@ -78,6 +78,9 @@ On the host, place a copy of `.env.prod` named `.env` at the project root becaus
 - `pnpm dev` — run the Vue client
 - `pnpm api:serve` — run the PHP API
 - `pnpm api:migrate` — apply pending SQLite migrations and report the current version
+- `pnpm pexels:fetch` — load `.env.prod` and cache images for the next 100 unsearched concepts
+- `php scripts/seed-image-concepts.php` — idempotently load the multilingual image concept catalog
+- `php scripts/fetch-pexels-images.php --limit=100` — cache up to 30 Pexels photos for each pending concept
 - `pnpm dev:all` — run the Vue client and PHP API
 - `pnpm typecheck` — validate TypeScript and Vue templates
 - `pnpm test` — run unit tests
@@ -139,6 +142,8 @@ POST   /auth/passkeys/register/options
 POST   /auth/passkeys/register/verify
 POST   /auth/passkeys/login/options
 POST   /auth/passkeys/login/verify
+GET    /image-library/search?query={word}
+POST   /flashcards/{id}/library-image
 GET    /flashcard-review-sets
 PATCH  /flashcard-review-sets/{id}/preferences
 GET    /flashcard-review-sets/{id}/shares
@@ -152,6 +157,7 @@ PATCH  /flashcard-review-sets/{id}/cards/{cardId}
 DELETE /flashcard-review-sets/{id}/cards/{cardId}
 POST   /flashcard-review-sets/{id}/cards/{cardId}/image
 DELETE /flashcard-review-sets/{id}/cards/{cardId}/image
+POST   /flashcard-review-sets/{id}/cards/{cardId}/library-image
 GET    /collections/{collection}/records
 POST   /collections/{collection}/records
 GET    /collections/{collection}/records/{id}

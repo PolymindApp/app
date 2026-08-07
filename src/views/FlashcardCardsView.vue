@@ -3,11 +3,12 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import FlashcardBulkImageAssignmentDialog from '@/components/FlashcardBulkImageAssignmentDialog.vue'
 import FlashcardCardsTable from '@/components/FlashcardCardsTable.vue'
 import FlashcardTagCombobox from '@/components/FlashcardTagCombobox.vue'
 import { cardMatchesTags, FLASHCARD_BULK_MENU_ITEMS } from '@/services/flashcards'
 import { useFlashcardStore } from '@/stores/flashcards'
-import type { Flashcard, FlashcardBulkAction } from '@/types/domain'
+import type { Flashcard, FlashcardBulkAction, FlashcardBulkRecordAction } from '@/types/domain'
 
 type FlashcardBulkTagAction = Extract<FlashcardBulkAction, 'add_tags' | 'set_tags' | 'remove_tags'>
 
@@ -18,6 +19,7 @@ const selectedCardIds = ref<string[]>([])
 const bulkError = ref('')
 const bulkSaving = ref(false)
 const bulkMenuOpen = ref(false)
+const bulkImageDialogOpen = ref(false)
 const bulkTagSheetOpen = ref(false)
 const bulkTagAction = ref<FlashcardBulkTagAction>('add_tags')
 const bulkTagIds = ref<string[]>([])
@@ -91,6 +93,11 @@ function openBulkTagAction(action: FlashcardBulkTagAction) {
 
 function chooseBulkAction(action: FlashcardBulkAction) {
   bulkMenuOpen.value = false
+  if (action === 'assign_images') {
+    bulkError.value = ''
+    bulkImageDialogOpen.value = true
+    return
+  }
   if (action === 'add_tags' || action === 'set_tags' || action === 'remove_tags') {
     openBulkTagAction(action)
     return
@@ -99,7 +106,11 @@ function chooseBulkAction(action: FlashcardBulkAction) {
   else deleteCardsDialog.value = true
 }
 
-async function runBulkAction(action: FlashcardBulkAction, tagIds: string[] = []) {
+function completeBulkImageAssignment() {
+  selectedCardIds.value = []
+}
+
+async function runBulkAction(action: FlashcardBulkRecordAction, tagIds: string[] = []) {
   const cardIds = [...selectedCardIds.value]
   if (!cardIds.length) return false
   bulkError.value = ''
@@ -329,6 +340,12 @@ async function deleteSelectedCards() {
         </div>
       </template>
     </ActionBottomSheet>
+
+    <FlashcardBulkImageAssignmentDialog
+      v-model="bulkImageDialogOpen"
+      :cards="selectedCards"
+      @complete="completeBulkImageAssignment"
+    />
 
     <ConfirmDialog
       v-model="clearTagsDialog"

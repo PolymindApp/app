@@ -91,7 +91,8 @@ export function flashcardReviewSettingsAreValid(
 }
 
 export const FLASHCARD_BULK_MENU_ITEMS = [
-  { action: 'add_tags', title: 'Add tags', icon: 'mdi-tag-plus-outline' },
+  { action: 'assign_images', title: 'Assign images', icon: 'mdi-image-multiple-outline' },
+  { action: 'add_tags', title: 'Add tags', icon: 'mdi-tag-plus-outline', divider: true },
   { action: 'set_tags', title: 'Set tags', icon: 'mdi-tag-check-outline' },
   { action: 'remove_tags', title: 'Remove tags', icon: 'mdi-tag-minus-outline', requiresTags: true },
   { action: 'clear_tags', title: 'Clear tags', icon: 'mdi-tag-off-outline', requiresTags: true },

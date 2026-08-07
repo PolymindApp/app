@@ -1,6 +1,7 @@
 import type {
-  FlashcardBulkAction,
+  FlashcardBulkRecordAction,
   FlashcardImportRow,
+  ImageLibraryAsset,
   FlashcardReviewAction,
   FlashcardReviewSetAccessRole,
   FlashcardReviewSettings,
@@ -58,12 +59,42 @@ interface FlashcardBulkActionResponse {
   deleted_ids: string[]
 }
 
+interface ImageLibrarySearchResponse {
+  page: number
+  perPage: number
+  totalItems: number
+  totalPages: number
+  items: ImageLibraryAsset[]
+}
+
 const AUTH_STORAGE_KEY = 'mom-api-auth'
 const baseUrl = (import.meta.env.VITE_API_URL || '/api').replace(/\/+$/, '')
 
 export function apiAssetUrl(value: string) {
   if (!value || /^(?:https?:|blob:|data:)/i.test(value)) return value
   return value.startsWith('/') ? `${baseUrl}${value}` : value
+}
+
+function mapImageLibraryAsset(record: Record<string, any>): ImageLibraryAsset {
+  const concept = record.concept && typeof record.concept === 'object'
+    ? {
+        id: Number(record.concept.id),
+        name: String(record.concept.name || ''),
+        partOfSpeech: String(record.concept.part_of_speech || ''),
+        definition: String(record.concept.definition || ''),
+      }
+    : undefined
+  return {
+    id: Number(record.id),
+    imageUrl: apiAssetUrl(String(record.image_url || '')),
+    alt: String(record.alt || ''),
+    photographer: String(record.photographer || ''),
+    photographerUrl: String(record.photographer_url || ''),
+    sourceUrl: String(record.source_url || ''),
+    licenseName: String(record.license_name || ''),
+    licenseUrl: String(record.license_url || ''),
+    concept,
+  }
 }
 
 function flashcardReviewSettingsBody(settings: FlashcardReviewSettings) {
@@ -419,7 +450,7 @@ class ApiClient {
     )
   }
 
-  bulkUpdateFlashcards(action: FlashcardBulkAction, cardIds: string[], tagIds: string[] = []) {
+  bulkUpdateFlashcards(action: FlashcardBulkRecordAction, cardIds: string[], tagIds: string[] = []) {
     return request<FlashcardBulkActionResponse>(
       '/flashcards/bulk',
       {
@@ -540,6 +571,37 @@ class ApiClient {
     return request<RecordModel>(
       `/flashcard-review-sets/${encodeURIComponent(reviewSetId)}/cards/${encodeURIComponent(cardId)}/image`,
       { method: 'DELETE' },
+      this.authStore,
+    )
+  }
+
+  setFlashcardReviewSetCardLibraryImage(reviewSetId: string, cardId: string, imageId: number) {
+    return request<RecordModel>(
+      `/flashcard-review-sets/${encodeURIComponent(reviewSetId)}/cards/${encodeURIComponent(cardId)}/library-image`,
+      { method: 'POST', body: { image_id: imageId } },
+      this.authStore,
+    )
+  }
+
+  async searchImageLibrary(query: string, page = 1, perPage = 30) {
+    const search = new URLSearchParams({
+      query: query.trim(),
+      page: String(page),
+      perPage: String(perPage),
+    })
+    const response = await request<Omit<ImageLibrarySearchResponse, 'items'> & {
+      items: Record<string, any>[]
+    }>(`/image-library/search?${search}`, {}, this.authStore)
+    return {
+      ...response,
+      items: response.items.map(mapImageLibraryAsset),
+    } satisfies ImageLibrarySearchResponse
+  }
+
+  setFlashcardLibraryImage(cardId: string, imageId: number) {
+    return request<RecordModel>(
+      `/flashcards/${encodeURIComponent(cardId)}/library-image`,
+      { method: 'POST', body: { image_id: imageId } },
       this.authStore,
     )
   }

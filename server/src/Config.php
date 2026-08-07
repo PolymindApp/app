@@ -16,6 +16,7 @@ final class Config
         public readonly string $passkeyRpId,
         public readonly string $passkeyAndroidPackage,
         public readonly array $passkeyAndroidKeyHashes,
+        public readonly string $pexelsApiKey,
         public readonly bool $debug,
     ) {
     }
@@ -68,6 +69,7 @@ final class Config
             'trim',
             explode(',', (string) $value('MOM_PASSKEY_ANDROID_KEY_HASHES', '')),
         ))));
+        $pexelsApiKey = trim((string) $value('MOM_PEXELS_API_KEY', ''));
         $debug = strtolower(trim((string) $value('DEBUG', ''))) === 'dev';
 
         if ($secret === '' || strlen($secret) < 32) {
@@ -131,6 +133,7 @@ final class Config
             $passkeyRpId,
             $passkeyAndroidPackage,
             $passkeyAndroidKeyHashes,
+            $pexelsApiKey,
             $debug,
         );
     }

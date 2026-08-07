@@ -8,6 +8,7 @@
     "dev:all": "concurrently -k -n WEB,API -c green,magenta \"pnpm dev\" \"pnpm api:serve\"",
     "api:serve": "bash scripts/run-php-api.sh",
     "api:migrate": "php server/migrate.php",
+    "pexels:fetch": "set -a && . ./.env.prod && set +a && php scripts/fetch-pexels-images.php",
     "build": "vue-tsc --noEmit && vite build",
     "build:prod": "vue-tsc --noEmit && vite build --mode prod",
     "android:sync": "pnpm build:prod && cap sync android",
@@ -29,7 +30,7 @@
     "preview": "vite preview",
     "typecheck": "vue-tsc --noEmit",
     "test": "vitest run",
-    "test:api": "bash server/tests/migrations.sh && bash server/tests/integration.sh"
+    "test:api": "bash server/tests/migrations.sh && bash server/tests/image-library.sh && bash server/tests/integration.sh"
   },
   "dependencies": {
     "@capacitor/android": "8.4.2",
