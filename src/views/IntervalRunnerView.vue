@@ -227,7 +227,10 @@ onMounted(async () => {
           error.value = 'The Review set attached to this interval could not be found.'
           return
         }
-        flashcardReview = createIntervalFlashcardReviewSnapshot(reviewSet, flashcardStore.cards)
+        const reviewCards = reviewSet.accessRole === 'owner'
+          ? flashcardStore.cards
+          : await flashcardStore.loadReviewSetCards(reviewSet.id)
+        flashcardReview = createIntervalFlashcardReviewSnapshot(reviewSet, reviewCards)
         if (!flashcardReview) {
           error.value = 'The Review set attached to this interval has no matching cards.'
           return

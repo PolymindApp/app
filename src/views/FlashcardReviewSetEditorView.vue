@@ -33,6 +33,8 @@ const original = ref('')
 const speechLoading = ref(true)
 const speechSupport = ref<FlashcardSpeechSupport>({ available: false, languages: [] })
 const isEditing = computed(() => Boolean(route.params.id))
+const currentReviewSet = computed(() => store.reviewSets.find(item => item.id === route.params.id))
+const isOwner = computed(() => !isEditing.value || currentReviewSet.value?.accessRole === 'owner')
 const draft = reactive<FlashcardReviewSetDraft>({
   name: '',
   tags: [],
@@ -51,21 +53,25 @@ const draft = reactive<FlashcardReviewSetDraft>({
 })
 
 function serializedDraft() {
-  return JSON.stringify({
-    name: draft.name,
-    tags: draft.tags,
-    settings: flashcardReviewSettingsSignature(draft),
-    sortOrder: draft.sortOrder,
-  })
+  return JSON.stringify(isOwner.value ? {
+      name: draft.name,
+      tags: draft.tags,
+      settings: flashcardReviewSettingsSignature(draft),
+      sortOrder: draft.sortOrder,
+    } : {
+      settings: flashcardReviewSettingsSignature(draft),
+    })
 }
 
 const changed = computed(() => ready.value && serializedDraft() !== original.value)
 const canSave = computed(() => (
   changed.value
-  && Boolean(draft.name.trim())
+  && (!isOwner.value || Boolean(draft.name.trim()))
   && flashcardReviewSettingsAreValid(draft)
 ))
-const matchingCardCount = computed(() => store.matchingCards(draft.tags).length)
+const matchingCardCount = computed(() => isOwner.value
+  ? store.matchingCards(draft.tags).length
+  : currentReviewSet.value?.matchingCardCount || 0)
 
 function ensureSpeechLanguages() {
   const fallback = defaultFlashcardSpeechLanguage(speechSupport.value.languages)
@@ -120,7 +126,8 @@ async function save() {
   saving.value = true
   error.value = ''
   try {
-    await store.saveReviewSet(draft)
+    if (isOwner.value) await store.saveReviewSet(draft)
+    else if (draft.id) await store.saveReviewSetPreferences(draft.id, draft)
     await router.replace('/flashcards')
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Could not save this Review set.'
@@ -152,7 +159,7 @@ async function remove() {
 
     <AppForm v-if="ready" ref="form" @submit.prevent="save">
       <v-card class="surface-card pa-5 mb-4">
-        <div class="field-stack">
+        <div v-if="isOwner" class="field-stack">
           <v-text-field
             v-model="draft.name"
             maxlength="160"
@@ -167,11 +174,27 @@ async function remove() {
           />
         </div>
 
+        <div v-else class="shared-set-heading">
+          <div class="min-width-0">
+            <h1 class="text-h6 font-weight-black text-truncate">{{ draft.name }}</h1>
+            <p class="text-body-2 muted mt-1">
+              Shared by {{ currentReviewSet?.ownerName || 'another account' }} · Your review settings are private.
+            </p>
+          </div>
+          <v-chip size="small" :color="currentReviewSet?.accessRole === 'editor' ? 'secondary' : undefined">
+            {{ currentReviewSet?.accessRole === 'editor' ? 'Editor' : 'Read only' }}
+          </v-chip>
+        </div>
+
         <div class="review-set-summary mt-4">
           <v-icon icon="mdi-cards-outline" color="secondary" />
           <div>
             <strong>{{ matchingCardCount }} matching {{ matchingCardCount === 1 ? 'card' : 'cards' }}</strong>
-            <p>{{ draft.tags.length ? 'Cards matching any selected tag' : 'Every card in your library' }}</p>
+            <p>
+              {{ draft.tags.length
+                ? 'Cards matching any selected tag'
+                : isOwner ? 'Every card in your library' : 'Every card in the owner’s library' }}
+            </p>
           </div>
         </div>
       </v-card>
@@ -191,7 +214,7 @@ async function remove() {
       :primary-text="isEditing ? 'Save' : 'Create'"
       :loading="saving"
       :primary-disabled="!canSave"
-      :show-delete="isEditing"
+      :show-delete="isEditing && isOwner"
       delete-label="Delete Review set"
       :delete-disabled="deleting"
       @submit="save"
@@ -213,6 +236,7 @@ async function remove() {
 
 <style scoped>
 .field-stack { display: grid; gap: 1rem; }
+.shared-set-heading { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 1rem; }
 .required-mark { color: rgb(var(--v-theme-error)); }
 .review-set-summary { display: flex; align-items: center; gap: .75rem; padding: .85rem; border-radius: 1rem; background: rgba(var(--v-theme-secondary), .08); }
 .review-set-summary strong { font-size: .82rem; }

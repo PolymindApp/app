@@ -19,6 +19,7 @@ import type {
   FlashcardReviewSession,
   FlashcardReviewSet,
   FlashcardReviewSetDraft,
+  FlashcardReviewSetShare,
   FlashcardReviewSettings,
   FlashcardTag,
   SquareImageSourceValue,
@@ -39,6 +40,7 @@ function mapCard(record: Record<string, any>): Flashcard {
     image: imageFile ? apiAssetUrl(`/flashcard-images/${imageFile}`) : imageUrl,
     imageSource: imageFile ? 'upload' : imageUrl ? 'url' : 'none',
     tags: Array.isArray(record.tags) ? record.tags : [],
+    tagDetails: Array.isArray(record.tag_details) ? record.tag_details.map(mapTag) : undefined,
     createdAt: record.created_at,
     updatedAt: record.updated_at,
     lastReviewedAt: record.last_reviewed_at || undefined,
@@ -53,6 +55,13 @@ function mapReviewSet(record: Record<string, any>): FlashcardReviewSet {
     id: record.id,
     name: record.name,
     tags: Array.isArray(record.tags) ? record.tags : [],
+    tagDetails: Array.isArray(record.tag_details) ? record.tag_details.map(mapTag) : [],
+    owner: record.owner || api.authStore.record?.id || '',
+    ownerName: record.owner_name || api.authStore.record?.name || '',
+    ownerAvatar: apiAssetUrl(record.owner_avatar || api.authStore.record?.avatar || ''),
+    accessRole: record.access_role || 'owner',
+    shareId: record.share_id || undefined,
+    matchingCardCount: Number(record.matching_card_count || 0),
     mode: record.mode,
     cardSides: record.card_sides || DEFAULT_FLASHCARD_REVIEW_CARD_SIDES,
     indefinite: Boolean(record.indefinite),
@@ -67,6 +76,20 @@ function mapReviewSet(record: Record<string, any>): FlashcardReviewSet {
     backLanguage: record.back_language || '',
     sortMode: record.sort_mode,
     sortOrder: Number(record.sort_order || 0),
+    createdAt: record.created_at,
+    updatedAt: record.updated_at,
+  }
+}
+
+function mapReviewSetShare(record: Record<string, any>): FlashcardReviewSetShare {
+  return {
+    id: record.id,
+    reviewSet: record.review_set,
+    recipient: record.recipient,
+    role: record.role,
+    name: record.name || '',
+    email: record.email || '',
+    avatar: apiAssetUrl(record.avatar || ''),
     createdAt: record.created_at,
     updatedAt: record.updated_at,
   }
@@ -130,6 +153,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
   const tags = ref<FlashcardTag[]>([])
   const cards = ref<Flashcard[]>([])
   const reviewSets = ref<FlashcardReviewSet[]>([])
+  const reviewSetCards = ref<Record<string, Flashcard[]>>({})
   const sessions = ref<FlashcardReviewSession[]>([])
   const events = ref<FlashcardReviewEvent[]>([])
   const loading = ref(false)
@@ -151,7 +175,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       const [tagRecords, cardRecords, setRecords, sessionRecords] = await Promise.all([
         api.collection('flashcard_tags').getFullList({ sort: 'name' }),
         api.collection('flashcards').getFullList({ sort: '-created_at' }),
-        api.collection('flashcard_review_sets').getFullList({ sort: 'sort_order,name' }),
+        api.getAccessibleFlashcardReviewSets(),
         api.collection('flashcard_review_sessions').getList(1, 100, { sort: '-started_at' }),
       ])
       tags.value = tagRecords.map(mapTag)
@@ -340,11 +364,130 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     const record = draft.id
       ? await api.collection('flashcard_review_sets').update(draft.id, payload)
       : await api.collection('flashcard_review_sets').create(payload)
+    const accessibleRecords = await api.getAccessibleFlashcardReviewSets()
+    reviewSets.value = accessibleRecords.map(mapReviewSet)
+    const reviewSet = reviewSets.value.find(item => item.id === record.id) || mapReviewSet(record)
+    return reviewSet
+  }
+
+  async function saveReviewSetPreferences(id: string, settings: FlashcardReviewSettings) {
+    const record = await api.updateFlashcardReviewSetPreferences(id, settings)
     const reviewSet = mapReviewSet(record)
-    const index = reviewSets.value.findIndex(item => item.id === reviewSet.id)
+    const index = reviewSets.value.findIndex(item => item.id === id)
     if (index >= 0) reviewSets.value.splice(index, 1, reviewSet)
     else reviewSets.value.push(reviewSet)
-    reviewSets.value.sort((left, right) => left.sortOrder - right.sortOrder || left.name.localeCompare(right.name))
+    return reviewSet
+  }
+
+  async function loadReviewSetCards(id: string) {
+    const records = await api.getFlashcardReviewSetCards(id)
+    const mapped = records.map(mapCard)
+    reviewSetCards.value = { ...reviewSetCards.value, [id]: mapped }
+    const reviewSet = reviewSets.value.find(item => item.id === id)
+    if (reviewSet) reviewSet.matchingCardCount = mapped.length
+    return mapped
+  }
+
+  async function saveReviewSetCard(
+    reviewSetId: string,
+    draft: FlashcardDraft,
+    image?: SquareImageSourceValue,
+  ) {
+    const imageChanged = Boolean(image && (
+      image.upload
+      || image.source !== image.existingSource
+      || (image.source === 'url' && image.url.trim() !== image.existingUrl)
+    ))
+    const payload: Record<string, unknown> = {
+      front: draft.front,
+      back: draft.back,
+      note: draft.note,
+    }
+    if (imageChanged && image?.source === 'url') payload.image_url = image.url.trim()
+    let record = draft.id
+      ? await api.updateFlashcardReviewSetCard(reviewSetId, draft.id, payload)
+      : await api.createFlashcardReviewSetCard(reviewSetId, payload)
+    if (imageChanged && image) {
+      if (image.source === 'upload' && image.upload) {
+        record = await api.updateFlashcardReviewSetCardImage(reviewSetId, record.id, image.upload)
+      } else if (image.source === 'none' && draft.id) {
+        record = await api.removeFlashcardReviewSetCardImage(reviewSetId, record.id)
+      }
+    }
+    const card = mapCard(record)
+    const current = reviewSetCards.value[reviewSetId] || []
+    const index = current.findIndex(item => item.id === card.id)
+    const next = [...current]
+    if (index >= 0) next.splice(index, 1, card)
+    else next.unshift(card)
+    reviewSetCards.value = { ...reviewSetCards.value, [reviewSetId]: next }
+    const reviewSet = reviewSets.value.find(item => item.id === reviewSetId)
+    if (reviewSet) reviewSet.matchingCardCount = next.length
+    if (reviewSet?.owner === api.authStore.record?.id) {
+      const cardIndex = cards.value.findIndex(item => item.id === card.id)
+      if (cardIndex >= 0) cards.value.splice(cardIndex, 1, card)
+      else cards.value.unshift(card)
+    }
+    return card
+  }
+
+  async function deleteReviewSetCard(reviewSetId: string, cardId: string) {
+    await api.deleteFlashcardReviewSetCard(reviewSetId, cardId)
+    const next = (reviewSetCards.value[reviewSetId] || []).filter(card => card.id !== cardId)
+    reviewSetCards.value = { ...reviewSetCards.value, [reviewSetId]: next }
+    cards.value = cards.value.filter(card => card.id !== cardId)
+    const reviewSet = reviewSets.value.find(item => item.id === reviewSetId)
+    if (reviewSet) reviewSet.matchingCardCount = next.length
+    useSnackbarStore().showDeletion('Card')
+  }
+
+  async function loadReviewSetShares(id: string) {
+    return (await api.getFlashcardReviewSetShares(id)).map(mapReviewSetShare)
+  }
+
+  async function createReviewSetShare(
+    id: string,
+    email: string,
+    role: FlashcardReviewSetShare['role'],
+  ) {
+    return mapReviewSetShare(await api.createFlashcardReviewSetShare(id, email, role))
+  }
+
+  async function updateReviewSetShare(shareId: string, role: FlashcardReviewSetShare['role']) {
+    return mapReviewSetShare(await api.updateFlashcardReviewSetShare(shareId, role))
+  }
+
+  async function removeReviewSetShare(shareId: string, reviewSetId?: string) {
+    await api.removeFlashcardReviewSetShare(shareId)
+    if (reviewSetId) {
+      reviewSets.value = reviewSets.value.filter(set => set.id !== reviewSetId)
+      delete reviewSetCards.value[reviewSetId]
+    }
+  }
+
+  async function copyReviewSet(id: string) {
+    const reviewSet = mapReviewSet(await api.copyFlashcardReviewSet(id))
+    reviewSets.value.push(reviewSet)
+    reviewSets.value.sort((left, right) => (
+      Number(left.accessRole !== 'owner') - Number(right.accessRole !== 'owner')
+      || left.sortOrder - right.sortOrder
+      || left.name.localeCompare(right.name)
+    ))
+    try {
+      const copiedCards = (await api.getFlashcardReviewSetCards(reviewSet.id)).map(mapCard)
+      reviewSetCards.value = { ...reviewSetCards.value, [reviewSet.id]: copiedCards }
+      for (const card of copiedCards) {
+        const cardIndex = cards.value.findIndex(item => item.id === card.id)
+        if (cardIndex >= 0) cards.value.splice(cardIndex, 1, card)
+        else cards.value.unshift(card)
+        for (const tag of card.tagDetails || []) {
+          if (!tags.value.some(item => item.id === tag.id)) tags.value.push(tag)
+        }
+      }
+      tags.value.sort((left, right) => left.name.localeCompare(right.name))
+    } catch {
+      loaded.value = false
+    }
     return reviewSet
   }
 
@@ -428,6 +571,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     tags,
     cards,
     reviewSets,
+    reviewSetCards,
     sessions,
     events,
     loading,
@@ -446,7 +590,16 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     importCards,
     bulkUpdateCards,
     saveReviewSet,
+    saveReviewSetPreferences,
     deleteReviewSet,
+    loadReviewSetCards,
+    saveReviewSetCard,
+    deleteReviewSetCard,
+    loadReviewSetShares,
+    createReviewSetShare,
+    updateReviewSetShare,
+    removeReviewSetShare,
+    copyReviewSet,
     matchingCards,
     startReview,
     act,

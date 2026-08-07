@@ -5,11 +5,16 @@ import { useDisplay } from 'vuetify'
 import { Intersect, Ripple } from 'vuetify/directives'
 import type { Flashcard, FlashcardTag } from '@/types/domain'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   cards: Flashcard[]
   tags: FlashcardTag[]
   modelValue: string[]
-}>()
+  selectable?: boolean
+  interactive?: boolean
+}>(), {
+  selectable: true,
+  interactive: true,
+})
 
 const emit = defineEmits<{
   'update:modelValue': [value: string[]]
@@ -102,7 +107,7 @@ function cardTagNames(card: Flashcard) {
       <v-table density="compact" class="card-library-table">
         <thead>
           <tr>
-            <th scope="col" class="card-library-table__select">
+            <th v-if="selectable" scope="col" class="card-library-table__select">
               <v-checkbox-btn
                 :model-value="allCardsSelected"
                 :indeterminate="someCardsSelected"
@@ -114,22 +119,25 @@ function cardTagNames(card: Flashcard) {
               />
             </th>
             <th scope="col" class="card-library-table__image-heading">Image</th>
-            <th scope="col">Faces</th>
-            <th scope="col">Tags</th>
+            <th scope="col" class="card-library-table__faces-heading">Faces</th>
+            <th scope="col" class="card-library-table__tags-heading">Tags</th>
           </tr>
         </thead>
         <tbody>
           <tr
             v-for="card in displayedCards"
             :key="card.id"
-            tabindex="0"
-            :class="{ 'card-library-table__row--selected': selectedCardIds.includes(card.id) }"
-            :aria-label="`Edit card: ${card.front}`"
-            @click="emit('open-card', card)"
-            @keydown.enter="emit('open-card', card)"
-            @keydown.space.prevent="emit('open-card', card)"
+            :tabindex="interactive ? 0 : undefined"
+            :class="{
+              'card-library-table__row--selected': selectedCardIds.includes(card.id),
+              'card-library-table__row--interactive': interactive,
+            }"
+            :aria-label="interactive ? `Edit card: ${card.front}` : undefined"
+            @click="interactive && emit('open-card', card)"
+            @keydown.enter="interactive && emit('open-card', card)"
+            @keydown.space.prevent="interactive && emit('open-card', card)"
           >
-            <td class="card-library-table__select" @click.stop @keydown.stop>
+            <td v-if="selectable" class="card-library-table__select" @click.stop @keydown.stop>
               <v-checkbox-btn
                 :model-value="selectedCardIds.includes(card.id)"
                 color="secondary"
@@ -160,14 +168,14 @@ function cardTagNames(card: Flashcard) {
                 </div>
               </div>
             </td>
-            <td>
+            <td class="card-library-table__faces-cell">
               <span v-ripple class="card-library-table__row-ripple" aria-hidden="true" />
               <div class="flashcard-table__faces">
                 <strong class="flashcard-table__text flashcard-table__front">{{ card.front }}</strong>
                 <span class="flashcard-table__text flashcard-table__back">{{ card.back }}</span>
               </div>
             </td>
-            <td>
+            <td class="card-library-table__tags-cell">
               <span class="flashcard-table__text flashcard-table__tags" :title="cardTagNames(card)">
                 {{ cardTagNames(card) }}
               </span>
@@ -208,17 +216,18 @@ function cardTagNames(card: Flashcard) {
 .card-library-table :deep(.v-table__wrapper) { overflow: visible; }
 .card-library-table :deep(table) { table-layout: fixed; }
 .card-library-table th { position: sticky; z-index: 3; top: calc(3.75rem + max(env(safe-area-inset-top, 0rem), var(--safe-area-inset-top, 0rem))); height: 2.25rem !important; padding: 0 .75rem !important; background: rgb(var(--v-theme-surface)); box-shadow: 0 .0625rem 0 rgba(var(--v-theme-on-surface), .1); color: rgba(var(--v-theme-on-surface), .52); font-size: .64rem !important; font-weight: 900 !important; letter-spacing: .08em; text-transform: uppercase; }
-.card-library-table th:nth-child(1) { width: 3rem; }
-.card-library-table th:nth-child(2) { width: 3rem; }
-.card-library-table th:nth-child(3) { width: 54%; }
-.card-library-table th:nth-child(4) { width: auto; }
+.card-library-table th.card-library-table__select { width: 3rem; }
+.card-library-table th.card-library-table__image-heading { width: 3rem; }
+.card-library-table th.card-library-table__faces-heading { width: 54%; }
+.card-library-table th.card-library-table__tags-heading { width: auto; }
 .card-library-table th.card-library-table__select,
 .card-library-table td.card-library-table__select { padding-right: .25rem !important; padding-left: .25rem !important; text-align: center; }
 .card-library-table th.card-library-table__image-heading,
 .card-library-table td.card-library-table__image-cell { padding-right: .5rem !important; padding-left: .5rem !important; }
 .card-library-table__select :deep(.v-selection-control) { position: relative; z-index: 2; justify-content: center; }
 .card-library-table td { height: 4rem !important; padding: .5rem .75rem !important; vertical-align: middle; }
-.card-library-table tbody tr { position: relative; overflow: hidden; cursor: pointer; transition: background-color 160ms ease; }
+.card-library-table tbody tr { position: relative; overflow: hidden; transition: background-color 160ms ease; }
+.card-library-table tbody tr.card-library-table__row--interactive { cursor: pointer; }
 .card-library-table__row-ripple { position: absolute; z-index: 1; inset: 0; display: block; overflow: hidden; }
 .card-library-table tbody tr:hover { background: rgba(var(--v-theme-on-surface), .045); }
 .card-library-table tbody tr.card-library-table__row--selected { background: rgba(var(--v-theme-secondary), .09); }
@@ -239,7 +248,7 @@ function cardTagNames(card: Flashcard) {
   .card-library-table td { padding-right: .5rem !important; padding-left: .5rem !important; }
   .card-library-table th.card-library-table__select,
   .card-library-table td.card-library-table__select { padding-right: .125rem !important; padding-left: .125rem !important; }
-  .card-library-table th:nth-child(2) { width: 3rem; }
-  .card-library-table th:nth-child(3) { width: 52%; }
+  .card-library-table th.card-library-table__image-heading { width: 3rem; }
+  .card-library-table th.card-library-table__faces-heading { width: 52%; }
 }
 </style>

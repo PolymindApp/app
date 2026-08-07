@@ -239,6 +239,7 @@ export type FlashcardReviewOutcome = 'success' | 'error' | 'passive' | 'ejected'
 export type FlashcardReviewAction = 'success' | 'error' | 'view' | 'previous' | 'next' | 'push' | 'eject' | 'pause' | 'resume' | 'end'
 export type FlashcardBulkAction = 'add_tags' | 'set_tags' | 'remove_tags' | 'clear_tags' | 'delete'
 export type SquareImageSource = 'none' | 'url' | 'upload'
+export type FlashcardReviewSetAccessRole = 'owner' | 'readonly' | 'editor'
 
 export interface SquareImageSourceValue {
   source: SquareImageSource
@@ -261,6 +262,7 @@ export interface Flashcard {
   image: string
   imageSource: SquareImageSource
   tags: string[]
+  tagDetails?: FlashcardTag[]
   createdAt: string
   updatedAt: string
   lastReviewedAt?: string
@@ -307,13 +309,60 @@ export interface FlashcardReviewSet extends FlashcardReviewSettings {
   id: string
   name: string
   tags: string[]
+  tagDetails: FlashcardTag[]
+  owner: string
+  ownerName: string
+  ownerAvatar: string
+  accessRole: FlashcardReviewSetAccessRole
+  shareId?: string
+  matchingCardCount: number
   sortOrder: number
   createdAt: string
   updatedAt: string
 }
 
-export interface FlashcardReviewSetDraft extends Omit<FlashcardReviewSet, 'id' | 'createdAt' | 'updatedAt'> {
+export interface FlashcardReviewSetDraft extends Omit<
+  FlashcardReviewSet,
+  | 'id'
+  | 'createdAt'
+  | 'updatedAt'
+  | 'tagDetails'
+  | 'owner'
+  | 'ownerName'
+  | 'ownerAvatar'
+  | 'accessRole'
+  | 'shareId'
+  | 'matchingCardCount'
+> {
   id?: string
+}
+
+export interface FlashcardReviewSetShare {
+  id: string
+  reviewSet: string
+  recipient: string
+  role: Exclude<FlashcardReviewSetAccessRole, 'owner'>
+  name: string
+  email: string
+  avatar: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type FlashcardReviewSetAction =
+  | 'review'
+  | 'edit'
+  | 'settings'
+  | 'cards'
+  | 'share'
+  | 'copy'
+  | 'leave'
+
+export interface FlashcardReviewSetActionItem {
+  action: FlashcardReviewSetAction
+  title: string
+  icon: string
+  color?: string
 }
 
 export interface FlashcardReviewQueueCard {

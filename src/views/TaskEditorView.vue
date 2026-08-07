@@ -97,7 +97,7 @@ const reviewSetItems = computed(() => flashcardStore.reviewSets.map(item => ({
   title: item.name,
   value: item.id,
   props: {
-    subtitle: `${item.mode === 'passive' ? 'Passive' : 'Manual'} · ${flashcardStore.matchingCards(item.tags).length} cards`,
+    subtitle: `${item.mode === 'passive' ? 'Passive' : 'Manual'} · ${item.matchingCardCount} cards`,
   },
 })))
 const trackingTrackerItems = computed(() => trackingStore.trackers
@@ -138,7 +138,7 @@ function reviewSetForStep(step: ProgramStepDraft) {
 function reviewSetSummary(reviewSetId?: string) {
   const reviewSet = flashcardStore.reviewSets.find(item => item.id === reviewSetId)
   if (!reviewSet) return ''
-  return `${reviewSet.mode === 'passive' ? 'Passive' : 'Manual'} · ${flashcardStore.matchingCards(reviewSet.tags).length} cards`
+  return `${reviewSet.mode === 'passive' ? 'Passive' : 'Manual'} · ${reviewSet.matchingCardCount} cards`
 }
 
 watch(() => draft.type, (type) => {

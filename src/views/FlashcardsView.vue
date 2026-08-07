@@ -3,19 +3,34 @@ import { computed, onMounted, ref } from 'vue'
 import { format, isSameWeek, startOfWeek } from 'date-fns'
 import { useRouter } from 'vue-router'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
+import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import WeekNavigator from '@/components/WeekNavigator.vue'
 import { flashcardReviewProgressPercent } from '@/services/flashcardHistory'
 import { formatReviewDuration, reviewSortTitle, sessionAccuracy } from '@/services/flashcards'
+import { FLASHCARD_REVIEW_SET_ACTIONS } from '@/services/flashcardReviewSetActions'
 import { groupSessionsByDate } from '@/services/sessionHistory'
 import { useFlashcardStore } from '@/stores/flashcards'
-import type { FlashcardReviewSession, FlashcardReviewSet } from '@/types/domain'
+import type {
+  FlashcardReviewSession,
+  FlashcardReviewSet,
+  FlashcardReviewSetAction,
+} from '@/types/domain'
 
 const router = useRouter()
 const store = useFlashcardStore()
 const startError = ref('')
 const reviewSetActionsOpen = ref(false)
 const selectedReviewSet = ref<FlashcardReviewSet>()
+const copyDialog = ref(false)
+const leaveDialog = ref(false)
+const working = ref(false)
+const notice = ref('')
 const recentWeekStart = ref(startOfWeek(new Date(), { weekStartsOn: 1 }))
+const ownedReviewSets = computed(() => store.reviewSets.filter(set => set.accessRole === 'owner'))
+const sharedReviewSets = computed(() => store.reviewSets.filter(set => set.accessRole !== 'owner'))
+const selectedActions = computed(() => selectedReviewSet.value
+  ? FLASHCARD_REVIEW_SET_ACTIONS[selectedReviewSet.value.accessRole]
+  : [])
 
 const recentReviewsForWeek = computed(() => store.sessions.filter(session =>
   (session.status === 'completed' || session.status === 'ended')
@@ -30,12 +45,14 @@ onMounted(() => {
   store.load().catch(() => undefined)
 })
 
-function tagName(id: string) {
-  return store.tags.find(tag => tag.id === id)?.name || 'Removed tag'
+function tagName(reviewSet: FlashcardReviewSet, id: string) {
+  return reviewSet.tagDetails.find(tag => tag.id === id)?.name
+    || store.tags.find(tag => tag.id === id)?.name
+    || 'Removed tag'
 }
 
 function reviewSetCardCount(reviewSet: FlashcardReviewSet) {
-  return Math.min(store.matchingCards(reviewSet.tags).length, reviewSet.maxCards)
+  return Math.min(reviewSet.matchingCardCount, reviewSet.maxCards)
 }
 
 function recentReviewColor(session: FlashcardReviewSession) {
@@ -47,18 +64,56 @@ function openReviewSetActions(reviewSet: FlashcardReviewSet) {
   reviewSetActionsOpen.value = true
 }
 
-async function reviewSelectedSet() {
+async function runReviewSetAction(action: FlashcardReviewSetAction) {
   const reviewSet = selectedReviewSet.value
   if (!reviewSet) return
   reviewSetActionsOpen.value = false
-  await startReview(reviewSet)
+  if (action === 'review') return startReview(reviewSet)
+  if (action === 'edit' || action === 'settings') {
+    return router.push({ name: 'flashcard-review-set-edit', params: { id: reviewSet.id } })
+  }
+  if (action === 'cards') {
+    return router.push({ name: 'flashcard-review-set-cards', params: { id: reviewSet.id } })
+  }
+  if (action === 'share') {
+    return router.push({ name: 'flashcard-review-set-share', params: { id: reviewSet.id } })
+  }
+  if (action === 'copy') copyDialog.value = true
+  else if (action === 'leave') leaveDialog.value = true
 }
 
-function editSelectedSet() {
+async function copySelectedSet() {
   const reviewSet = selectedReviewSet.value
   if (!reviewSet) return
-  reviewSetActionsOpen.value = false
-  return router.push({ name: 'flashcard-review-set-edit', params: { id: reviewSet.id } })
+  working.value = true
+  startError.value = ''
+  try {
+    const copied = await store.copyReviewSet(reviewSet.id)
+    notice.value = `${copied.name} was added to your Review sets.`
+    copyDialog.value = false
+  } catch (cause) {
+    startError.value = cause instanceof Error ? cause.message : 'Could not copy this Review set.'
+    copyDialog.value = false
+  } finally {
+    working.value = false
+  }
+}
+
+async function leaveSelectedSet() {
+  const reviewSet = selectedReviewSet.value
+  if (!reviewSet?.shareId) return
+  working.value = true
+  startError.value = ''
+  try {
+    await store.removeReviewSetShare(reviewSet.shareId, reviewSet.id)
+    leaveDialog.value = false
+    selectedReviewSet.value = undefined
+  } catch (cause) {
+    startError.value = cause instanceof Error ? cause.message : 'Could not leave this Review set.'
+    leaveDialog.value = false
+  } finally {
+    working.value = false
+  }
 }
 
 async function startReview(reviewSet: FlashcardReviewSet) {
@@ -87,10 +142,13 @@ async function startReview(reviewSet: FlashcardReviewSet) {
       </template>
     </v-alert>
     <v-alert v-if="startError" type="error" variant="tonal" class="mb-4">{{ startError }}</v-alert>
+    <v-alert v-if="notice" type="success" variant="tonal" closable class="mb-4" @click:close="notice = ''">
+      {{ notice }}
+    </v-alert>
 
     <section>
       <div class="section-heading mt-0">
-        <h2>Review sets</h2>
+        <h2>Your Review sets</h2>
         <v-btn
           size="small"
           variant="text"
@@ -101,9 +159,9 @@ async function startReview(reviewSet: FlashcardReviewSet) {
         </v-btn>
       </div>
 
-      <div v-if="store.reviewSets.length" class="review-set-list">
+      <div v-if="ownedReviewSets.length" class="review-set-list">
         <v-card
-          v-for="reviewSet in store.reviewSets"
+          v-for="reviewSet in ownedReviewSets"
           :key="reviewSet.id"
           ripple
           class="review-set surface-card pa-4"
@@ -151,7 +209,7 @@ async function startReview(reviewSet: FlashcardReviewSet) {
                   class="review-set__meta-item"
                 >
                   <v-icon icon="mdi-tag-outline" size="small" />
-                  <span>{{ tagName(tag) }}</span>
+                  <span>{{ tagName(reviewSet, tag) }}</span>
                 </span>
               </div>
             </div>
@@ -176,6 +234,61 @@ async function startReview(reviewSet: FlashcardReviewSet) {
       >
         Manage cards
       </v-btn>
+    </section>
+
+    <section v-if="sharedReviewSets.length">
+      <div class="section-heading">
+        <h2>Shared with you</h2>
+        <span class="text-caption muted">{{ sharedReviewSets.length }}</span>
+      </div>
+      <div class="review-set-list">
+        <v-card
+          v-for="reviewSet in sharedReviewSets"
+          :key="reviewSet.id"
+          ripple
+          class="review-set surface-card pa-4"
+          role="button"
+          tabindex="0"
+          :aria-label="`Open ${reviewSet.name} shared Review set actions`"
+          @click="openReviewSetActions(reviewSet)"
+          @keydown.enter="openReviewSetActions(reviewSet)"
+          @keydown.space.prevent="openReviewSetActions(reviewSet)"
+        >
+          <div class="review-set__main">
+            <div class="min-width-0">
+              <div class="shared-review-set__heading">
+                <h3 class="text-body-1 font-weight-black text-truncate">{{ reviewSet.name }}</h3>
+                <v-chip size="x-small" :color="reviewSet.accessRole === 'editor' ? 'secondary' : undefined">
+                  {{ reviewSet.accessRole === 'editor' ? 'Editor' : 'Read only' }}
+                </v-chip>
+              </div>
+              <p class="shared-review-set__owner mt-1">
+                <v-icon icon="mdi-account-outline" size="x-small" />
+                Shared by {{ reviewSet.ownerName || 'another account' }}
+              </p>
+              <div class="review-set__meta mt-2">
+                <span v-if="!reviewSet.tags.length" class="review-set__meta-item">
+                  <v-icon icon="mdi-cards-outline" size="small" />
+                  <span>All owner cards</span>
+                </span>
+                <span class="review-set__meta-item">
+                  <v-icon :icon="reviewSet.mode === 'passive' ? 'mdi-play-speed' : 'mdi-gesture-tap'" size="small" />
+                  <span>{{ reviewSet.mode === 'passive' ? 'Passive' : 'Manual' }}</span>
+                </span>
+                <span class="review-set__meta-item">
+                  <v-icon icon="mdi-card-multiple-outline" size="small" />
+                  <span>{{ reviewSetCardCount(reviewSet) }} cards/session</span>
+                </span>
+                <span v-for="tag in reviewSet.tags" :key="tag" class="review-set__meta-item">
+                  <v-icon icon="mdi-tag-outline" size="small" />
+                  <span>{{ tagName(reviewSet, tag) }}</span>
+                </span>
+              </div>
+            </div>
+            <v-icon icon="mdi-chevron-right" color="medium-emphasis" />
+          </div>
+        </v-card>
+      </div>
     </section>
 
     <section>
@@ -281,20 +394,38 @@ async function startReview(reviewSet: FlashcardReviewSet) {
     >
       <template v-if="selectedReviewSet">
         <v-list-item
-          prepend-icon="mdi-play"
-          title="Review"
+          v-for="item in selectedActions"
+          :key="item.action"
+          :prepend-icon="item.icon"
+          :title="item.title"
+          :base-color="item.color"
           rounded="lg"
-          :disabled="reviewSetCardCount(selectedReviewSet) === 0"
-          @click="reviewSelectedSet"
-        />
-        <v-list-item
-          prepend-icon="mdi-pencil-outline"
-          title="Edit"
-          rounded="lg"
-          @click="editSelectedSet"
+          :disabled="working || (item.action === 'review' && reviewSetCardCount(selectedReviewSet) === 0)"
+          @click="runReviewSetAction(item.action)"
         />
       </template>
     </ActionBottomSheet>
+
+    <ConfirmDialog
+      v-model="copyDialog"
+      title="Make an independent copy?"
+      :message="`All ${selectedReviewSet?.matchingCardCount || 0} currently matching cards and your review settings will be copied. The live shared set will remain available.`"
+      confirm-text="Make a copy"
+      confirm-color="secondary"
+      icon="mdi-content-copy"
+      :loading="working"
+      @confirm="copySelectedSet"
+    />
+
+    <ConfirmDialog
+      v-model="leaveDialog"
+      title="Leave this shared Review set?"
+      message="It will be detached from your tasks and intervals. Your completed review history will stay."
+      confirm-text="Leave shared set"
+      icon="mdi-exit-to-app"
+      :loading="working"
+      @confirm="leaveSelectedSet"
+    />
 
   </main>
 </template>
@@ -308,6 +439,9 @@ async function startReview(reviewSet: FlashcardReviewSet) {
 .review-set__meta-item { display: inline-flex; min-width: 0; align-items: center; gap: .25rem; }
 .review-set__meta-item :deep(.v-icon) { flex: 0 0 auto; opacity: .8; }
 .review-set__meta-item--active { color: rgb(var(--v-theme-secondary)); }
+.shared-review-set__heading { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: .75rem; }
+.shared-review-set__heading h3 { min-width: 0; }
+.shared-review-set__owner { display: flex; align-items: center; gap: .25rem; color: rgba(var(--v-theme-on-surface), .56); font-size: .7rem; font-weight: 800; }
 .review-history-content-enter-active { transition: opacity 180ms ease, transform 220ms cubic-bezier(.22, 1, .36, 1); }
 .review-history-content-enter-from { opacity: 0; transform: translateY(.75rem); }
 .recent-review-group__heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }

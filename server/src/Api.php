@@ -19,6 +19,11 @@ final class Api
     private const MAX_FLASHCARD_IMPORT_ROWS = 500;
     private const PASSKEY_CHALLENGE_TTL = 300;
     private const MAIN_MENU_ITEMS = ['tasks', 'intervals', 'flashcards', 'tracking', 'journal'];
+    private const FLASHCARD_REVIEW_SETTING_FIELDS = [
+        'mode', 'card_sides', 'indefinite', 'max_cards', 'front_seconds', 'back_seconds',
+        'back_speech_repeat_count', 'speech_enabled', 'front_language', 'back_language',
+        'sort_mode',
+    ];
 
     public function __construct(
         private readonly Config $config,
@@ -113,6 +118,107 @@ final class Api
                 ) === 1
             ) {
                 $this->completeIntervalSession($intervalMatches[1], $this->authenticate());
+            }
+            if ($method === 'GET' && $path === '/flashcard-review-sets') {
+                $this->listAccessibleFlashcardReviewSets($this->authenticate());
+            }
+            if (
+                $method === 'PATCH'
+                && preg_match(
+                    '#^/flashcard-review-sets/([a-zA-Z0-9_-]{1,64})/preferences/?$#',
+                    $path,
+                    $reviewSetPreferenceMatches,
+                ) === 1
+            ) {
+                $this->updateFlashcardReviewSetPreferences(
+                    $reviewSetPreferenceMatches[1],
+                    $this->authenticate(),
+                );
+            }
+            if (
+                ($method === 'GET' || $method === 'POST')
+                && preg_match(
+                    '#^/flashcard-review-sets/([a-zA-Z0-9_-]{1,64})/shares/?$#',
+                    $path,
+                    $reviewSetShareMatches,
+                ) === 1
+            ) {
+                $this->flashcardReviewSetShares(
+                    $method,
+                    $reviewSetShareMatches[1],
+                    $this->authenticate(),
+                );
+            }
+            if (
+                ($method === 'PATCH' || $method === 'DELETE')
+                && preg_match(
+                    '#^/flashcard-review-set-shares/([a-zA-Z0-9_-]{1,64})/?$#',
+                    $path,
+                    $reviewSetShareRecordMatches,
+                ) === 1
+            ) {
+                $this->flashcardReviewSetShareRecord(
+                    $method,
+                    $reviewSetShareRecordMatches[1],
+                    $this->authenticate(),
+                );
+            }
+            if (
+                $method === 'POST'
+                && preg_match(
+                    '#^/flashcard-review-sets/([a-zA-Z0-9_-]{1,64})/copies/?$#',
+                    $path,
+                    $reviewSetCopyMatches,
+                ) === 1
+            ) {
+                $this->copySharedFlashcardReviewSet(
+                    $reviewSetCopyMatches[1],
+                    $this->authenticate(),
+                );
+            }
+            if (
+                ($method === 'POST' || $method === 'DELETE')
+                && preg_match(
+                    '#^/flashcard-review-sets/([a-zA-Z0-9_-]{1,64})/cards/([a-zA-Z0-9_-]{1,64})/image/?$#',
+                    $path,
+                    $sharedCardImageMatches,
+                ) === 1
+            ) {
+                $this->sharedFlashcardImage(
+                    $method,
+                    $sharedCardImageMatches[1],
+                    $sharedCardImageMatches[2],
+                    $this->authenticate(),
+                );
+            }
+            if (
+                ($method === 'PATCH' || $method === 'DELETE')
+                && preg_match(
+                    '#^/flashcard-review-sets/([a-zA-Z0-9_-]{1,64})/cards/([a-zA-Z0-9_-]{1,64})/?$#',
+                    $path,
+                    $sharedCardRecordMatches,
+                ) === 1
+            ) {
+                $this->sharedFlashcardRecord(
+                    $method,
+                    $sharedCardRecordMatches[1],
+                    $sharedCardRecordMatches[2],
+                    $this->authenticate(),
+                );
+            }
+            if (
+                ($method === 'GET' || $method === 'POST')
+                && preg_match(
+                    '#^/flashcard-review-sets/([a-zA-Z0-9_-]{1,64})/cards/?$#',
+                    $path,
+                    $sharedCardsMatches,
+                ) === 1
+            ) {
+                $this->sharedFlashcards(
+                    $method,
+                    $sharedCardsMatches[1],
+                    $this->authenticate(),
+                );
             }
             if (
                 $method === 'POST'
@@ -1704,6 +1810,15 @@ final class Api
         $record = $this->ownedRecord($table, (string) $values['id'], (string) $user['id']);
         if ($table === 'flashcards') {
             $this->syncFlashcardWithActiveReviewQueues($record, (string) $user['id'], true);
+        } elseif ($table === 'flashcard_review_sets') {
+            $this->saveFlashcardReviewSetPreferences(
+                (string) $record['id'],
+                (string) $user['id'],
+                array_intersect_key(
+                    $this->normalizeRecord($collection, $record),
+                    array_flip(self::FLASHCARD_REVIEW_SETTING_FIELDS),
+                ),
+            );
         }
         $this->respond($this->normalizeRecord($collection, $record), 201);
     }
@@ -1807,6 +1922,15 @@ final class Api
             if ($oldFlashcardImage !== null) {
                 $this->removeFlashcardImageFileIfUnused($oldFlashcardImage);
             }
+        } elseif (
+            $collection['name'] === 'flashcard_review_sets'
+            && array_intersect(array_keys($values), self::FLASHCARD_REVIEW_SETTING_FIELDS) !== []
+        ) {
+            $this->saveFlashcardReviewSetPreferences(
+                $id,
+                (string) $user['id'],
+                array_intersect_key($combined, array_flip(self::FLASHCARD_REVIEW_SETTING_FIELDS)),
+            );
         }
         $this->respond($this->normalizeRecord($collection, $record));
     }
@@ -1853,7 +1977,7 @@ final class Api
         ];
         $statement = $this->database->pdo->prepare(
             "SELECT * FROM flashcard_review_sessions
-             WHERE owner = :owner AND status IN ('running', 'paused')",
+             WHERE source_owner = :owner AND status IN ('running', 'paused')",
         );
         $statement->execute(['owner' => $owner]);
         $update = $this->database->pdo->prepare(
@@ -1899,7 +2023,7 @@ final class Api
                 'total_cards' => $totalCards,
                 'updated_at' => (new DateTimeImmutable('now'))->format('Y-m-d\TH:i:s.v\Z'),
                 'id' => $session['id'],
-                'owner' => $owner,
+                'owner' => $session['owner'],
             ]);
         }
     }
@@ -2178,6 +2302,515 @@ final class Api
         return array_values($ids);
     }
 
+    private function listAccessibleFlashcardReviewSets(array $user): never
+    {
+        $account = (string) $user['id'];
+        $statement = $this->database->pdo->prepare(
+            "SELECT flashcard_review_sets.*,
+                    flashcard_review_set_shares.id AS share_id,
+                    CASE WHEN flashcard_review_sets.owner = :account
+                         THEN 'owner' ELSE flashcard_review_set_shares.role END AS access_role,
+                    users.name AS owner_name,
+                    users.avatar AS owner_avatar
+             FROM flashcard_review_sets
+             JOIN users ON users.id = flashcard_review_sets.owner
+             LEFT JOIN flashcard_review_set_shares
+               ON flashcard_review_set_shares.review_set = flashcard_review_sets.id
+              AND flashcard_review_set_shares.recipient = :account
+             WHERE flashcard_review_sets.owner = :account
+                OR flashcard_review_set_shares.recipient = :account
+             ORDER BY CASE WHEN flashcard_review_sets.owner = :account THEN 0 ELSE 1 END,
+                      flashcard_review_sets.sort_order,
+                      flashcard_review_sets.name",
+        );
+        $statement->execute(['account' => $account]);
+        $this->respond(array_map(
+            fn (array $record): array => $this->accessibleReviewSetResponse($record, $account),
+            $statement->fetchAll(),
+        ));
+    }
+
+    private function updateFlashcardReviewSetPreferences(string $id, array $user): never
+    {
+        $account = (string) $user['id'];
+        $reviewSet = $this->accessibleFlashcardReviewSet($id, $account);
+        $body = $this->jsonBody();
+        $settings = $this->validatedFlashcardReviewSettings($body);
+        $this->saveFlashcardReviewSetPreferences($id, $account, $settings);
+
+        if ((string) $reviewSet['owner'] === $account) {
+            $assignments = array_map(
+                static fn (string $field): string => $field . ' = :' . $field,
+                self::FLASHCARD_REVIEW_SETTING_FIELDS,
+            );
+            $statement = $this->database->pdo->prepare(
+                'UPDATE flashcard_review_sets SET ' . implode(', ', $assignments) . ', updated_at = :updated_at
+                 WHERE id = :id AND owner = :owner',
+            );
+            $statement->execute([
+                ...$this->booleanDatabaseSettings($settings),
+                'updated_at' => $this->now(),
+                'id' => $id,
+                'owner' => $account,
+            ]);
+        }
+
+        $this->respond($this->accessibleReviewSetResponse(
+            $this->accessibleFlashcardReviewSet($id, $account),
+            $account,
+        ));
+    }
+
+    private function flashcardReviewSetShares(string $method, string $id, array $user): never
+    {
+        $owner = (string) $user['id'];
+        $reviewSet = $this->ownedRecord('flashcard_review_sets', $id, $owner);
+        if ($method === 'GET') {
+            $statement = $this->database->pdo->prepare(
+                'SELECT flashcard_review_set_shares.*, users.name, users.email, users.avatar
+                 FROM flashcard_review_set_shares
+                 JOIN users ON users.id = flashcard_review_set_shares.recipient
+                 WHERE flashcard_review_set_shares.review_set = :review_set
+                 ORDER BY users.name, users.email',
+            );
+            $statement->execute(['review_set' => $id]);
+            $this->respond(array_map(
+                fn (array $share): array => $this->flashcardReviewSetShareResponse($share),
+                $statement->fetchAll(),
+            ));
+        }
+
+        $this->rateLimit('review-set-share:' . $owner, 60, 900);
+        $body = $this->jsonBody();
+        $this->allowOnlyFields($body, ['email', 'role']);
+        if (!array_key_exists('email', $body) || !array_key_exists('role', $body)) {
+            throw new ApiException(422, 'An account email and role are required.');
+        }
+        $email = $this->normalizeEmail($body['email']);
+        $role = $this->validateFlashcardShareRole($body['role']);
+        $statement = $this->database->pdo->prepare(
+            'SELECT * FROM users WHERE email = :email COLLATE NOCASE LIMIT 1',
+        );
+        $statement->execute(['email' => $email]);
+        $recipient = $statement->fetch();
+        if (!is_array($recipient) || hash_equals($owner, (string) $recipient['id'])) {
+            throw new ApiException(422, 'That account could not be added.');
+        }
+
+        $now = $this->now();
+        $shareId = $this->newId();
+        $pdo = $this->database->pdo;
+        $pdo->beginTransaction();
+        try {
+            $statement = $pdo->prepare(
+                'INSERT INTO flashcard_review_set_shares (
+                    id, review_set, recipient, role, created_at, updated_at
+                 ) VALUES (
+                    :id, :review_set, :recipient, :role, :created_at, :updated_at
+                 )',
+            );
+            $statement->execute([
+                'id' => $shareId,
+                'review_set' => $id,
+                'recipient' => $recipient['id'],
+                'role' => $role,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+            $settings = $this->effectiveFlashcardReviewSettings($reviewSet, $owner);
+            $this->saveFlashcardReviewSetPreferences(
+                $id,
+                (string) $recipient['id'],
+                $settings,
+            );
+            $pdo->commit();
+        } catch (PDOException $exception) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            if ($this->isConstraintViolation($exception)) {
+                throw new ApiException(409, 'This Review set is already shared with that account.');
+            }
+            throw $exception;
+        } catch (Throwable $exception) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $exception;
+        }
+
+        $this->respond($this->flashcardReviewSetShareResponse([
+            'id' => $shareId,
+            'review_set' => $id,
+            'recipient' => $recipient['id'],
+            'role' => $role,
+            'created_at' => $now,
+            'updated_at' => $now,
+            'name' => $recipient['name'],
+            'email' => $recipient['email'],
+            'avatar' => $recipient['avatar'],
+        ]), 201);
+    }
+
+    private function flashcardReviewSetShareRecord(string $method, string $id, array $user): never
+    {
+        $statement = $this->database->pdo->prepare(
+            'SELECT flashcard_review_set_shares.*, flashcard_review_sets.owner
+             FROM flashcard_review_set_shares
+             JOIN flashcard_review_sets
+               ON flashcard_review_sets.id = flashcard_review_set_shares.review_set
+             WHERE flashcard_review_set_shares.id = :id LIMIT 1',
+        );
+        $statement->execute(['id' => $id]);
+        $share = $statement->fetch();
+        if (!is_array($share)) {
+            throw new ApiException(404, 'Share not found.');
+        }
+        $account = (string) $user['id'];
+        $isOwner = hash_equals((string) $share['owner'], $account);
+        $isRecipient = hash_equals((string) $share['recipient'], $account);
+        if (!$isOwner && !$isRecipient) {
+            throw new ApiException(404, 'Share not found.');
+        }
+
+        if ($method === 'PATCH') {
+            if (!$isOwner) {
+                throw new ApiException(403, 'Only the Review set owner can change access.');
+            }
+            $body = $this->jsonBody();
+            $this->allowOnlyFields($body, ['role']);
+            $role = $this->validateFlashcardShareRole($body['role'] ?? null);
+            $statement = $this->database->pdo->prepare(
+                'UPDATE flashcard_review_set_shares SET role = :role, updated_at = :updated_at
+                 WHERE id = :id',
+            );
+            $updatedAt = $this->now();
+            $statement->execute(['role' => $role, 'updated_at' => $updatedAt, 'id' => $id]);
+            $share['role'] = $role;
+            $share['updated_at'] = $updatedAt;
+            $userStatement = $this->database->pdo->prepare(
+                'SELECT name, email, avatar FROM users WHERE id = :id LIMIT 1',
+            );
+            $userStatement->execute(['id' => $share['recipient']]);
+            $recipient = $userStatement->fetch();
+            if (is_array($recipient)) {
+                $share = array_merge($share, $recipient);
+            }
+            $this->respond($this->flashcardReviewSetShareResponse($share));
+        }
+
+        $pdo = $this->database->pdo;
+        $pdo->beginTransaction();
+        try {
+            $this->detachFlashcardReviewSetFromAccount(
+                (string) $share['review_set'],
+                (string) $share['recipient'],
+            );
+            $statement = $pdo->prepare(
+                'DELETE FROM flashcard_review_set_preferences
+                 WHERE review_set = :review_set AND account = :account',
+            );
+            $statement->execute([
+                'review_set' => $share['review_set'],
+                'account' => $share['recipient'],
+            ]);
+            $statement = $pdo->prepare('DELETE FROM flashcard_review_set_shares WHERE id = :id');
+            $statement->execute(['id' => $id]);
+            $pdo->commit();
+        } catch (Throwable $exception) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $exception;
+        }
+        $this->respond(null, 204);
+    }
+
+    private function copySharedFlashcardReviewSet(string $id, array $user): never
+    {
+        $account = (string) $user['id'];
+        $reviewSet = $this->accessibleFlashcardReviewSet($id, $account);
+        if ((string) $reviewSet['owner'] === $account) {
+            throw new ApiException(422, 'Only a shared Review set can be copied.');
+        }
+        $cards = $this->matchingSourceFlashcards($reviewSet);
+        if ($cards === []) {
+            throw new ApiException(409, 'No flashcards match this Review set.');
+        }
+
+        $settings = $this->effectiveFlashcardReviewSettings($reviewSet, $account);
+        $copyName = $this->uniqueReviewSetCopyName((string) $reviewSet['name'], $account);
+        $scopeTagName = $this->uniqueFlashcardTagName($copyName, $account);
+        $scopeTagId = $this->newId();
+        $newSetId = $this->newId();
+        $now = $this->now();
+        $sourceTags = $this->flashcardTagNameMap((string) $reviewSet['owner']);
+        $referencedSourceTags = [];
+        foreach ($cards as $card) {
+            $cardTags = $this->decodeJsonColumn($card['tags'] ?? '[]');
+            foreach (is_array($cardTags) ? $cardTags : [] as $tagId) {
+                if (is_string($tagId) && isset($sourceTags[$tagId])) {
+                    $referencedSourceTags[$tagId] = true;
+                }
+            }
+        }
+        $recipientTags = $this->flashcardTagIdMap($account);
+        $mappedTags = [];
+        $createdFiles = [];
+        $pdo = $this->database->pdo;
+        $pdo->beginTransaction();
+        try {
+            $statement = $pdo->prepare(
+                'INSERT INTO flashcard_tags (id, owner, name) VALUES (:id, :owner, :name)',
+            );
+            $statement->execute(['id' => $scopeTagId, 'owner' => $account, 'name' => $scopeTagName]);
+            $recipientTags[mb_strtolower($scopeTagName)] = $scopeTagId;
+
+            foreach (array_keys($referencedSourceTags) as $sourceTagId) {
+                $tagName = $sourceTags[$sourceTagId];
+                $key = mb_strtolower($tagName);
+                if (isset($recipientTags[$key])) {
+                    $mappedTags[$sourceTagId] = $recipientTags[$key];
+                    continue;
+                }
+                $tagId = $this->newId();
+                $statement->execute(['id' => $tagId, 'owner' => $account, 'name' => $tagName]);
+                $recipientTags[$key] = $tagId;
+                $mappedTags[$sourceTagId] = $tagId;
+            }
+
+            $setStatement = $pdo->prepare(
+                'INSERT INTO flashcard_review_sets (
+                    id, owner, name, tags, mode, card_sides, indefinite, max_cards,
+                    front_seconds, back_seconds, back_speech_repeat_count,
+                    speech_enabled, front_language, back_language, sort_mode,
+                    sort_order, created_at, updated_at
+                 ) VALUES (
+                    :id, :owner, :name, :tags, :mode, :card_sides, :indefinite, :max_cards,
+                    :front_seconds, :back_seconds, :back_speech_repeat_count,
+                    :speech_enabled, :front_language, :back_language, :sort_mode,
+                    :sort_order, :created_at, :updated_at
+                 )',
+            );
+            $setStatement->execute([
+                'id' => $newSetId,
+                'owner' => $account,
+                'name' => $copyName,
+                'tags' => json_encode([$scopeTagId], JSON_THROW_ON_ERROR),
+                ...$this->booleanDatabaseSettings($settings),
+                'sort_order' => $this->nextFlashcardReviewSetOrder($account),
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+            $this->saveFlashcardReviewSetPreferences($newSetId, $account, $settings);
+
+            $cardStatement = $pdo->prepare(
+                'INSERT INTO flashcards (
+                    id, owner, front, back, note, image_url, image_file,
+                    tags, created_at, updated_at,
+                    last_reviewed_at, passive_views, success_count, error_count
+                 ) VALUES (
+                    :id, :owner, :front, :back, :note, :image_url, :image_file,
+                    :tags, :created_at, :updated_at,
+                    :last_reviewed_at, 0, 0, 0
+                 )',
+            );
+            foreach ($cards as $card) {
+                $cardTags = $this->decodeJsonColumn($card['tags'] ?? '[]');
+                $copiedTags = [$scopeTagId];
+                foreach (is_array($cardTags) ? $cardTags : [] as $tagId) {
+                    if (is_string($tagId) && isset($mappedTags[$tagId])) {
+                        $copiedTags[] = $mappedTags[$tagId];
+                    }
+                }
+                $imageFile = (string) ($card['image_file'] ?? '');
+                if ($imageFile !== '') {
+                    $imageFile = $this->duplicateFlashcardImageFile($imageFile);
+                    if ($imageFile !== '') {
+                        $createdFiles[] = $imageFile;
+                    }
+                }
+                $cardStatement->execute([
+                    'id' => $this->newId(),
+                    'owner' => $account,
+                    'front' => $card['front'],
+                    'back' => $card['back'],
+                    'note' => $card['note'] ?? '',
+                    'image_url' => $card['image_url'] ?? '',
+                    'image_file' => $imageFile,
+                    'tags' => json_encode(array_values(array_unique($copiedTags)), JSON_THROW_ON_ERROR),
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                    'last_reviewed_at' => '',
+                ]);
+            }
+            $pdo->commit();
+        } catch (Throwable $exception) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            foreach ($createdFiles as $filename) {
+                $this->removeFlashcardImageFileIfUnused($filename);
+            }
+            throw $exception;
+        }
+
+        $this->respond($this->accessibleReviewSetResponse(
+            $this->accessibleFlashcardReviewSet($newSetId, $account),
+            $account,
+        ), 201);
+    }
+
+    private function sharedFlashcards(string $method, string $id, array $user): never
+    {
+        $account = (string) $user['id'];
+        $reviewSet = $this->accessibleFlashcardReviewSet($id, $account);
+        if ($method === 'GET') {
+            $this->respond(array_map(
+                fn (array $card): array => $this->flashcardResponseForReviewer($card, $account),
+                $this->matchingSourceFlashcards($reviewSet),
+            ));
+        }
+        $this->requireFlashcardReviewSetEditor($reviewSet, $account);
+        $body = $this->jsonBody();
+        $this->allowOnlyFields($body, ['front', 'back', 'note', 'image_url']);
+        $fields = $this->requireCollection('flashcards')['config']['fields'];
+        $front = $this->validateField('front', $body['front'] ?? null, $fields['front']);
+        $back = $this->validateField('back', $body['back'] ?? null, $fields['back']);
+        $note = $this->validateField('note', $body['note'] ?? '', $fields['note']);
+        $imageUrl = $this->validateFlashcardImageUrl($body['image_url'] ?? '');
+        $tags = $this->reviewSetTagIds($reviewSet);
+        $now = $this->now();
+        $cardId = $this->newId();
+        $statement = $this->database->pdo->prepare(
+            "INSERT INTO flashcards (
+                id, owner, front, back, note, image_url, image_file,
+                tags, created_at, updated_at,
+                last_reviewed_at, passive_views, success_count, error_count
+             ) VALUES (
+                :id, :owner, :front, :back, :note, :image_url, '',
+                :tags, :created_at, :updated_at, '', 0, 0, 0
+             )",
+        );
+        $statement->execute([
+            'id' => $cardId,
+            'owner' => $reviewSet['owner'],
+            'front' => $front,
+            'back' => $back,
+            'note' => $note,
+            'image_url' => $imageUrl,
+            'tags' => json_encode($tags, JSON_THROW_ON_ERROR),
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+        $card = $this->ownedRecord('flashcards', $cardId, (string) $reviewSet['owner']);
+        $this->syncFlashcardWithActiveReviewQueues($card, (string) $reviewSet['owner'], true);
+        $this->respond($this->flashcardResponseForReviewer($card, $account), 201);
+    }
+
+    private function sharedFlashcardRecord(
+        string $method,
+        string $reviewSetId,
+        string $cardId,
+        array $user,
+    ): never {
+        $account = (string) $user['id'];
+        $reviewSet = $this->accessibleFlashcardReviewSet($reviewSetId, $account);
+        $this->requireFlashcardReviewSetEditor($reviewSet, $account);
+        $card = $this->matchingSourceFlashcard($reviewSet, $cardId);
+        if ($method === 'DELETE') {
+            $this->deleteFlashcard($cardId, (string) $reviewSet['owner']);
+            $this->respond(null, 204);
+        }
+
+        $body = $this->jsonBody();
+        $this->allowOnlyFields($body, ['front', 'back', 'note', 'image_url']);
+        $fields = $this->requireCollection('flashcards')['config']['fields'];
+        $values = [];
+        foreach (['front', 'back', 'note'] as $field) {
+            if (array_key_exists($field, $body)) {
+                $values[$field] = $this->validateField($field, $body[$field], $fields[$field]);
+            }
+        }
+        $oldImage = null;
+        if (array_key_exists('image_url', $body)) {
+            $values['image_url'] = $this->validateFlashcardImageUrl($body['image_url']);
+            $values['image_file'] = '';
+            $oldImage = $this->validAvatarFilename($card['image_file'] ?? null);
+        }
+        if ($values === []) {
+            throw new ApiException(422, 'At least one writable field is required.');
+        }
+        $values['updated_at'] = $this->now();
+        $assignments = array_map(
+            static fn (string $field): string => $field . ' = :' . $field,
+            array_keys($values),
+        );
+        $statement = $this->database->pdo->prepare(
+            'UPDATE flashcards SET ' . implode(', ', $assignments) . '
+             WHERE id = :id AND owner = :owner',
+        );
+        $statement->execute([
+            ...$values,
+            'id' => $cardId,
+            'owner' => $reviewSet['owner'],
+        ]);
+        $card = $this->ownedRecord('flashcards', $cardId, (string) $reviewSet['owner']);
+        $this->syncFlashcardWithActiveReviewQueues($card, (string) $reviewSet['owner'], false);
+        if ($oldImage !== null) {
+            $this->removeFlashcardImageFileIfUnused($oldImage);
+        }
+        $this->respond($this->flashcardResponseForReviewer($card, $account));
+    }
+
+    private function sharedFlashcardImage(
+        string $method,
+        string $reviewSetId,
+        string $cardId,
+        array $user,
+    ): never {
+        $account = (string) $user['id'];
+        $reviewSet = $this->accessibleFlashcardReviewSet($reviewSetId, $account);
+        $this->requireFlashcardReviewSetEditor($reviewSet, $account);
+        $card = $this->matchingSourceFlashcard($reviewSet, $cardId);
+        $sourceOwner = (string) $reviewSet['owner'];
+        $this->rateLimit('flashcard-image-update:' . $account, 60, 900);
+        $oldFilename = $this->validAvatarFilename($card['image_file'] ?? null);
+        $updated = $this->now();
+        if ($method === 'DELETE') {
+            $statement = $this->database->pdo->prepare(
+                "UPDATE flashcards SET image_url = '', image_file = '', updated_at = :updated_at
+                 WHERE id = :id AND owner = :owner",
+            );
+            $statement->execute(['updated_at' => $updated, 'id' => $cardId, 'owner' => $sourceOwner]);
+        } else {
+            $bytes = $this->compressedSquareJpegBytes($this->jsonBody(), 'card image');
+            $filename = $this->storeSquareJpeg($bytes, $this->flashcardImageDirectory(), 'card image');
+            try {
+                $statement = $this->database->pdo->prepare(
+                    "UPDATE flashcards SET image_url = '', image_file = :image_file,
+                        updated_at = :updated_at
+                     WHERE id = :id AND owner = :owner",
+                );
+                $statement->execute([
+                    'image_file' => $filename,
+                    'updated_at' => $updated,
+                    'id' => $cardId,
+                    'owner' => $sourceOwner,
+                ]);
+            } catch (Throwable $exception) {
+                @unlink($this->flashcardImageDirectory() . DIRECTORY_SEPARATOR . $filename);
+                throw $exception;
+            }
+        }
+        $card = $this->ownedRecord('flashcards', $cardId, $sourceOwner);
+        $this->syncFlashcardWithActiveReviewQueues($card, $sourceOwner, false);
+        if ($oldFilename !== null && ($method === 'DELETE' || !hash_equals($oldFilename, (string) $card['image_file']))) {
+            $this->removeFlashcardImageFileIfUnused($oldFilename);
+        }
+        $this->respond($this->flashcardResponseForReviewer($card, $account));
+    }
+
     private function startFlashcardReviewSession(string $reviewSetId, array $user): never
     {
         $body = $this->jsonBody();
@@ -2198,7 +2831,12 @@ final class Api
         );
 
         $owner = (string) $user['id'];
-        $reviewSet = $this->ownedRecord('flashcard_review_sets', $reviewSetId, $owner);
+        $reviewSet = $this->accessibleFlashcardReviewSet($reviewSetId, $owner);
+        $reviewSet = array_merge(
+            $reviewSet,
+            $this->effectiveFlashcardReviewSettings($reviewSet, $owner),
+        );
+        $sourceOwner = (string) $reviewSet['owner'];
         if ($taskId === '') {
             if ($programStepId !== '' || $taskDate !== '') {
                 throw new ApiException(422, 'Task details require an attached flashcard task.');
@@ -2241,7 +2879,7 @@ final class Api
             ]);
         }
 
-        $selection = $this->flashcardReviewSelection($reviewSet, $owner);
+        $selection = $this->flashcardReviewSelection($reviewSet, $sourceOwner, $owner);
         $selectedTags = $selection['tags'];
         $sortMode = $selection['sortMode'];
         $queue = $selection['queue'];
@@ -2251,7 +2889,7 @@ final class Api
         try {
             $statement = $this->database->pdo->prepare(
                 'INSERT INTO flashcard_review_sessions (
-                    id, owner, review_set, status, snapshot_name, mode_snapshot, card_sides_snapshot,
+                    id, owner, source_owner, review_set, status, snapshot_name, mode_snapshot, card_sides_snapshot,
                     sort_snapshot, indefinite_snapshot, max_cards_snapshot, tags_snapshot,
                     front_seconds_snapshot, back_seconds_snapshot,
                     back_speech_repeat_count_snapshot,
@@ -2259,7 +2897,7 @@ final class Api
                     started_at, ended_at, updated_at, elapsed_seconds, total_cards, viewed_count,
                     success_count, error_count, ejected_count, task, program_step, task_date
                  ) VALUES (
-                    :id, :owner, :review_set, :status, :snapshot_name, :mode_snapshot,
+                    :id, :owner, :source_owner, :review_set, :status, :snapshot_name, :mode_snapshot,
                     :card_sides_snapshot, :sort_snapshot, :indefinite_snapshot, :max_cards_snapshot,
                     :tags_snapshot, :front_seconds_snapshot, :back_seconds_snapshot,
                     :back_speech_repeat_count_snapshot,
@@ -2271,6 +2909,7 @@ final class Api
             $statement->execute([
                 'id' => $sessionId,
                 'owner' => $owner,
+                'source_owner' => $sourceOwner,
                 'review_set' => $reviewSetId,
                 'status' => 'running',
                 'snapshot_name' => (string) $reviewSet['name'],
@@ -2547,7 +3186,7 @@ final class Api
                 'tags' => $session['tags_snapshot'],
                 'sort_mode' => $settings['sort_mode'],
                 'max_cards' => 100,
-            ], $owner);
+            ], (string) ($session['source_owner'] ?: $owner), $owner);
             $eventStatement = $pdo->prepare(
                 'SELECT card, outcome FROM flashcard_review_events
                  WHERE session = :session AND owner = :owner AND card != :empty',
@@ -2663,18 +3302,47 @@ final class Api
         if ($counter === null) {
             return;
         }
+        $cardStatement = $this->database->pdo->prepare(
+            'SELECT owner FROM flashcards WHERE id = :id LIMIT 1',
+        );
+        $cardStatement->execute(['id' => $cardId]);
+        $cardOwner = $cardStatement->fetchColumn();
+        if ($cardOwner === false) {
+            return;
+        }
         $statement = $this->database->pdo->prepare(
-            "UPDATE flashcards SET
+            "INSERT INTO flashcard_review_card_stats (
+                reviewer, card, last_reviewed_at, passive_views,
+                success_count, error_count, updated_at
+             ) VALUES (
+                :reviewer, :card, :reviewed_at,
+                :passive_views, :success_count, :error_count, :reviewed_at
+             )
+             ON CONFLICT(reviewer, card) DO UPDATE SET
                 {$counter} = {$counter} + 1,
-                last_reviewed_at = :reviewed_at,
-                updated_at = :reviewed_at
-             WHERE id = :id AND owner = :owner",
+                last_reviewed_at = excluded.last_reviewed_at,
+                updated_at = excluded.updated_at",
         );
         $statement->execute([
+            'reviewer' => $owner,
+            'card' => $cardId,
             'reviewed_at' => $reviewedAt,
-            'id' => $cardId,
-            'owner' => $owner,
+            'passive_views' => $counter === 'passive_views' ? 1 : 0,
+            'success_count' => $counter === 'success_count' ? 1 : 0,
+            'error_count' => $counter === 'error_count' ? 1 : 0,
         ]);
+        if (hash_equals((string) $cardOwner, $owner)) {
+            $statement = $this->database->pdo->prepare(
+                "UPDATE flashcards SET {$counter} = {$counter} + 1,
+                    last_reviewed_at = :reviewed_at, updated_at = :reviewed_at
+                 WHERE id = :id AND owner = :owner",
+            );
+            $statement->execute([
+                'reviewed_at' => $reviewedAt,
+                'id' => $cardId,
+                'owner' => $owner,
+            ]);
+        }
     }
 
     private function sortFlashcardsForReview(array &$cards, string $sortMode): void
@@ -2720,7 +3388,11 @@ final class Api
         });
     }
 
-    private function flashcardReviewSelection(array $reviewSet, string $owner): array
+    private function flashcardReviewSelection(
+        array $reviewSet,
+        string $sourceOwner,
+        ?string $reviewer = null,
+    ): array
     {
         $selectedTags = $this->decodeJsonColumn($reviewSet['tags'] ?? '[]');
         if (!is_array($selectedTags)) {
@@ -2729,7 +3401,7 @@ final class Api
         $statement = $this->database->pdo->prepare(
             'SELECT * FROM flashcards WHERE owner = :owner',
         );
-        $statement->execute(['owner' => $owner]);
+        $statement->execute(['owner' => $sourceOwner]);
         $cards = array_values(array_filter(
             $statement->fetchAll(),
             function (array $card) use ($selectedTags): bool {
@@ -2740,6 +3412,21 @@ final class Api
                 return is_array($cardTags) && array_intersect($selectedTags, $cardTags) !== [];
             },
         ));
+        if ($reviewer !== null) {
+            $stats = $this->flashcardStatsMap($reviewer, array_column($cards, 'id'));
+            $cards = array_map(
+                static function (array $card) use ($stats): array {
+                    $cardStats = $stats[(string) $card['id']] ?? null;
+                    return array_merge($card, [
+                        'last_reviewed_at' => $cardStats['last_reviewed_at'] ?? '',
+                        'passive_views' => (int) ($cardStats['passive_views'] ?? 0),
+                        'success_count' => (int) ($cardStats['success_count'] ?? 0),
+                        'error_count' => (int) ($cardStats['error_count'] ?? 0),
+                    ]);
+                },
+                $cards,
+            );
+        }
         if ($cards === []) {
             throw new ApiException(409, 'No flashcards match this Review set.');
         }
@@ -2777,8 +3464,16 @@ final class Api
             return [];
         }
 
-        $reviewSet = $this->ownedRecord('flashcard_review_sets', $reviewSetId, $owner);
-        $selection = $this->flashcardReviewSelection($reviewSet, $owner);
+        $reviewSet = $this->accessibleFlashcardReviewSet($reviewSetId, $owner);
+        $reviewSet = array_merge(
+            $reviewSet,
+            $this->effectiveFlashcardReviewSettings($reviewSet, $owner),
+        );
+        $selection = $this->flashcardReviewSelection(
+            $reviewSet,
+            (string) $reviewSet['owner'],
+            $owner,
+        );
         $isPassive = (string) $reviewSet['mode'] === 'passive';
         return [
             'reviewSet' => $reviewSetId,
@@ -3148,9 +3843,13 @@ final class Api
         $card = $this->ownedRecord('flashcards', $id, $owner);
         $imageFile = $this->validAvatarFilename($card['image_file'] ?? null);
         $statement = $this->database->pdo->prepare(
-            "UPDATE flashcard_review_events SET card = '' WHERE card = :id AND owner = :owner",
+            "UPDATE flashcard_review_events SET card = '' WHERE card = :id",
         );
-        $statement->execute(['id' => $id, 'owner' => $owner]);
+        $statement->execute(['id' => $id]);
+        $statement = $this->database->pdo->prepare(
+            'DELETE FROM flashcard_review_card_stats WHERE card = :id',
+        );
+        $statement->execute(['id' => $id]);
         $this->deleteOwnedRow('flashcards', $id, $owner);
         if ($imageFile !== null) {
             $this->removeFlashcardImageFileIfUnused($imageFile);
@@ -3204,10 +3903,24 @@ final class Api
             );
         }
         $statement = $this->database->pdo->prepare(
-            "UPDATE flashcard_review_sessions SET review_set = ''
-             WHERE review_set = :id AND owner = :owner",
+            'SELECT recipient FROM flashcard_review_set_shares WHERE review_set = :id',
         );
-        $statement->execute(['id' => $id, 'owner' => $owner]);
+        $statement->execute(['id' => $id]);
+        foreach ($statement->fetchAll(PDO::FETCH_COLUMN) as $recipient) {
+            $this->detachFlashcardReviewSetFromAccount($id, (string) $recipient);
+        }
+        $statement = $this->database->pdo->prepare(
+            "UPDATE flashcard_review_sessions SET review_set = '' WHERE review_set = :id",
+        );
+        $statement->execute(['id' => $id]);
+        $statement = $this->database->pdo->prepare(
+            'DELETE FROM flashcard_review_set_preferences WHERE review_set = :id',
+        );
+        $statement->execute(['id' => $id]);
+        $statement = $this->database->pdo->prepare(
+            'DELETE FROM flashcard_review_set_shares WHERE review_set = :id',
+        );
+        $statement->execute(['id' => $id]);
         $this->deleteOwnedRow('flashcard_review_sets', $id, $owner);
     }
 
@@ -3566,7 +4279,7 @@ final class Api
             $reviewSet = (string) ($record['flashcard_review_set'] ?? '');
             if (
                 $reviewSet !== ''
-                && !$this->relationExists('flashcard_review_sets', $reviewSet, $owner)
+                && !$this->flashcardReviewSetIsAccessible($reviewSet, $owner)
             ) {
                 throw new ApiException(422, 'The selected Review set is invalid.');
             }
@@ -3613,7 +4326,7 @@ final class Api
                 throw new ApiException(422, 'Only interval tasks may have an attached interval.');
             }
             if (($record['type'] ?? '') === 'flashcards') {
-                if (!$this->relationExists('flashcard_review_sets', $flashcardReviewSet, $owner)) {
+                if (!$this->flashcardReviewSetIsAccessible($flashcardReviewSet, $owner)) {
                     throw new ApiException(422, 'Select a valid Review set for this task.');
                 }
             } elseif ($flashcardReviewSet !== '') {
@@ -3664,13 +4377,13 @@ final class Api
             if ($completionType === 'flashcards') {
                 if (
                     $active
-                    && !$this->relationExists('flashcard_review_sets', $flashcardReviewSet, $owner)
+                    && !$this->flashcardReviewSetIsAccessible($flashcardReviewSet, $owner)
                 ) {
                     throw new ApiException(422, 'Select a valid Review set for this program step.');
                 }
                 if (
                     $flashcardReviewSet !== ''
-                    && !$this->relationExists('flashcard_review_sets', $flashcardReviewSet, $owner)
+                    && !$this->flashcardReviewSetIsAccessible($flashcardReviewSet, $owner)
                 ) {
                     throw new ApiException(422, 'The selected Review set is invalid.');
                 }
@@ -4034,6 +4747,385 @@ final class Api
         return (new DateTimeImmutable($timestamp))
             ->setTimezone(new DateTimeZone($timezone))
             ->format('Y-m-d');
+    }
+
+    private function accessibleFlashcardReviewSet(string $id, string $account): array
+    {
+        $statement = $this->database->pdo->prepare(
+            "SELECT flashcard_review_sets.*,
+                    flashcard_review_set_shares.id AS share_id,
+                    CASE WHEN flashcard_review_sets.owner = :account
+                         THEN 'owner' ELSE flashcard_review_set_shares.role END AS access_role,
+                    users.name AS owner_name,
+                    users.avatar AS owner_avatar
+             FROM flashcard_review_sets
+             JOIN users ON users.id = flashcard_review_sets.owner
+             LEFT JOIN flashcard_review_set_shares
+               ON flashcard_review_set_shares.review_set = flashcard_review_sets.id
+              AND flashcard_review_set_shares.recipient = :account
+             WHERE flashcard_review_sets.id = :id
+               AND (flashcard_review_sets.owner = :account
+                    OR flashcard_review_set_shares.recipient = :account)
+             LIMIT 1",
+        );
+        $statement->execute(['id' => $id, 'account' => $account]);
+        $record = $statement->fetch();
+        if (!is_array($record)) {
+            throw new ApiException(404, 'Review set not found.');
+        }
+        return $record;
+    }
+
+    private function flashcardReviewSetIsAccessible(string $id, string $account): bool
+    {
+        if ($id === '') {
+            return false;
+        }
+        $statement = $this->database->pdo->prepare(
+            'SELECT 1 FROM flashcard_review_sets
+             LEFT JOIN flashcard_review_set_shares
+               ON flashcard_review_set_shares.review_set = flashcard_review_sets.id
+              AND flashcard_review_set_shares.recipient = :account
+             WHERE flashcard_review_sets.id = :id
+               AND (flashcard_review_sets.owner = :account
+                    OR flashcard_review_set_shares.recipient = :account)
+             LIMIT 1',
+        );
+        $statement->execute(['id' => $id, 'account' => $account]);
+        return $statement->fetchColumn() !== false;
+    }
+
+    private function accessibleReviewSetResponse(array $reviewSet, string $account): array
+    {
+        $settings = $this->effectiveFlashcardReviewSettings($reviewSet, $account);
+        $record = array_merge(
+            $this->normalizeRecord($this->requireCollection('flashcard_review_sets'), $reviewSet),
+            $settings,
+        );
+        $record['access_role'] = (string) ($reviewSet['access_role'] ?? 'owner');
+        $record['share_id'] = (string) ($reviewSet['share_id'] ?? '');
+        $record['owner_name'] = (string) ($reviewSet['owner_name'] ?? '');
+        $ownerAvatar = $this->validAvatarFilename($reviewSet['owner_avatar'] ?? null);
+        $record['owner_avatar'] = $ownerAvatar === null ? '' : '/avatars/' . $ownerAvatar;
+        $record['tag_details'] = $this->flashcardTagDetails(
+            (string) $reviewSet['owner'],
+            $this->reviewSetTagIds($reviewSet),
+        );
+        $record['matching_card_count'] = count($this->matchingSourceFlashcards($reviewSet));
+        return $record;
+    }
+
+    private function validatedFlashcardReviewSettings(array $body): array
+    {
+        $this->allowOnlyFields($body, self::FLASHCARD_REVIEW_SETTING_FIELDS);
+        $fields = $this->requireCollection('flashcard_review_sets')['config']['fields'];
+        $settings = [];
+        foreach (self::FLASHCARD_REVIEW_SETTING_FIELDS as $field) {
+            if (!array_key_exists($field, $body)) {
+                throw new ApiException(422, 'Every Review set preference is required.', [
+                    $field => 'required',
+                ]);
+            }
+            $settings[$field] = $this->validateField($field, $body[$field], $fields[$field]);
+        }
+        if ($settings['mode'] !== 'passive') {
+            $settings['indefinite'] = false;
+        }
+        $this->validateFlashcardSpeechSettings($settings);
+        return $settings;
+    }
+
+    private function effectiveFlashcardReviewSettings(array $reviewSet, string $account): array
+    {
+        $statement = $this->database->pdo->prepare(
+            'SELECT * FROM flashcard_review_set_preferences
+             WHERE review_set = :review_set AND account = :account LIMIT 1',
+        );
+        $statement->execute(['review_set' => $reviewSet['id'], 'account' => $account]);
+        $preferences = $statement->fetch();
+        $source = is_array($preferences) ? $preferences : $reviewSet;
+        $settings = [];
+        foreach (self::FLASHCARD_REVIEW_SETTING_FIELDS as $field) {
+            $settings[$field] = match ($field) {
+                'indefinite', 'speech_enabled' => (bool) ($source[$field] ?? false),
+                'max_cards', 'front_seconds', 'back_seconds', 'back_speech_repeat_count'
+                    => (int) ($source[$field] ?? 0),
+                default => (string) ($source[$field] ?? ''),
+            };
+        }
+        return $settings;
+    }
+
+    private function saveFlashcardReviewSetPreferences(
+        string $reviewSetId,
+        string $account,
+        array $settings,
+    ): void {
+        $statement = $this->database->pdo->prepare(
+            'INSERT INTO flashcard_review_set_preferences (
+                review_set, account, mode, card_sides, indefinite, max_cards,
+                front_seconds, back_seconds, back_speech_repeat_count,
+                speech_enabled, front_language, back_language, sort_mode, updated_at
+             ) VALUES (
+                :review_set, :account, :mode, :card_sides, :indefinite, :max_cards,
+                :front_seconds, :back_seconds, :back_speech_repeat_count,
+                :speech_enabled, :front_language, :back_language, :sort_mode, :updated_at
+             )
+             ON CONFLICT(review_set, account) DO UPDATE SET
+                mode = excluded.mode,
+                card_sides = excluded.card_sides,
+                indefinite = excluded.indefinite,
+                max_cards = excluded.max_cards,
+                front_seconds = excluded.front_seconds,
+                back_seconds = excluded.back_seconds,
+                back_speech_repeat_count = excluded.back_speech_repeat_count,
+                speech_enabled = excluded.speech_enabled,
+                front_language = excluded.front_language,
+                back_language = excluded.back_language,
+                sort_mode = excluded.sort_mode,
+                updated_at = excluded.updated_at',
+        );
+        $statement->execute([
+            'review_set' => $reviewSetId,
+            'account' => $account,
+            ...$this->booleanDatabaseSettings($settings),
+            'updated_at' => $this->now(),
+        ]);
+    }
+
+    private function booleanDatabaseSettings(array $settings): array
+    {
+        $values = array_intersect_key(
+            $settings,
+            array_flip(self::FLASHCARD_REVIEW_SETTING_FIELDS),
+        );
+        $values['indefinite'] = !empty($values['indefinite']) ? 1 : 0;
+        $values['speech_enabled'] = !empty($values['speech_enabled']) ? 1 : 0;
+        return $values;
+    }
+
+    private function validateFlashcardShareRole(mixed $role): string
+    {
+        if (!is_string($role) || !in_array($role, ['readonly', 'editor'], true)) {
+            throw new ApiException(422, 'Select read-only or editor access.', ['role' => 'choice']);
+        }
+        return $role;
+    }
+
+    private function flashcardReviewSetShareResponse(array $share): array
+    {
+        $avatar = $this->validAvatarFilename($share['avatar'] ?? null);
+        return [
+            'id' => (string) $share['id'],
+            'review_set' => (string) $share['review_set'],
+            'recipient' => (string) $share['recipient'],
+            'role' => (string) $share['role'],
+            'name' => (string) ($share['name'] ?? ''),
+            'email' => (string) ($share['email'] ?? ''),
+            'avatar' => $avatar === null ? '' : '/avatars/' . $avatar,
+            'created_at' => (string) $share['created_at'],
+            'updated_at' => (string) $share['updated_at'],
+        ];
+    }
+
+    private function reviewSetTagIds(array $reviewSet): array
+    {
+        $tags = $reviewSet['tags'] ?? [];
+        if (is_string($tags)) {
+            $tags = $this->decodeJsonColumn($tags);
+        }
+        return is_array($tags)
+            ? array_values(array_filter($tags, static fn (mixed $tag): bool => is_string($tag)))
+            : [];
+    }
+
+    private function flashcardTagDetails(string $owner, array $tagIds): array
+    {
+        if ($tagIds === []) {
+            return [];
+        }
+        $map = $this->flashcardTagNameMap($owner);
+        return array_values(array_map(
+            static fn (string $id): array => ['id' => $id, 'name' => $map[$id] ?? 'Removed tag'],
+            $tagIds,
+        ));
+    }
+
+    private function flashcardTagNameMap(string $owner): array
+    {
+        $statement = $this->database->pdo->prepare(
+            'SELECT id, name FROM flashcard_tags WHERE owner = :owner',
+        );
+        $statement->execute(['owner' => $owner]);
+        $map = [];
+        foreach ($statement->fetchAll() as $tag) {
+            $map[(string) $tag['id']] = (string) $tag['name'];
+        }
+        return $map;
+    }
+
+    private function flashcardTagIdMap(string $owner): array
+    {
+        $statement = $this->database->pdo->prepare(
+            'SELECT id, name FROM flashcard_tags WHERE owner = :owner',
+        );
+        $statement->execute(['owner' => $owner]);
+        $map = [];
+        foreach ($statement->fetchAll() as $tag) {
+            $map[mb_strtolower((string) $tag['name'])] = (string) $tag['id'];
+        }
+        return $map;
+    }
+
+    private function matchingSourceFlashcards(array $reviewSet): array
+    {
+        $selectedTags = $this->reviewSetTagIds($reviewSet);
+        $statement = $this->database->pdo->prepare(
+            'SELECT * FROM flashcards WHERE owner = :owner ORDER BY created_at DESC, id',
+        );
+        $statement->execute(['owner' => $reviewSet['owner']]);
+        return array_values(array_filter(
+            $statement->fetchAll(),
+            function (array $card) use ($selectedTags): bool {
+                if ($selectedTags === []) {
+                    return true;
+                }
+                $cardTags = $this->decodeJsonColumn($card['tags'] ?? '[]');
+                return is_array($cardTags) && array_intersect($selectedTags, $cardTags) !== [];
+            },
+        ));
+    }
+
+    private function matchingSourceFlashcard(array $reviewSet, string $cardId): array
+    {
+        $card = $this->ownedRecord('flashcards', $cardId, (string) $reviewSet['owner']);
+        $selectedTags = $this->reviewSetTagIds($reviewSet);
+        if ($selectedTags === []) {
+            return $card;
+        }
+        $cardTags = $this->decodeJsonColumn($card['tags'] ?? '[]');
+        if (!is_array($cardTags) || array_intersect($selectedTags, $cardTags) === []) {
+            throw new ApiException(404, 'Flashcard not found in this Review set.');
+        }
+        return $card;
+    }
+
+    private function requireFlashcardReviewSetEditor(array $reviewSet, string $account): void
+    {
+        $role = (string) ($reviewSet['access_role'] ?? '');
+        if ((string) $reviewSet['owner'] !== $account && $role !== 'editor') {
+            throw new ApiException(403, 'Editor access is required to change these cards.');
+        }
+    }
+
+    private function flashcardStatsMap(string $reviewer, array $cardIds): array
+    {
+        if ($cardIds === []) {
+            return [];
+        }
+        $statement = $this->database->pdo->prepare(
+            'SELECT * FROM flashcard_review_card_stats WHERE reviewer = :reviewer',
+        );
+        $statement->execute(['reviewer' => $reviewer]);
+        $wanted = array_fill_keys(array_map('strval', $cardIds), true);
+        $map = [];
+        foreach ($statement->fetchAll() as $stats) {
+            $cardId = (string) $stats['card'];
+            if (isset($wanted[$cardId])) {
+                $map[$cardId] = $stats;
+            }
+        }
+        return $map;
+    }
+
+    private function flashcardResponseForReviewer(array $card, string $reviewer): array
+    {
+        $stats = $this->flashcardStatsMap($reviewer, [(string) $card['id']]);
+        $cardStats = $stats[(string) $card['id']] ?? null;
+        $card = array_merge($card, [
+            'last_reviewed_at' => $cardStats['last_reviewed_at'] ?? '',
+            'passive_views' => (int) ($cardStats['passive_views'] ?? 0),
+            'success_count' => (int) ($cardStats['success_count'] ?? 0),
+            'error_count' => (int) ($cardStats['error_count'] ?? 0),
+        ]);
+        $response = $this->normalizeRecord($this->requireCollection('flashcards'), $card);
+        $response['tag_details'] = $this->flashcardTagDetails(
+            (string) $card['owner'],
+            is_array($response['tags'] ?? null) ? $response['tags'] : [],
+        );
+        return $response;
+    }
+
+    private function detachFlashcardReviewSetFromAccount(string $reviewSetId, string $account): void
+    {
+        foreach (['tasks', 'program_steps', 'interval_templates'] as $table) {
+            $statement = $this->database->pdo->prepare(
+                "UPDATE {$table} SET flashcard_review_set = ''
+                 WHERE flashcard_review_set = :review_set AND owner = :owner",
+            );
+            $statement->execute(['review_set' => $reviewSetId, 'owner' => $account]);
+        }
+    }
+
+    private function nextFlashcardReviewSetOrder(string $owner): int
+    {
+        $statement = $this->database->pdo->prepare(
+            'SELECT COALESCE(MAX(sort_order), -1) + 1 FROM flashcard_review_sets WHERE owner = :owner',
+        );
+        $statement->execute(['owner' => $owner]);
+        return (int) $statement->fetchColumn();
+    }
+
+    private function uniqueReviewSetCopyName(string $name, string $owner): string
+    {
+        $base = mb_substr(trim($name) . ' copy', 0, 160);
+        $candidate = $base;
+        $suffix = 2;
+        $statement = $this->database->pdo->prepare(
+            'SELECT 1 FROM flashcard_review_sets
+             WHERE owner = :owner AND name = :name COLLATE NOCASE LIMIT 1',
+        );
+        while (true) {
+            $statement->execute(['owner' => $owner, 'name' => $candidate]);
+            if ($statement->fetchColumn() === false) {
+                return $candidate;
+            }
+            $ending = ' ' . $suffix++;
+            $candidate = mb_substr($base, 0, 160 - mb_strlen($ending)) . $ending;
+        }
+    }
+
+    private function uniqueFlashcardTagName(string $name, string $owner): string
+    {
+        $base = mb_substr(trim($name), 0, 50);
+        $candidate = $base === '' ? 'Review set copy' : $base;
+        $suffix = 2;
+        $statement = $this->database->pdo->prepare(
+            'SELECT 1 FROM flashcard_tags
+             WHERE owner = :owner AND name = :name COLLATE NOCASE LIMIT 1',
+        );
+        while (true) {
+            $statement->execute(['owner' => $owner, 'name' => $candidate]);
+            if ($statement->fetchColumn() === false) {
+                return $candidate;
+            }
+            $ending = ' ' . $suffix++;
+            $candidate = mb_substr($base, 0, 50 - mb_strlen($ending)) . $ending;
+        }
+    }
+
+    private function duplicateFlashcardImageFile(string $filename): string
+    {
+        $validated = $this->validAvatarFilename($filename);
+        if ($validated === null) {
+            return '';
+        }
+        $source = $this->flashcardImageDirectory() . DIRECTORY_SEPARATOR . $validated;
+        $bytes = is_file($source) && is_readable($source) ? file_get_contents($source) : false;
+        if ($bytes === false) {
+            return '';
+        }
+        return $this->storeSquareJpeg($bytes, $this->flashcardImageDirectory(), 'card image');
     }
 
     private function relationExists(string $table, string $id, string $owner): bool

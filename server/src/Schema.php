@@ -233,6 +233,7 @@ final class Schema
             ],
             'flashcard_review_sessions' => [
                 'fields' => [
+                    'source_owner' => self::relation(false, true),
                     'review_set' => self::relation(false, true),
                     'status' => self::choice(['running', 'paused', 'completed', 'ended'], true),
                     'snapshot_name' => self::text(160, true),

@@ -451,7 +451,7 @@ function reviewSetMeta(progress: TaskProgress) {
   return {
     name: reviewSet.name,
     mode: reviewSet.mode,
-    cardCount: flashcardStore.matchingCards(reviewSet.tags).length,
+    cardCount: reviewSet.matchingCardCount,
   }
 }
 

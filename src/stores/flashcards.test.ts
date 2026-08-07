@@ -6,6 +6,8 @@ const apiMocks = vi.hoisted(() => ({
   bulkUpdateCards: vi.fn(),
   createTag: vi.fn(),
   createCard: vi.fn(),
+  copyReviewSet: vi.fn(),
+  getReviewSetCards: vi.fn(),
   importCards: vi.fn(),
   startReview: vi.fn(),
   updateCardImage: vi.fn(),
@@ -20,6 +22,8 @@ vi.mock('@/lib/api', () => ({
     authStore: { record: { id: 'user-1' } },
     actOnFlashcardReviewSession: apiMocks.act,
     bulkUpdateFlashcards: apiMocks.bulkUpdateCards,
+    copyFlashcardReviewSet: apiMocks.copyReviewSet,
+    getFlashcardReviewSetCards: apiMocks.getReviewSetCards,
     importFlashcards: apiMocks.importCards,
     startFlashcardReviewSession: apiMocks.startReview,
     updateFlashcardImage: apiMocks.updateCardImage,
@@ -41,6 +45,8 @@ describe('flashcard store', () => {
     apiMocks.bulkUpdateCards.mockReset()
     apiMocks.createTag.mockReset()
     apiMocks.createCard.mockReset()
+    apiMocks.copyReviewSet.mockReset()
+    apiMocks.getReviewSetCards.mockReset()
     apiMocks.importCards.mockReset()
     apiMocks.startReview.mockReset()
     apiMocks.updateCardImage.mockReset()
@@ -300,5 +306,37 @@ describe('flashcard store', () => {
       taskDate: '2026-08-07',
     })).resolves.toMatchObject({ id: active.id, task: active.task, taskDate: active.taskDate })
     expect(apiMocks.startReview).not.toHaveBeenCalled()
+  })
+
+  it('maps an independent shared-set copy and hydrates its copied cards and tags', async () => {
+    const store = useFlashcardStore()
+    apiMocks.copyReviewSet.mockResolvedValue({
+      id: 'set-copy', owner: 'user-1', owner_name: 'Current user', owner_avatar: '',
+      access_role: 'owner', share_id: '', matching_card_count: 1,
+      name: 'Shared vocabulary copy', tags: ['tag-copy'],
+      tag_details: [{ id: 'tag-copy', name: 'Shared vocabulary copy' }],
+      mode: 'manual', card_sides: 'front', indefinite: false, max_cards: 7,
+      front_seconds: 9, back_seconds: 11, back_speech_repeat_count: 2,
+      speech_enabled: false, front_language: '', back_language: '',
+      sort_mode: 'least_recent', sort_order: 2,
+      created_at: '2026-08-07T10:00:00Z', updated_at: '2026-08-07T10:00:00Z',
+    })
+    apiMocks.getReviewSetCards.mockResolvedValue([{
+      id: 'card-copy', front: 'Question', back: 'Answer', note: '', tags: ['tag-copy'],
+      tag_details: [{ id: 'tag-copy', name: 'Shared vocabulary copy' }],
+      created_at: '2026-08-07T10:00:00Z', updated_at: '2026-08-07T10:00:00Z',
+      last_reviewed_at: '', passive_views: 0, success_count: 0, error_count: 0,
+    }])
+
+    const copied = await store.copyReviewSet('set-shared')
+
+    expect(apiMocks.copyReviewSet).toHaveBeenCalledWith('set-shared')
+    expect(apiMocks.getReviewSetCards).toHaveBeenCalledWith('set-copy')
+    expect(copied).toMatchObject({
+      id: 'set-copy', accessRole: 'owner', matchingCardCount: 1, maxCards: 7,
+    })
+    expect(store.reviewSetCards['set-copy']?.[0]?.id).toBe('card-copy')
+    expect(store.cards[0]?.id).toBe('card-copy')
+    expect(store.tags).toEqual([{ id: 'tag-copy', name: 'Shared vocabulary copy' }])
   })
 })

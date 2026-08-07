@@ -37,6 +37,8 @@ const cardImage = ref<SquareImageSourceValue>({
 })
 
 const cardId = computed(() => typeof route.params.id === 'string' ? route.params.id : '')
+const reviewSetId = computed(() => typeof route.params.reviewSetId === 'string' ? route.params.reviewSetId : '')
+const isReviewSetCard = computed(() => Boolean(reviewSetId.value))
 const isEditing = computed(() => Boolean(cardId.value))
 const returnTo = computed(() => typeof route.query.returnTo === 'string'
   && route.query.returnTo.startsWith('/')
@@ -63,8 +65,17 @@ onMounted(async () => {
   error.value = ''
   try {
     if (!store.loaded) await store.load()
+    if (isReviewSetCard.value) {
+      const reviewSet = store.reviewSets.find(item => item.id === reviewSetId.value)
+      if (!reviewSet || reviewSet.accessRole === 'readonly') {
+        throw new Error('Editor access is required to change these cards.')
+      }
+      await store.loadReviewSetCards(reviewSetId.value)
+    }
     if (isEditing.value) {
-      const card = store.cards.find(item => item.id === cardId.value)
+      const card = isReviewSetCard.value
+        ? store.reviewSetCards[reviewSetId.value]?.find(item => item.id === cardId.value)
+        : store.cards.find(item => item.id === cardId.value)
       if (!card) throw new Error('That flashcard could not be found.')
       Object.assign(draft, {
         id: card.id,
@@ -96,15 +107,22 @@ async function save() {
   error.value = ''
   savedNotice.value = false
   try {
-    await store.saveCard({
+    const cardDraft = {
       id: draft.id,
       front: draft.front,
       back: draft.back,
       note: draft.note,
       tags: draft.tags,
-    }, cardImage.value)
+    }
+    if (isReviewSetCard.value) {
+      await store.saveReviewSetCard(reviewSetId.value, cardDraft, cardImage.value)
+    } else {
+      await store.saveCard(cardDraft, cardImage.value)
+    }
     if (isEditing.value || returnTo.value) {
-      await router.replace(returnTo.value || { name: 'flashcard-cards' })
+      await router.replace(returnTo.value || (isReviewSetCard.value
+        ? { name: 'flashcard-review-set-cards', params: { id: reviewSetId.value } }
+        : { name: 'flashcard-cards' }))
       return
     }
 
@@ -133,9 +151,15 @@ async function remove() {
   deleting.value = true
   error.value = ''
   try {
-    await store.deleteCard(cardId.value)
+    if (isReviewSetCard.value) {
+      await store.deleteReviewSetCard(reviewSetId.value, cardId.value)
+    } else {
+      await store.deleteCard(cardId.value)
+    }
     deleteDialog.value = false
-    await router.replace(returnTo.value || { name: 'flashcard-cards' })
+    await router.replace(returnTo.value || (isReviewSetCard.value
+      ? { name: 'flashcard-review-set-cards', params: { id: reviewSetId.value } }
+      : { name: 'flashcard-cards' }))
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Could not delete this flashcard.'
     deleteDialog.value = false
@@ -207,7 +231,10 @@ async function remove() {
             :loading="saving"
             @error="error = $event"
           />
-          <FlashcardTagCombobox v-model="draft.tags" />
+          <FlashcardTagCombobox v-if="!isReviewSetCard" v-model="draft.tags" />
+          <v-alert v-else type="info" variant="tonal" density="compact">
+            Card tags are controlled by the Review set owner so this card stays in the live set.
+          </v-alert>
         </div>
       </v-card>
     </AppForm>
@@ -228,7 +255,9 @@ async function remove() {
     <ConfirmDialog
       v-model="deleteDialog"
       title="Delete this flashcard?"
-      message="The card will be removed from future reviews. Existing review history keeps its saved front and back."
+      :message="isReviewSetCard
+        ? 'This removes the owner’s source card from their library and every Review set it matches. Existing review history keeps its saved front and back.'
+        : 'The card will be removed from future reviews. Existing review history keeps its saved front and back.'"
       confirm-text="Delete flashcard"
       icon="mdi-delete-outline"
       :loading="deleting"

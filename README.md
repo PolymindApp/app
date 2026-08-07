@@ -123,6 +123,12 @@ The workflow reads the Apple team from the profile, validates its application id
 
 The detailed deployment guide is in [server/README.md](server/README.md).
 
+## Sharing Review sets
+
+Review set owners can share a live set with another existing Polymind account by exact email address. Read-only recipients can review and inspect matching cards. Editors can also add, change, and permanently delete matching cards in the owner’s source library; card tags remain controlled by the owner’s set filter.
+
+Each recipient has private review settings and card progress. Shared sets can be attached to the recipient’s flashcard tasks, program steps, and intervals. A recipient can make an independent copy of every currently matching card without leaving the live share. Revoking or leaving a share automatically detaches those integrations while preserving completed review history and card snapshots.
+
 The API serves these routes:
 
 ```text
@@ -133,6 +139,19 @@ POST   /auth/passkeys/register/options
 POST   /auth/passkeys/register/verify
 POST   /auth/passkeys/login/options
 POST   /auth/passkeys/login/verify
+GET    /flashcard-review-sets
+PATCH  /flashcard-review-sets/{id}/preferences
+GET    /flashcard-review-sets/{id}/shares
+POST   /flashcard-review-sets/{id}/shares
+PATCH  /flashcard-review-set-shares/{shareId}
+DELETE /flashcard-review-set-shares/{shareId}
+POST   /flashcard-review-sets/{id}/copies
+GET    /flashcard-review-sets/{id}/cards
+POST   /flashcard-review-sets/{id}/cards
+PATCH  /flashcard-review-sets/{id}/cards/{cardId}
+DELETE /flashcard-review-sets/{id}/cards/{cardId}
+POST   /flashcard-review-sets/{id}/cards/{cardId}/image
+DELETE /flashcard-review-sets/{id}/cards/{cardId}/image
 GET    /collections/{collection}/records
 POST   /collections/{collection}/records
 GET    /collections/{collection}/records/{id}

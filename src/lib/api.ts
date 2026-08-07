@@ -2,6 +2,7 @@ import type {
   FlashcardBulkAction,
   FlashcardImportRow,
   FlashcardReviewAction,
+  FlashcardReviewSetAccessRole,
   FlashcardReviewSettings,
 } from '@/types/domain'
 
@@ -63,6 +64,22 @@ const baseUrl = (import.meta.env.VITE_API_URL || '/api').replace(/\/+$/, '')
 export function apiAssetUrl(value: string) {
   if (!value || /^(?:https?:|blob:|data:)/i.test(value)) return value
   return value.startsWith('/') ? `${baseUrl}${value}` : value
+}
+
+function flashcardReviewSettingsBody(settings: FlashcardReviewSettings) {
+  return {
+    mode: settings.mode,
+    card_sides: settings.cardSides,
+    indefinite: settings.mode === 'passive' && settings.indefinite,
+    max_cards: settings.maxCards,
+    front_seconds: settings.frontSeconds,
+    back_seconds: settings.backSeconds,
+    back_speech_repeat_count: settings.backSpeechRepeatCount,
+    speech_enabled: settings.speechEnabled,
+    front_language: settings.frontLanguage,
+    back_language: settings.backLanguage,
+    sort_mode: settings.sortMode,
+  }
 }
 
 function normalizeAuthRecord(record: AuthRecord): AuthRecord {
@@ -413,6 +430,120 @@ class ApiClient {
     )
   }
 
+  getAccessibleFlashcardReviewSets() {
+    return request<RecordModel[]>('/flashcard-review-sets', {}, this.authStore)
+  }
+
+  updateFlashcardReviewSetPreferences(reviewSetId: string, settings: FlashcardReviewSettings) {
+    return request<RecordModel>(
+      `/flashcard-review-sets/${encodeURIComponent(reviewSetId)}/preferences`,
+      { method: 'PATCH', body: flashcardReviewSettingsBody(settings) },
+      this.authStore,
+    )
+  }
+
+  getFlashcardReviewSetShares(reviewSetId: string) {
+    return request<RecordModel[]>(
+      `/flashcard-review-sets/${encodeURIComponent(reviewSetId)}/shares`,
+      {},
+      this.authStore,
+    )
+  }
+
+  createFlashcardReviewSetShare(
+    reviewSetId: string,
+    email: string,
+    role: Exclude<FlashcardReviewSetAccessRole, 'owner'>,
+  ) {
+    return request<RecordModel>(
+      `/flashcard-review-sets/${encodeURIComponent(reviewSetId)}/shares`,
+      { method: 'POST', body: { email, role } },
+      this.authStore,
+    )
+  }
+
+  updateFlashcardReviewSetShare(
+    shareId: string,
+    role: Exclude<FlashcardReviewSetAccessRole, 'owner'>,
+  ) {
+    return request<RecordModel>(
+      `/flashcard-review-set-shares/${encodeURIComponent(shareId)}`,
+      { method: 'PATCH', body: { role } },
+      this.authStore,
+    )
+  }
+
+  removeFlashcardReviewSetShare(shareId: string) {
+    return request<void>(
+      `/flashcard-review-set-shares/${encodeURIComponent(shareId)}`,
+      { method: 'DELETE' },
+      this.authStore,
+    )
+  }
+
+  copyFlashcardReviewSet(reviewSetId: string) {
+    return request<RecordModel>(
+      `/flashcard-review-sets/${encodeURIComponent(reviewSetId)}/copies`,
+      { method: 'POST' },
+      this.authStore,
+    )
+  }
+
+  getFlashcardReviewSetCards(reviewSetId: string) {
+    return request<RecordModel[]>(
+      `/flashcard-review-sets/${encodeURIComponent(reviewSetId)}/cards`,
+      {},
+      this.authStore,
+    )
+  }
+
+  createFlashcardReviewSetCard(reviewSetId: string, body: Record<string, unknown>) {
+    return request<RecordModel>(
+      `/flashcard-review-sets/${encodeURIComponent(reviewSetId)}/cards`,
+      { method: 'POST', body },
+      this.authStore,
+    )
+  }
+
+  updateFlashcardReviewSetCard(
+    reviewSetId: string,
+    cardId: string,
+    body: Record<string, unknown>,
+  ) {
+    return request<RecordModel>(
+      `/flashcard-review-sets/${encodeURIComponent(reviewSetId)}/cards/${encodeURIComponent(cardId)}`,
+      { method: 'PATCH', body },
+      this.authStore,
+    )
+  }
+
+  deleteFlashcardReviewSetCard(reviewSetId: string, cardId: string) {
+    return request<void>(
+      `/flashcard-review-sets/${encodeURIComponent(reviewSetId)}/cards/${encodeURIComponent(cardId)}`,
+      { method: 'DELETE' },
+      this.authStore,
+    )
+  }
+
+  async updateFlashcardReviewSetCardImage(reviewSetId: string, cardId: string, image: Blob) {
+    if (image.type !== 'image/jpeg') {
+      throw new ApiError(422, 'The card image must be compressed as a JPEG.')
+    }
+    return request<RecordModel>(
+      `/flashcard-review-sets/${encodeURIComponent(reviewSetId)}/cards/${encodeURIComponent(cardId)}/image`,
+      { method: 'POST', body: { image: await blobDataUrl(image) } },
+      this.authStore,
+    )
+  }
+
+  removeFlashcardReviewSetCardImage(reviewSetId: string, cardId: string) {
+    return request<RecordModel>(
+      `/flashcard-review-sets/${encodeURIComponent(reviewSetId)}/cards/${encodeURIComponent(cardId)}/image`,
+      { method: 'DELETE' },
+      this.authStore,
+    )
+  }
+
   async updateFlashcardImage(cardId: string, image: Blob) {
     if (image.type !== 'image/jpeg') {
       throw new ApiError(422, 'The card image must be compressed as a JPEG.')
@@ -458,19 +589,7 @@ class ApiClient {
       `/flashcard-review-sessions/${encodeURIComponent(sessionId)}/settings`,
       {
         method: 'PATCH',
-        body: {
-          mode: settings.mode,
-          card_sides: settings.cardSides,
-          indefinite: settings.mode === 'passive' && settings.indefinite,
-          max_cards: settings.maxCards,
-          front_seconds: settings.frontSeconds,
-          back_seconds: settings.backSeconds,
-          back_speech_repeat_count: settings.backSpeechRepeatCount,
-          speech_enabled: settings.speechEnabled,
-          front_language: settings.frontLanguage,
-          back_language: settings.backLanguage,
-          sort_mode: settings.sortMode,
-        },
+        body: flashcardReviewSettingsBody(settings),
       },
       this.authStore,
     )

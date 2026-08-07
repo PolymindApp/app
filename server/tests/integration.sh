@@ -57,7 +57,7 @@ suffix="$(php -r 'echo bin2hex(random_bytes(5));')"
 password="correct-horse-battery"
 
 migration_count="$(sqlite3 "$test_db" 'SELECT COUNT(*) FROM mom_schema_migrations;')"
-[[ "$migration_count" == 23 ]] || {
+[[ "$migration_count" == 24 ]] || {
   echo "The API did not apply the complete database migration sequence." >&2
   exit 1
 }
@@ -1554,6 +1554,224 @@ cross_user_review_status="$(curl --silent --output /dev/null --write-out '%{http
   exit 1
 }
 
+share_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "{\"email\":\"$bob_email\",\"role\":\"readonly\"}" \
+  "$api_url/flashcard-review-sets/$manual_review_set_id/shares")"
+share_id="$(json_field id <<<"$share_response")"
+share_summary="$(php -r '
+  $share = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+  echo $share["role"] . ":" . $share["email"];
+' <<<"$share_response")"
+[[ "$share_summary" == "readonly:$bob_email" ]] || {
+  echo "Sharing a Review set did not return the recipient and role." >&2
+  exit 1
+}
+
+bob_review_sets_response="$(curl --silent --show-error --fail \
+  -H "Authorization: Bearer $bob_token" \
+  "$api_url/flashcard-review-sets")"
+bob_shared_set_summary="$(php -r '
+  $sets = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+  foreach ($sets as $set) {
+      if (($set["id"] ?? "") === $argv[1]) {
+          echo implode(":", [
+              $set["access_role"] ?? "", $set["owner_name"] ?? "",
+              $set["matching_card_count"] ?? 0, count($set["tag_details"] ?? []),
+          ]);
+      }
+  }
+' "$manual_review_set_id" <<<"$bob_review_sets_response")"
+[[ "$bob_shared_set_summary" == "readonly:Alice Updated:1:1" ]] || {
+  echo "The shared Review set was not listed with live owner metadata." >&2
+  exit 1
+}
+
+readonly_card_create_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $bob_token" \
+  --data '{"front":"Readonly edit","back":"Blocked"}' \
+  "$api_url/flashcard-review-sets/$manual_review_set_id/cards")"
+[[ "$readonly_card_create_status" == 403 ]] || {
+  echo "Read-only Review set access allowed a card edit." >&2
+  exit 1
+}
+
+bob_preference_response="$(curl --silent --show-error --fail \
+  -X PATCH -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $bob_token" \
+  --data '{"mode":"manual","card_sides":"front","indefinite":false,"max_cards":7,"front_seconds":9,"back_seconds":11,"back_speech_repeat_count":2,"speech_enabled":false,"front_language":"","back_language":"","sort_mode":"least_recent"}' \
+  "$api_url/flashcard-review-sets/$manual_review_set_id/preferences")"
+bob_preference_summary="$(php -r '
+  $set = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+  echo $set["card_sides"] . ":" . $set["max_cards"] . ":" . $set["sort_mode"];
+' <<<"$bob_preference_response")"
+alice_limit="$(sqlite3 "$test_db" \
+  "SELECT max_cards FROM flashcard_review_set_preferences WHERE review_set = '$manual_review_set_id' AND account = '$alice_id';")"
+bob_id="$(sqlite3 "$test_db" "SELECT id FROM users WHERE email = '$bob_email';")"
+bob_limit="$(sqlite3 "$test_db" \
+  "SELECT max_cards FROM flashcard_review_set_preferences WHERE review_set = '$manual_review_set_id' AND account = '$bob_id';")"
+[[ "$bob_preference_summary" == "front:7:least_recent" && "$alice_limit" != "$bob_limit" && "$bob_limit" == 7 ]] || {
+  echo "Recipient Review set preferences were not stored independently." >&2
+  exit 1
+}
+
+editor_share_response="$(curl --silent --show-error --fail \
+  -X PATCH -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"role":"editor"}' \
+  "$api_url/flashcard-review-set-shares/$share_id")"
+[[ "$(json_field role <<<"$editor_share_response")" == editor ]] || {
+  echo "The Review set share role was not updated." >&2
+  exit 1
+}
+
+editor_card_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $bob_token" \
+  --data '{"front":"Shared editor card","back":"Created by Bob","note":"Owner data","image_url":""}' \
+  "$api_url/flashcard-review-sets/$manual_review_set_id/cards")"
+editor_card_id="$(json_field id <<<"$editor_card_response")"
+editor_card_owner_and_tags="$(sqlite3 "$test_db" \
+  "SELECT owner || ':' || json_array_length(tags) || ':' || json_extract(tags, '\$[0]') FROM flashcards WHERE id = '$editor_card_id';")"
+[[ "$editor_card_owner_and_tags" == "$alice_id:1:$flashcard_tag_id" ]] || {
+  echo "An editor-created card was not stored with the owner and locked set tags." >&2
+  exit 1
+}
+
+editor_tag_change_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  -X PATCH -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $bob_token" \
+  --data '{"tags":[]}' \
+  "$api_url/flashcard-review-sets/$manual_review_set_id/cards/$editor_card_id")"
+[[ "$editor_tag_change_status" == 422 ]] || {
+  echo "A Review set editor was allowed to change locked card tags." >&2
+  exit 1
+}
+curl --silent --show-error --fail \
+  -X PATCH -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $bob_token" \
+  --data '{"front":"Shared editor card updated"}' \
+  "$api_url/flashcard-review-sets/$manual_review_set_id/cards/$editor_card_id" >/dev/null
+[[ "$(sqlite3 "$test_db" "SELECT front FROM flashcards WHERE id = '$editor_card_id';")" == "Shared editor card updated" ]] || {
+  echo "A Review set editor could not update owner card content." >&2
+  exit 1
+}
+editor_card_delete_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  -X DELETE -H "Authorization: Bearer $bob_token" \
+  "$api_url/flashcard-review-sets/$manual_review_set_id/cards/$editor_card_id")"
+[[ "$editor_card_delete_status" == 204 \
+  && "$(sqlite3 "$test_db" "SELECT COUNT(*) FROM flashcards WHERE id = '$editor_card_id';")" == 0 ]] || {
+  echo "A Review set editor could not permanently delete an owner card." >&2
+  exit 1
+}
+
+bob_shared_session_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $bob_token" \
+  --data '{"task":"","program_step":"","task_date":""}' \
+  "$api_url/flashcard-review-sets/$manual_review_set_id/sessions")"
+bob_shared_session_id="$(json_field id <<<"$bob_shared_session_response")"
+curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $bob_token" \
+  --data '{"action":"error","elapsed_seconds":3}' \
+  "$api_url/flashcard-review-sessions/$bob_shared_session_id/actions" >/dev/null
+bob_stat_error_count="$(sqlite3 "$test_db" \
+  "SELECT error_count FROM flashcard_review_card_stats WHERE reviewer = '$bob_id' AND card = '$flashcard_id';")"
+owner_legacy_error_count="$(sqlite3 "$test_db" "SELECT error_count FROM flashcards WHERE id = '$flashcard_id';")"
+[[ "$bob_stat_error_count" == 1 && "$owner_legacy_error_count" == 0 ]] || {
+  echo "Shared Review set progress was not isolated per reviewer." >&2
+  exit 1
+}
+
+copied_set_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $bob_token" \
+  -X POST \
+  "$api_url/flashcard-review-sets/$manual_review_set_id/copies")"
+copied_set_id="$(json_field id <<<"$copied_set_response")"
+copied_set_summary="$(php -r '
+  $set = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+  echo $set["access_role"] . ":" . $set["matching_card_count"] . ":" . $set["max_cards"];
+' <<<"$copied_set_response")"
+bob_live_share_count="$(sqlite3 "$test_db" \
+  "SELECT COUNT(*) FROM flashcard_review_set_shares WHERE id = '$share_id' AND recipient = '$bob_id';")"
+[[ "$copied_set_summary" == "owner:1:7" && "$bob_live_share_count" == 1 ]] || {
+  echo "Copying a shared Review set did not create an independent snapshot while keeping the live share." >&2
+  exit 1
+}
+
+bob_shared_task_payload="$(php -r '
+  echo json_encode([
+    "name" => "Bob shared review", "description" => "", "type" => "flashcards",
+    "tags" => [], "mandatory" => true, "review_when_missed" => false,
+    "active" => true, "start_date" => $argv[2], "end_date" => "",
+    "recurrence_type" => "daily", "weekdays" => [], "interval_weeks" => 1,
+    "target_value" => 1, "target_operator" => "gte", "unit" => "",
+    "custom_unit" => "", "goal_period" => "occurrence", "quick_amounts" => [],
+    "cycle_length" => 0, "program_repeat" => true, "program_strict" => false,
+    "entry_notes_enabled" => false, "entry_note_suggestions_enabled" => false,
+    "sort_order" => 1, "color" => "#C7F464", "interval_template" => "",
+    "flashcard_review_set" => $argv[1], "tracking_trackers" => [],
+  ], JSON_THROW_ON_ERROR);
+' "$manual_review_set_id" "$flashcard_today")"
+bob_shared_task_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $bob_token" \
+  --data "$bob_shared_task_payload" \
+  "$api_url/collections/tasks/records")"
+bob_shared_task_id="$(json_field id <<<"$bob_shared_task_response")"
+
+bob_program_payload="$(php -r '
+  $task = json_decode($argv[1], true, 512, JSON_THROW_ON_ERROR);
+  $task["name"] = "Bob shared program";
+  $task["type"] = "program";
+  $task["cycle_length"] = 1;
+  $task["flashcard_review_set"] = "";
+  echo json_encode($task, JSON_THROW_ON_ERROR);
+' "$bob_shared_task_payload")"
+bob_program_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $bob_token" \
+  --data "$bob_program_payload" \
+  "$api_url/collections/tasks/records")"
+bob_program_id="$(json_field id <<<"$bob_program_response")"
+bob_program_step_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $bob_token" \
+  --data "{\"task\":\"$bob_program_id\",\"name\":\"Shared cards\",\"description\":\"\",\"sort_order\":0,\"cycle_days\":[1],\"completion_type\":\"flashcards\",\"target_value\":1,\"target_operator\":\"gte\",\"unit\":\"\",\"custom_unit\":\"\",\"quick_amounts\":[],\"active\":true,\"interval_template\":\"\",\"flashcard_review_set\":\"$manual_review_set_id\"}" \
+  "$api_url/collections/program_steps/records")"
+bob_program_step_id="$(json_field id <<<"$bob_program_step_response")"
+
+bob_interval_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $bob_token" \
+  --data "{\"name\":\"Bob shared interval\",\"description\":\"\",\"color\":\"#66D9C8\",\"definition\":{\"version\":1,\"children\":[{\"id\":\"step-1\",\"type\":\"step\",\"name\":\"Work\",\"kind\":\"work\",\"durationSeconds\":1}]},\"sound_enabled\":true,\"vibration_enabled\":true,\"sound\":\"beep\",\"sort_order\":0,\"flashcard_review_set\":\"$manual_review_set_id\"}" \
+  "$api_url/collections/interval_templates/records")"
+bob_interval_id="$(json_field id <<<"$bob_interval_response")"
+
+share_delete_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  -X DELETE -H "Authorization: Bearer $alice_token" \
+  "$api_url/flashcard-review-set-shares/$share_id")"
+detached_shared_integrations="$(sqlite3 "$test_db" \
+  "SELECT (SELECT flashcard_review_set FROM tasks WHERE id = '$bob_shared_task_id') || ':' || (SELECT flashcard_review_set FROM program_steps WHERE id = '$bob_program_step_id') || ':' || (SELECT flashcard_review_set FROM interval_templates WHERE id = '$bob_interval_id');")"
+revoked_original_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  -H "Authorization: Bearer $bob_token" \
+  "$api_url/flashcard-review-sets/$manual_review_set_id/cards")"
+copied_set_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  -H "Authorization: Bearer $bob_token" \
+  "$api_url/flashcard-review-sets/$copied_set_id/cards")"
+preserved_shared_history="$(sqlite3 "$test_db" \
+  "SELECT COUNT(*) FROM flashcard_review_sessions WHERE id = '$bob_shared_session_id' AND owner = '$bob_id' AND source_owner = '$alice_id';")"
+[[ "$share_delete_status" == 204 && "$detached_shared_integrations" == "::" \
+  && "$revoked_original_status" == 404 && "$copied_set_status" == 200 \
+  && "$preserved_shared_history" == 1 ]] || {
+  echo "Revoking a Review set did not detach integrations while preserving history and copies." >&2
+  exit 1
+}
+
 flashcard_tag_delete_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
   -X DELETE -H "Authorization: Bearer $alice_token" \
   "$api_url/collections/flashcard_tags/records/$flashcard_tag_id")"
@@ -1571,7 +1789,7 @@ flashcard_delete_status="$(curl --silent --output /dev/null --write-out '%{http_
   "$api_url/collections/flashcards/records/$flashcard_id")"
 flashcard_history_snapshot="$(sqlite3 "$test_db" \
   "SELECT COUNT(*) FROM flashcard_review_events WHERE card = '' AND front_snapshot = 'What is 2 + 2?' AND back_snapshot = '4';")"
-[[ "$flashcard_delete_status" == 204 && "$flashcard_history_snapshot" == 4 ]] || {
+[[ "$flashcard_delete_status" == 204 && "$flashcard_history_snapshot" == 5 ]] || {
   echo "Deleting a flashcard did not preserve and detach its review history snapshots." >&2
   exit 1
 }

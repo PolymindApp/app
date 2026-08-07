@@ -94,6 +94,7 @@ The reconstructed PHP-era history is:
 | `202607290001` | Baseline schema used when the standalone PHP server replaced the previous backend |
 | `202607290002` | API rate-limit storage |
 | `202607290003` | Android passkey credentials and one-time challenges |
+| `202608070006` | Live Review set sharing, recipient preferences, reviewer-specific card statistics, and source-owner session attribution |
 
 Existing PHP databases are safely baselined because these migrations use `IF NOT EXISTS`; application rows are not recreated or deleted. The schema is validated after migration, including required columns.
 
@@ -108,6 +109,16 @@ Recommended deployment order:
 5. Verify `/health`, then deploy or enable the client.
 
 The release workflow calls the authenticated endpoint after its upload job succeeds. Configure the same `MOM_MIGRATION_KEY` value in the host's root `.env` and the GitHub `Web` environment secret. `MIGRATION_URL` may be set as a `Web` environment variable when the default deployment URL is not appropriate. The first ordinary API request also applies pending migrations as a fallback. Keep the backup: migrations are forward-only and do not perform automatic rollbacks after a successful deployment.
+
+## Review set sharing
+
+`GET /flashcard-review-sets` returns the authenticated account’s owned sets and sets shared with it. Each record includes its `access_role`, owner display metadata, resolved tag names, current matching-card count, and that account’s effective review settings.
+
+Owners manage access through `/flashcard-review-sets/{id}/shares` and `/flashcard-review-set-shares/{shareId}`. Shares require an existing account’s exact email and accept `readonly` or `editor`. Read-only recipients may review and list cards. Editors may also use the set-scoped card and image endpoints to mutate the owner’s matching source cards, but cannot change card tags, set identity, tag filters, or sharing. New editor-created cards receive the set’s current tags automatically.
+
+Review preferences and card statistics are keyed by account, so one recipient’s timing, speech, sorting, success, and error history do not alter another account’s experience. Sessions retain both the reviewer and source owner. Recipients may attach accessible sets to their tasks, program steps, and interval templates. Removing a share detaches those references transactionally while keeping immutable review events and session snapshots.
+
+`POST /flashcard-review-sets/{id}/copies` creates a recipient-owned set and copies every card currently matching the shared filter. Copied cards, tags, settings, and uploaded image files are independent; the original live share remains in place.
 
 ## Apache/shared hosting
 

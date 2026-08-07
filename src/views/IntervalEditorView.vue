@@ -61,7 +61,7 @@ const draft = reactive<IntervalTemplateDraft>({
 const totalDuration = computed(() => intervalDuration(draft.definition))
 const totalSteps = computed(() => intervalStepCount(draft.definition))
 const reviewSetItems = computed(() => flashcardStore.reviewSets.map(reviewSet => {
-  const cardCount = flashcardStore.matchingCards(reviewSet.tags).length
+  const cardCount = reviewSet.matchingCardCount
   return {
     title: reviewSet.name,
     value: reviewSet.id,
@@ -73,7 +73,7 @@ const selectedReviewSet = computed(() => flashcardStore.reviewSets.find(
   reviewSet => reviewSet.id === draft.flashcardReviewSet,
 ))
 const selectedReviewCardCount = computed(() => selectedReviewSet.value
-  ? flashcardStore.matchingCards(selectedReviewSet.value.tags).length
+  ? selectedReviewSet.value.matchingCardCount
   : 0)
 const selectedReviewTiming = computed(() => {
   const reviewSet = selectedReviewSet.value

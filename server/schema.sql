@@ -84,6 +84,57 @@ CREATE TABLE flashcard_review_sets (
 CREATE INDEX idx_flashcard_review_sets_owner_order
     ON flashcard_review_sets (owner, sort_order, name);
 
+CREATE TABLE flashcard_review_set_shares (
+    id TEXT PRIMARY KEY NOT NULL,
+    review_set TEXT NOT NULL,
+    recipient TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'readonly',
+    created_at TEXT NOT NULL DEFAULT '',
+    updated_at TEXT NOT NULL DEFAULT '',
+    CHECK (role IN ('readonly', 'editor')),
+    UNIQUE (review_set, recipient)
+);
+
+CREATE INDEX idx_flashcard_review_set_shares_recipient
+    ON flashcard_review_set_shares (recipient, review_set);
+CREATE INDEX idx_flashcard_review_set_shares_set
+    ON flashcard_review_set_shares (review_set, recipient);
+
+CREATE TABLE flashcard_review_set_preferences (
+    review_set TEXT NOT NULL,
+    account TEXT NOT NULL,
+    mode TEXT NOT NULL DEFAULT 'manual',
+    card_sides TEXT NOT NULL DEFAULT 'both',
+    indefinite BOOLEAN NOT NULL DEFAULT FALSE,
+    max_cards INTEGER NOT NULL DEFAULT 20,
+    front_seconds INTEGER NOT NULL DEFAULT 5,
+    back_seconds INTEGER NOT NULL DEFAULT 5,
+    back_speech_repeat_count INTEGER NOT NULL DEFAULT 1,
+    speech_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    front_language VARCHAR(35) NOT NULL DEFAULT '',
+    back_language VARCHAR(35) NOT NULL DEFAULT '',
+    sort_mode TEXT NOT NULL DEFAULT 'difficult',
+    updated_at TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (review_set, account)
+);
+
+CREATE INDEX idx_flashcard_review_set_preferences_account
+    ON flashcard_review_set_preferences (account, review_set);
+
+CREATE TABLE flashcard_review_card_stats (
+    reviewer TEXT NOT NULL,
+    card TEXT NOT NULL,
+    last_reviewed_at TEXT NOT NULL DEFAULT '',
+    passive_views INTEGER NOT NULL DEFAULT 0,
+    success_count INTEGER NOT NULL DEFAULT 0,
+    error_count INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (reviewer, card)
+);
+
+CREATE INDEX idx_flashcard_review_card_stats_card
+    ON flashcard_review_card_stats (card, reviewer);
+
 CREATE TABLE tasks (
     id TEXT PRIMARY KEY NOT NULL DEFAULT ('r' || lower(hex(randomblob(7)))),
     owner TEXT NOT NULL,
@@ -237,6 +288,7 @@ CREATE INDEX idx_interval_sessions_owner_program_step_date
 CREATE TABLE flashcard_review_sessions (
     id TEXT PRIMARY KEY NOT NULL DEFAULT ('r' || lower(hex(randomblob(7)))),
     owner TEXT NOT NULL,
+    source_owner TEXT NOT NULL DEFAULT '',
     review_set TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'running',
     snapshot_name VARCHAR(160) NOT NULL DEFAULT '',
