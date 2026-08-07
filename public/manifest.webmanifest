@@ -1,6 +1,6 @@
 {
-  "name": "Mom — Management of Me",
-  "short_name": "Mom",
+  "name": "Polymind — Many systems. One mind.",
+  "short_name": "Polymind",
   "description": "Manage tasks, plans, habits, workouts, and timed sessions in one flexible personal system.",
   "start_url": "/",
   "display": "standalone",
@@ -8,7 +8,7 @@
   "theme_color": "#101310",
   "icons": [
     {
-      "src": "/brand/mom-app-icon.png",
+      "src": "/brand/polymind-app-icon.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"

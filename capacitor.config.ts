@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli'
 
 const config: CapacitorConfig = {
   appId: 'dev.coulombe.mom',
-  appName: 'Mom',
+  appName: 'Polymind',
   webDir: 'dist',
   plugins: {
     SystemBars: {

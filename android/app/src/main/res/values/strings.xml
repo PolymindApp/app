@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Mom</string>
-    <string name="title_activity_main">Mom</string>
+    <string name="app_name">Polymind</string>
+    <string name="title_activity_main">Polymind</string>
     <string name="package_name">dev.coulombe.mom</string>
     <string name="custom_url_scheme">dev.coulombe.mom</string>
     <string name="asset_statements" translatable="false">[{\"include\":\"https://mom.coulombe.dev/.well-known/assetlinks.json\"}]</string>

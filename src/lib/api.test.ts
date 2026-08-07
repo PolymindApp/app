@@ -14,7 +14,7 @@ const jsonResponse = (body: unknown, status = 200) =>
     headers: { 'Content-Type': 'application/json' },
   })
 
-describe('Mom API client adapter', () => {
+describe('Polymind API client adapter', () => {
   beforeEach(() => {
     localStorage.clear()
     vi.resetModules()

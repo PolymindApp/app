@@ -613,7 +613,7 @@ async function syncNativeBackground() {
   nativeBackgroundReady.value = started
   backgroundSpeechWarning.value = started
     ? ''
-    : 'Speech will pause if Mom is sent to the background on this device.'
+    : 'Speech will pause if Polymind is sent to the background on this device.'
   return started
 }
 

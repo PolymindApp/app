@@ -30,9 +30,9 @@ public class PermissionsRationaleActivity extends AppCompatActivity {
 
         TextView body = new TextView(this);
         body.setText(
-            "Mom reads aggregated step totals from Health Connect only after you grant permission. "
+            "Polymind reads aggregated step totals from Health Connect only after you grant permission. "
                 + "Those totals are used to calculate progress for your step-counter tasks. "
-                + "Mom does not write step data to Health Connect. You can revoke access at any time "
+                + "Polymind does not write step data to Health Connect. You can revoke access at any time "
                 + "from Health Connect settings."
         );
         body.setTextColor(Color.rgb(190, 196, 190));

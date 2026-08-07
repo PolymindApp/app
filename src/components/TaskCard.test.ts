@@ -170,7 +170,7 @@ describe('TaskCard amount actions', () => {
     const wrapper = mount(TaskCard, {
       props: {
         progress: stepProgress,
-        stepCountError: 'Open Mom on a supported Android device to load steps from Health Connect.',
+        stepCountError: 'Open Polymind on a supported Android device to load steps from Health Connect.',
       },
       global: {
         stubs: {
@@ -189,7 +189,7 @@ describe('TaskCard amount actions', () => {
     expect(wrapper.text()).toContain('Health Connect')
     expect(wrapper.text()).not.toContain('Log amount')
     const sourceMessage = wrapper.get('.step-source-message')
-    expect(sourceMessage.text()).toContain('Open Mom on a supported Android device')
+    expect(sourceMessage.text()).toContain('Open Polymind on a supported Android device')
     expect(sourceMessage.element.compareDocumentPosition(wrapper.get('.step-source').element)
       & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })

@@ -116,7 +116,7 @@ final class Database
         $found = $statement->fetchAll(PDO::FETCH_COLUMN);
         $missing = array_values(array_diff($tableNames, $found));
         if ($missing !== []) {
-            throw new ApiException(500, 'The SQLite database does not have the expected Mom schema.');
+            throw new ApiException(500, 'The SQLite database does not have the expected Polymind schema.');
         }
 
         foreach ($required as $table => $columns) {
@@ -125,7 +125,7 @@ final class Database
             if (array_diff($columns, $foundColumns) !== []) {
                 throw new ApiException(
                     500,
-                    "The SQLite {$table} table does not have the expected Mom schema.",
+                    "The SQLite {$table} table does not have the expected Polymind schema.",
                 );
             }
         }

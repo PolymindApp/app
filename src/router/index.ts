@@ -12,7 +12,7 @@ const router = createRouter({
       path: '/',
       name: 'landing',
       component: () => import('@/views/LandingView.vue'),
-      meta: { desktopOnly: true, title: 'Mom — Management of Me' },
+      meta: { desktopOnly: true, title: 'Polymind — Many systems. One mind.' },
     },
     { path: '/auth', name: 'auth', component: () => import('@/views/AuthView.vue'), meta: { guest: true } },
     {

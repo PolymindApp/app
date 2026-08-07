@@ -306,7 +306,7 @@ fi
 adb -s "$device_serial" reverse "tcp:$vite_port" "tcp:$vite_port"
 adb -s "$device_serial" reverse "tcp:$api_port" "tcp:$api_port"
 
-echo "Launching Mom with live reload. Press Ctrl+C to stop."
+echo "Launching Polymind with live reload. Press Ctrl+C to stop."
 set +e
 pnpm exec cap run android \
   --target "$device_serial" \

@@ -1281,7 +1281,7 @@ final class Api
             throw new ApiException(503, 'Biometric sign-in is not configured.');
         }
 
-        $webAuthn = new WebAuthn('Mom', $this->config->passkeyRpId, ['none'], true);
+        $webAuthn = new WebAuthn('Polymind', $this->config->passkeyRpId, ['none'], true);
         $webAuthn->addAndroidKeyHashes($this->config->passkeyAndroidKeyHashes);
         return $webAuthn;
     }

@@ -79,7 +79,7 @@ export async function openHealthConnectSettings() {
 export async function readHealthConnectSteps(date: Date): Promise<number> {
   if (!isNativeHealthConnectSupported()) {
     throw new HealthConnectError(
-      'Open Mom on a supported Android device to load steps from Health Connect.',
+      'Open Polymind on a supported Android device to load steps from Health Connect.',
       'HEALTH_CONNECT_UNAVAILABLE',
     )
   }
@@ -147,6 +147,6 @@ function normalizeHealthConnectError(cause: unknown): HealthConnectError {
   }
   const message = cause instanceof Error && cause.message
     ? cause.message
-    : 'Mom could not read your steps from Health Connect.'
+    : 'Polymind could not read your steps from Health Connect.'
   return new HealthConnectError(message, 'HEALTH_CONNECT_READ_FAILED')
 }

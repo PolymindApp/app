@@ -1,4 +1,4 @@
-# Mom — Management of Me
+# Polymind — Many systems. One mind.
 
 A mobile-first personal management app for tasks, plans, habits, workouts, and programmable intervals. The client uses Vue 3, Vuetify, and TypeScript. A PHP API provides password/passkey authentication and secure SQLite access.
 
@@ -8,7 +8,7 @@ A mobile-first personal management app for tasks, plans, habits, workouts, and p
 - pnpm 11+
 - PHP 8.1+ with PDO_SQLITE
 - Composer 2
-- A writable Mom SQLite database
+- A writable Polymind SQLite database
 - Android Studio 2025.2.1+ and an Android SDK for Android builds
 
 ## Start locally
@@ -172,7 +172,7 @@ Connect one phone with USB or wireless debugging enabled, then run:
 pnpm android:dev
 ```
 
-The command starts the PHP API and Vite when needed, forwards ports `5173` and `8090`, installs Mom, and stays attached for hot updates. Press `Ctrl+C` to stop it.
+The command starts the PHP API and Vite when needed, forwards ports `5173` and `8090`, installs Polymind, and stays attached for hot updates. Press `Ctrl+C` to stop it.
 
 If more than one device is connected, select one explicitly:
 

@@ -475,7 +475,7 @@ public class BackgroundIntervalService extends Service {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
         NotificationChannel channel = new NotificationChannel(
             CHANNEL_ID,
-            "Mom intervals",
+            "Polymind intervals",
             NotificationManager.IMPORTANCE_LOW
         );
         channel.setDescription("Keeps interval sessions and cue sounds running in the background.");

@@ -116,7 +116,7 @@ class HealthConnectPlugin : Plugin() {
                 val granted = client.permissionController.getGrantedPermissions()
                 if (!granted.contains(readStepsPermission)) {
                     call.reject(
-                        "Allow Mom to read steps in Health Connect.",
+                        "Allow Polymind to read steps in Health Connect.",
                         "HEALTH_CONNECT_PERMISSION_REQUIRED",
                     )
                     return@launch
@@ -132,7 +132,7 @@ class HealthConnectPlugin : Plugin() {
                 call.resolve(JSObject().put("steps", steps))
             } catch (exception: SecurityException) {
                 call.reject(
-                    "Allow Mom to read steps in Health Connect.",
+                    "Allow Polymind to read steps in Health Connect.",
                     "HEALTH_CONNECT_PERMISSION_REQUIRED",
                     exception,
                 )
@@ -194,5 +194,5 @@ class HealthConnectPlugin : Plugin() {
 
     private fun healthErrorMessage(exception: Exception): String =
         exception.message?.takeIf { it.isNotBlank() }
-            ?: "Mom could not communicate with Health Connect."
+            ?: "Polymind could not communicate with Health Connect."
 }

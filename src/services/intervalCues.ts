@@ -142,8 +142,8 @@ export async function notifyIntervalTransition(title: string, body: string) {
   if (!('Notification' in window) || Notification.permission !== 'granted' || document.visibilityState === 'visible') return
   const options = {
     body,
-    icon: '/brand/mom-mark.png',
-    badge: '/brand/mom-mark.png',
+    icon: '/brand/polymind-mark.png',
+    badge: '/brand/polymind-mark.png',
     tag: 'mom-interval',
     renotify: true,
   }

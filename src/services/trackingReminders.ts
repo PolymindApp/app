@@ -54,7 +54,7 @@ export async function reconcileTrackingReminders(
       const [hour = 20, minute = 0] = tracker.reminderTime.split(':').map(Number)
       return {
         id: notificationId(tracker.id),
-        title: 'Mom check-in',
+        title: 'Polymind check-in',
         body: tracker.reminderShowName
           ? `Time to log ${tracker.name}.`
           : 'Time to check in with your tracking.',

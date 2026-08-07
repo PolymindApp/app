@@ -133,7 +133,7 @@ function showNotice(color: 'success' | 'error', text: string) {
       <div class="account-section-heading">
         <div>
           <h2>Profile</h2>
-          <p>This is the name shown throughout Mom.</p>
+          <p>This is the name shown throughout Polymind.</p>
         </div>
         <v-icon icon="mdi-account-outline" />
       </div>
@@ -212,7 +212,7 @@ function showNotice(color: 'success' | 'error', text: string) {
       <div v-else-if="biometricState === 'available'" class="biometric-action">
         <div class="biometric-privacy">
           <v-icon icon="mdi-shield-lock-outline" size="20" />
-          <p>Your biometric data stays on your device. Mom only receives confirmation that it was you.</p>
+          <p>Your biometric data stays on your device. Polymind only receives confirmation that it was you.</p>
         </div>
         <v-btn
           color="secondary"
@@ -231,7 +231,7 @@ function showNotice(color: 'success' | 'error', text: string) {
         class="mt-5"
       >
         <div class="biometric-error">
-          <span>Mom could not check your biometric sign-in status.</span>
+          <span>Polymind could not check your biometric sign-in status.</span>
           <v-btn size="small" variant="tonal" @click="checkBiometricStatus">Try again</v-btn>
         </div>
       </v-alert>
@@ -246,7 +246,7 @@ function showNotice(color: 'success' | 'error', text: string) {
         {{
           isAndroidApp
             ? 'Biometric sign-in is not available on this device.'
-            : 'Open Mom on Android to connect biometric sign-in.'
+            : 'Open Polymind on Android to connect biometric sign-in.'
         }}
       </v-alert>
     </v-card>

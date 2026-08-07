@@ -1,6 +1,6 @@
-# Mom PHP API
+# Polymind PHP API
 
-This is a PHP 8.1 JSON API for the Mom SQLite database. `public/index.php` is the front controller; PHP code, data, and local configuration remain outside the web root.
+This is a PHP 8.1 JSON API for the Polymind SQLite database. `public/index.php` is the front controller; PHP code, data, and local configuration remain outside the web root.
 
 ## PHP extensions
 

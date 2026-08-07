@@ -383,7 +383,7 @@ public class BackgroundFlashcardService extends Service {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
         NotificationChannel channel = new NotificationChannel(
             CHANNEL_ID,
-            "Mom flashcard reviews",
+            "Polymind flashcard reviews",
             NotificationManager.IMPORTANCE_LOW
         );
         channel.setDescription("Keeps passive flashcard speech and timing active in the background.");

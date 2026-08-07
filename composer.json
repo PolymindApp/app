@@ -1,6 +1,6 @@
 {
     "name": "coulombe/mom-server",
-    "description": "Private PHP API for Mom",
+    "description": "Private PHP API for Polymind",
     "type": "project",
     "license": "proprietary",
     "require": {

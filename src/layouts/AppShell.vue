@@ -42,7 +42,7 @@ const reducedMotion = ref(
   && window.matchMedia('(prefers-reduced-motion: reduce)').matches,
 )
 const documentTitle = typeof document === 'undefined'
-  ? 'Mom — Management of Me'
+  ? 'Polymind — Many systems. One mind.'
   : document.title
 let documentTitleFrame = 0
 let documentTitleTimer: number | undefined
@@ -58,7 +58,7 @@ const flashcardSessionIsActive = computed(() => Boolean(flashcardStore.activeSes
 const sessionIsRunning = computed(() => intervalIsRunning.value || flashcardIsRunning.value)
 
 const immersive = computed(() => Boolean(router.currentRoute.value.meta.immersive))
-const pageTitle = computed(() => String(router.currentRoute.value.meta.title || 'Mom'))
+const pageTitle = computed(() => String(router.currentRoute.value.meta.title || 'Polymind'))
 const canGoBack = computed(() => Number(router.currentRoute.value.meta.pageDepth ?? 0) > 0)
 const accountName = computed(() => auth.user?.name || auth.firstName || 'You')
 const accountEmail = computed(() => auth.user?.email || '')
@@ -211,9 +211,9 @@ function releaseLeavingPage(element: Element) {
     <v-navigation-drawer v-if="mdAndUp && !immersive" permanent width="224" color="background">
       <div class="pa-6 pt-8">
         <div class="brand-mark mb-3">
-          <img src="/brand/mom-wordmark.png" alt="Mom" />
+          <img src="/brand/polymind-wordmark.png" alt="Polymind" />
         </div>
-        <p class="text-caption text-medium-emphasis mt-2">Management of Me.</p>
+        <p class="text-caption text-medium-emphasis mt-2">Many systems. One mind.</p>
       </div>
 
       <v-list nav class="px-3 mt-6">
@@ -462,13 +462,13 @@ function releaseLeavingPage(element: Element) {
 }
 
 .brand-mark {
-  width: 104px;
+  width: 160px;
   height: 36px;
 }
 
 .brand-mark img {
   display: block;
-  width: 104px;
+  width: 160px;
   height: 36px;
   object-fit: contain;
   object-position: left center;

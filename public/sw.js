@@ -1,9 +1,9 @@
-const CACHE_NAME = 'mom-shell-v5'
+const CACHE_NAME = 'mom-shell-v6'
 const APP_SHELL = [
   '/',
   '/manifest.webmanifest',
-  '/brand/mom-mark.png',
-  '/brand/mom-app-icon.png',
+  '/brand/polymind-mark.png',
+  '/brand/polymind-app-icon.png',
   '/sounds/count.mp3',
   '/sounds/go.mp3',
   '/sounds/complete.mp3',

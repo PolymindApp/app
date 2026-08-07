@@ -68,11 +68,11 @@ async function signInWithPasskey() {
       <v-container class="auth-wrap px-5">
         <section class="auth-intro">
           <div class="logo-box">
-            <img src="/brand/mom-wordmark.png" alt="Mom" />
+            <img src="/brand/polymind-wordmark.png" alt="Polymind" />
           </div>
           <h1 class="display-title auth-title mt-3">
-            <span class="auth-title__management">MANAGEMENT</span>
-            <span>OF ME<span class="text-secondary">.</span></span>
+            <span class="auth-title__systems">MANY SYSTEMS</span>
+            <span>ONE MIND<span class="text-secondary">.</span></span>
           </h1>
           <p class="auth-copy mt-5">
               Plan tasks and workouts, run intervals, review flashcards with audio, track habits and Health Connect progress, explore insights, and journal reflections, all in one flexible system for real life.
@@ -95,7 +95,7 @@ async function signInWithPasskey() {
               :color="mode === 'register' ? 'secondary' : undefined"
               @click="mode = 'register'"
             >
-              Join Mom
+              Join Polymind
             </v-btn>
           </div>
 
@@ -243,7 +243,7 @@ async function signInWithPasskey() {
   font-size: clamp(3.6rem, 17vw, 7rem);
 }
 
-.auth-title__management {
+.auth-title__systems {
   font-size: .46em;
   line-height: 1;
 }

@@ -31,17 +31,17 @@ const screenshots = [
   {
     title: 'Tasks',
     src: '/images/tasks.jpeg',
-    alt: 'Mom Tasks screen showing a weekly plan, completion progress, and programmable targets.',
+    alt: 'Polymind Tasks screen showing a weekly plan, completion progress, and programmable targets.',
   },
   {
     title: 'Intervals',
     src: '/images/intervals.jpeg',
-    alt: 'Mom Intervals screen running a programmed exercise sequence with timing and repetition progress.',
+    alt: 'Polymind Intervals screen running a programmed exercise sequence with timing and repetition progress.',
   },
   {
     title: 'Tracking',
     src: '/images/tracking.jpeg',
-    alt: 'Mom Tracking screen showing configurable wellbeing trackers and weekly patterns.',
+    alt: 'Polymind Tracking screen showing configurable wellbeing trackers and weekly patterns.',
   },
 ]
 
@@ -61,8 +61,8 @@ function scrollToFeatures() {
   <v-app theme="forgeDark">
     <v-main class="landing-page app-scroll">
       <header class="landing-header px-6 px-lg-10">
-        <router-link to="/" class="landing-brand" aria-label="Mom home">
-          <img src="/brand/mom-wordmark.png" alt="Mom" />
+        <router-link to="/" class="landing-brand" aria-label="Polymind home">
+          <img src="/brand/polymind-wordmark.png" alt="Polymind" />
         </router-link>
         <div class="landing-header__actions">
           <v-btn
@@ -88,7 +88,7 @@ function scrollToFeatures() {
             <v-col cols="12" lg="5" class="hero-copy">
               <h1>Program your life. <span class="text-secondary">Precisely.</span></h1>
               <p class="mt-6">
-                Management of Me [MOM] turns what matters to you into a system you can fine-tune, from daily actions and multi-step routines to precise timers, learning, tracking, and reflection.
+                Polymind turns what matters to you into a system you can fine-tune, from daily actions and multi-step routines to precise timers, learning, tracking, and reflection.
               </p>
               <div class="hero-actions mt-8">
                 <v-btn color="secondary" size="x-large" to="/auth" append-icon="mdi-arrow-right">
@@ -107,7 +107,7 @@ function scrollToFeatures() {
             </v-col>
 
             <v-col cols="12" lg="7">
-              <div class="phone-gallery" aria-label="Mom mobile app screenshots">
+              <div class="phone-gallery" aria-label="Polymind mobile app screenshots">
                 <div
                   v-for="(screenshot, index) in screenshots"
                   :key="screenshot.title"
@@ -169,8 +169,8 @@ function scrollToFeatures() {
       </main>
 
       <footer class="landing-footer px-6 px-lg-10">
-        <img src="/brand/mom-wordmark.png" alt="Mom" />
-        <span>Management of Me.</span>
+        <img src="/brand/polymind-wordmark.png" alt="Polymind" />
+        <span>Many systems. One mind.</span>
       </footer>
     </v-main>
   </v-app>
