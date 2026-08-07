@@ -112,7 +112,7 @@ describe('FlashcardCardsTable', () => {
     expect(wrapper.emitted('open-card')).toEqual([[cards[0]]])
   })
 
-  it('shows a 64-pixel image cell with an empty placeholder by default', () => {
+  it('shows a compact image cell with an empty placeholder by default', () => {
     const cards = [
       card(1, 'https://images.example.test/card.jpg'),
       card(2),
