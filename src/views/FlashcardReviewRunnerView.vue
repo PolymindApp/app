@@ -13,9 +13,11 @@ import {
 import { playReviewCompleteCue } from '@/services/intervalCues'
 import { requestScreenWakeLock, type ScreenWakeLock } from '@/services/screenWakeLock'
 import {
+  flashcardBackDurationMs,
   flashcardSideFromSwipe,
   flashcardTextFontSize,
   formatReviewDuration,
+  normalizeFlashcardBackSpeechRepeatCount,
   sessionAccuracy,
 } from '@/services/flashcards'
 import { useFlashcardStore } from '@/stores/flashcards'
@@ -80,9 +82,28 @@ const progressCards = computed(() => {
 const progress = computed(() => session.value?.totalCards
   ? Math.round(progressCards.value / session.value.totalCards * 100)
   : 0)
+const backSpeechRepeatCount = computed(() => session.value?.mode === 'passive'
+  && session.value.speechEnabled
+  ? normalizeFlashcardBackSpeechRepeatCount(session.value.backSpeechRepeatCount)
+  : 1)
 const passiveDurationMs = computed(() => {
   if (!session.value) return 1000
-  return (passiveSide.value === 'front' ? session.value.frontSeconds : session.value.backSeconds) * 1000
+  return passiveSide.value === 'front'
+    ? session.value.frontSeconds * 1000
+    : flashcardBackDurationMs(session.value.backSeconds, backSpeechRepeatCount.value)
+})
+const passiveSpeechRepeatIndex = computed(() => {
+  if (
+    session.value?.mode !== 'passive'
+    || passiveSide.value !== 'back'
+    || backSpeechRepeatCount.value === 1
+  ) return 0
+  const baseBackDurationMs = Math.max(1000, session.value.backSeconds * 1000)
+  const elapsedBackMs = Math.max(0, passiveDurationMs.value - passiveRemainingMs.value)
+  return Math.min(
+    backSpeechRepeatCount.value - 1,
+    Math.floor(elapsedBackMs / baseBackDurationMs),
+  )
 })
 const passiveProgress = computed(() => {
   tickVersion.value
@@ -114,6 +135,7 @@ watch([
   () => session.value?.speechEnabled,
   () => currentCard.value?.id,
   currentSpeechSide,
+  passiveSpeechRepeatIndex,
 ], () => {
   void speakCurrentSide()
 }, { flush: 'post' })
@@ -282,7 +304,10 @@ async function advancePassive() {
   if (!session.value || session.value.mode !== 'passive' || passiveAdvancing) return
   if (passiveSide.value === 'front') {
     passiveSide.value = 'back'
-    passiveRemainingMs.value = session.value.backSeconds * 1000
+    passiveRemainingMs.value = flashcardBackDurationMs(
+      session.value.backSeconds,
+      backSpeechRepeatCount.value,
+    )
     savePassiveState()
     await syncNativeBackground()
     return
@@ -407,7 +432,7 @@ function handleVisibilityChange() {
 
 function speechKey() {
   if (!currentCard.value || !session.value?.speechEnabled || session.value.status !== 'running') return ''
-  return `${currentCard.value.id}:${currentSpeechSide.value}`
+  return `${currentCard.value.id}:${currentSpeechSide.value}:${passiveSpeechRepeatIndex.value}`
 }
 
 async function speakCurrentSide() {
@@ -603,10 +628,6 @@ async function leaveRunner() {
   await pauseReview(false)
   await router.replace(exitDestination.value)
 }
-
-function tagName(id: string) {
-  return store.tags.find(tag => tag.id === id)?.name || 'Removed tag'
-}
 </script>
 
 <template>
@@ -701,19 +722,6 @@ function tagName(id: string) {
           <span>{{ formatReviewDuration(elapsedSeconds) }}</span>
         </div>
 
-        <div class="tag-row">
-          <v-chip
-            v-for="tag in currentCard.tags"
-            :key="tag"
-            size="small"
-            variant="tonal"
-            prepend-icon="mdi-tag-outline"
-          >
-            {{ tagName(tag) }}
-          </v-chip>
-          <span v-if="!currentCard.tags.length" class="text-caption muted">No tags</span>
-        </div>
-
         <button
           v-if="session.mode === 'manual'"
           v-ripple
@@ -745,6 +753,7 @@ function tagName(id: string) {
             <span class="review-card__face review-card__back">
               <small>Back</small>
               <span class="review-card__answer">
+                <span class="review-card__front-reference">{{ currentCard.front }}</span>
                 <strong
                   class="text-secondary"
                   :style="{ fontSize: flashcardTextFontSize(currentCard.back) }"
@@ -799,6 +808,7 @@ function tagName(id: string) {
               >
                 {{ currentCard.note }}
               </span>
+              <span class="review-card__front-reference">{{ currentCard.front }}</span>
             </span>
             <span v-if="session.speechEnabled" class="review-card__hint">
               <v-icon icon="mdi-volume-high" size="18" /> Tap to replay
@@ -931,7 +941,6 @@ function tagName(id: string) {
 .runner-body { display: flex; width: 100%; max-width: 44rem; min-height: 0; margin: 0 auto; padding: 1rem 1rem .5rem; flex: 1 1 auto; flex-direction: column; gap: .875rem; overflow-y: auto; overscroll-behavior: contain; }
 .runner-meta { display: flex; align-items: center; justify-content: space-between; gap: 1rem; color: rgba(var(--v-theme-on-surface), .68); font-size: .75rem; font-weight: 850; }
 .runner-meta > div { display: flex; align-items: center; gap: .4rem; }
-.tag-row { display: flex; min-height: 2rem; flex-wrap: wrap; justify-content: center; gap: .4rem; }
 .review-card { position: relative; width: 100%; min-height: min(38dvh, 22rem); border: 0; border-radius: 1.5rem; flex: 1 1 auto; overflow: hidden; background: transparent; color: inherit; cursor: pointer; perspective: 80rem; touch-action: pan-y; }
 .review-card :deep(.v-ripple__container) { z-index: 2; }
 .review-card:focus-visible { outline: .1875rem solid rgba(var(--v-theme-secondary), .72); outline-offset: .25rem; }
@@ -943,6 +952,7 @@ function tagName(id: string) {
 .review-card__face strong,
 .passive-card strong { max-width: 34rem; overflow-wrap: anywhere; font-size: clamp(1.3rem, 5vw, 2.1rem); font-weight: 850; line-height: 1.35; white-space: pre-wrap; }
 .review-card__answer { display: flex; align-items: center; flex-direction: column; gap: .45rem; }
+.review-card__front-reference { max-width: 30rem; overflow-wrap: anywhere; color: rgba(var(--v-theme-on-surface), .48); font-size: clamp(.72rem, 2.2vw, .88rem); line-height: 1.4; white-space: pre-wrap; }
 .review-card__note { max-width: 32rem; color: rgba(var(--v-theme-on-surface), .6); font-size: .82rem; font-weight: 650; line-height: 1.5; white-space: pre-wrap; }
 .review-card__back { border-color: rgba(var(--v-theme-secondary), .34); transform: rotateY(180deg); }
 .review-card__hint { display: flex; align-items: center; gap: .4rem; color: rgba(var(--v-theme-on-surface), .48); font-size: .72rem; font-weight: 800; }

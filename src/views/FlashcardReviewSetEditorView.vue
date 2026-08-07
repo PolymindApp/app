@@ -7,9 +7,12 @@ import FlashcardTagCombobox from '@/components/FlashcardTagCombobox.vue'
 import FormActionBar from '@/components/FormActionBar.vue'
 import LabeledSlider from '@/components/LabeledSlider.vue'
 import {
+  DEFAULT_FLASHCARD_BACK_SPEECH_REPEATS,
   DEFAULT_FLASHCARD_SESSION_CARDS,
   FLASHCARD_REVIEW_SORT_OPTIONS,
+  MAX_FLASHCARD_BACK_SPEECH_REPEATS,
   MAX_FLASHCARD_SESSION_CARDS,
+  MIN_FLASHCARD_BACK_SPEECH_REPEATS,
   MIN_FLASHCARD_SESSION_CARDS,
 } from '@/services/flashcards'
 import {
@@ -41,6 +44,7 @@ const draft = reactive<FlashcardReviewSetDraft>({
   maxCards: DEFAULT_FLASHCARD_SESSION_CARDS,
   frontSeconds: 5,
   backSeconds: 5,
+  backSpeechRepeatCount: DEFAULT_FLASHCARD_BACK_SPEECH_REPEATS,
   speechEnabled: false,
   frontLanguage: '',
   backLanguage: '',
@@ -57,6 +61,7 @@ function serializedDraft() {
     maxCards: draft.maxCards,
     frontSeconds: draft.frontSeconds,
     backSeconds: draft.backSeconds,
+    backSpeechRepeatCount: draft.backSpeechRepeatCount,
     speechEnabled: draft.speechEnabled,
     frontLanguage: draft.frontLanguage,
     backLanguage: draft.backLanguage,
@@ -72,6 +77,9 @@ const canSave = computed(() => (
   && Number.isInteger(draft.maxCards)
   && draft.maxCards >= MIN_FLASHCARD_SESSION_CARDS
   && draft.maxCards <= MAX_FLASHCARD_SESSION_CARDS
+  && Number.isInteger(draft.backSpeechRepeatCount)
+  && draft.backSpeechRepeatCount >= MIN_FLASHCARD_BACK_SPEECH_REPEATS
+  && draft.backSpeechRepeatCount <= MAX_FLASHCARD_BACK_SPEECH_REPEATS
   && (!draft.speechEnabled || Boolean(draft.frontLanguage && draft.backLanguage))
 ))
 const matchingCardCount = computed(() => store.matchingCards(draft.tags).length)
@@ -116,6 +124,7 @@ onMounted(async () => {
         maxCards: reviewSet.maxCards,
         frontSeconds: reviewSet.frontSeconds,
         backSeconds: reviewSet.backSeconds,
+        backSpeechRepeatCount: reviewSet.backSpeechRepeatCount,
         speechEnabled: reviewSet.speechEnabled,
         frontLanguage: reviewSet.frontLanguage,
         backLanguage: reviewSet.backLanguage,
@@ -297,6 +306,23 @@ async function remove() {
             >
               <template #label>Back language <span class="required-mark">*</span></template>
             </v-select>
+            <div v-if="draft.mode === 'passive'" class="speech-repeat-setting">
+              <LabeledSlider
+                v-model="draft.backSpeechRepeatCount"
+                title="Repeat back aloud"
+                :min="MIN_FLASHCARD_BACK_SPEECH_REPEATS"
+                :max="MAX_FLASHCARD_BACK_SPEECH_REPEATS"
+                :step="1"
+                :value-label="draft.backSpeechRepeatCount === 1 ? 'Once' : `${draft.backSpeechRepeatCount} times`"
+                min-label="Once"
+                :max-label="`${MAX_FLASHCARD_BACK_SPEECH_REPEATS} times`"
+                aria-label="Number of times to read each flashcard back aloud"
+              />
+              <p class="mode-hint mt-3">
+                <v-icon icon="mdi-information-outline" size="18" />
+                Each repeat adds the configured back duration before advancing to the next card.
+              </p>
+            </div>
             <p class="speech-background-hint">
               <v-icon icon="mdi-cellphone-sound" size="18" />
               Passive reviews keep speaking on Android while the app is in the background or the screen is locked.
@@ -382,6 +408,7 @@ async function remove() {
 .setting-row > div { min-width: 0; }
 .setting-row p { margin-top: .15rem; color: rgba(var(--v-theme-on-surface), .5); font-size: .7rem; }
 .speech-language-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.speech-repeat-setting { grid-column: 1 / -1; }
 .speech-background-hint { display: flex; grid-column: 1 / -1; align-items: flex-start; gap: .5rem; color: rgba(var(--v-theme-on-surface), .58); font-size: .72rem; line-height: 1.5; }
 .speech-background-hint .v-icon { flex: 0 0 auto; }
 .review-set-loading { display: flex; align-items: center; justify-content: center; gap: .75rem; }

@@ -309,6 +309,7 @@ async function loadVisibleWeekEntries() {
           :trackers="store.trackers"
           :entries="store.entries"
           :week-start="visibleWeekStart"
+          :selected-date="selectedDate"
           class="mt-4"
         />
         <div class="weekly-hint mt-4">

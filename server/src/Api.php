@@ -1395,6 +1395,7 @@ final class Api
                 'max_cards' => 20,
                 'front_seconds' => 5,
                 'back_seconds' => 5,
+                'back_speech_repeat_count' => 1,
                 'speech_enabled' => false,
                 'front_language' => '',
                 'back_language' => '',
@@ -1456,6 +1457,7 @@ final class Api
         if ($collection['name'] === 'flashcard_review_sets') {
             $this->allowOnlyFields($body, [
                 'name', 'tags', 'mode', 'indefinite', 'max_cards', 'front_seconds', 'back_seconds',
+                'back_speech_repeat_count',
                 'speech_enabled', 'front_language', 'back_language',
                 'sort_mode', 'sort_order',
             ]);
@@ -1906,12 +1908,14 @@ final class Api
                 'INSERT INTO flashcard_review_sessions (
                     id, owner, review_set, status, snapshot_name, mode_snapshot, sort_snapshot,
                     indefinite_snapshot, tags_snapshot, front_seconds_snapshot, back_seconds_snapshot,
+                    back_speech_repeat_count_snapshot,
                     speech_enabled_snapshot, front_language_snapshot, back_language_snapshot, queue_state,
                     started_at, ended_at, updated_at, elapsed_seconds, total_cards, viewed_count,
                     success_count, error_count, ejected_count, task, program_step, task_date
                  ) VALUES (
                     :id, :owner, :review_set, :status, :snapshot_name, :mode_snapshot, :sort_snapshot,
                     :indefinite_snapshot, :tags_snapshot, :front_seconds_snapshot, :back_seconds_snapshot,
+                    :back_speech_repeat_count_snapshot,
                     :speech_enabled_snapshot, :front_language_snapshot, :back_language_snapshot, :queue_state,
                     :started_at, :ended_at, :updated_at, 0, :total_cards, 0, 0, 0, 0,
                     :task, :program_step, :task_date
@@ -1929,6 +1933,10 @@ final class Api
                 'tags_snapshot' => json_encode(array_values($selectedTags), JSON_THROW_ON_ERROR),
                 'front_seconds_snapshot' => (int) $reviewSet['front_seconds'],
                 'back_seconds_snapshot' => (int) $reviewSet['back_seconds'],
+                'back_speech_repeat_count_snapshot' => (
+                    (string) $reviewSet['mode'] === 'passive'
+                    && (bool) $reviewSet['speech_enabled']
+                ) ? (int) $reviewSet['back_speech_repeat_count'] : 1,
                 'speech_enabled_snapshot' => (bool) $reviewSet['speech_enabled'],
                 'front_language_snapshot' => (string) $reviewSet['front_language'],
                 'back_language_snapshot' => (string) $reviewSet['back_language'],
@@ -2277,6 +2285,9 @@ final class Api
             'sortMode' => $selection['sortMode'],
             'frontSeconds' => $isPassive ? (int) $reviewSet['front_seconds'] : 5,
             'backSeconds' => $isPassive ? (int) $reviewSet['back_seconds'] : 5,
+            'backSpeechRepeatCount' => $isPassive && (bool) $reviewSet['speech_enabled']
+                ? (int) $reviewSet['back_speech_repeat_count']
+                : 1,
             'speechEnabled' => (bool) $reviewSet['speech_enabled'],
             'frontLanguage' => (string) $reviewSet['front_language'],
             'backLanguage' => (string) $reviewSet['back_language'],

@@ -6,7 +6,16 @@ import FormActionBar from '@/components/FormActionBar.vue'
 import { parseFlashcardCsv } from '@/services/flashcardCsv'
 import { useFlashcardStore } from '@/stores/flashcards'
 
-const AI_PROMPT = 'Generate 50 rows of English-to-Spanish vocabulary about woodworking as CSV with the headers front,back,note,tags. Use note for a short optional learning hint, use | between multiple tags, keep note and tags optional, quote any value containing a comma, and include no text outside the CSV.'
+const AI_PROMPT = `Generate exactly 50 English-to-Spanish flashcards about woodworking.
+
+Return ONLY raw CSV text that can be pasted directly into an importer. Do not use Markdown, code fences, a Markdown table, a title, an introduction, explanations, or any text before or after the CSV.
+
+The first line must be exactly:
+front,back,note,tags
+
+After the header, output exactly 50 data rows with exactly four comma-separated fields per row. Front and back are required. Note is an optional short learning hint; leave it empty when unused. Separate multiple tags with | inside the tags field. Every row must include the language-direction tag english-to-spanish; if the requested languages change, replace it with a lowercase source-language-to-target-language tag, such as french-to-german. Other tags are optional. Quote fields containing commas or double quotes according to CSV rules, and do not put line breaks inside fields.
+
+Your entire response must start with the header front,back,note,tags and end with the final CSV data row.`
 const CSV_EXAMPLE = `front,back,note,tags
 chisel,formón,Hand tool for carving wood,woodworking|tools
 wood grain,veta de la madera,,woodworking|materials`

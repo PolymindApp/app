@@ -25,6 +25,7 @@ interface FlashcardSpeechPlugin {
     remainingMs: number
     frontSeconds: number
     backSeconds: number
+    backSpeechRepeatCount: number
     frontLanguage: string
     backLanguage: string
     elapsedMs: number
@@ -240,6 +241,7 @@ export async function syncBackgroundFlashcardReview(
       remainingMs: Math.max(1, Math.round(remainingMs)),
       frontSeconds: session.frontSeconds,
       backSeconds: session.backSeconds,
+      backSpeechRepeatCount: session.backSpeechRepeatCount,
       frontLanguage: session.frontLanguage,
       backLanguage: session.backLanguage,
       elapsedMs: Math.max(0, Math.round(elapsedMs)),

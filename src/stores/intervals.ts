@@ -47,7 +47,10 @@ function mapSession(record: Record<string, any>): IntervalSession {
     && !Array.isArray(flashcardSnapshot)
     && Array.isArray(flashcardSnapshot.cards)
     && flashcardSnapshot.cards.length
-      ? flashcardSnapshot as IntervalFlashcardReviewSnapshot
+      ? {
+          ...flashcardSnapshot,
+          backSpeechRepeatCount: Number(flashcardSnapshot.backSpeechRepeatCount || 1),
+        } as IntervalFlashcardReviewSnapshot
       : undefined
   return {
     id: record.id,

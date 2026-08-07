@@ -1,7 +1,11 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { ApiError, api } from '@/lib/api'
-import { cardMatchesTags, DEFAULT_FLASHCARD_SESSION_CARDS } from '@/services/flashcards'
+import {
+  cardMatchesTags,
+  DEFAULT_FLASHCARD_BACK_SPEECH_REPEATS,
+  DEFAULT_FLASHCARD_SESSION_CARDS,
+} from '@/services/flashcards'
 import { useSnackbarStore } from '@/stores/snackbar'
 import { useTaskStore } from '@/stores/tasks'
 import type {
@@ -47,6 +51,9 @@ function mapReviewSet(record: Record<string, any>): FlashcardReviewSet {
     maxCards: Number(record.max_cards || DEFAULT_FLASHCARD_SESSION_CARDS),
     frontSeconds: Number(record.front_seconds || 5),
     backSeconds: Number(record.back_seconds || 5),
+    backSpeechRepeatCount: Number(
+      record.back_speech_repeat_count || DEFAULT_FLASHCARD_BACK_SPEECH_REPEATS,
+    ),
     speechEnabled: Boolean(record.speech_enabled),
     frontLanguage: record.front_language || '',
     backLanguage: record.back_language || '',
@@ -69,6 +76,9 @@ function mapSession(record: Record<string, any>): FlashcardReviewSession {
     tags: Array.isArray(record.tags_snapshot) ? record.tags_snapshot : [],
     frontSeconds: Number(record.front_seconds_snapshot || 5),
     backSeconds: Number(record.back_seconds_snapshot || 5),
+    backSpeechRepeatCount: Number(
+      record.back_speech_repeat_count_snapshot || DEFAULT_FLASHCARD_BACK_SPEECH_REPEATS,
+    ),
     speechEnabled: Boolean(record.speech_enabled_snapshot),
     frontLanguage: record.front_language_snapshot || '',
     backLanguage: record.back_language_snapshot || '',
@@ -265,6 +275,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       max_cards: draft.maxCards,
       front_seconds: draft.frontSeconds,
       back_seconds: draft.backSeconds,
+      back_speech_repeat_count: draft.backSpeechRepeatCount,
       speech_enabled: draft.speechEnabled,
       front_language: draft.frontLanguage,
       back_language: draft.backLanguage,

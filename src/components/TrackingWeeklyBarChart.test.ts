@@ -51,6 +51,7 @@ describe('TrackingWeeklyBarChart', () => {
     const wrapper = mount(TrackingWeeklyBarChart, {
       props: {
         weekStart: new Date(2026, 6, 27, 12),
+        selectedDate: new Date(2026, 6, 27, 12),
         trackers: [
           tracker({ id: 'meditation', name: 'Meditation' }),
           tracker({
@@ -79,19 +80,25 @@ describe('TrackingWeeklyBarChart', () => {
 
     expect(wrapper.find('.chart-legend').text()).toContain('Meditation')
     expect(wrapper.find('.chart-legend').text()).toContain('Mood')
-
-    await wrapper.find('.chart-plot').trigger('keydown', { key: 'ArrowRight' })
-
     expect(wrapper.find('.chart-readout').text()).toContain('Monday, Jul 27')
     expect(wrapper.find('.chart-readout').text()).toContain('Meditation:')
     expect(wrapper.find('.chart-readout').text()).toContain('2 times')
     expect(wrapper.findComponent(TrackingRatingValue).props('value')).toBe(7)
+
+    await wrapper.find('.chart-plot').trigger('keydown', { key: 'ArrowRight' })
+    await wrapper.find('.chart-plot').trigger('keydown', { key: 'ArrowRight' })
+
+    expect(wrapper.find('.chart-readout').text()).toContain('Tuesday, Jul 28')
+    expect(wrapper.findAll('.chart-readout__value')).toHaveLength(2)
+    expect(wrapper.find('.chart-readout').text()).toContain('Meditation:Not logged')
+    expect(wrapper.find('.chart-readout').text()).toContain('Mood:Not logged')
   })
 
   it('shows a weekly empty state when there are no entries in range', () => {
     const wrapper = mount(TrackingWeeklyBarChart, {
       props: {
         weekStart: new Date(2026, 6, 27, 12),
+        selectedDate: new Date(2026, 6, 27, 12),
         trackers: [tracker({})],
         entries: [],
       },

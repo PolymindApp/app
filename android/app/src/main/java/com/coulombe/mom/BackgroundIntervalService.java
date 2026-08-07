@@ -66,7 +66,9 @@ public class BackgroundIntervalService extends Service {
     private long reviewBaseElapsedMs;
     private long reviewConfiguredElapsedMs;
     private long reviewFrontDurationMs = 5000L;
+    private long reviewBaseBackDurationMs = 5000L;
     private long reviewBackDurationMs = 5000L;
+    private int reviewBackSpeechRepeatCount = 1;
     private String reviewFrontLanguage = "";
     private String reviewBackLanguage = "";
     private String lastReviewSpeechKey = "";
@@ -232,7 +234,12 @@ public class BackgroundIntervalService extends Service {
             ));
         }
         reviewFrontDurationMs = Math.max(1000L, review.optLong("frontSeconds", 5L) * 1000L);
-        reviewBackDurationMs = Math.max(1000L, review.optLong("backSeconds", 5L) * 1000L);
+        reviewBaseBackDurationMs = Math.max(1000L, review.optLong("backSeconds", 5L) * 1000L);
+        reviewBackSpeechRepeatCount = Math.max(
+            1,
+            Math.min(5, review.optInt("backSpeechRepeatCount", 1))
+        );
+        reviewBackDurationMs = reviewBaseBackDurationMs * reviewBackSpeechRepeatCount;
         reviewFrontLanguage = review.optString("frontLanguage", "").trim();
         reviewBackLanguage = review.optString("backLanguage", "").trim();
         if (!previousSessionId.equals(sessionId)) lastReviewSpeechKey = "";
@@ -246,7 +253,17 @@ public class BackgroundIntervalService extends Service {
         int cardIndex = (int) (absoluteCardIndex % reviewCards.size());
         long elapsedInCard = elapsedMs % cardDurationMs;
         String side = elapsedInCard < reviewFrontDurationMs ? "front" : "back";
-        return new ReviewPhase(cardIndex, side, absoluteCardIndex + ":" + side);
+        int backSpeechRepeatIndex = "back".equals(side)
+            ? Math.min(
+                reviewBackSpeechRepeatCount - 1,
+                (int) ((elapsedInCard - reviewFrontDurationMs) / reviewBaseBackDurationMs)
+            )
+            : 0;
+        return new ReviewPhase(
+            cardIndex,
+            side,
+            absoluteCardIndex + ":" + side + ":" + backSpeechRepeatIndex
+        );
     }
 
     private void updateReviewSpeech(long now) {

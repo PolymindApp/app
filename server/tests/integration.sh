@@ -57,7 +57,7 @@ suffix="$(php -r 'echo bin2hex(random_bytes(5));')"
 password="correct-horse-battery"
 
 migration_count="$(sqlite3 "$test_db" 'SELECT COUNT(*) FROM mom_schema_migrations;')"
-[[ "$migration_count" == 19 ]] || {
+[[ "$migration_count" == 20 ]] || {
   echo "The API did not apply the complete database migration sequence." >&2
   exit 1
 }
@@ -1181,6 +1181,7 @@ passive_review_set_payload="$(php -r '
     "name" => "Passive algebra", "tags" => [$argv[1]], "mode" => "passive",
     "indefinite" => true,
     "front_seconds" => 3, "back_seconds" => 4,
+    "back_speech_repeat_count" => 3,
     "speech_enabled" => true, "front_language" => "en-US", "back_language" => "fr-CA",
     "sort_mode" => "recently_added", "sort_order" => 1,
   ], JSON_THROW_ON_ERROR);
@@ -1199,9 +1200,9 @@ passive_session_response="$(curl --silent --show-error --fail \
 passive_session_id="$(json_field id <<<"$passive_session_response")"
 passive_session_speech="$(php -r '
   $data=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
-  echo ((int) $data["speech_enabled_snapshot"]) . ":" . $data["front_language_snapshot"] . ":" . $data["back_language_snapshot"] . ":" . ((int) $data["indefinite_snapshot"]);
+  echo ((int) $data["speech_enabled_snapshot"]) . ":" . $data["front_language_snapshot"] . ":" . $data["back_language_snapshot"] . ":" . ((int) $data["indefinite_snapshot"]) . ":" . $data["back_speech_repeat_count_snapshot"];
 ' <<<"$passive_session_response")"
-[[ "$passive_session_speech" == "1:en-US:fr-CA:1" ]] || {
+[[ "$passive_session_speech" == "1:en-US:fr-CA:1:3" ]] || {
   echo "A Review set did not snapshot its speech synthesis and looping settings." >&2
   exit 1
 }
@@ -1266,9 +1267,9 @@ interval_flashcard_snapshot="$(php -r '
   $snapshot = $data["flashcard_snapshot"];
   echo $snapshot["reviewSet"] . ":" . $snapshot["frontSeconds"] . ":"
     . $snapshot["backSeconds"] . ":" . ((int) $snapshot["speechEnabled"])
-    . ":" . count($snapshot["cards"]);
+    . ":" . $snapshot["backSpeechRepeatCount"] . ":" . count($snapshot["cards"]);
 ' <<<"$interval_flashcard_session_response")"
-[[ "$interval_flashcard_snapshot" == "$passive_review_set_id:3:4:1:1" ]] || {
+[[ "$interval_flashcard_snapshot" == "$passive_review_set_id:3:4:1:3:1" ]] || {
   echo "An interval did not snapshot its attached Passive Review set." >&2
   exit 1
 }
@@ -1316,9 +1317,10 @@ manual_interval_session_id="$(json_field id <<<"$manual_interval_response")"
 manual_interval_timing="$(php -r '
   $data = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
   echo $data["flashcard_snapshot"]["frontSeconds"] . ":"
-    . $data["flashcard_snapshot"]["backSeconds"];
+    . $data["flashcard_snapshot"]["backSeconds"] . ":"
+    . $data["flashcard_snapshot"]["backSpeechRepeatCount"];
 ' <<<"$manual_interval_response")"
-[[ "$manual_interval_timing" == "5:5" ]] || {
+[[ "$manual_interval_timing" == "5:5:1" ]] || {
   echo "An interval did not apply the five-second fallback to a Manual Review set." >&2
   exit 1
 }

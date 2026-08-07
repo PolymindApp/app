@@ -157,6 +157,7 @@ export interface IntervalFlashcardReviewSnapshot {
   sortMode: FlashcardReviewSort
   frontSeconds: number
   backSeconds: number
+  backSpeechRepeatCount: number
   speechEnabled: boolean
   frontLanguage: string
   backLanguage: string
@@ -284,6 +285,7 @@ export interface FlashcardReviewSet {
   maxCards: number
   frontSeconds: number
   backSeconds: number
+  backSpeechRepeatCount: number
   speechEnabled: boolean
   frontLanguage: string
   backLanguage: string
@@ -316,6 +318,7 @@ export interface FlashcardReviewSession {
   tags: string[]
   frontSeconds: number
   backSeconds: number
+  backSpeechRepeatCount: number
   speechEnabled: boolean
   frontLanguage: string
   backLanguage: string

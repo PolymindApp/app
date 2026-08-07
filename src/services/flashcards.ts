@@ -11,6 +11,9 @@ import type {
 export const MIN_FLASHCARD_SESSION_CARDS = 1
 export const MAX_FLASHCARD_SESSION_CARDS = 100
 export const DEFAULT_FLASHCARD_SESSION_CARDS = 20
+export const MIN_FLASHCARD_BACK_SPEECH_REPEATS = 1
+export const MAX_FLASHCARD_BACK_SPEECH_REPEATS = 5
+export const DEFAULT_FLASHCARD_BACK_SPEECH_REPEATS = 1
 
 export const FLASHCARD_BULK_MENU_ITEMS = [
   { action: 'add_tags', title: 'Add tags', icon: 'mdi-tag-plus-outline' },
@@ -175,6 +178,9 @@ export function createIntervalFlashcardReviewSnapshot(
     sortMode: reviewSet.sortMode,
     frontSeconds: effectiveSeconds.front,
     backSeconds: effectiveSeconds.back,
+    backSpeechRepeatCount: reviewSet.mode === 'passive' && reviewSet.speechEnabled
+      ? normalizeFlashcardBackSpeechRepeatCount(reviewSet.backSpeechRepeatCount)
+      : DEFAULT_FLASHCARD_BACK_SPEECH_REPEATS,
     speechEnabled: reviewSet.speechEnabled,
     frontLanguage: reviewSet.frontLanguage,
     backLanguage: reviewSet.backLanguage,
@@ -200,13 +206,27 @@ export interface IntervalFlashcardPhase {
   key: string
 }
 
+export function normalizeFlashcardBackSpeechRepeatCount(value: number) {
+  if (!Number.isFinite(value)) return DEFAULT_FLASHCARD_BACK_SPEECH_REPEATS
+  return Math.min(
+    MAX_FLASHCARD_BACK_SPEECH_REPEATS,
+    Math.max(MIN_FLASHCARD_BACK_SPEECH_REPEATS, Math.round(value)),
+  )
+}
+
+export function flashcardBackDurationMs(backSeconds: number, repeatCount: number) {
+  const durationMs = Math.max(1000, backSeconds * 1000)
+  return durationMs * normalizeFlashcardBackSpeechRepeatCount(repeatCount)
+}
+
 export function intervalFlashcardPhase(
   review: IntervalFlashcardReviewSnapshot,
   elapsedMs: number,
 ): IntervalFlashcardPhase | undefined {
   if (!review.cards.length) return undefined
   const frontMs = Math.max(1000, review.frontSeconds * 1000)
-  const backMs = Math.max(1000, review.backSeconds * 1000)
+  const baseBackMs = Math.max(1000, review.backSeconds * 1000)
+  const backMs = flashcardBackDurationMs(review.backSeconds, review.backSpeechRepeatCount)
   const cardDurationMs = frontMs + backMs
   const safeElapsedMs = Number.isFinite(elapsedMs) ? Math.max(0, elapsedMs) : 0
   const absoluteCardIndex = Math.floor(safeElapsedMs / cardDurationMs)
@@ -215,6 +235,12 @@ export function intervalFlashcardPhase(
   const side: FlashcardReviewSide = elapsedInCard < frontMs ? 'front' : 'back'
   const sideElapsedMs = side === 'front' ? elapsedInCard : elapsedInCard - frontMs
   const sideDurationMs = side === 'front' ? frontMs : backMs
+  const backSpeechRepeatIndex = side === 'back'
+    ? Math.min(
+        normalizeFlashcardBackSpeechRepeatCount(review.backSpeechRepeatCount) - 1,
+        Math.floor(sideElapsedMs / baseBackMs),
+      )
+    : 0
   const card = review.cards[cardIndex]
   if (!card) return undefined
 
@@ -225,6 +251,6 @@ export function intervalFlashcardPhase(
     side,
     progress: Math.min(100, Math.max(0, sideElapsedMs / sideDurationMs * 100)),
     remainingMs: Math.max(0, sideDurationMs - sideElapsedMs),
-    key: `${absoluteCardIndex}:${side}`,
+    key: `${absoluteCardIndex}:${side}:${backSpeechRepeatIndex}`,
   }
 }

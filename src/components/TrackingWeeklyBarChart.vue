@@ -9,6 +9,7 @@ const props = defineProps<{
   trackers: TrackingTracker[]
   entries: TrackingEntry[]
   weekStart: Date
+  selectedDate: Date
 }>()
 
 const selectedDayIndex = ref<number>()
@@ -58,15 +59,17 @@ const series = computed(() => props.trackers
   .filter((item) => item.hasValues)
   .sort((a, b) => a.tracker.sortOrder - b.tracker.sortOrder || a.tracker.name.localeCompare(b.tracker.name)))
 
-const selectedDay = computed(() => selectedDayIndex.value === undefined
-  ? undefined
-  : days.value[selectedDayIndex.value])
-const selectedValues = computed(() => selectedDayIndex.value === undefined
-  ? []
-  : series.value.flatMap((item) => {
-      const value = item.values[selectedDayIndex.value!]
-      return value === null ? [] : [{ tracker: item.tracker, value }]
-    }))
+const fallbackDayIndex = computed(() => {
+  const selectedKey = format(props.selectedDate, 'yyyy-MM-dd')
+  const index = days.value.findIndex(day => day.key === selectedKey)
+  return index >= 0 ? index : 0
+})
+const readoutDayIndex = computed(() => selectedDayIndex.value ?? fallbackDayIndex.value)
+const readoutDay = computed(() => days.value[readoutDayIndex.value])
+const readoutValues = computed(() => series.value.map(item => ({
+  tracker: item.tracker,
+  value: item.values[readoutDayIndex.value] ?? null,
+})))
 const ariaLabel = computed(() => {
   const start = days.value[0]?.date
   const end = days.value.at(-1)?.date
@@ -121,29 +124,22 @@ function onKeydown(event: KeyboardEvent) {
 
 <template>
   <div v-if="series.length" class="weekly-chart">
-    <div class="chart-legend" aria-label="Trackers shown">
-      <span v-for="item in series" :key="item.tracker.id">
-        <i :style="{ background: item.tracker.color }" />{{ item.tracker.name }}
-      </span>
-    </div>
-
     <div class="chart-readout" aria-live="polite">
-      <template v-if="selectedDay">
-        <strong>{{ format(selectedDay.date, 'EEEE, MMM d') }}</strong>
-        <span v-if="!selectedValues.length">No entries</span>
-        <span v-for="item in selectedValues" :key="item.tracker.id" class="chart-readout__value">
-          <b>{{ item.tracker.name }}:</b>
+      <strong v-if="readoutDay">{{ format(readoutDay.date, 'EEEE, MMM d') }}</strong>
+      <span v-for="item in readoutValues" :key="item.tracker.id" class="chart-readout__value">
+        <b>{{ item.tracker.name }}:</b>
+        <span class="chart-readout__display">
           <TrackingRatingValue
-            v-if="item.tracker.kind === 'rating'"
+            v-if="item.tracker.kind === 'rating' && item.value !== null"
             :value="item.value"
             :max="item.tracker.scaleMax"
             :color="item.tracker.color"
             :label="item.tracker.name"
           />
-          <template v-else>{{ formatTrackingValue(item.tracker, item.value) }}</template>
+          <template v-else-if="item.value !== null">{{ formatTrackingValue(item.tracker, item.value) }}</template>
+          <template v-else>Not logged</template>
         </span>
-      </template>
-      <span v-else>Tap, hover, or use arrow keys to inspect a day.</span>
+      </span>
     </div>
 
     <div
@@ -206,6 +202,12 @@ function onKeydown(event: KeyboardEvent) {
         >{{ day.label }}</text>
       </svg>
     </div>
+
+    <div class="chart-legend" aria-label="Trackers shown">
+      <span v-for="item in series" :key="item.tracker.id">
+        <i :style="{ background: item.tracker.color }" />{{ item.tracker.name }}
+      </span>
+    </div>
   </div>
 
   <div v-else class="weekly-chart-empty py-7 text-center" role="status">
@@ -223,13 +225,14 @@ function onKeydown(event: KeyboardEvent) {
   flex-wrap: wrap;
 }
 
-.chart-legend { color: rgba(var(--v-theme-on-surface), .68); font-size: .72rem; font-weight: 800; }
+.chart-legend { margin-top: .5rem; color: rgba(var(--v-theme-on-surface), .68); font-size: .72rem; font-weight: 800; }
 .chart-legend span { display: inline-flex; align-items: center; gap: .4rem; }
 .chart-legend i { width: .65rem; height: .65rem; flex: 0 0 auto; border-radius: .2rem; }
-.chart-readout { min-height: 2.75rem; margin-top: .65rem; color: rgba(var(--v-theme-on-surface), .58); font-size: .7rem; }
+.chart-readout { min-height: 2.75rem; margin-bottom: .65rem; color: rgba(var(--v-theme-on-surface), .58); font-size: .7rem; }
 .chart-readout strong { color: rgb(var(--v-theme-on-surface)); }
 .chart-readout__value { display: inline-flex; align-items: center; gap: .35rem; }
 .chart-readout__value b { font-weight: 800; }
+.chart-readout__display { display: inline-flex; width: min(7.5rem, 38vw); min-width: 6rem; align-items: center; }
 .chart-plot { outline: none; }
 .chart-plot:focus-visible { border-radius: 1rem; outline: .125rem solid rgba(var(--v-theme-secondary), .72); outline-offset: .25rem; }
 svg { display: block; width: 100%; height: auto; touch-action: pan-y; }

@@ -57,7 +57,10 @@ public class BackgroundFlashcardService extends Service {
     private String frontLanguage = "";
     private String backLanguage = "";
     private long frontDurationMs = 5000L;
+    private long baseBackDurationMs = 5000L;
     private long backDurationMs = 5000L;
+    private int backSpeechRepeatCount = 1;
+    private int lastBackSpeechRepeatIndex = -1;
     private long deadlineElapsedMs;
     private long configuredElapsedMs;
     private long baseElapsedMs;
@@ -76,6 +79,7 @@ public class BackgroundFlashcardService extends Service {
             // duration during handoff and speak only when advance() reaches the next side.
             advance(now);
             if (!running) return;
+            repeatBackSpeechWhenDue(now);
             long notificationSecond = Math.max(0L, deadlineElapsedMs - now) / 1000L;
             if (notificationSecond != lastNotificationSecond) {
                 lastNotificationSecond = notificationSecond;
@@ -152,12 +156,21 @@ public class BackgroundFlashcardService extends Service {
         indefinite = config.optBoolean("indefinite", false);
         side = "back".equals(config.optString("side")) ? "back" : "front";
         frontDurationMs = Math.max(1000L, config.optLong("frontSeconds", 5L) * 1000L);
-        backDurationMs = Math.max(1000L, config.optLong("backSeconds", 5L) * 1000L);
+        baseBackDurationMs = Math.max(1000L, config.optLong("backSeconds", 5L) * 1000L);
+        backSpeechRepeatCount = Math.max(1, Math.min(5, config.optInt("backSpeechRepeatCount", 1)));
+        backDurationMs = baseBackDurationMs * backSpeechRepeatCount;
         frontLanguage = config.optString("frontLanguage", "").trim();
         backLanguage = config.optString("backLanguage", "").trim();
         baseElapsedMs = Math.max(0L, config.optLong("elapsedMs", 0L));
         configuredElapsedMs = SystemClock.elapsedRealtime();
-        deadlineElapsedMs = configuredElapsedMs + Math.max(1L, config.optLong("remainingMs", 1L));
+        long remainingMs = Math.max(1L, config.optLong("remainingMs", 1L));
+        deadlineElapsedMs = configuredElapsedMs + remainingMs;
+        lastBackSpeechRepeatIndex = "back".equals(side)
+            ? Math.min(
+                backSpeechRepeatCount - 1,
+                (int) (Math.max(0L, backDurationMs - remainingMs) / baseBackDurationMs)
+            )
+            : -1;
         cardIndex = 0;
         completedCards = 0;
         lastNotificationSecond = -1L;
@@ -172,6 +185,7 @@ public class BackgroundFlashcardService extends Service {
             if ("front".equals(side)) {
                 side = "back";
                 deadlineElapsedMs += backDurationMs;
+                lastBackSpeechRepeatIndex = 0;
                 speakCurrentSide();
             } else {
                 completedCards += 1;
@@ -185,11 +199,24 @@ public class BackgroundFlashcardService extends Service {
                     }
                 }
                 side = "front";
+                lastBackSpeechRepeatIndex = -1;
                 deadlineElapsedMs += frontDurationMs;
                 speakCurrentSide();
             }
             persistState();
         }
+    }
+
+    private void repeatBackSpeechWhenDue(long now) {
+        if (!"back".equals(side) || backSpeechRepeatCount <= 1) return;
+        long backStartedAt = deadlineElapsedMs - backDurationMs;
+        int repeatIndex = Math.min(
+            backSpeechRepeatCount - 1,
+            (int) (Math.max(0L, now - backStartedAt) / baseBackDurationMs)
+        );
+        if (repeatIndex <= lastBackSpeechRepeatIndex) return;
+        lastBackSpeechRepeatIndex = repeatIndex;
+        speakCurrentSide();
     }
 
     private void speakCurrentSide() {

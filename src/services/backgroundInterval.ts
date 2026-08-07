@@ -27,6 +27,7 @@ interface BackgroundIntervalPlugin {
       cards: Array<{ front: string; back: string }>
       frontSeconds: number
       backSeconds: number
+      backSpeechRepeatCount: number
       speechEnabled: boolean
       frontLanguage: string
       backLanguage: string
@@ -85,6 +86,7 @@ export async function syncBackgroundInterval(session: IntervalSession) {
               })),
               frontSeconds: session.flashcardReview.frontSeconds,
               backSeconds: session.flashcardReview.backSeconds,
+              backSpeechRepeatCount: session.flashcardReview.backSpeechRepeatCount,
               speechEnabled: true,
               frontLanguage: session.flashcardReview.frontLanguage,
               backLanguage: session.flashcardReview.backLanguage,
