@@ -1145,9 +1145,9 @@ async function leaveRunner() {
       v-model="sessionSettingsDialog"
       persistent
       scrollable
-      max-width="44rem"
+      fullscreen
     >
-      <v-card class="session-settings-dialog">
+      <v-card rounded="0">
         <v-card-title class="d-flex align-center ga-3 px-5 pt-5">
           <v-icon icon="mdi-tune-variant" color="secondary" />
           <span>Session settings</span>
@@ -1255,7 +1255,6 @@ async function leaveRunner() {
 .queue-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
 .queue-actions .v-btn,
 .grading-actions .v-btn { min-height: 3.25rem; }
-.session-settings-dialog { max-height: calc(100dvh - 2rem); }
 .completion-panel { display: flex; width: min(42rem, calc(100% - 2rem)); min-height: 0; margin: 0 auto; padding: 2rem 0; align-items: center; justify-content: center; flex: 1 1 auto; flex-direction: column; gap: 1.25rem; overflow-y: auto; text-align: center; }
 .completion-panel__icon { display: grid; width: 6rem; height: 6rem; place-items: center; border-radius: 2rem; background: rgba(var(--v-theme-secondary), .16); color: rgb(var(--v-theme-secondary)); }
 .completion-panel h1 { font-size: clamp(2.6rem, 10vw, 5rem); }
