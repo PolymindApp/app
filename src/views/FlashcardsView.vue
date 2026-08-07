@@ -115,58 +115,44 @@ async function startReview(reviewSet: FlashcardReviewSet) {
           @keydown.space.prevent="openReviewSetActions(reviewSet)"
         >
           <div class="review-set__main">
-            <div class="review-set__icon"><v-icon icon="mdi-cards-playing-outline" size="25" /></div>
             <div class="min-width-0">
               <h3 class="text-body-1 font-weight-black text-truncate">{{ reviewSet.name }}</h3>
               <div class="review-set__meta mt-2">
-                <v-chip
-                  v-if="!reviewSet.tags.length"
-                  size="x-small"
-                  variant="tonal"
-                  prepend-icon="mdi-cards-outline"
-                >
-                  All cards
-                </v-chip>
-                <v-chip
-                  size="x-small"
-                  variant="tonal"
-                  :prepend-icon="reviewSet.mode === 'passive' ? 'mdi-play-speed' : 'mdi-gesture-tap'"
-                >
-                  {{ reviewSet.mode === 'passive' ? 'Passive' : 'Manual' }}
-                </v-chip>
-                <v-chip
-                  v-if="reviewSet.speechEnabled"
-                  size="x-small"
-                  variant="tonal"
-                  color="secondary"
-                  prepend-icon="mdi-volume-high"
-                >
-                  Speech
-                </v-chip>
-                <v-chip
-                  v-if="reviewSet.indefinite"
-                  size="x-small"
-                  variant="tonal"
-                  color="secondary"
-                  prepend-icon="mdi-infinity"
-                >
-                  Indefinite
-                </v-chip>
-                <v-chip size="x-small" variant="tonal">
-                  {{ reviewSortTitle(reviewSet.sortMode) }}
-                </v-chip>
-                <v-chip size="x-small" variant="tonal" prepend-icon="mdi-cards-outline">
-                  {{ reviewSetCardCount(reviewSet) }} cards/session
-                </v-chip>
-                <v-chip
+                <span v-if="!reviewSet.tags.length" class="review-set__meta-item">
+                  <v-icon icon="mdi-cards-outline" size="small" />
+                  <span>All cards</span>
+                </span>
+                <span class="review-set__meta-item">
+                  <v-icon
+                    :icon="reviewSet.mode === 'passive' ? 'mdi-play-speed' : 'mdi-gesture-tap'"
+                    size="small"
+                  />
+                  <span>{{ reviewSet.mode === 'passive' ? 'Passive' : 'Manual' }}</span>
+                </span>
+                <span v-if="reviewSet.speechEnabled" class="review-set__meta-item review-set__meta-item--active">
+                  <v-icon icon="mdi-volume-high" size="small" />
+                  <span>Speech</span>
+                </span>
+                <span v-if="reviewSet.indefinite" class="review-set__meta-item review-set__meta-item--active">
+                  <v-icon icon="mdi-infinity" size="small" />
+                  <span>Indefinite</span>
+                </span>
+                <span class="review-set__meta-item">
+                  <v-icon icon="mdi-sort-variant" size="small" />
+                  <span>{{ reviewSortTitle(reviewSet.sortMode) }}</span>
+                </span>
+                <span class="review-set__meta-item">
+                  <v-icon icon="mdi-card-multiple-outline" size="small" />
+                  <span>{{ reviewSetCardCount(reviewSet) }} cards/session</span>
+                </span>
+                <span
                   v-for="tag in reviewSet.tags"
                   :key="tag"
-                  size="x-small"
-                  variant="tonal"
-                  prepend-icon="mdi-tag-outline"
+                  class="review-set__meta-item"
                 >
-                  {{ tagName(tag) }}
-                </v-chip>
+                  <v-icon icon="mdi-tag-outline" size="small" />
+                  <span>{{ tagName(tag) }}</span>
+                </span>
               </div>
             </div>
             <v-icon icon="mdi-chevron-right" color="medium-emphasis" />
@@ -317,10 +303,11 @@ async function startReview(reviewSet: FlashcardReviewSet) {
 .review-set-list { display: grid; gap: .75rem; }
 .review-set { overflow: hidden; cursor: pointer; }
 .review-set:focus-visible { outline: .125rem solid rgba(var(--v-theme-secondary), .72); outline-offset: .1875rem; }
-.review-set__main { display: grid; min-width: 0; grid-template-columns: 3rem minmax(0, 1fr) 1.5rem; align-items: center; gap: .85rem; }
-.review-set__icon { display: grid; width: 3rem; height: 3rem; place-items: center; border-radius: 1rem; background: rgba(var(--v-theme-secondary), .14); color: rgb(var(--v-theme-secondary)); }
-.review-set__meta { display: flex; flex-wrap: wrap; gap: .35rem; }
-.review-set__meta :deep(.v-chip) { font-weight: 800; }
+.review-set__main { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr) 1.5rem; align-items: center; gap: .85rem; }
+.review-set__meta { display: flex; flex-wrap: wrap; gap: .35rem .75rem; color: rgba(var(--v-theme-on-surface), .6); font-size: .7rem; font-weight: 800; line-height: 1.35; }
+.review-set__meta-item { display: inline-flex; min-width: 0; align-items: center; gap: .25rem; }
+.review-set__meta-item :deep(.v-icon) { flex: 0 0 auto; opacity: .8; }
+.review-set__meta-item--active { color: rgb(var(--v-theme-secondary)); }
 .review-history-content-enter-active { transition: opacity 180ms ease, transform 220ms cubic-bezier(.22, 1, .36, 1); }
 .review-history-content-enter-from { opacity: 0; transform: translateY(.75rem); }
 .recent-review-group__heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }

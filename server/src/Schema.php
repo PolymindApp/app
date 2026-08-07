@@ -86,7 +86,7 @@ final class Schema
                     'type' => self::choice(
                         [
                             'check', 'duration', 'daily_total', 'step_counter',
-                            'program', 'interval', 'flashcards', 'tracking',
+                            'program', 'interval', 'flashcards', 'tracking', 'journal',
                         ],
                         true,
                     ),

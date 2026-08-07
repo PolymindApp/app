@@ -1,52 +1,34 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { useDisplay } from 'vuetify'
-import { Ripple } from 'vuetify/directives'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import FlashcardCardsTable from '@/components/FlashcardCardsTable.vue'
 import FlashcardTagCombobox from '@/components/FlashcardTagCombobox.vue'
-import { cardMatchesTags } from '@/services/flashcards'
+import { cardMatchesTags, FLASHCARD_BULK_MENU_ITEMS } from '@/services/flashcards'
 import { useFlashcardStore } from '@/stores/flashcards'
 import type { Flashcard, FlashcardBulkAction } from '@/types/domain'
 
 type FlashcardBulkTagAction = Extract<FlashcardBulkAction, 'add_tags' | 'set_tags' | 'remove_tags'>
 
 const router = useRouter()
-const { xs } = useDisplay()
 const store = useFlashcardStore()
 const selectedTags = ref<string[]>([])
 const selectedCardIds = ref<string[]>([])
 const bulkError = ref('')
 const bulkSaving = ref(false)
+const bulkMenuOpen = ref(false)
 const bulkTagSheetOpen = ref(false)
 const bulkTagAction = ref<FlashcardBulkTagAction>('add_tags')
 const bulkTagIds = ref<string[]>([])
 const clearTagsDialog = ref(false)
 const deleteCardsDialog = ref(false)
-const cardPage = ref(1)
-const vRipple = Ripple
-const CARD_PAGE_SIZE = 10
 
 const filteredCards = computed(() => store.cards.filter(card => cardMatchesTags(card, selectedTags.value)))
-const cardPageCount = computed(() => Math.ceil(filteredCards.value.length / CARD_PAGE_SIZE))
-const paginatedCards = computed(() => {
-  const start = (cardPage.value - 1) * CARD_PAGE_SIZE
-  return filteredCards.value.slice(start, start + CARD_PAGE_SIZE)
-})
-const pageCardIds = computed(() => paginatedCards.value.map(card => card.id))
 const selectedCards = computed(() => {
   const selected = new Set(selectedCardIds.value)
   return store.cards.filter(card => selected.has(card.id))
 })
-const allPageCardsSelected = computed(() =>
-  pageCardIds.value.length > 0
-  && pageCardIds.value.every(id => selectedCardIds.value.includes(id)),
-)
-const somePageCardsSelected = computed(() =>
-  !allPageCardsSelected.value
-  && pageCardIds.value.some(id => selectedCardIds.value.includes(id)),
-)
 const selectedCardsHaveTags = computed(() => selectedCards.value.some(card => card.tags.length > 0))
 const bulkRemovableTags = computed(() => {
   const assigned = new Set(selectedCards.value.flatMap(card => card.tags))
@@ -75,18 +57,17 @@ watch(() => store.tags, (tags) => {
 }, { deep: true, immediate: true })
 
 watch(selectedTags, () => {
-  cardPage.value = 1
   selectedCardIds.value = []
+}, { deep: true })
+
+watch(selectedCardIds, () => {
+  bulkError.value = ''
 }, { deep: true })
 
 watch(() => store.cards.map(card => card.id), (ids) => {
   const existing = new Set(ids)
   selectedCardIds.value = selectedCardIds.value.filter(id => existing.has(id))
 }, { immediate: true })
-
-watch(() => filteredCards.value.length, () => {
-  cardPage.value = Math.min(cardPage.value, Math.max(1, cardPageCount.value))
-})
 
 onMounted(() => {
   if (!store.loaded) store.load().catch(() => undefined)
@@ -100,27 +81,22 @@ function openCard(card: Flashcard) {
   void router.push({ name: 'flashcard-edit', params: { id: card.id } })
 }
 
-function togglePageSelection(selected: boolean) {
-  const next = new Set(selectedCardIds.value)
-  pageCardIds.value.forEach(id => selected ? next.add(id) : next.delete(id))
-  selectedCardIds.value = [...next]
-  bulkError.value = ''
-}
-
-function toggleCardSelection(cardId: string, selected: boolean) {
-  const next = new Set(selectedCardIds.value)
-  if (selected) next.add(cardId)
-  else next.delete(cardId)
-  selectedCardIds.value = [...next]
-  bulkError.value = ''
-}
-
 function openBulkTagAction(action: FlashcardBulkTagAction) {
   if (!selectedCardIds.value.length) return
   bulkTagAction.value = action
   bulkTagIds.value = []
   bulkError.value = ''
   bulkTagSheetOpen.value = true
+}
+
+function chooseBulkAction(action: FlashcardBulkAction) {
+  bulkMenuOpen.value = false
+  if (action === 'add_tags' || action === 'set_tags' || action === 'remove_tags') {
+    openBulkTagAction(action)
+    return
+  }
+  if (action === 'clear_tags') clearTagsDialog.value = true
+  else deleteCardsDialog.value = true
 }
 
 async function runBulkAction(action: FlashcardBulkAction, tagIds: string[] = []) {
@@ -160,13 +136,6 @@ async function deleteSelectedCards() {
   deleteCardsDialog.value = false
 }
 
-function tagName(id: string) {
-  return store.tags.find(tag => tag.id === id)?.name || 'Removed tag'
-}
-
-function cardTagNames(card: Flashcard) {
-  return card.tags.length ? card.tags.map(tagName).join(', ') : 'No tags'
-}
 </script>
 
 <template>
@@ -186,150 +155,119 @@ function cardTagNames(card: Flashcard) {
     <section v-else>
       <div class="section-heading mt-0">
         <h2>Your cards</h2>
-        <div class="d-flex align-center justify-end ga-4">
-          <span class="text-caption muted">{{ filteredCards.length }} of {{ store.cards.length }}</span>
-          <v-btn size="small" variant="text" prepend-icon="mdi-plus" @click="openNewCard">
-            New
-          </v-btn>
-        </div>
+        <span class="text-caption muted">{{ filteredCards.length }} of {{ store.cards.length }}</span>
       </div>
 
       <div class="card-filters mb-3">
-        <v-select
+        <v-autocomplete
           v-model="selectedTags"
           :items="store.tags"
           item-title="name"
           item-value="id"
           label="Filter by tags"
+          variant="outlined"
+          density="comfortable"
+          rounded="lg"
+          hide-details="auto"
           multiple
           chips
           closable-chips
           clearable
           autocomplete="off"
+          no-data-text="No matching tags"
           prepend-inner-icon="mdi-filter-variant"
           :disabled="!store.tags.length"
         />
-        <v-btn
-          icon="mdi-tag-multiple-outline"
-          variant="tonal"
-          aria-label="Manage flashcard tags"
-          :to="{ name: 'flashcard-tags' }"
-        />
-      </div>
-
-      <div v-if="filteredCards.length" class="card-library surface-card">
-        <v-table density="compact" class="card-library-table">
-          <thead>
-            <tr>
-              <th scope="col" class="card-library-table__select">
-                <v-checkbox-btn
-                  :model-value="allPageCardsSelected"
-                  :indeterminate="somePageCardsSelected"
-                  color="secondary"
-                  density="compact"
-                  hide-details="auto"
-                  aria-label="Select all cards on this page"
-                  @update:model-value="togglePageSelection(Boolean($event))"
-                />
-              </th>
-              <th scope="col">Faces</th>
-              <th scope="col">Tags</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="card in paginatedCards"
-              :key="card.id"
-              v-ripple
-              tabindex="0"
-              :class="{ 'card-library-table__row--selected': selectedCardIds.includes(card.id) }"
-              :aria-label="`Edit card: ${card.front}`"
-              @click="openCard(card)"
-              @keydown.enter="openCard(card)"
-              @keydown.space.prevent="openCard(card)"
-            >
-              <td class="card-library-table__select" @click.stop @keydown.stop>
-                <v-checkbox-btn
-                  :model-value="selectedCardIds.includes(card.id)"
-                  color="secondary"
-                  density="compact"
-                  hide-details="auto"
-                  :aria-label="`Select card: ${card.front}`"
-                  @click.stop
-                  @update:model-value="toggleCardSelection(card.id, Boolean($event))"
-                />
-              </td>
-              <td>
-                <div class="flashcard-table__faces">
-                  <strong class="flashcard-table__text flashcard-table__front">{{ card.front }}</strong>
-                  <span class="flashcard-table__text flashcard-table__back">{{ card.back }}</span>
-                </div>
-              </td>
-              <td>
-                <span class="flashcard-table__text flashcard-table__tags" :title="cardTagNames(card)">
-                  {{ cardTagNames(card) }}
+        <div class="card-filter-actions">
+          <v-btn
+            class="card-filter-action"
+            variant="tonal"
+            aria-label="Manage flashcard tags"
+            :to="{ name: 'flashcard-tags' }"
+          >
+            <span class="card-filter-action__content">
+              <v-icon icon="mdi-tag-multiple-outline" />
+              <span class="card-filter-action__label">Tags</span>
+            </span>
+          </v-btn>
+          <v-btn
+            class="card-filter-action"
+            variant="tonal"
+            aria-label="Import flashcards"
+            :to="{ name: 'flashcard-import' }"
+          >
+            <span class="card-filter-action__content">
+              <v-icon icon="mdi-file-import-outline" />
+              <span class="card-filter-action__label">Import</span>
+            </span>
+          </v-btn>
+          <v-menu
+            v-model="bulkMenuOpen"
+            location="bottom end"
+            transition="slide-y-transition"
+          >
+            <template #activator="{ props: activatorProps }">
+              <v-btn
+                v-bind="activatorProps"
+                class="card-filter-action"
+                variant="tonal"
+                :disabled="!selectedCardIds.length || bulkSaving"
+                :aria-label="selectedCardIds.length ? `Bulk actions for ${selectedCardIds.length} selected cards` : 'Select cards to use bulk actions'"
+              >
+                <span class="card-filter-action__content">
+                  <v-badge
+                    :model-value="selectedCardIds.length > 0"
+                    :content="selectedCardIds.length"
+                    color="secondary"
+                  >
+                    <v-icon icon="mdi-select-multiple" />
+                  </v-badge>
+                  <span class="card-filter-action__label">Bulk</span>
                 </span>
-              </td>
-            </tr>
-          </tbody>
-        </v-table>
+              </v-btn>
+            </template>
 
-        <v-expand-transition>
-          <div v-if="selectedCardIds.length" class="card-library-bulk">
-            <strong class="card-library-bulk__count">
-              {{ selectedCardIds.length }} selected
-            </strong>
-            <div class="card-library-bulk__actions">
-              <v-btn size="small" variant="text" prepend-icon="mdi-tag-plus-outline" @click="openBulkTagAction('add_tags')">
-                Add tags
-              </v-btn>
-              <v-btn size="small" variant="text" prepend-icon="mdi-tag-check-outline" @click="openBulkTagAction('set_tags')">
-                Set tags
-              </v-btn>
-              <v-btn
-                size="small"
-                variant="text"
-                prepend-icon="mdi-tag-minus-outline"
-                :disabled="!selectedCardsHaveTags"
-                @click="openBulkTagAction('remove_tags')"
-              >
-                Remove tags
-              </v-btn>
-              <v-btn
-                size="small"
-                variant="text"
-                prepend-icon="mdi-tag-off-outline"
-                :disabled="!selectedCardsHaveTags"
-                @click="clearTagsDialog = true"
-              >
-                Clear tags
-              </v-btn>
-              <v-btn
-                size="small"
-                variant="text"
-                color="error"
-                prepend-icon="mdi-delete-outline"
-                @click="deleteCardsDialog = true"
-              >
-                Delete
-              </v-btn>
-            </div>
-            <v-alert v-if="bulkError" type="error" variant="tonal" density="compact">
-              {{ bulkError }}
-            </v-alert>
-          </div>
-        </v-expand-transition>
+            <v-list class="bulk-menu-list" density="compact" rounded="lg">
+              <v-list-subheader>
+                {{ selectedCardIds.length }} {{ selectedCardIds.length === 1 ? 'card' : 'cards' }} selected
+              </v-list-subheader>
+              <template v-for="item in FLASHCARD_BULK_MENU_ITEMS" :key="item.action">
+                <v-divider v-if="item.divider" class="my-1" />
+                <v-list-item
+                  :prepend-icon="item.icon"
+                  :title="item.title"
+                  :base-color="item.color"
+                  :disabled="bulkSaving || ('requiresTags' in item && item.requiresTags && !selectedCardsHaveTags)"
+                  @click="chooseBulkAction(item.action)"
+                />
+              </template>
+            </v-list>
+          </v-menu>
+          <v-btn
+            class="card-filter-action"
+            variant="flat"
+            color="secondary"
+            aria-label="Add a new flashcard"
+            @click="openNewCard"
+          >
+            <span class="card-filter-action__content">
+              <v-icon icon="mdi-plus" />
+              <span class="card-filter-action__label">Add</span>
+            </span>
+          </v-btn>
+        </div>
       </div>
 
-      <v-pagination
-        v-if="cardPageCount > 1"
-        v-model="cardPage"
-        :length="cardPageCount"
-        :total-visible="xs ? 3 : 7"
-        color="secondary"
-        rounded="lg"
-        class="card-library-pagination mt-3"
-        aria-label="Flashcard table pages"
+      <v-alert v-if="bulkError" type="error" variant="tonal" density="compact" class="mb-3">
+        {{ bulkError }}
+      </v-alert>
+
+      <FlashcardCardsTable
+        v-if="filteredCards.length"
+        v-model="selectedCardIds"
+        :cards="filteredCards"
+        :tags="store.tags"
+        @open-card="openCard"
       />
 
       <v-card v-if="!filteredCards.length" class="surface-card pa-8 text-center">
@@ -344,16 +282,6 @@ function cardTagNames(card: Flashcard) {
         <v-btn v-else variant="tonal" @click="selectedTags = []">Clear filters</v-btn>
       </v-card>
 
-      <div class="card-library-import-row mt-2">
-        <v-btn
-          size="small"
-          variant="text"
-          prepend-icon="mdi-file-import-outline"
-          :to="{ name: 'flashcard-import' }"
-        >
-          Import
-        </v-btn>
-      </div>
     </section>
 
     <ActionBottomSheet
@@ -426,47 +354,19 @@ function cardTagNames(card: Flashcard) {
 </template>
 
 <style scoped>
-.card-filters { display: grid; grid-template-columns: minmax(0, 1fr) 2.75rem; align-items: start; gap: .75rem; }
-.card-filters > .v-btn { min-width: 2.75rem; min-height: 2.75rem; }
-.card-library { overflow: hidden; }
-.card-library-table { background: transparent; }
-.card-library-table :deep(.v-table__wrapper) { overflow-x: hidden; }
-.card-library-table :deep(table) { table-layout: fixed; }
-.card-library-table th { height: 2.25rem !important; padding: 0 .75rem !important; color: rgba(var(--v-theme-on-surface), .52); font-size: .64rem !important; font-weight: 900 !important; letter-spacing: .08em; text-transform: uppercase; }
-.card-library-table th:nth-child(1) { width: 3rem; }
-.card-library-table th:nth-child(2) { width: 64%; }
-.card-library-table th:nth-child(3) { width: auto; }
-.card-library-table th.card-library-table__select,
-.card-library-table td.card-library-table__select { padding-right: .25rem !important; padding-left: .25rem !important; text-align: center; }
-.card-library-table__select :deep(.v-selection-control) { justify-content: center; }
-.card-library-table td { height: 4rem !important; padding: .5rem .75rem !important; vertical-align: middle; }
-.card-library-table tbody tr { position: relative; overflow: hidden; cursor: pointer; transition: background-color 160ms ease; }
-.card-library-table tbody tr:hover { background: rgba(var(--v-theme-on-surface), .045); }
-.card-library-table tbody tr.card-library-table__row--selected { background: rgba(var(--v-theme-secondary), .09); }
-.card-library-table tbody tr:focus-visible { outline: .125rem solid rgba(var(--v-theme-secondary), .72); outline-offset: -.125rem; }
-.card-library-bulk { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: .5rem 1rem; padding: .625rem .75rem .75rem; border-top: .0625rem solid rgba(var(--v-theme-on-surface), .1); background: rgba(var(--v-theme-secondary), .055); }
-.card-library-bulk__count { color: rgba(var(--v-theme-on-surface), .72); font-size: .72rem; white-space: nowrap; }
-.card-library-bulk__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .125rem; }
-.card-library-bulk__actions :deep(.v-btn) { min-height: 2.75rem; }
-.card-library-bulk > .v-alert { grid-column: 1 / -1; }
-.card-library-pagination :deep(.v-btn) { min-width: 2.75rem; min-height: 2.75rem; }
-.card-library-import-row { display: flex; justify-content: flex-end; }
-.card-library-import-row :deep(.v-btn) { min-height: 2.75rem; }
-.flashcard-table__text { display: -webkit-box; overflow: hidden; overflow-wrap: anywhere; font-size: .78rem; line-height: 1.35; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-.flashcard-table__faces { display: grid; gap: .2rem; }
-.flashcard-table__front { color: rgb(var(--v-theme-on-surface)); font-weight: 900; }
-.flashcard-table__back { color: rgba(var(--v-theme-on-surface), .72); }
-.flashcard-table__tags { color: rgba(var(--v-theme-on-surface), .56); font-size: .7rem; }
+.card-filters { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: .75rem; }
+.card-filter-actions { display: flex; align-items: stretch; gap: .25rem; }
+.card-filter-action { min-width: 4rem; min-height: 3.75rem; height: auto !important; padding: .125rem .375rem !important; text-transform: none; }
+.card-filter-action__content { display: flex; min-width: 0; flex-direction: column; align-items: center; justify-content: center; gap: .2rem; }
+
+.card-filter-action__label { margin-top: 0.25rem; overflow: hidden; max-width: 100%; font-size: .64rem; font-weight: 800; line-height: 1.15; text-overflow: ellipsis; white-space: nowrap; }
+.bulk-menu-list { min-width: 14rem; }
 .bulk-tag-actions { display: flex; justify-content: flex-end; gap: .5rem; }
 .bulk-tag-actions > .v-btn { min-width: 6rem; min-height: 2.75rem; }
 
 @media (max-width: 31.25rem) {
-  .card-library-table th,
-  .card-library-table td { padding-right: .5rem !important; padding-left: .5rem !important; }
-  .card-library-table th.card-library-table__select,
-  .card-library-table td.card-library-table__select { padding-right: .125rem !important; padding-left: .125rem !important; }
-  .card-library-table th:nth-child(2) { width: 62%; }
-  .card-library-bulk { grid-template-columns: 1fr; }
-  .card-library-bulk__actions { justify-content: flex-start; }
+  .card-filters { grid-template-columns: minmax(0, 1fr); }
+  .card-filter-actions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .card-filter-action { width: 100%; }
 }
 </style>

@@ -37,8 +37,15 @@ const taskItems = computed(() => [...taskStore.tasks]
   .map(item => ({
     title: item.name,
     value: item.id,
-    props: { subtitle: item.active ? undefined : 'Paused task' },
+    props: {
+      subtitle: [
+        item.type === 'journal' ? 'Writing completes this task' : '',
+        item.active ? '' : 'Paused task',
+      ].filter(Boolean).join(' · ') || undefined,
+    },
   })))
+const selectedTask = computed(() => taskStore.tasks.find(item => item.id === task.value))
+const completesJournalTask = computed(() => selectedTask.value?.type === 'journal')
 const trackerItems = computed(() => [...trackingStore.trackers]
   .sort((left, right) => Number(right.active) - Number(left.active) || left.name.localeCompare(right.name))
   .map(item => ({
@@ -76,6 +83,12 @@ function destinationQuery() {
     ...(typeof route.query.task === 'string' ? { task: route.query.task } : {}),
     ...(typeof route.query.tracker === 'string' ? { tracker: route.query.tracker } : {}),
   }
+}
+
+function destinationRoute() {
+  return route.query.from === 'tasks'
+    ? { name: 'tasks' as const }
+    : { name: 'journal' as const, query: destinationQuery() }
 }
 
 onMounted(async () => {
@@ -128,7 +141,7 @@ async function save() {
       task: task.value,
       tracker: tracker.value,
     })
-    await router.replace({ name: 'journal', query: destinationQuery() })
+    await router.replace(destinationRoute())
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Could not save this reflection.'
   } finally {
@@ -143,7 +156,7 @@ async function removeEntry() {
   try {
     await journalStore.deleteEntry(entryId.value)
     deleteDialog.value = false
-    await router.replace({ name: 'journal', query: destinationQuery() })
+    await router.replace(destinationRoute())
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Could not delete this reflection.'
     deleteDialog.value = false
@@ -190,7 +203,11 @@ async function removeEntry() {
 
       <v-card class="surface-card pa-5 mb-4">
         <h2 class="text-body-1 font-weight-black">Connect this reflection</h2>
-        <p class="text-body-2 muted mt-1 mb-4">Add context without changing task progress or tracking logs.</p>
+        <p class="text-body-2 muted mt-1 mb-4">
+          {{ completesJournalTask
+            ? `Saving this reflection completes ${selectedTask?.name || 'the journaling task'} for its date.`
+            : 'Add context without changing task progress or tracking logs.' }}
+        </p>
         <div class="journal-editor-context">
           <v-select
             v-model="task"

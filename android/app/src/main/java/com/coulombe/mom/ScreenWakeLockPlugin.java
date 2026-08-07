@@ -27,7 +27,7 @@ public class ScreenWakeLockPlugin extends Plugin {
 
         activity.runOnUiThread(() -> {
             holders.add(token);
-            activity.getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            setKeepScreenOn(activity, true);
             call.resolve();
         });
     }
@@ -44,10 +44,18 @@ public class ScreenWakeLockPlugin extends Plugin {
         activity.runOnUiThread(() -> {
             holders.remove(token);
             if (holders.isEmpty()) {
-                activity.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                setKeepScreenOn(activity, false);
             }
             call.resolve();
         });
+    }
+
+    @Override
+    protected void handleOnResume() {
+        Activity activity = getActivity();
+        if (activity != null && !holders.isEmpty()) {
+            activity.runOnUiThread(() -> setKeepScreenOn(activity, true));
+        }
     }
 
     @Override
@@ -55,10 +63,17 @@ public class ScreenWakeLockPlugin extends Plugin {
         Activity activity = getActivity();
         holders.clear();
         if (activity != null) {
-            activity.runOnUiThread(() ->
-                activity.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-            );
+            activity.runOnUiThread(() -> setKeepScreenOn(activity, false));
         }
         super.handleOnDestroy();
+    }
+
+    private void setKeepScreenOn(Activity activity, boolean keepScreenOn) {
+        activity.getWindow().getDecorView().setKeepScreenOn(keepScreenOn);
+        if (keepScreenOn) {
+            activity.getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        } else {
+            activity.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        }
     }
 }

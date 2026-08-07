@@ -475,6 +475,16 @@ async function removeTask() {
         </div>
       </v-card>
 
+      <v-card v-if="draft.type === 'journal'" class="surface-card pa-5 mb-4">
+        <div class="journal-task-summary">
+          <v-icon icon="mdi-notebook-edit-outline" color="secondary" size="24" />
+          <div>
+            <h2 class="text-body-1 font-weight-black">Write one reflection</h2>
+            <p>A linked journal entry completes this task for its scheduled date.</p>
+          </div>
+        </div>
+      </v-card>
+
       <v-card v-if="draft.type !== 'program'" class="surface-card field-stack pa-5 mb-4">
         <v-select
           v-model="draft.recurrenceType"
@@ -775,6 +785,8 @@ async function removeTask() {
 .flashcard-attachment-icon { display: grid; width: 42px; height: 42px; flex: 0 0 auto; place-items: center; border-radius: 14px; background: rgb(var(--v-theme-secondary)); color: rgb(var(--v-theme-on-secondary)); }
 .tracking-attachment-icon { display: grid; width: 34px; height: 34px; flex: 0 0 auto; place-items: center; border-radius: 11px; color: #17200f; }
 .tracking-selection-icon { display: inline-grid; width: 1.25rem; height: 1.25rem; flex: 0 0 auto; place-items: center; border-radius: .4rem; color: #17200f; }
+.journal-task-summary { display: flex; align-items: flex-start; gap: .75rem; }
+.journal-task-summary p { margin-top: .2rem; color: rgba(var(--v-theme-on-surface), .58); font-size: .72rem; line-height: 1.45; }
 .step-number { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 11px; background: rgb(var(--v-theme-secondary)); color: rgb(var(--v-theme-on-secondary)); font-size: .75rem; font-weight: 900; }
 .cycle-day-picker { max-height: 145px; overflow-y: auto; }
 .step-actions { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }

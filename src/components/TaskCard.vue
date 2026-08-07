@@ -46,6 +46,7 @@ const props = defineProps<{
   reviewActive?: boolean
   trackers?: Array<{ id: string; name: string; icon: string; color: string; logged: boolean }>
   canLogTracking?: boolean
+  canWriteJournal?: boolean
   syncing?: boolean
   stepCountError?: string
 }>()
@@ -58,6 +59,7 @@ const emit = defineEmits<{
   startInterval: [progress: TaskProgress]
   startReview: [progress: TaskProgress]
   logTracking: [progress: TaskProgress, trackerId: string]
+  writeJournal: [progress: TaskProgress]
   actions: [progress: TaskProgress]
 }>()
 
@@ -79,6 +81,7 @@ const isFlashcards = computed(() =>
   (!step.value && task.value.type === 'flashcards') || step.value?.completionType === 'flashcards',
 )
 const isTracking = computed(() => !step.value && task.value.type === 'tracking')
+const isJournal = computed(() => !step.value && task.value.type === 'journal')
 const isDailyTotal = computed(() => !step.value && task.value.type === 'daily_total')
 const isStepCounter = computed(() => !step.value && task.value.type === 'step_counter')
 const canLogAmount = computed(() => taskCanLogAmounts(props.progress))
@@ -92,9 +95,9 @@ const target = computed(() => isTracking.value
 const unit = computed(() => step.value?.customUnit || step.value?.unit || task.value.customUnit || task.value.unit || '')
 const operator = computed(() => ({ gte: 'at least', lte: 'at most', eq: 'exactly' })[step.value?.targetOperator || task.value.targetOperator || 'gte'])
 const targetOperator = computed(() => step.value?.targetOperator || task.value.targetOperator || 'gte')
-const currentGoalState = computed(() => isCheck.value || isInterval.value || isFlashcards.value || isTracking.value ? 'neutral' : goalState(props.progress.value, target.value, targetOperator.value))
+const currentGoalState = computed(() => isCheck.value || isInterval.value || isFlashcards.value || isTracking.value || isJournal.value ? 'neutral' : goalState(props.progress.value, target.value, targetOperator.value))
 const numericGoalStatus = computed(() => {
-  if (isCheck.value || isInterval.value || isFlashcards.value || isTracking.value) return undefined
+  if (isCheck.value || isInterval.value || isFlashcards.value || isTracking.value || isJournal.value) return undefined
   const difference = target.value - props.progress.value
   if (targetOperator.value === 'gte' && currentGoalState.value === 'not_enough' && difference > 0) {
     return {
@@ -174,6 +177,12 @@ const subtitle = computed(() => {
   if (isTracking.value) {
     const total = target.value
     return `${props.progress.value} of ${total} ${total === 1 ? 'tracker' : 'trackers'} logged`
+  }
+  if (isJournal.value) {
+    if (props.progress.value > 0) {
+      return `${props.progress.value} ${props.progress.value === 1 ? 'reflection' : 'reflections'} written`
+    }
+    return task.value.description || 'Write a reflection'
   }
   return step.value ? `${task.value.name} · Program step` : task.value.description
 })
@@ -387,6 +396,24 @@ watch(() => props.valuePulse, async (pulse, previousPulse) => {
           </v-list>
           <div v-if="!canLogTracking && !displayedComplete && progress.status === 'pending'" class="status-banner mt-3 muted">
             <v-icon icon="mdi-calendar-today-outline" size="16" /> Select today or an earlier date to log tracking
+          </div>
+        </template>
+
+        <template v-else-if="isJournal">
+          <v-btn
+            v-if="canWriteJournal"
+            block
+            class="mt-4"
+            color="secondary"
+            prepend-icon="mdi-notebook-edit-outline"
+            :disabled="busy || progress.locked"
+            @touchstart.stop
+            @click.stop="emit('writeJournal', progress)"
+          >
+            {{ displayedComplete ? 'Write another reflection' : 'Write reflection' }}
+          </v-btn>
+          <div v-else-if="!displayedComplete && progress.status === 'pending'" class="status-banner mt-3 muted">
+            <v-icon icon="mdi-calendar-today-outline" size="16" /> Select today or an earlier date to write
           </div>
         </template>
 

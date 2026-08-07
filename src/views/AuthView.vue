@@ -70,9 +70,12 @@ async function signInWithPasskey() {
           <div class="logo-box">
             <img src="/brand/mom-wordmark.png" alt="Mom" />
           </div>
-          <h1 class="display-title auth-title mt-3">MAKE IT<br />YOURS<span class="text-secondary">.</span></h1>
+          <h1 class="display-title auth-title mt-3">
+            <span class="auth-title__management">MANAGEMENT</span>
+            <span>OF ME<span class="text-secondary">.</span></span>
+          </h1>
           <p class="auth-copy mt-5">
-            Management of Me keeps tasks, plans, habits, workouts, and timed sessions together—one flexible system for real life.
+              Plan tasks and workouts, run intervals, review flashcards with audio, track habits and Health Connect progress, explore insights, and journal reflections, all in one flexible system for real life.
           </p>
         </section>
 
@@ -234,7 +237,15 @@ async function signInWithPasskey() {
 }
 
 .auth-title {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
   font-size: clamp(3.6rem, 17vw, 7rem);
+}
+
+.auth-title__management {
+  font-size: .46em;
+  line-height: 1;
 }
 
 .auth-copy {

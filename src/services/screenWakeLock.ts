@@ -6,6 +6,7 @@ interface NativeScreenWakeLockPlugin {
 }
 
 export interface ScreenWakeLock {
+  kind?: 'native-android'
   release: () => Promise<void>
 }
 
@@ -34,6 +35,7 @@ export async function requestScreenWakeLock(): Promise<ScreenWakeLock | undefine
     await NativeScreenWakeLock.acquire({ token })
     let released = false
     return {
+      kind: 'native-android',
       release: async () => {
         if (released) return
         released = true

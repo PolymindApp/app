@@ -7,6 +7,7 @@ import { dailyTotalCompletionPercent, isTaskScheduled, meetsTarget, programCycle
 import { taskNeedsReview } from '@/services/taskCardActions'
 import { sanitizeTaskEntryNote } from '@/services/taskEntryNotes'
 import { useSnackbarStore } from '@/stores/snackbar'
+import { useJournalStore } from '@/stores/journal'
 import { useTrackingStore } from '@/stores/tracking'
 import type { Entry, Occurrence, ProgramStep, Task, TaskDraft, TaskProgress } from '@/types/domain'
 
@@ -98,6 +99,7 @@ function mapEntry(record: Record<string, any>): Entry {
 }
 
 export const useTaskStore = defineStore('tasks', () => {
+  const journalStore = useJournalStore()
   const trackingStore = useTrackingStore()
   const tasks = ref<Task[]>([])
   const steps = ref<ProgramStep[]>([])
@@ -150,15 +152,22 @@ export const useTaskStore = defineStore('tasks', () => {
         .filter(entry => entry.localDate === dateKey && trackingTrackerIds.includes(entry.tracker))
         .map(entry => entry.tracker))
       : new Set<string>()
+    const journalEntryCount = !step && task.type === 'journal'
+      ? journalStore.entries.filter(entry => entry.task === task.id && entry.localDate === dateKey).length
+      : 0
     const value = trackingTrackerIds.length
       ? loggedTrackingTrackerIds.size
+      : !step && task.type === 'journal'
+        ? journalEntryCount
       : !step && task.type === 'step_counter'
         ? stepCounts.value[dateKey] || 0
         : entriesFor(task, date, step).reduce((sum, entry) => sum + entry.value, 0)
-    const target = trackingTrackerIds.length || step?.targetValue || task.targetValue || 1
+    const target = trackingTrackerIds.length || (!step && task.type === 'journal' ? 1 : step?.targetValue || task.targetValue || 1)
     const operator = step?.targetOperator || task.targetOperator || 'gte'
     const targetReached = task.type === 'tracking' && !step
       ? trackingTrackerIds.length > 0 && value === target
+      : task.type === 'journal' && !step
+        ? value > 0
       : meetsTarget(value, target, operator)
     const occurrenceComplete = occurrence?.status === 'completed'
     const isOccurrenceDriven = (step && ['check', 'interval', 'flashcards'].includes(step.completionType))

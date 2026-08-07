@@ -1,0 +1,14 @@
+[
+  {
+    "label": "Web Development",
+    "command": "pnpm dev:all"
+  },
+  {
+    "label": "Build for production",
+    "command": "pnpm build:prod"
+  },
+  {
+    "label": "Push to Android",
+    "command": "pnpm android:build:install:release"
+  }
+]

@@ -1,5 +1,6 @@
 import type {
   Flashcard,
+  FlashcardBulkAction,
   FlashcardReviewSession,
   FlashcardReviewSet,
   FlashcardReviewSide,
@@ -10,6 +11,21 @@ import type {
 export const MIN_FLASHCARD_SESSION_CARDS = 1
 export const MAX_FLASHCARD_SESSION_CARDS = 100
 export const DEFAULT_FLASHCARD_SESSION_CARDS = 20
+
+export const FLASHCARD_BULK_MENU_ITEMS = [
+  { action: 'add_tags', title: 'Add tags', icon: 'mdi-tag-plus-outline' },
+  { action: 'set_tags', title: 'Set tags', icon: 'mdi-tag-check-outline' },
+  { action: 'remove_tags', title: 'Remove tags', icon: 'mdi-tag-minus-outline', requiresTags: true },
+  { action: 'clear_tags', title: 'Clear tags', icon: 'mdi-tag-off-outline', requiresTags: true },
+  { action: 'delete', title: 'Delete cards', icon: 'mdi-delete-outline', color: 'error', divider: true },
+] as const satisfies ReadonlyArray<{
+  action: FlashcardBulkAction
+  title: string
+  icon: string
+  requiresTags?: boolean
+  color?: 'error'
+  divider?: boolean
+}>
 
 const MIN_FLASHCARD_SWIPE_DISTANCE = 56
 const FLASHCARD_SWIPE_AXIS_RATIO = 1.2

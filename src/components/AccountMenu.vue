@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Capacitor } from '@capacitor/core'
 import { computed, nextTick, onBeforeUnmount, ref, useId, watch } from 'vue'
+import AppVersionLabel from '@/components/AppVersionLabel.vue'
 import { getAccountMenuPosition } from '@/services/accountMenuPosition'
 
 const props = defineProps<{
@@ -178,6 +179,7 @@ onBeforeUnmount(unbindListeners)
             <div class="min-width-0">
               <strong class="d-block text-truncate">{{ accountName }}</strong>
               <span v-if="accountEmail" class="d-block text-caption muted text-truncate">{{ accountEmail }}</span>
+              <AppVersionLabel class="account-menu__version" />
             </div>
             <v-icon icon="mdi-chevron-right" size="20" />
           </button>
@@ -229,6 +231,11 @@ onBeforeUnmount(unbindListeners)
 .account-menu {
   overflow: hidden;
   border: 1px solid rgb(var(--v-theme-on-surface) / .1);
+}
+
+.account-menu__version {
+  margin-top: .15rem;
+  text-align: left;
 }
 
 .account-menu__identity {

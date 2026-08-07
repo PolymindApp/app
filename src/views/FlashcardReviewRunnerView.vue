@@ -11,7 +11,7 @@ import {
   syncBackgroundFlashcardReview,
 } from '@/services/flashcardSpeech'
 import { playReviewCompleteCue } from '@/services/intervalCues'
-import { requestScreenWakeLock } from '@/services/screenWakeLock'
+import { requestScreenWakeLock, type ScreenWakeLock } from '@/services/screenWakeLock'
 import {
   flashcardSideFromSwipe,
   flashcardTextFontSize,
@@ -51,8 +51,9 @@ let passiveAdvancing = false
 let visibilityWork: Promise<void> = Promise.resolve()
 let lastSpokenKey = ''
 let speechRequest = 0
-let wakeLock: { release: () => Promise<void> } | undefined
+let wakeLock: ScreenWakeLock | undefined
 let acquiringWakeLock = false
+let wakeLockRetryRequested = false
 let manualSwipeStart: { pointerId: number; x: number; y: number } | undefined
 let suppressManualCardTap = false
 let manualCardTapResetTimer: number | undefined
@@ -62,6 +63,7 @@ const session = computed(() => store.sessions.find(item => item.id === currentSe
 const currentCard = computed(() => session.value?.queue[0])
 const isFinished = computed(() => session.value?.status === 'completed' || session.value?.status === 'ended')
 const isRunning = computed(() => session.value?.status === 'running')
+const shouldKeepScreenAwake = computed(() => Boolean(session.value && !isFinished.value))
 const elapsedSeconds = computed(() => {
   tickVersion.value
   return Math.max(session.value?.elapsedSeconds || 0, Math.floor(localElapsedMs.value / 1000))
@@ -116,8 +118,8 @@ watch([
   void speakCurrentSide()
 }, { flush: 'post' })
 
-watch(isRunning, (running) => {
-  if (running && document.visibilityState === 'visible') void acquireWakeLock()
+watch(shouldKeepScreenAwake, (keepAwake) => {
+  if (keepAwake && document.visibilityState === 'visible') void acquireWakeLock()
   else void releaseWakeLock()
 })
 
@@ -154,7 +156,7 @@ onMounted(async () => {
     if (!restoredBackground) await syncNativeBackground()
     tickTimer = setInterval(tick, 100)
     document.addEventListener('visibilitychange', handleVisibilityChange)
-    if (isRunning.value && document.visibilityState === 'visible') void acquireWakeLock()
+    if (shouldKeepScreenAwake.value && document.visibilityState === 'visible') void acquireWakeLock()
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Could not start this review.'
   } finally {
@@ -181,18 +183,31 @@ onBeforeUnmount(() => {
 })
 
 async function acquireWakeLock() {
-  if (wakeLock || acquiringWakeLock || !mounted || !isRunning.value || document.visibilityState !== 'visible') return
+  if (acquiringWakeLock) {
+    wakeLockRetryRequested = true
+    return
+  }
+  if (
+    wakeLock
+    || !mounted
+    || !shouldKeepScreenAwake.value
+    || document.visibilityState !== 'visible'
+  ) return
   acquiringWakeLock = true
   try {
     const lock = await requestScreenWakeLock()
     if (!lock) return
-    if (!mounted || !isRunning.value || document.visibilityState !== 'visible') {
+    if (!mounted || !shouldKeepScreenAwake.value || document.visibilityState !== 'visible') {
       await lock.release()
       return
     }
     wakeLock = lock
   } finally {
     acquiringWakeLock = false
+    if (wakeLockRetryRequested) {
+      wakeLockRetryRequested = false
+      void acquireWakeLock()
+    }
   }
 }
 
@@ -364,7 +379,10 @@ function handleVisibilityChange() {
   visibilityWork = visibilityWork.then(async () => {
     if (!mounted || isFinished.value) return
     if (document.visibilityState === 'hidden') {
-      await releaseWakeLock()
+      // Android's window flag is harmless in the background and becomes effective
+      // again as soon as the Activity resumes. Keep its holder alive for the whole
+      // review screen; browser wake-lock sentinels must be requested again instead.
+      if (wakeLock?.kind !== 'native-android') await releaseWakeLock()
       lastSpokenKey = speechKey()
       await stopFlashcardSpeech()
       if (canUseNativeBackground.value && nativeBackgroundReady.value) {
@@ -375,6 +393,7 @@ function handleVisibilityChange() {
       return
     }
 
+    await acquireWakeLock()
     if (canUseNativeBackground.value) {
       const restored = await reconcileBackgroundReview()
       if (restored) return
@@ -382,7 +401,6 @@ function handleVisibilityChange() {
     if (visibilityPaused.value && session.value?.status === 'paused') {
       await resumeReview()
     }
-    if (isRunning.value) await acquireWakeLock()
     await speakCurrentSide()
   })
 }
@@ -647,7 +665,7 @@ function tagName(id: string) {
         type="warning"
         variant="tonal"
         density="compact"
-        class="runner-alert"
+        class="runner-alert runner-alert--speech"
       >
         {{ speechWarning }}
         <template v-if="speechPlaybackWarning" #append>
@@ -905,7 +923,11 @@ function tagName(id: string) {
 .runner-header__title strong { max-width: 100%; font-size: .88rem; }
 .runner-header__title span { color: rgba(var(--v-theme-on-surface), .52); font-size: .68rem; font-weight: 800; }
 .runner-state { display: flex; min-height: 100dvh; align-items: center; justify-content: center; flex-direction: column; gap: 1rem; }
-.runner-alert { max-width: 44rem; margin: 1rem auto 0; }
+.runner-alert { width: min(44rem, calc(100% - 2rem)); flex: 0 0 auto; margin: 1rem auto 0; }
+.runner-alert--speech { width: fit-content; max-width: calc(100% - 2rem); margin-top: .5rem; padding: .25rem .5rem !important; font-size: .7rem; line-height: 1.35; }
+.runner-alert--speech :deep(.v-alert__prepend) { min-height: 1rem; margin-inline-end: .4rem; }
+.runner-alert--speech :deep(.v-alert__prepend > .v-icon) { width: 1rem; height: 1rem; font-size: 1rem; }
+.runner-alert--speech :deep(.v-alert__append) { align-self: center; margin-inline-start: .5rem; }
 .runner-body { display: flex; width: 100%; max-width: 44rem; min-height: 0; margin: 0 auto; padding: 1rem 1rem .5rem; flex: 1 1 auto; flex-direction: column; gap: .875rem; overflow-y: auto; overscroll-behavior: contain; }
 .runner-meta { display: flex; align-items: center; justify-content: space-between; gap: 1rem; color: rgba(var(--v-theme-on-surface), .68); font-size: .75rem; font-weight: 850; }
 .runner-meta > div { display: flex; align-items: center; gap: .4rem; }

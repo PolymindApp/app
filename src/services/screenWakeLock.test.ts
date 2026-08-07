@@ -56,6 +56,7 @@ describe('screen wake lock', () => {
     const token = capacitorMocks.acquire.mock.calls[0]?.[0].token
 
     expect(token).toMatch(/^screen-/)
+    expect(lock?.kind).toBe('native-android')
     await lock?.release()
     await lock?.release()
     expect(capacitorMocks.release).toHaveBeenCalledOnce()

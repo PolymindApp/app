@@ -49,6 +49,35 @@ beforeEach(() => {
 })
 
 describe('TaskCard amount actions', () => {
+  it('opens a reflection from a journaling task', async () => {
+    const journalProgress: TaskProgress = {
+      ...progress,
+      task: {
+        ...progress.task,
+        id: 'daily-reflection',
+        name: 'Daily reflection',
+        type: 'journal',
+      },
+    }
+    const wrapper = mount(TaskCard, {
+      props: { progress: journalProgress, canWriteJournal: true },
+      global: {
+        stubs: {
+          VBtn: VBtnStub,
+          VCard: { template: '<div><slot /></div>' },
+          VExpandTransition: { template: '<div><slot /></div>' },
+          ExpandTransition: { template: '<div><slot /></div>' },
+          VIcon: true,
+        },
+      },
+    })
+
+    const writeButton = wrapper.findAll('button').find(button => button.text() === 'Write reflection')
+    expect(writeButton).toBeDefined()
+    await writeButton!.trigger('click')
+    expect(wrapper.emitted('writeJournal')).toEqual([[journalProgress]])
+  })
+
   it('opens a tracker log by clicking its list item', async () => {
     const trackingProgress: TaskProgress = {
       ...progress,

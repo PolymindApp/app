@@ -23,6 +23,7 @@ import {
 } from '@/services/taskEntryNotes'
 import { useIntervalStore } from '@/stores/intervals'
 import { useFlashcardStore } from '@/stores/flashcards'
+import { useJournalStore } from '@/stores/journal'
 import { useTaskStore } from '@/stores/tasks'
 import { useTrackingStore } from '@/stores/tracking'
 import type { Entry, TaskProgress, TrackingTracker } from '@/types/domain'
@@ -31,6 +32,7 @@ const allowAutomaticFocus = Capacitor.getPlatform() !== 'android'
 const store = useTaskStore()
 const intervalStore = useIntervalStore()
 const flashcardStore = useFlashcardStore()
+const journalStore = useJournalStore()
 const trackingStore = useTrackingStore()
 const router = useRouter()
 const { smAndUp } = useDisplay()
@@ -150,9 +152,11 @@ async function loadVisibleTaskProgress() {
   const dates = visibleWeekDates.value
   const start = toDateKey(dates[0])
   const end = toDateKey(dates[6])
+  const journalStart = toDateKey(addDays(dates[0], -1))
   await Promise.all([
     store.loadProgressRange(start, end).catch(() => undefined),
     trackingStore.loaded ? trackingStore.loadRange(start, end).catch(() => undefined) : Promise.resolve(),
+    journalStore.loadRange(journalStart, end).catch(() => undefined),
   ])
   if (!isNativeHealthConnectSupported()) return
   for (const date of dates) {
@@ -180,6 +184,22 @@ function intervalCanStart(progress: TaskProgress) {
 function trackingCanLog(progress: TaskProgress) {
   return progress.task.type === 'tracking'
     && !isAfter(parseISO(progress.scheduledDate), startOfDay(new Date()))
+}
+
+function journalCanWrite(progress: TaskProgress) {
+  return progress.task.type === 'journal'
+    && !isAfter(parseISO(progress.scheduledDate), startOfDay(new Date()))
+}
+
+function openJournalTask(progress: TaskProgress) {
+  void router.push({
+    name: 'journal-new',
+    query: {
+      task: progress.task.id,
+      date: progress.scheduledDate,
+      from: 'tasks',
+    },
+  })
 }
 
 function trackingMeta(progress: TaskProgress) {
@@ -551,62 +571,74 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
       <section v-if="required.length">
         <div class="section-heading"><h2>Required tasks</h2><span class="text-caption muted">{{ required.filter(i => i.complete).length }}/{{ required.length }}</span></div>
         <div class="task-stack">
-          <TaskCard
+          <div
             v-for="item in required"
             :key="`${item.task.id}-${item.programStep?.id || ''}`"
-            :progress="item"
-            :busy="progressIsBusy(item)"
-            :value-pulse="valuePulseFor(item)"
-            :syncing="item.task.type === 'step_counter' && stepCountLoading"
-            :step-count-error="item.task.type === 'step_counter' ? stepCountError : ''"
-            :interval="intervalMeta(item)"
-            :can-start-interval="intervalCanStart(item)"
-            :interval-active="sessionMatchesProgress(item)"
-            :review-set="reviewSetMeta(item)"
-            :can-start-review="progressIsToday(item) && item.status === 'pending'"
-            :review-active="reviewSessionMatchesProgress(item)"
-            :trackers="trackingMeta(item)"
-            :can-log-tracking="trackingCanLog(item)"
-            @toggle="(progress, complete) => runForProgress(progress, () => store.toggleComplete(progress, complete))"
-            @seal="progress => runForProgress(progress, () => store.setDailyTotalSealed(progress))"
-            @log-amount="openExact"
-            @log-time="openTimeLogger"
-            @start-interval="startIntervalTask"
-            @start-review="startFlashcardTask"
-            @log-tracking="openTrackingLogger"
-            @actions="openTaskActions"
-          />
+            class="task-masonry-item"
+          >
+            <TaskCard
+              :progress="item"
+              :busy="progressIsBusy(item)"
+              :value-pulse="valuePulseFor(item)"
+              :syncing="item.task.type === 'step_counter' && stepCountLoading"
+              :step-count-error="item.task.type === 'step_counter' ? stepCountError : ''"
+              :interval="intervalMeta(item)"
+              :can-start-interval="intervalCanStart(item)"
+              :interval-active="sessionMatchesProgress(item)"
+              :review-set="reviewSetMeta(item)"
+              :can-start-review="progressIsToday(item) && item.status === 'pending'"
+              :review-active="reviewSessionMatchesProgress(item)"
+              :trackers="trackingMeta(item)"
+              :can-log-tracking="trackingCanLog(item)"
+              :can-write-journal="journalCanWrite(item)"
+              @toggle="(progress, complete) => runForProgress(progress, () => store.toggleComplete(progress, complete))"
+              @seal="progress => runForProgress(progress, () => store.setDailyTotalSealed(progress))"
+              @log-amount="openExact"
+              @log-time="openTimeLogger"
+              @start-interval="startIntervalTask"
+              @start-review="startFlashcardTask"
+              @log-tracking="openTrackingLogger"
+              @write-journal="openJournalTask"
+              @actions="openTaskActions"
+            />
+          </div>
         </div>
       </section>
 
       <section v-if="optional.length">
         <div class="section-heading"><h2>Extra credit</h2><span class="text-caption muted">Optional</span></div>
         <div class="task-stack">
-          <TaskCard
+          <div
             v-for="item in optional"
             :key="`${item.task.id}-${item.programStep?.id || ''}`"
-            :progress="item"
-            :busy="progressIsBusy(item)"
-            :value-pulse="valuePulseFor(item)"
-            :syncing="item.task.type === 'step_counter' && stepCountLoading"
-            :step-count-error="item.task.type === 'step_counter' ? stepCountError : ''"
-            :interval="intervalMeta(item)"
-            :can-start-interval="intervalCanStart(item)"
-            :interval-active="sessionMatchesProgress(item)"
-            :review-set="reviewSetMeta(item)"
-            :can-start-review="progressIsToday(item) && item.status === 'pending'"
-            :review-active="reviewSessionMatchesProgress(item)"
-            :trackers="trackingMeta(item)"
-            :can-log-tracking="trackingCanLog(item)"
-            @toggle="(progress, complete) => runForProgress(progress, () => store.toggleComplete(progress, complete))"
-            @seal="progress => runForProgress(progress, () => store.setDailyTotalSealed(progress))"
-            @log-amount="openExact"
-            @log-time="openTimeLogger"
-            @start-interval="startIntervalTask"
-            @start-review="startFlashcardTask"
-            @log-tracking="openTrackingLogger"
-            @actions="openTaskActions"
-          />
+            class="task-masonry-item"
+          >
+            <TaskCard
+              :progress="item"
+              :busy="progressIsBusy(item)"
+              :value-pulse="valuePulseFor(item)"
+              :syncing="item.task.type === 'step_counter' && stepCountLoading"
+              :step-count-error="item.task.type === 'step_counter' ? stepCountError : ''"
+              :interval="intervalMeta(item)"
+              :can-start-interval="intervalCanStart(item)"
+              :interval-active="sessionMatchesProgress(item)"
+              :review-set="reviewSetMeta(item)"
+              :can-start-review="progressIsToday(item) && item.status === 'pending'"
+              :review-active="reviewSessionMatchesProgress(item)"
+              :trackers="trackingMeta(item)"
+              :can-log-tracking="trackingCanLog(item)"
+              :can-write-journal="journalCanWrite(item)"
+              @toggle="(progress, complete) => runForProgress(progress, () => store.toggleComplete(progress, complete))"
+              @seal="progress => runForProgress(progress, () => store.setDailyTotalSealed(progress))"
+              @log-amount="openExact"
+              @log-time="openTimeLogger"
+              @start-interval="startIntervalTask"
+              @start-review="startFlashcardTask"
+              @log-tracking="openTrackingLogger"
+              @write-journal="openJournalTask"
+              @actions="openTaskActions"
+            />
+          </div>
         </div>
       </section>
     </template>
@@ -850,6 +882,7 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
 .score-number { font-family: Impact, "Arial Narrow", sans-serif; font-size: 3.2rem; line-height: .9; letter-spacing: -.03em; }
 .score-percent { color: #c7f464; font-size: 1.2rem; font-weight: 900; }
 .task-stack { display: grid; gap: .7rem; }
+.task-masonry-item { min-width: 0; }
 .manage-tasks-button { min-height: 52px; }
 .empty-icon { display: grid; width: 64px; height: 64px; place-items: center; border-radius: 20px; background: #c7f464; color: #17200f; }
 .amount-keypad { display: grid; gap: 1rem; }
@@ -877,6 +910,20 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
 @media (min-width: 700px) {
   .task-stack { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .review-actions { grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
+}
+
+@media (min-width: 960px) {
+  .task-stack {
+    display: block;
+    column-count: 2;
+    column-gap: .7rem;
+  }
+
+  .task-masonry-item {
+    width: 100%;
+    margin-bottom: .7rem;
+    break-inside: avoid;
+  }
 }
 
 </style>

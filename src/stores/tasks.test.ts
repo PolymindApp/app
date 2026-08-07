@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
-import type { Entry, Occurrence, ProgramStep, Task, TrackingEntry } from '@/types/domain'
+import type { Entry, JournalEntry, Occurrence, ProgramStep, Task, TrackingEntry } from '@/types/domain'
 
 const apiMocks = vi.hoisted(() => ({
   createOccurrence: vi.fn(),
@@ -36,6 +36,7 @@ vi.mock('@/services/healthConnect', () => ({
 }))
 
 import { useTaskStore } from './tasks'
+import { useJournalStore } from './journal'
 import { useTrackingStore } from './tracking'
 
 const selectedDate = new Date(2026, 6, 29)
@@ -607,6 +608,60 @@ describe('tracking task completion', () => {
 
     expect(store.makeProgress(trackingTask, selectedDate)).toMatchObject({
       value: 2,
+      percent: 100,
+      complete: true,
+      status: 'completed',
+    })
+    expect(store.completionRateForDate(selectedDate)).toBe(100)
+  })
+})
+
+describe('journaling task completion', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  it('completes when a reflection is linked to the task for the scheduled date', () => {
+    const store = useTaskStore()
+    const journalStore = useJournalStore()
+    const journalTask: Task = {
+      ...task,
+      id: 'journal-task',
+      name: 'Evening reflection',
+      type: 'journal',
+      targetValue: 1,
+    }
+    const journalEntry = (id: string, taskId: string, localDate: string): JournalEntry => ({
+      id,
+      title: '',
+      body: 'What went well today?',
+      occurredAt: `${localDate}T20:00:00.000Z`,
+      localDate,
+      timezoneOffset: 240,
+      task: taskId,
+      taskSnapshot: journalTask.name,
+      trackerSnapshot: '',
+      createdAt: `${localDate}T20:00:00.000Z`,
+      updatedAt: `${localDate}T20:00:00.000Z`,
+    })
+
+    store.tasks = [journalTask]
+    journalStore.entries = [
+      journalEntry('other-task', 'another-task', '2026-07-29'),
+      journalEntry('other-day', journalTask.id, '2026-07-28'),
+    ]
+
+    expect(store.makeProgress(journalTask, selectedDate)).toMatchObject({
+      value: 0,
+      percent: 0,
+      complete: false,
+      status: 'pending',
+    })
+
+    journalStore.entries.push(journalEntry('matching', journalTask.id, '2026-07-29'))
+
+    expect(store.makeProgress(journalTask, selectedDate)).toMatchObject({
+      value: 1,
       percent: 100,
       complete: true,
       status: 'completed',
