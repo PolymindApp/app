@@ -256,9 +256,9 @@ function releaseLeavingPage(element: Element) {
             <transition name="app-bar-button">
               <div v-if="canGoBack" class="app-bar__back-control">
                 <v-btn
+                  class="app-bar__back-button"
                   icon="mdi-chevron-left"
                   variant="text"
-                  density="compact"
                   aria-label="Go back"
                   @click="router.back()"
                 />
@@ -385,17 +385,12 @@ function releaseLeavingPage(element: Element) {
   grid-template-columns: 0 minmax(0, 1fr) 44px;
   align-items: center;
   gap: 0;
-  transition:
-    grid-template-columns 220ms ease,
-    gap 220ms ease;
 }
 
 .app-bar__leading {
   display: grid;
-  width: 0;
-  overflow: hidden;
+  width: 44px;
   place-items: center;
-  transition: width 220ms ease;
 }
 
 .app-bar__back-control {
@@ -403,21 +398,24 @@ function releaseLeavingPage(element: Element) {
   width: 44px;
   height: 44px;
   flex: 0 0 auto;
-  overflow: hidden;
   place-items: center;
+}
+
+.app-bar__back-button {
+  width: 2.75rem !important;
+  min-width: 2.75rem !important;
+  height: 2.75rem !important;
 }
 
 .app-bar-button-enter-active,
 .app-bar-button-leave-active {
   transition:
-    width 220ms ease,
     opacity 160ms ease,
     transform 220ms ease;
 }
 
 .app-bar-button-enter-from,
 .app-bar-button-leave-to {
-  width: 0;
   opacity: 0;
   transform: translateX(-.5rem);
 }
@@ -449,18 +447,10 @@ function releaseLeavingPage(element: Element) {
   gap: 1rem;
 }
 
-.app-bar--back .app-bar__leading {
-  width: 44px;
-}
-
 .app-bar--ios .app-bar__inner {
   padding: 0 .5rem;
   grid-template-columns: 44px minmax(0, 1fr) 44px;
   gap: .5rem;
-}
-
-.app-bar--ios .app-bar__leading {
-  width: 44px;
 }
 
 .app-bar--ios .app-bar__title {
