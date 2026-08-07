@@ -1108,7 +1108,7 @@ async function leaveRunner() {
             :disabled="busy"
             @click="cardMenuOpen = true"
           >
-            Card menu
+            Options
           </v-btn>
           <v-btn
             variant="text"
