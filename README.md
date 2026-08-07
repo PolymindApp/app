@@ -92,7 +92,32 @@ On the host, place a copy of `.env.prod` named `.env` at the project root becaus
 - `pnpm android:build` — create a debug APK using `.env.prod`
 - `pnpm android:build:release` — create a signed release APK using `.env.prod`
 - `pnpm android:bundle` — create a signed release AAB using `.env.prod`
-- `pnpm release:android [X.X.X]` — create and push a release commit and annotated tag, using an authenticated Codex CLI to summarize every committed change since the previous release
+- `pnpm ios:sync` — build with `.env.prod` and sync the web app into Xcode
+- `pnpm ios:assets` — regenerate iOS app-icon and splash assets
+- `pnpm ios:open` — open the native project in Xcode
+- `pnpm ios:run` — sync and run on an iOS simulator or device
+- `pnpm ios:build:release` — create a signed release IPA using the configured Apple signing identity
+- `pnpm release:android [X.X.X]` — update Android and iOS versions, then create and push a release commit and annotated tag using an authenticated Codex CLI to summarize every committed change since the previous release
+
+## iOS release builds
+
+The Capacitor iOS project targets iOS 15 or newer and requires Xcode 26 or newer. Tag releases and `ios` manual workflow runs build a signed IPA on the `macos-26` GitHub runner and retain it as a workflow artifact for 30 days.
+
+Create a GitHub environment named `iOS` with these secrets:
+
+- `IOS_CERTIFICATE_BASE64` — the base64-encoded Apple distribution `.p12` certificate
+- `IOS_CERTIFICATE_PASSWORD` — the `.p12` password
+- `IOS_PROVISIONING_PROFILE_BASE64` — a base64-encoded distribution provisioning profile for `dev.coulombe.mom`
+
+The environment may also define `VITE_API_URL` and `IOS_EXPORT_METHOD`. The API defaults to `https://mom.coulombe.dev/server`; the export method defaults to `app-store-connect` and may instead be `release-testing`, `enterprise`, or `debugging` when it matches the provisioning profile.
+
+Encode each binary signing file without line breaks before saving it as a GitHub secret:
+
+```bash
+base64 < signing-file | tr -d '\n'
+```
+
+The workflow reads the Apple team from the profile, validates its application identifier, imports the certificate into an ephemeral keychain, builds through Capacitor, and removes the signing files afterward. For local release builds, export the parsed `IOS_TEAM_ID`, `IOS_SIGNING_CERTIFICATE`, and `IOS_PROVISIONING_PROFILE` values before running `pnpm ios:build:release`; routine device development is easier through `pnpm ios:open` and Xcode-managed signing.
 
 ## PHP API deployment
 

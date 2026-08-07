@@ -7,6 +7,7 @@ release_remote="${RELEASE_REMOTE:-origin}"
 release_branch="${RELEASE_BRANCH:-main}"
 package_file="package.json"
 gradle_file="android/app/build.gradle"
+ios_project_file="ios/App/App.xcodeproj/project.pbxproj"
 
 fail() {
   echo "Release stopped: $1" >&2
@@ -21,7 +22,7 @@ fi
 command -v git >/dev/null 2>&1 || fail "git is required."
 command -v node >/dev/null 2>&1 || fail "Node.js is required."
 command -v pnpm >/dev/null 2>&1 || fail "pnpm is required."
-command -v perl >/dev/null 2>&1 || fail "Perl is required to update the Android version."
+command -v perl >/dev/null 2>&1 || fail "Perl is required to update the native app versions."
 command -v codex >/dev/null 2>&1 || fail "Codex CLI is required to generate the release notes."
 
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 \
@@ -30,7 +31,7 @@ git rev-parse --is-inside-work-tree >/dev/null 2>&1 \
 repository_root="$(git rev-parse --show-toplevel)"
 cd "$repository_root"
 
-[[ -f "$package_file" && -f "$gradle_file" ]] \
+[[ -f "$package_file" && -f "$gradle_file" && -f "$ios_project_file" ]] \
   || fail "the app version files could not be found."
 
 current_branch="$(git branch --show-current)"
@@ -38,8 +39,8 @@ current_branch="$(git branch --show-current)"
 [[ "$current_branch" == "$release_branch" ]] \
   || fail "switch to $release_branch before creating a release."
 
-[[ -z "$(git status --porcelain -- "$package_file" "$gradle_file")" ]] \
-  || fail "commit or stash changes to $package_file and $gradle_file before creating a release."
+[[ -z "$(git status --porcelain -- "$package_file" "$gradle_file" "$ios_project_file")" ]] \
+  || fail "commit or stash changes to the app version files before creating a release."
 
 if [[ -n "$(git status --porcelain)" ]]; then
   echo "Unrelated working tree changes will be left out of the release."
@@ -90,14 +91,36 @@ version_name_matches="$(grep -Ec '^[[:space:]]*versionName[[:space:]]+"[^"]+"[[:
 [[ "$version_code_matches" -eq 1 && "$version_name_matches" -eq 1 ]] \
   || fail "expected one versionCode and one versionName in $gradle_file."
 
+ios_version_code_matches="$(grep -Ec '^[[:space:]]*CURRENT_PROJECT_VERSION = [0-9]+;$' "$ios_project_file")"
+ios_version_name_matches="$(grep -Ec '^[[:space:]]*MARKETING_VERSION = [^;]+;$' "$ios_project_file")"
+[[ "$ios_version_code_matches" -eq 2 && "$ios_version_name_matches" -eq 2 ]] \
+  || fail "expected two iOS build versions and two marketing versions in $ios_project_file."
+
 current_version_code="$(
   sed -n 's/^[[:space:]]*versionCode[[:space:]]\+\([0-9]\+\)[[:space:]]*$/\1/p' \
     "$gradle_file"
 )"
 [[ "$current_version_code" =~ ^[0-9]+$ ]] \
   || fail "the current Android versionCode could not be read."
+
+current_ios_version_code="$(
+  sed -n 's/^[[:space:]]*CURRENT_PROJECT_VERSION = \([0-9]\+\);$/\1/p' \
+    "$ios_project_file" \
+    | sort -u
+)"
+[[ "$current_ios_version_code" == "$current_version_code" ]] \
+  || fail "the iOS build version must match Android versionCode $current_version_code."
+
+current_ios_version="$(
+  sed -n 's/^[[:space:]]*MARKETING_VERSION = \([^;]\+\);$/\1/p' \
+    "$ios_project_file" \
+    | sort -u
+)"
+[[ "$current_ios_version" == "$current_version" ]] \
+  || fail "the iOS marketing version must match package version $current_version."
+
 next_version_code=$((current_version_code + 1))
-((next_version_code <= 2100000000)) || fail "the Android versionCode limit was reached."
+((next_version_code <= 2100000000)) || fail "the shared native build-number limit was reached."
 
 previous_release_tag=""
 while IFS= read -r candidate_tag; do
@@ -107,7 +130,7 @@ while IFS= read -r candidate_tag; do
   fi
 done < <(git tag --merged HEAD --list 'v*' --sort=-version:refname)
 
-release_temp_dir="$(mktemp -d "${TMPDIR:-/tmp}/mom-android-release.XXXXXX")"
+release_temp_dir="$(mktemp -d "${TMPDIR:-/tmp}/mom-release.XXXXXX")"
 release_notes_file="$release_temp_dir/release-notes.md"
 tag_message_file="$release_temp_dir/tag-message.md"
 cleanup_release_files() {
@@ -170,7 +193,7 @@ grep -q '[^[:space:]]' "$release_notes_file" \
 echo "Generated tag message:"
 cat "$tag_message_file"
 
-echo "Preparing $release_tag (Android versionCode $next_version_code)..."
+echo "Preparing $release_tag (native build $next_version_code)..."
 pnpm pkg set "version=$release_version"
 
 RELEASE_VERSION="$release_version" \
@@ -180,16 +203,27 @@ NEXT_VERSION_CODE="$next_version_code" \
     s/(versionName\s+)"[^"]+"/$1"$ENV{RELEASE_VERSION}"/;
   ' "$gradle_file"
 
+RELEASE_VERSION="$release_version" \
+NEXT_VERSION_CODE="$next_version_code" \
+  perl -0pi -e '
+    s/(CURRENT_PROJECT_VERSION = )\d+;/$1$ENV{NEXT_VERSION_CODE};/g;
+    s/(MARKETING_VERSION = )[^;]+;/$1$ENV{RELEASE_VERSION};/g;
+  ' "$ios_project_file"
+
 [[ "$(node -p "require('./$package_file').version")" == "$release_version" ]] \
   || fail "the package version was not updated."
 grep -Eq "^[[:space:]]*versionCode[[:space:]]+$next_version_code[[:space:]]*$" "$gradle_file" \
   || fail "the Android versionCode was not updated."
 grep -Eq "^[[:space:]]*versionName[[:space:]]+\"$release_version\"[[:space:]]*$" "$gradle_file" \
   || fail "the Android versionName was not updated."
-git diff --check -- "$package_file" "$gradle_file"
+[[ "$(grep -Ec "^[[:space:]]*CURRENT_PROJECT_VERSION = $next_version_code;$" "$ios_project_file")" -eq 2 ]] \
+  || fail "the iOS build version was not updated."
+[[ "$(grep -Ec "^[[:space:]]*MARKETING_VERSION = $release_version;$" "$ios_project_file")" -eq 2 ]] \
+  || fail "the iOS marketing version was not updated."
+git diff --check -- "$package_file" "$gradle_file" "$ios_project_file"
 
-git add -- "$package_file" "$gradle_file"
-git commit --only -m "Release $release_tag" -- "$package_file" "$gradle_file"
+git add -- "$package_file" "$gradle_file" "$ios_project_file"
+git commit --only -m "Release $release_tag" -- "$package_file" "$gradle_file" "$ios_project_file"
 git tag --annotate "$release_tag" --file "$tag_message_file"
 
 echo "Pushing $release_branch and $release_tag to $release_remote..."
