@@ -148,7 +148,18 @@ else
   range_description="the repository's first commit through HEAD"
 fi
 
-release_notes_prompt='Write only the Markdown body for an annotated Git release tag from the supplied Git history and diff.
+release_notes_prompt="Write only the Markdown body for an annotated Git release tag.
+
+Repository context:
+- Work only from committed changes in the Git range $release_range.
+- Compare $diff_base to HEAD when inspecting the complete release diff.
+- Do not include unrelated working-tree changes.
+
+Inspection requirements:
+- Inspect the commit history, diff statistics, and relevant source diffs yourself from the current repository.
+- Inspect changes incrementally instead of loading the complete release diff in one command.
+- Do not read large generated datasets or binary assets in full. Determine their purpose from paths, statistics, commit context, and related source changes.
+- Do not modify repository files, create commits or tags, or run the release workflow.
 
 Requirements:
 - Cover every material user-facing, server, Android, deployment, and developer-workflow change in the supplied range.
@@ -156,27 +167,15 @@ Requirements:
 - Prioritize behavior and outcomes over filenames or implementation mechanics.
 - Do not include a release title, version heading, preamble, conclusion, or fenced code block.
 - Do not mention changes outside the supplied committed range or infer unsupported behavior.
-- Omit release-only version bumps and generated artifacts.'
+- Omit release-only version bumps and generated artifacts."
 
 echo "Asking Codex to summarize changes from $range_description..."
-if ! {
-  printf 'Release range: %s\n\nCommit history:\n' "$range_description"
-  git log \
-    --reverse \
-    --date=short \
-    --format='commit %H%nDate: %ad%nSubject: %s%n%n%b%n---' \
-    "$release_range"
-  printf '\nChanged files:\n'
-  git diff --stat "$diff_base" HEAD
-  printf '\nFull diff:\n'
-  git diff --no-color --no-ext-diff --find-renames "$diff_base" HEAD
-} | codex exec \
+if ! codex exec \
   --sandbox read-only \
   --ephemeral \
   --color never \
   --output-last-message "$release_notes_file" \
-  --cd "$release_temp_dir" \
-  --skip-git-repo-check \
+  --cd "$repository_root" \
   "$release_notes_prompt" >/dev/null; then
   fail "Codex could not generate the release notes. No release files were changed."
 fi
