@@ -1,7 +1,17 @@
-name: Deploy to host
+name: Release
 
 on:
   workflow_dispatch:
+    inputs:
+      target:
+        description: Release target
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - web
+          - android
   push:
     tags:
       - "v*"
@@ -9,28 +19,30 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: production-ftp-deploy
-  cancel-in-progress: false
-
 jobs:
-  deploy:
-    runs-on: ubuntu-latest
+  deploy_web:
+    name: Deploy web application
+    if: github.event_name != 'workflow_dispatch' || inputs.target == 'all' || inputs.target == 'web'
+    runs-on: ubuntu-24.04
     environment: Web
     timeout-minutes: 20
+    concurrency:
+      group: production-ftp-deploy
+      cancel-in-progress: false
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: '22'
+          node-version: 22
           cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Set up PHP
         uses: shivammathur/setup-php@v2
@@ -107,3 +119,206 @@ jobs:
             vendor/**
             .env
             .env.*
+
+  migrate_server:
+    name: Run database migrations
+    needs: deploy_web
+    if: github.event_name != 'workflow_dispatch' || inputs.target == 'all' || inputs.target == 'web'
+    runs-on: ubuntu-24.04
+    environment: Web
+    timeout-minutes: 5
+    concurrency:
+      group: production-ftp-deploy
+      cancel-in-progress: false
+
+    steps:
+      - name: Run server migrations
+        env:
+          MIGRATION_URL: ${{ vars.MIGRATION_URL || 'https://mom.coulombe.dev/server/migrate.php' }}
+          MOM_MIGRATION_KEY: ${{ secrets.MOM_MIGRATION_KEY }}
+        run: |
+          if [[ "$MIGRATION_URL" != https://* ]]; then
+            echo "MIGRATION_URL must use HTTPS." >&2
+            exit 1
+          fi
+          if (( ${#MOM_MIGRATION_KEY} < 32 )); then
+            echo "MOM_MIGRATION_KEY must contain at least 32 characters." >&2
+            exit 1
+          fi
+
+          response_file="$(mktemp)"
+          trap 'rm -f -- "$response_file"' EXIT
+          http_status="$(
+            curl \
+              --silent \
+              --show-error \
+              --retry 4 \
+              --retry-delay 2 \
+              --retry-all-errors \
+              --proto '=https' \
+              --request GET \
+              --header "Accept: application/json" \
+              --header "X-Mom-Migration-Key: $MOM_MIGRATION_KEY" \
+              --output "$response_file" \
+              --write-out '%{http_code}' \
+              "$MIGRATION_URL"
+          )"
+
+          cat "$response_file"
+          echo
+          if [[ "$http_status" != "200" ]]; then
+            echo "Migration request failed with HTTP $http_status." >&2
+            exit 1
+          fi
+
+  build_android:
+    name: Build signed Android APK
+    if: github.event_name != 'workflow_dispatch' || inputs.target == 'all' || inputs.target == 'android'
+    runs-on: ubuntu-24.04
+    environment: Android
+    timeout-minutes: 30
+    concurrency:
+      group: android-release-${{ github.ref }}
+      cancel-in-progress: false
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+          cache-dependency-path: |
+            android/*.gradle
+            android/**/*.gradle
+            android/gradle/wrapper/gradle-wrapper.properties
+
+      - name: Verify Android SDK 36
+        run: |
+          if [[ ! -d "$ANDROID_HOME/platforms/android-36" ]]; then
+            echo "Android SDK platform 36 is missing from the runner." >&2
+            exit 1
+          fi
+          if [[ ! -d "$ANDROID_HOME/build-tools/36.0.0" ]]; then
+            echo "Android SDK build-tools 36.0.0 are missing from the runner." >&2
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Prepare production environment
+        env:
+          VITE_API_URL: ${{ vars.VITE_API_URL || 'https://mom.coulombe.dev/server' }}
+        run: printf 'VITE_API_URL=%s\n' "$VITE_API_URL" > .env.prod
+
+      - name: Restore Android signing files
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_SIGNING_PROPERTIES_BASE64: ${{ secrets.ANDROID_SIGNING_PROPERTIES_BASE64 }}
+          EXPECTED_ANDROID_KEYSTORE_SHA256: ${{ vars.ANDROID_KEYSTORE_SHA256 }}
+        run: |
+          if [[ -z "$ANDROID_KEYSTORE_BASE64" || -z "$ANDROID_SIGNING_PROPERTIES_BASE64" ]]; then
+            echo "Android signing secrets are not configured." >&2
+            exit 1
+          fi
+
+          mkdir -p private
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" \
+            | base64 --decode > private/mom-release.jks
+          printf '%s' "$ANDROID_SIGNING_PROPERTIES_BASE64" \
+            | base64 --decode > private/android-signing.properties
+          chmod 600 private/mom-release.jks private/android-signing.properties
+
+          keystore_sha256="$(
+            sha256sum private/mom-release.jks \
+              | cut -d ' ' -f 1
+          )"
+          echo "Decoded keystore SHA-256: $keystore_sha256"
+          if [[
+            -n "$EXPECTED_ANDROID_KEYSTORE_SHA256"
+            && "$keystore_sha256" != "$EXPECTED_ANDROID_KEYSTORE_SHA256"
+          ]]; then
+            echo "The decoded keystore does not match ANDROID_KEYSTORE_SHA256." >&2
+            exit 1
+          fi
+
+          signing_store_file="$(
+            sed -n 's/^storeFile=//p' private/android-signing.properties \
+              | tr -d '\r'
+          )"
+          signing_store_password="$(
+            sed -n 's/^storePassword=//p' private/android-signing.properties \
+              | tr -d '\r'
+          )"
+          signing_key_alias="$(
+            sed -n 's/^keyAlias=//p' private/android-signing.properties \
+              | tr -d '\r'
+          )"
+          if [[
+            "$signing_store_file" != "mom-release.jks"
+            || -z "$signing_store_password"
+            || -z "$signing_key_alias"
+          ]]; then
+            echo "The decoded Android signing properties are invalid." >&2
+            exit 1
+          fi
+          if ! keytool -list \
+            -keystore private/mom-release.jks \
+            -storepass "$signing_store_password" \
+            -alias "$signing_key_alias" >/dev/null 2>&1; then
+            echo "The decoded keystore is invalid or does not match the signing properties." >&2
+            exit 1
+          fi
+
+      - name: Build signed release APK
+        run: pnpm android:build:release
+
+      - name: Verify APK signature
+        run: |
+          apksigner_path="$(
+            find "$ANDROID_HOME/build-tools" -type f -name apksigner \
+              | sort -V \
+              | tail -n 1
+          )"
+
+          if [[ -z "$apksigner_path" ]]; then
+            echo "Android apksigner was not found." >&2
+            exit 1
+          fi
+
+          "$apksigner_path" verify \
+            --verbose \
+            android/app/build/outputs/apk/release/app-release.apk
+
+      - name: Create checksum
+        run: |
+          cd android/app/build/outputs/apk/release
+          sha256sum app-release.apk > app-release.apk.sha256
+
+      - name: Upload Android release
+        uses: actions/upload-artifact@v7
+        with:
+          name: mom-android-release-${{ github.run_number }}
+          path: |
+            android/app/build/outputs/apk/release/app-release.apk
+            android/app/build/outputs/apk/release/app-release.apk.sha256
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Remove signing files
+        if: always()
+        run: rm -f private/mom-release.jks private/android-signing.properties

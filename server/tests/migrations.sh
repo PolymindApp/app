@@ -6,15 +6,23 @@ test_dir="$(mktemp -d "$test_root/mom-migrations-test.XXXXXX")"
 empty_db="$test_dir/empty.db"
 existing_db="$test_dir/existing.db"
 cli_db="$test_dir/cli.db"
+http_db="$test_dir/http.db"
+http_response="$test_dir/http-response.json"
+http_server_log="$test_dir/http-server.log"
+http_server_pid=""
 
 cleanup() {
+  if [[ -n "$http_server_pid" ]]; then
+    kill "$http_server_pid" >/dev/null 2>&1 || true
+    wait "$http_server_pid" >/dev/null 2>&1 || true
+  fi
   case "$test_dir" in
     "$test_root"/mom-migrations-test.*) rm -rf -- "$test_dir" ;;
   esac
 }
 trap cleanup EXIT
 
-for command in php sqlite3; do
+for command in curl php sqlite3; do
   command -v "$command" >/dev/null 2>&1 || {
     echo "$command is required for the migration test." >&2
     exit 1
@@ -99,6 +107,85 @@ cli_output="$(
   echo "The migration CLI did not initialize and report a new database." >&2
   exit 1
 }
+
+sqlite3 "$http_db" 'VACUUM'
+http_port="${MOM_MIGRATION_TEST_PORT:-$((18900 + RANDOM % 800))}"
+http_key="mom-http-migration-key-at-least-32-characters"
+MOM_DB_PATH="$http_db" \
+MOM_API_SECRET="mom-migration-test-secret-at-least-32-characters" \
+MOM_MIGRATION_KEY="$http_key" \
+  php -S "127.0.0.1:$http_port" -t . >"$http_server_log" 2>&1 &
+http_server_pid="$!"
+
+http_status=""
+for _ in {1..50}; do
+  http_status="$(
+    curl --silent --output "$http_response" --write-out '%{http_code}' \
+      "http://127.0.0.1:$http_port/server/migrate.php" \
+      2>/dev/null \
+      || true
+  )"
+  [[ "$http_status" != "000" && -n "$http_status" ]] && break
+  sleep 0.1
+done
+[[ "$http_status" == "401" ]] || {
+  echo "The HTTP migration endpoint did not reject a missing key." >&2
+  cat "$http_server_log" >&2
+  exit 1
+}
+
+http_status="$(
+  curl --silent --request POST \
+    --header "X-Mom-Migration-Key: $http_key" \
+    --output "$http_response" \
+    --write-out '%{http_code}' \
+    "http://127.0.0.1:$http_port/server/migrate.php"
+)"
+[[ "$http_status" == "405" ]] || {
+  echo "The HTTP migration endpoint accepted a method other than GET." >&2
+  exit 1
+}
+
+http_status="$(
+  curl --silent \
+    --header "X-Mom-Migration-Key: $http_key" \
+    --output "$http_response" \
+    --write-out '%{http_code}' \
+    "http://127.0.0.1:$http_port/server/migrate.php"
+)"
+[[ "$http_status" == "200" ]] || {
+  echo "The authenticated HTTP migration request failed." >&2
+  cat "$http_response" >&2
+  exit 1
+}
+php -r '
+  $response = json_decode(file_get_contents($argv[1]), true, 512, JSON_THROW_ON_ERROR);
+  if (
+      ($response["status"] ?? null) !== "ok"
+      || count($response["appliedMigrations"] ?? []) !== 19
+      || ($response["currentVersion"] ?? null) !== "202608060004"
+      || ($response["migrationCount"] ?? null) !== 19
+  ) {
+      fwrite(STDERR, "The HTTP migration response was invalid.\n");
+      exit(1);
+  }
+' "$http_response"
+
+curl --silent \
+  --header "X-Mom-Migration-Key: $http_key" \
+  --output "$http_response" \
+  "http://127.0.0.1:$http_port/server/migrate.php"
+php -r '
+  $response = json_decode(file_get_contents($argv[1]), true, 512, JSON_THROW_ON_ERROR);
+  if (($response["status"] ?? null) !== "ok" || ($response["appliedMigrations"] ?? null) !== []) {
+      fwrite(STDERR, "The repeated HTTP migration request was not idempotent.\n");
+      exit(1);
+  }
+' "$http_response"
+
+kill "$http_server_pid"
+wait "$http_server_pid" || true
+http_server_pid=""
 
 source_db="${MOM_TEST_SOURCE_DB:-private/data.db}"
 [[ -f "$source_db" ]] || {

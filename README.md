@@ -57,6 +57,8 @@ Generate a different `MOM_API_SECRET` for each production installation:
 php -r 'echo bin2hex(random_bytes(32)), PHP_EOL;'
 ```
 
+Generate a second, independent value for `MOM_MIGRATION_KEY`. Store it in the host's root `.env` and as the `MOM_MIGRATION_KEY` secret in the GitHub `Web` environment so the release workflow can run migrations after uploading the server.
+
 The PHP server reads the root `.env` itself. Vite exposes only variables beginning with `VITE_`, so `MOM_API_SECRET`, `MOM_DB_PATH`, and other server settings are not embedded in browser JavaScript.
 
 Prepare the web build with:
@@ -67,7 +69,7 @@ composer install --no-dev --optimize-autoloader
 pnpm build:prod
 ```
 
-For the prepared `mom.coulombe.dev` deployment, this loads `.env.prod` and embeds `https://mom.coulombe.dev/server` as the browser API URL. Upload the contents of `dist` as the web application, then upload the `server` and Composer-generated `vendor` directories. Back up the database and run `php server/migrate.php` before sending traffic to the updated API. The generated `dist/.htaccess` routes `/server/*` to the protected PHP front controller without exposing `/public` in the URL.
+For the prepared `mom.coulombe.dev` deployment, this loads `.env.prod` and embeds `https://mom.coulombe.dev/server` as the browser API URL. Upload the contents of `dist` as the web application, then upload the `server` and Composer-generated `vendor` directories. Back up the database before releasing. The GitHub release workflow calls the authenticated migration endpoint after its upload job succeeds. The generated `dist/.htaccess` routes `/server/*` to the protected PHP front controller without exposing `/public` in the URL.
 
 On the host, place a copy of `.env.prod` named `.env` at the project root because the PHP runtime reads `.env`. Prefer keeping both environment files and `private` outside the public document root. When shared hosting requires them at the deployment root, the included Apache rules deny browser access to `.env`, `private`, and the server implementation. The PHP process must be able to read the root `.env` and read/write `private/data.db`.
 
@@ -90,6 +92,7 @@ On the host, place a copy of `.env.prod` named `.env` at the project root becaus
 - `pnpm android:build` — create a debug APK using `.env.prod`
 - `pnpm android:build:release` — create a signed release APK using `.env.prod`
 - `pnpm android:bundle` — create a signed release AAB using `.env.prod`
+- `pnpm release:android [X.X.X]` — create and push a release commit and annotated tag, using an authenticated Codex CLI to summarize every committed change since the previous release
 
 ## PHP API deployment
 

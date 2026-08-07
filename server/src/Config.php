@@ -9,6 +9,7 @@ final class Config
     public function __construct(
         public readonly string $databasePath,
         public readonly string $secret,
+        public readonly string $migrationKey,
         public readonly array $allowedOrigins,
         public readonly int $tokenTtl,
         public readonly int $maxBodyBytes,
@@ -54,6 +55,7 @@ final class Config
             $databasePath = $projectRoot . '/' . ltrim($databasePath, '/\\');
         }
         $secret = (string) $value('MOM_API_SECRET', '');
+        $migrationKey = trim((string) $value('MOM_MIGRATION_KEY', ''));
         $origins = array_values(array_filter(array_map(
             'trim',
             explode(',', (string) $value('MOM_ALLOWED_ORIGINS', '')),
@@ -122,6 +124,7 @@ final class Config
         return new self(
             $databasePath,
             $secret,
+            $migrationKey,
             $origins,
             $tokenTtl,
             $maxBodyBytes,

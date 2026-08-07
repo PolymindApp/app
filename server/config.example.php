@@ -5,6 +5,7 @@ declare(strict_types=1);
 return [
     'MOM_DB_PATH' => '/absolute/private/path/to/data.db',
     'MOM_API_SECRET' => 'CHANGE_ME',
+    'MOM_MIGRATION_KEY' => 'CHANGE_ME',
     'MOM_ALLOWED_ORIGINS' => 'https://mom.example.com,capacitor://localhost,http://localhost',
     'MOM_TOKEN_TTL' => 604800,
     'MOM_MAX_BODY_BYTES' => 2500000,

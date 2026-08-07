@@ -19,6 +19,7 @@ RewriteRule ^private(?:/|$) - [F,L,NC]
 
 # Expose the PHP API at /server without putting /public in its URL.
 RewriteRule ^server/index\.php$ - [L,NC]
+RewriteRule ^server/migrate\.php$ - [L,NC]
 RewriteRule ^server(?:/.*)?$ server/index.php [QSA,L,NC]
 
 # Serve generated assets directly, then fall back to the Vue application.

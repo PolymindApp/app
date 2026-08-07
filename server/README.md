@@ -26,6 +26,7 @@ Configuration may be supplied through the root `.env`, process environment varia
 | --- | --- | --- |
 | `MOM_DB_PATH` | Absolute path to `data.db` | Local `private/data.db` |
 | `MOM_API_SECRET` | HMAC signing secret, at least 32 characters | Required in production |
+| `MOM_MIGRATION_KEY` | Dedicated key for authenticated HTTP migrations, at least 32 characters | HTTP migration disabled |
 | `MOM_ALLOWED_ORIGINS` | Comma-separated exact browser/Capacitor origins | Same-origin only |
 | `MOM_TOKEN_TTL` | Token lifetime in seconds, 5 minutes–30 days | 604800 |
 | `MOM_MAX_BODY_BYTES` | Maximum JSON request size | 2500000 |
@@ -39,7 +40,7 @@ Generate a production secret:
 php -r 'echo bin2hex(random_bytes(32)), PHP_EOL;'
 ```
 
-Never commit the generated secret.
+Generate separate values for `MOM_API_SECRET` and `MOM_MIGRATION_KEY`. Never commit either secret.
 
 Only `VITE_API_URL` is exposed to the browser build. Variables beginning with `MOM_` remain PHP-only.
 
@@ -74,6 +75,16 @@ The API applies pending migrations automatically before handling a request. For 
 php server/migrate.php
 ```
 
+On a host without CLI access, configure a dedicated `MOM_MIGRATION_KEY` and invoke the same runner over HTTPS:
+
+```bash
+curl --fail-with-body \
+  --header "X-Mom-Migration-Key: $MOM_MIGRATION_KEY" \
+  https://example.com/server/migrate.php
+```
+
+The HTTP endpoint accepts only `GET`, is disabled when the key is missing or shorter than 32 characters, uses a constant-time comparison, and never returns internal exception details. Send the key in the header rather than the URL so it is not stored in normal URL or query-string logs.
+
 Applied versions are stored in `mom_schema_migrations` with the migration filename checksum and application time. All pending migrations run inside one SQLite `BEGIN IMMEDIATE` transaction, so concurrent PHP requests cannot apply the same migration and a failed batch is rolled back.
 
 The reconstructed PHP-era history is:
@@ -93,14 +104,14 @@ Recommended deployment order:
 1. Create and verify an online SQLite backup.
 2. Upload the new `server`, `vendor`, and migration files.
 3. Confirm `.env` points to the intended database.
-4. Run `php server/migrate.php`.
+4. Run `php server/migrate.php`, or call its authenticated HTTPS endpoint.
 5. Verify `/health`, then deploy or enable the client.
 
-If the hosting provider has no CLI access, the first API request performs step 4 automatically. Keep the backup: migrations are forward-only and do not perform automatic rollbacks after a successful deployment.
+The release workflow calls the authenticated endpoint after its upload job succeeds. Configure the same `MOM_MIGRATION_KEY` value in the host's root `.env` and the GitHub `Web` environment secret. `MIGRATION_URL` may be set as a `Web` environment variable when the default deployment URL is not appropriate. The first ordinary API request also applies pending migrations as a fallback. Keep the backup: migrations are forward-only and do not perform automatic rollbacks after a successful deployment.
 
 ## Apache/shared hosting
 
-For the prepared shared-hosting layout, upload the `server` directory at `/server` and the Composer-generated `vendor` directory beside it. Its included `.htaccess` routes requests through the root `index.php`, preserves the bearer authorization header, disables directory listing, and prevents direct access to implementation files. The public API remains `https://mom.coulombe.dev/server`; `/public` is not part of the URL.
+For the prepared shared-hosting layout, upload the `server` directory at `/server` and the Composer-generated `vendor` directory beside it. Its included `.htaccess` routes requests through the root `index.php`, preserves the bearer authorization header, disables directory listing, and prevents direct access to implementation files except for the authenticated migration endpoint. The public API remains `https://mom.coulombe.dev/server`; `/public` is not part of the URL.
 
 When the provider supports aliases or custom document roots, pointing `/server` directly at `server/public` remains the preferred alternative.
 

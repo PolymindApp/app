@@ -22,6 +22,7 @@ command -v git >/dev/null 2>&1 || fail "git is required."
 command -v node >/dev/null 2>&1 || fail "Node.js is required."
 command -v pnpm >/dev/null 2>&1 || fail "pnpm is required."
 command -v perl >/dev/null 2>&1 || fail "Perl is required to update the Android version."
+command -v codex >/dev/null 2>&1 || fail "Codex CLI is required to generate the release notes."
 
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 \
   || fail "run this command from the repository."
@@ -37,8 +38,12 @@ current_branch="$(git branch --show-current)"
 [[ "$current_branch" == "$release_branch" ]] \
   || fail "switch to $release_branch before creating a release."
 
-[[ -z "$(git status --porcelain)" ]] \
-  || fail "commit or stash all changes before creating a release."
+[[ -z "$(git status --porcelain -- "$package_file" "$gradle_file")" ]] \
+  || fail "commit or stash changes to $package_file and $gradle_file before creating a release."
+
+if [[ -n "$(git status --porcelain)" ]]; then
+  echo "Unrelated working tree changes will be left out of the release."
+fi
 
 git remote get-url "$release_remote" >/dev/null 2>&1 \
   || fail "git remote '$release_remote' does not exist."
@@ -94,6 +99,77 @@ current_version_code="$(
 next_version_code=$((current_version_code + 1))
 ((next_version_code <= 2100000000)) || fail "the Android versionCode limit was reached."
 
+previous_release_tag=""
+while IFS= read -r candidate_tag; do
+  if [[ "$candidate_tag" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+    previous_release_tag="$candidate_tag"
+    break
+  fi
+done < <(git tag --merged HEAD --list 'v*' --sort=-version:refname)
+
+release_temp_dir="$(mktemp -d "${TMPDIR:-/tmp}/mom-android-release.XXXXXX")"
+release_notes_file="$release_temp_dir/release-notes.md"
+tag_message_file="$release_temp_dir/tag-message.md"
+cleanup_release_files() {
+  rm -rf -- "$release_temp_dir"
+}
+trap cleanup_release_files EXIT
+
+if [[ -n "$previous_release_tag" ]]; then
+  release_range="$previous_release_tag..HEAD"
+  diff_base="$previous_release_tag"
+  range_description="$previous_release_tag through HEAD"
+else
+  release_range="HEAD"
+  diff_base="$(git hash-object -t tree /dev/null)"
+  range_description="the repository's first commit through HEAD"
+fi
+
+release_notes_prompt='Write only the Markdown body for an annotated Git release tag from the supplied Git history and diff.
+
+Requirements:
+- Cover every material user-facing, server, Android, deployment, and developer-workflow change in the supplied range.
+- Group related changes under concise Markdown headings and use clear bullet points.
+- Prioritize behavior and outcomes over filenames or implementation mechanics.
+- Do not include a release title, version heading, preamble, conclusion, or fenced code block.
+- Do not mention changes outside the supplied committed range or infer unsupported behavior.
+- Omit release-only version bumps and generated artifacts.'
+
+echo "Asking Codex to summarize changes from $range_description..."
+if ! {
+  printf 'Release range: %s\n\nCommit history:\n' "$range_description"
+  git log \
+    --reverse \
+    --date=short \
+    --format='commit %H%nDate: %ad%nSubject: %s%n%n%b%n---' \
+    "$release_range"
+  printf '\nChanged files:\n'
+  git diff --stat "$diff_base" HEAD
+  printf '\nFull diff:\n'
+  git diff --no-color --no-ext-diff --find-renames "$diff_base" HEAD
+} | codex exec \
+  --sandbox read-only \
+  --ephemeral \
+  --color never \
+  --output-last-message "$release_notes_file" \
+  --cd "$release_temp_dir" \
+  --skip-git-repo-check \
+  "$release_notes_prompt" >/dev/null; then
+  fail "Codex could not generate the release notes. No release files were changed."
+fi
+
+grep -q '[^[:space:]]' "$release_notes_file" \
+  || fail "Codex returned an empty release note. No release files were changed."
+
+{
+  printf 'Release %s\n\n' "$release_tag"
+  sed -e 's/\r$//' "$release_notes_file"
+  printf '\n'
+} > "$tag_message_file"
+
+echo "Generated tag message:"
+cat "$tag_message_file"
+
 echo "Preparing $release_tag (Android versionCode $next_version_code)..."
 pnpm pkg set "version=$release_version"
 
@@ -110,11 +186,11 @@ grep -Eq "^[[:space:]]*versionCode[[:space:]]+$next_version_code[[:space:]]*$" "
   || fail "the Android versionCode was not updated."
 grep -Eq "^[[:space:]]*versionName[[:space:]]+\"$release_version\"[[:space:]]*$" "$gradle_file" \
   || fail "the Android versionName was not updated."
-git diff --check
+git diff --check -- "$package_file" "$gradle_file"
 
 git add -- "$package_file" "$gradle_file"
-git commit -m "Release $release_tag"
-git tag --annotate "$release_tag" --message "Release $release_tag"
+git commit --only -m "Release $release_tag" -- "$package_file" "$gradle_file"
+git tag --annotate "$release_tag" --file "$tag_message_file"
 
 echo "Pushing $release_branch and $release_tag to $release_remote..."
 if ! git push --atomic "$release_remote" \

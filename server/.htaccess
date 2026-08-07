@@ -7,6 +7,7 @@ RewriteEngine On
 RewriteCond %{HTTP:Authorization} .
 RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
 
-# Only the front controller is web-accessible. Every API route is internal.
+# Only the front controller and authenticated migration endpoint are web-accessible.
 RewriteRule ^index\.php$ - [L,NC]
+RewriteRule ^migrate\.php$ - [L,NC]
 RewriteRule ^ index.php [QSA,L]
