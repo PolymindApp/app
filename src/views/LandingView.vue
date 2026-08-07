@@ -44,6 +44,17 @@ const screenshots = [
     alt: 'Mom Tracking screen showing configurable wellbeing trackers and weekly patterns.',
   },
 ]
+
+function scrollToFeatures() {
+  const featuresSection = document.getElementById('features')
+  if (!featuresSection) return
+
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  featuresSection.scrollIntoView({
+    behavior: reducedMotion ? 'auto' : 'smooth',
+    block: 'start',
+  })
+}
 </script>
 
 <template>
@@ -71,7 +82,7 @@ const screenshots = [
                 <v-btn color="secondary" size="x-large" to="/auth" append-icon="mdi-arrow-right">
                   Get started
                 </v-btn>
-                <a class="feature-link" href="#features">
+                <a class="feature-link" href="#features" @click.prevent="scrollToFeatures">
                   See what it does
                   <v-icon icon="mdi-arrow-down" size="18" />
                 </a>
