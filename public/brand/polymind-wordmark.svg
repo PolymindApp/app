@@ -1,11 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1500 320" role="img" aria-labelledby="title">
   <title id="title">Polymind</title>
-  <g transform="translate(12 12) scale(.578125)" fill="#C7F464">
-    <path d="M176 86h112c72 0 132 55 139 126h-88c-6-25-29-44-56-44h-39L176 86Z" />
-    <path d="M339 228h88c-7 71-67 126-139 126h-66v-76l48-50h13c27 0 50-19 56-44Z" />
-    <path d="m104 142 100 100v58L104 400V142Z" />
-    <path d="m120 426 84-84v84h-84Z" />
-  </g>
+  <image href="polymind-mark.png" x="20" y="10" width="300" height="300" preserveAspectRatio="xMidYMid meet" />
   <path
     fill="#C7F464"
     aria-label="POLYMIND"
