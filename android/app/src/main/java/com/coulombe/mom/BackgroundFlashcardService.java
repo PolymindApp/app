@@ -53,6 +53,7 @@ public class BackgroundFlashcardService extends Service {
     private boolean indefinite;
     private String sessionId = "";
     private String sessionName = "Review";
+    private String cardSides = "both";
     private String side = "front";
     private String frontLanguage = "";
     private String backLanguage = "";
@@ -154,7 +155,12 @@ public class BackgroundFlashcardService extends Service {
         sessionName = config.optString("sessionName", "Review").trim();
         if (sessionName.isEmpty()) sessionName = "Review";
         indefinite = config.optBoolean("indefinite", false);
+        String configuredCardSides = config.optString("cardSides", "both");
+        cardSides = "front".equals(configuredCardSides) || "back".equals(configuredCardSides)
+            ? configuredCardSides
+            : "both";
         side = "back".equals(config.optString("side")) ? "back" : "front";
+        if (!"both".equals(cardSides)) side = cardSides;
         frontDurationMs = Math.max(1000L, config.optLong("frontSeconds", 5L) * 1000L);
         baseBackDurationMs = Math.max(1000L, config.optLong("backSeconds", 5L) * 1000L);
         backSpeechRepeatCount = Math.max(1, Math.min(5, config.optInt("backSpeechRepeatCount", 1)));
@@ -182,7 +188,7 @@ public class BackgroundFlashcardService extends Service {
 
     private void advance(long now) {
         while (running && now >= deadlineElapsedMs) {
-            if ("front".equals(side)) {
+            if ("front".equals(side) && "both".equals(cardSides)) {
                 side = "back";
                 deadlineElapsedMs += backDurationMs;
                 lastBackSpeechRepeatIndex = 0;
@@ -198,9 +204,10 @@ public class BackgroundFlashcardService extends Service {
                         return;
                     }
                 }
-                side = "front";
+                side = "back".equals(cardSides) ? "back" : "front";
                 lastBackSpeechRepeatIndex = -1;
-                deadlineElapsedMs += frontDurationMs;
+                deadlineElapsedMs += "back".equals(side) ? backDurationMs : frontDurationMs;
+                if ("back".equals(side)) lastBackSpeechRepeatIndex = 0;
                 speakCurrentSide();
             }
             persistState();

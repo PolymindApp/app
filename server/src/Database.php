@@ -40,6 +40,11 @@ final class Database
                 'password', 'token_key', 'timezone', 'settings', 'created', 'updated',
             ],
             'tags' => ['id', 'owner', 'name'],
+            'flashcards' => [
+                'id', 'owner', 'front', 'back', 'note', 'image_url', 'image_file',
+                'tags', 'created_at', 'updated_at', 'last_reviewed_at',
+                'passive_views', 'success_count', 'error_count',
+            ],
             'tasks' => [
                 'id', 'owner', 'name', 'description', 'type', 'tags', 'mandatory',
                 'review_when_missed', 'active', 'start_date', 'end_date',

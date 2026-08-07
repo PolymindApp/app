@@ -951,15 +951,23 @@ async function runAgain(repetitions?: number) {
               >
                 <div class="interval-review-card__content">
                   <div class="interval-review-card__heading">
-                    <small>{{ flashcardPhase.side === 'front' ? 'Front' : 'Back' }}</small>
+                    <span class="interval-review-card__set">
+                      <v-icon icon="mdi-cards-outline" size="17" />
+                      <span class="text-truncate">{{ session.flashcardReview.name }}</span>
+                    </span>
                     <div class="interval-review-card__meta">
-                      <span class="interval-review-card__set">
-                        <v-icon icon="mdi-cards-outline" size="17" />
-                        <span class="text-truncate">{{ session.flashcardReview.name }}</span>
-                      </span>
+                      <small>{{ flashcardPhase.side === 'front' ? 'Front' : 'Back' }}</small>
                       <span>{{ flashcardPhase.cardIndex + 1 }}/{{ session.flashcardReview.cards.length }}</span>
                     </div>
                   </div>
+                  <img
+                    v-if="flashcardPhase.card.image"
+                    :src="flashcardPhase.card.image"
+                    alt=""
+                    class="interval-review-card__image"
+                    width="256"
+                    height="256"
+                  />
                   <strong
                     :class="{ 'text-secondary': flashcardPhase.side === 'back' }"
                     :style="{
@@ -1261,12 +1269,12 @@ async function runAgain(repetitions?: number) {
 .interval-review-card { width: min(100%, 34rem); overflow: hidden; border: 1px solid rgba(var(--v-theme-on-surface), .08); border-radius: .75rem; background: rgba(var(--v-theme-on-surface), .055); box-shadow: none; text-align: left; }
 .interval-review-card__content { display: flex; padding: 1rem; align-items: center; justify-content: center; flex-direction: column; gap: .65rem; text-align: center; }
 .interval-review-card__heading { display: flex; width: 100%; min-width: 0; align-items: center; justify-content: space-between; gap: .75rem; }
-.interval-review-card__meta { display: flex; min-width: 0; max-width: 75%; align-items: center; justify-content: flex-end; gap: .75rem; color: rgba(var(--v-theme-on-surface), .58); font-size: .62rem; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
-.interval-review-card__meta > span { min-width: 0; }
+.interval-review-card__meta { display: flex; flex: 0 0 auto; align-items: center; justify-content: flex-end; gap: .75rem; color: rgba(var(--v-theme-on-surface), .58); font-size: .62rem; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
 .interval-review-card__meta > span:last-child { flex: 0 0 auto; font-variant-numeric: tabular-nums; }
-.interval-review-card__set { display: flex; align-items: center; gap: .4rem; }
+.interval-review-card__set { display: flex; min-width: 0; max-width: 75%; align-items: center; gap: .4rem; color: rgba(var(--v-theme-on-surface), .58); font-size: .62rem; font-weight: 900; letter-spacing: .1em; text-align: left; text-transform: uppercase; }
 .interval-review-card__set > .text-truncate { min-width: 0; }
 .interval-review-card__content small { color: rgba(var(--v-theme-on-surface), .58); font-size: .62rem; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
+.interval-review-card__image { width: min(100%, 12rem); height: auto; max-height: 12rem; border-radius: .75rem; object-fit: contain; }
 .interval-review-card__content strong { overflow-wrap: anywhere; font-size: clamp(1.05rem, 4.5vw, 1.5rem); line-height: 1.3; white-space: pre-wrap; }
 .interval-review-card__note { color: rgba(var(--v-theme-on-surface), .58); font-size: .74rem; font-weight: 650; line-height: 1.45; white-space: pre-wrap; }
 .interval-review-card :deep(.v-progress-linear) { border-radius: 0; }
@@ -1512,6 +1520,11 @@ async function runAgain(repetitions?: number) {
     font-size: clamp(.9rem, 2.5dvh, 1.2rem);
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 3;
+  }
+
+  .interval-review-card__image {
+    width: min(100%, 6rem);
+    max-height: 6rem;
   }
 
   .runner-progress {

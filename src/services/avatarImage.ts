@@ -87,7 +87,33 @@ export function compressAvatar(
   })
 }
 
+export const squareImageCropMetrics = avatarCropMetrics
+export const clampSquareImageCrop = clampAvatarCrop
+export const compressSquareImage = compressAvatar
+
+export function squareImageSourceIsValid(value: SquareImageSourceValue) {
+  if (value.source === 'none') return true
+  if (value.source === 'upload') {
+    return Boolean(value.upload || value.existingSource === 'upload')
+  }
+  try {
+    const url = new URL(value.url.trim())
+    return url.protocol === 'http:' || url.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
+export function squareImageSourceSignature(value: SquareImageSourceValue) {
+  return JSON.stringify({
+    source: value.source,
+    url: value.source === 'url' ? value.url.trim() : '',
+    upload: value.upload ? `${value.upload.type}:${value.upload.size}` : '',
+  })
+}
+
 function clamp(value: number, minimum: number, maximum: number) {
   const result = Math.min(maximum, Math.max(minimum, value))
   return result === 0 ? 0 : result
 }
+import type { SquareImageSourceValue } from '@/types/domain'

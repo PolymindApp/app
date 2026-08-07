@@ -5,6 +5,10 @@ description: Preserve and extend the Mom application's established UI direction.
 
 # Mom UI Direction
 
+## After each tasks
+
+- Do a git commit
+
 ## Start from the Existing System
 
 - Inspect `src/plugins/vuetify.ts` and `src/styles/main.scss` before changing shared visual behavior.

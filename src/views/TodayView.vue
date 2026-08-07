@@ -66,6 +66,7 @@ const taskLogLoading = ref(false)
 const taskLogError = ref('')
 let taskLogRequest = 0
 const activeIntervalSheet = ref(false)
+const activeReviewSheet = ref(false)
 const intervalStartError = ref('')
 const flashcardStartError = ref('')
 const trackingSheetOpen = ref(false)
@@ -73,6 +74,9 @@ const trackingSheetTracker = ref<TrackingTracker>()
 const trackingSheetDate = ref(toDateKey(new Date()))
 const trackingSheetContext = ref('')
 const valuePulseVersions = ref<Record<string, number>>({})
+const showCompleted = ref(false)
+const recentlyCompletedKeys = ref(new Set<string>())
+const completedVisibilityTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const exactAmount = computed(() => {
   if (!exactAmountInput.value || exactAmountInput.value === '.') return null
   const value = Number(exactAmountInput.value)
@@ -118,6 +122,8 @@ const taskDateMarkers = computed(() => visibleWeekDates.value.flatMap((date) => 
 
 const required = computed(() => selectedProgress.value.filter((item) => item.task.mandatory))
 const optional = computed(() => selectedProgress.value.filter((item) => !item.task.mandatory))
+const visibleRequired = computed(() => required.value.filter(taskIsVisible))
+const visibleOptional = computed(() => optional.value.filter(taskIsVisible))
 const reviewItems = computed(() => store.reviewProgressForDate(selectedDate.value))
 const doneCount = computed(() => selectedProgress.value.filter((item) => item.complete).length)
 let appStateListener: Awaited<ReturnType<typeof App.addListener>> | undefined
@@ -138,6 +144,8 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   void appStateListener?.remove()
+  completedVisibilityTimers.forEach(timer => clearTimeout(timer))
+  completedVisibilityTimers.clear()
 })
 
 watch(selectedDate, date => {
@@ -172,6 +180,59 @@ async function run(action: () => Promise<void>) {
 function progressKey(progress: TaskProgress) {
   return `${progress.task.id}:${progress.programStep?.id || ''}`
 }
+
+function visibilityKey(progress: TaskProgress) {
+  return `${progress.scheduledDate}:${progressKey(progress)}`
+}
+
+function taskIsVisible(progress: TaskProgress) {
+  return showCompleted.value
+    || !progress.complete
+    || recentlyCompletedKeys.value.has(visibilityKey(progress))
+}
+
+function clearCompletedTaskVisibility(key: string) {
+  const timer = completedVisibilityTimers.get(key)
+  if (timer) clearTimeout(timer)
+  completedVisibilityTimers.delete(key)
+  if (!recentlyCompletedKeys.value.has(key)) return
+  const nextKeys = new Set(recentlyCompletedKeys.value)
+  nextKeys.delete(key)
+  recentlyCompletedKeys.value = nextKeys
+}
+
+function keepCompletedTaskVisible(key: string) {
+  const existingTimer = completedVisibilityTimers.get(key)
+  if (existingTimer) clearTimeout(existingTimer)
+
+  recentlyCompletedKeys.value = new Set(recentlyCompletedKeys.value).add(key)
+  completedVisibilityTimers.set(key, setTimeout(() => {
+    clearCompletedTaskVisibility(key)
+  }, 2000))
+}
+
+watch(
+  () => selectedProgress.value.map(progress => ({
+    key: visibilityKey(progress),
+    complete: progress.complete,
+  })),
+  (current, previous = []) => {
+    const previousByKey = new Map(previous.map(item => [item.key, item.complete]))
+    const currentByKey = new Map(current.map(item => [item.key, item.complete]))
+
+    current.forEach((item) => {
+      if (item.complete && previousByKey.get(item.key) === false) {
+        keepCompletedTaskVisible(item.key)
+      }
+      if (!item.complete) clearCompletedTaskVisibility(item.key)
+    })
+
+    previous.forEach((item) => {
+      if (currentByKey.has(item.key)) return
+      clearCompletedTaskVisibility(item.key)
+    })
+  },
+)
 
 function progressIsToday(progress: TaskProgress) {
   return progress.scheduledDate === toDateKey(new Date())
@@ -398,17 +459,22 @@ function reviewSessionMatchesProgress(progress: TaskProgress) {
   const active = flashcardStore.activeSession
   return active?.task === progress.task.id
     && (active.programStep || '') === (progress.programStep?.id || '')
+    && active.taskDate === progress.scheduledDate
 }
 
 async function startFlashcardTask(progress: TaskProgress) {
   flashcardStartError.value = ''
   const active = flashcardStore.activeSession
   if (active) {
-    await router.push({
-      name: 'flashcard-review-runner',
-      params: { sessionId: active.id },
-      query: { from: 'tasks' },
-    })
+    if (reviewSessionMatchesProgress(progress)) {
+      await router.push({
+        name: 'flashcard-review-runner',
+        params: { sessionId: active.id },
+        query: { from: 'tasks' },
+      })
+    } else {
+      activeReviewSheet.value = true
+    }
     return
   }
   const reviewSetId = progress.programStep?.flashcardReviewSet || progress.task.flashcardReviewSet
@@ -472,6 +538,17 @@ async function resumeActiveInterval() {
   activeIntervalSheet.value = false
   await router.push({
     name: 'interval-runner',
+    params: { sessionId: active.id },
+    query: { from: 'tasks' },
+  })
+}
+
+async function resumeActiveReview() {
+  const active = flashcardStore.activeSession
+  if (!active) return
+  activeReviewSheet.value = false
+  await router.push({
+    name: 'flashcard-review-runner',
     params: { sessionId: active.id },
     query: { from: 'tasks' },
   })
@@ -569,11 +646,23 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
     </v-alert>
     <template v-if="selectedProgress.length">
       <section v-if="required.length">
-        <div class="section-heading"><h2>Required tasks</h2><span class="text-caption muted">{{ required.filter(i => i.complete).length }}/{{ required.length }}</span></div>
-        <div class="task-stack">
+        <div class="section-heading task-section-heading">
+          <h2>Required tasks</h2>
+          <div class="task-section-heading__controls">
+            <span class="text-caption muted">{{ required.filter(i => i.complete).length }}/{{ required.length }}</span>
+            <v-checkbox-btn
+              v-model="showCompleted"
+              label="Show completed"
+              color="secondary"
+              density="compact"
+              hide-details="auto"
+            />
+          </div>
+        </div>
+        <TransitionGroup name="task-list" tag="div" class="task-stack">
           <div
-            v-for="item in required"
-            :key="`${item.task.id}-${item.programStep?.id || ''}`"
+            v-for="item in visibleRequired"
+            :key="visibilityKey(item)"
             class="task-masonry-item"
           >
             <TaskCard
@@ -602,15 +691,15 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
               @actions="openTaskActions"
             />
           </div>
-        </div>
+        </TransitionGroup>
       </section>
 
-      <section v-if="optional.length">
+      <section v-if="visibleOptional.length">
         <div class="section-heading"><h2>Extra credit</h2><span class="text-caption muted">Optional</span></div>
-        <div class="task-stack">
+        <TransitionGroup name="task-list" tag="div" class="task-stack">
           <div
-            v-for="item in optional"
-            :key="`${item.task.id}-${item.programStep?.id || ''}`"
+            v-for="item in visibleOptional"
+            :key="visibilityKey(item)"
             class="task-masonry-item"
           >
             <TaskCard
@@ -639,7 +728,7 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
               @actions="openTaskActions"
             />
           </div>
-        </div>
+        </TransitionGroup>
       </section>
     </template>
 
@@ -873,6 +962,21 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
         </v-btn>
       </div>
     </ActionBottomSheet>
+
+    <ActionBottomSheet
+      v-model="activeReviewSheet"
+      title="Review already running"
+      aria-label="Active flashcard review actions"
+    >
+      <div class="px-2 py-3">
+        <p class="text-body-2 muted mb-4">
+          {{ flashcardStore.activeSession?.name || 'Another review' }} is already in progress. Finish or end it before starting a different task.
+        </p>
+        <v-btn block color="secondary" prepend-icon="mdi-play" @click="resumeActiveReview">
+          Resume active review
+        </v-btn>
+      </div>
+    </ActionBottomSheet>
   </main>
 </template>
 
@@ -881,8 +985,27 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
 .score-pattern { position: absolute; top: -70px; right: -40px; width: 220px; height: 220px; border: 35px solid rgba(199,244,100,.07); border-radius: 50%; }
 .score-number { font-family: Impact, "Arial Narrow", sans-serif; font-size: 3.2rem; line-height: .9; letter-spacing: -.03em; }
 .score-percent { color: #c7f464; font-size: 1.2rem; font-weight: 900; }
-.task-stack { display: grid; gap: .7rem; }
-.task-masonry-item { min-width: 0; }
+.task-section-heading { flex-wrap: wrap; gap: .75rem; }
+.task-section-heading__controls { display: flex; min-width: 0; margin-left: auto; align-items: center; justify-content: flex-end; gap: .7rem; }
+.task-section-heading__controls :deep(.v-label) { font-size: .72rem; font-weight: 750; white-space: nowrap; }
+.task-stack { display: grid; gap: 0; }
+.task-masonry-item {
+  display: grid;
+  min-width: 0;
+  margin-bottom: .7rem;
+  grid-template-rows: 1fr;
+}
+.task-masonry-item:last-child { margin-bottom: 0; }
+.task-masonry-item > * { min-height: 0; }
+.task-list-leave-active {
+  overflow: hidden;
+  transition:
+    grid-template-rows .22s cubic-bezier(.22, 1, .36, 1),
+    margin-bottom .22s cubic-bezier(.22, 1, .36, 1),
+    opacity .18s ease;
+}
+.task-list-leave-to { margin-bottom: 0; grid-template-rows: 0fr; opacity: 0; }
+.task-list-move { transition: transform .22s cubic-bezier(.22, 1, .36, 1); }
 .manage-tasks-button { min-height: 52px; }
 .empty-icon { display: grid; width: 64px; height: 64px; place-items: center; border-radius: 20px; background: #c7f464; color: #17200f; }
 .amount-keypad { display: grid; gap: 1rem; }
@@ -907,6 +1030,10 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
 .review-actions { display: grid; gap: .5rem; }
 .review-actions .v-btn { width: 100%; }
 
+@media (prefers-reduced-motion: reduce) {
+  .task-list-leave-active { transition-duration: 0s; }
+}
+
 @media (min-width: 700px) {
   .task-stack { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .review-actions { grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
@@ -921,7 +1048,6 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
 
   .task-masonry-item {
     width: 100%;
-    margin-bottom: .7rem;
     break-inside: avoid;
   }
 }

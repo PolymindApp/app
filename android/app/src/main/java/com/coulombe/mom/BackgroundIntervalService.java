@@ -69,6 +69,7 @@ public class BackgroundIntervalService extends Service {
     private long reviewBaseBackDurationMs = 5000L;
     private long reviewBackDurationMs = 5000L;
     private int reviewBackSpeechRepeatCount = 1;
+    private String reviewCardSides = "both";
     private String reviewFrontLanguage = "";
     private String reviewBackLanguage = "";
     private String lastReviewSpeechKey = "";
@@ -240,6 +241,10 @@ public class BackgroundIntervalService extends Service {
             Math.min(5, review.optInt("backSpeechRepeatCount", 1))
         );
         reviewBackDurationMs = reviewBaseBackDurationMs * reviewBackSpeechRepeatCount;
+        String configuredCardSides = review.optString("cardSides", "both");
+        reviewCardSides = "front".equals(configuredCardSides) || "back".equals(configuredCardSides)
+            ? configuredCardSides
+            : "both";
         reviewFrontLanguage = review.optString("frontLanguage", "").trim();
         reviewBackLanguage = review.optString("backLanguage", "").trim();
         if (!previousSessionId.equals(sessionId)) lastReviewSpeechKey = "";
@@ -247,16 +252,20 @@ public class BackgroundIntervalService extends Service {
 
     private ReviewPhase currentReviewPhase(long now) {
         if (reviewCards.isEmpty()) return null;
-        long cardDurationMs = reviewFrontDurationMs + reviewBackDurationMs;
+        boolean showsFront = !"back".equals(reviewCardSides);
+        boolean showsBack = !"front".equals(reviewCardSides);
+        long cardDurationMs = (showsFront ? reviewFrontDurationMs : 0L)
+            + (showsBack ? reviewBackDurationMs : 0L);
         long elapsedMs = reviewBaseElapsedMs + Math.max(0L, now - reviewConfiguredElapsedMs);
         long absoluteCardIndex = elapsedMs / cardDurationMs;
         int cardIndex = (int) (absoluteCardIndex % reviewCards.size());
         long elapsedInCard = elapsedMs % cardDurationMs;
-        String side = elapsedInCard < reviewFrontDurationMs ? "front" : "back";
+        String side = showsFront && elapsedInCard < reviewFrontDurationMs ? "front" : "back";
+        long elapsedInBack = elapsedInCard - (showsFront ? reviewFrontDurationMs : 0L);
         int backSpeechRepeatIndex = "back".equals(side)
             ? Math.min(
                 reviewBackSpeechRepeatCount - 1,
-                (int) ((elapsedInCard - reviewFrontDurationMs) / reviewBaseBackDurationMs)
+                (int) (elapsedInBack / reviewBaseBackDurationMs)
             )
             : 0;
         return new ReviewPhase(

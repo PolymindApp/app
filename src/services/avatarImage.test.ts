@@ -3,6 +3,8 @@ import {
   avatarCropMetrics,
   avatarCropSourceRect,
   clampAvatarCrop,
+  squareImageSourceIsValid,
+  squareImageSourceSignature,
 } from './avatarImage'
 
 describe('avatar cropping', () => {
@@ -57,5 +59,37 @@ describe('avatar cropping', () => {
 
     expect(normal.maxOffsetX).toBe(0)
     expect(zoomed.maxOffsetX).toBe(128)
+  })
+
+  it('accepts uploaded images and safe remote image URLs', () => {
+    expect(squareImageSourceIsValid({
+      source: 'upload',
+      url: '',
+      existingUrl: '',
+      existingSource: 'none',
+      upload: new Blob(['image'], { type: 'image/jpeg' }),
+    })).toBe(true)
+    expect(squareImageSourceIsValid({
+      source: 'url',
+      url: 'https://images.example.test/card.jpg',
+      existingUrl: '',
+      existingSource: 'none',
+    })).toBe(true)
+    expect(squareImageSourceIsValid({
+      source: 'url',
+      url: 'javascript:alert(1)',
+      existingUrl: '',
+      existingSource: 'none',
+    })).toBe(false)
+  })
+
+  it('tracks a pending upload as a form change without serializing its bytes', () => {
+    expect(squareImageSourceSignature({
+      source: 'upload',
+      url: '',
+      existingUrl: '',
+      existingSource: 'none',
+      upload: new Blob(['image'], { type: 'image/jpeg' }),
+    })).toContain('image/jpeg:5')
   })
 })

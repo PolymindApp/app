@@ -1,4 +1,9 @@
-import type { FlashcardBulkAction, FlashcardImportRow, FlashcardReviewAction } from '@/types/domain'
+import type {
+  FlashcardBulkAction,
+  FlashcardImportRow,
+  FlashcardReviewAction,
+  FlashcardReviewSettings,
+} from '@/types/domain'
 
 type RecordModel = Record<string, any> & { id: string }
 type AuthRecord = RecordModel & { email: string; name?: string; avatar?: string }
@@ -55,6 +60,11 @@ interface FlashcardBulkActionResponse {
 const AUTH_STORAGE_KEY = 'mom-api-auth'
 const baseUrl = (import.meta.env.VITE_API_URL || '/api').replace(/\/+$/, '')
 
+export function apiAssetUrl(value: string) {
+  if (!value || /^(?:https?:|blob:|data:)/i.test(value)) return value
+  return value.startsWith('/') ? `${baseUrl}${value}` : value
+}
+
 function normalizeAuthRecord(record: AuthRecord): AuthRecord {
   const avatar = typeof record.avatar === 'string' ? record.avatar : ''
   if (
@@ -66,9 +76,7 @@ function normalizeAuthRecord(record: AuthRecord): AuthRecord {
   }
   return {
     ...record,
-    avatar: avatar.startsWith('/avatars/')
-      ? `${baseUrl}${avatar}`
-      : avatar,
+    avatar: avatar.startsWith('/avatars/') ? apiAssetUrl(avatar) : avatar,
   }
 }
 
@@ -405,6 +413,25 @@ class ApiClient {
     )
   }
 
+  async updateFlashcardImage(cardId: string, image: Blob) {
+    if (image.type !== 'image/jpeg') {
+      throw new ApiError(422, 'The card image must be compressed as a JPEG.')
+    }
+    return request<RecordModel>(
+      `/flashcards/${encodeURIComponent(cardId)}/image`,
+      { method: 'POST', body: { image: await blobDataUrl(image) } },
+      this.authStore,
+    )
+  }
+
+  removeFlashcardImage(cardId: string) {
+    return request<RecordModel>(
+      `/flashcards/${encodeURIComponent(cardId)}/image`,
+      { method: 'DELETE' },
+      this.authStore,
+    )
+  }
+
   actOnFlashcardReviewSession(
     sessionId: string,
     action: FlashcardReviewAction,
@@ -417,6 +444,32 @@ class ApiClient {
         body: {
           action,
           elapsed_seconds: Math.max(0, Math.round(elapsedSeconds)),
+        },
+      },
+      this.authStore,
+    )
+  }
+
+  updateFlashcardReviewSessionSettings(
+    sessionId: string,
+    settings: FlashcardReviewSettings,
+  ) {
+    return request<RecordModel>(
+      `/flashcard-review-sessions/${encodeURIComponent(sessionId)}/settings`,
+      {
+        method: 'PATCH',
+        body: {
+          mode: settings.mode,
+          card_sides: settings.cardSides,
+          indefinite: settings.mode === 'passive' && settings.indefinite,
+          max_cards: settings.maxCards,
+          front_seconds: settings.frontSeconds,
+          back_seconds: settings.backSeconds,
+          back_speech_repeat_count: settings.backSpeechRepeatCount,
+          speech_enabled: settings.speechEnabled,
+          front_language: settings.frontLanguage,
+          back_language: settings.backLanguage,
+          sort_mode: settings.sortMode,
         },
       },
       this.authStore,

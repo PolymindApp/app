@@ -155,6 +155,7 @@ export interface IntervalFlashcardReviewSnapshot {
   name: string
   tags: string[]
   sortMode: FlashcardReviewSort
+  cardSides: FlashcardReviewCardSides
   frontSeconds: number
   backSeconds: number
   backSpeechRepeatCount: number
@@ -231,11 +232,21 @@ export interface QuickIntervalSettings extends QuickIntervalDraft {
 
 export type FlashcardReviewMode = 'manual' | 'passive'
 export type FlashcardReviewSide = 'front' | 'back'
+export type FlashcardReviewCardSides = 'both' | FlashcardReviewSide
 export type FlashcardReviewSort = 'difficult' | 'never_reviewed' | 'least_recent' | 'recently_added' | 'random'
 export type FlashcardReviewStatus = 'running' | 'paused' | 'completed' | 'ended'
-export type FlashcardReviewOutcome = 'success' | 'error' | 'passive'
+export type FlashcardReviewOutcome = 'success' | 'error' | 'passive' | 'ejected'
 export type FlashcardReviewAction = 'success' | 'error' | 'view' | 'previous' | 'next' | 'push' | 'eject' | 'pause' | 'resume' | 'end'
 export type FlashcardBulkAction = 'add_tags' | 'set_tags' | 'remove_tags' | 'clear_tags' | 'delete'
+export type SquareImageSource = 'none' | 'url' | 'upload'
+
+export interface SquareImageSourceValue {
+  source: SquareImageSource
+  url: string
+  existingUrl: string
+  existingSource: SquareImageSource
+  upload?: Blob
+}
 
 export interface FlashcardTag {
   id: string
@@ -247,6 +258,8 @@ export interface Flashcard {
   front: string
   back: string
   note: string
+  image: string
+  imageSource: SquareImageSource
   tags: string[]
   createdAt: string
   updatedAt: string
@@ -276,11 +289,9 @@ export interface FlashcardCsvParseResult {
   errors: string[]
 }
 
-export interface FlashcardReviewSet {
-  id: string
-  name: string
-  tags: string[]
+export interface FlashcardReviewSettings {
   mode: FlashcardReviewMode
+  cardSides: FlashcardReviewCardSides
   indefinite: boolean
   maxCards: number
   frontSeconds: number
@@ -290,6 +301,12 @@ export interface FlashcardReviewSet {
   frontLanguage: string
   backLanguage: string
   sortMode: FlashcardReviewSort
+}
+
+export interface FlashcardReviewSet extends FlashcardReviewSettings {
+  id: string
+  name: string
+  tags: string[]
   sortOrder: number
   createdAt: string
   updatedAt: string
@@ -304,24 +321,16 @@ export interface FlashcardReviewQueueCard {
   front: string
   back: string
   note: string
+  image: string
   tags: string[]
 }
 
-export interface FlashcardReviewSession {
+export interface FlashcardReviewSession extends FlashcardReviewSettings {
   id: string
   reviewSet?: string
   status: FlashcardReviewStatus
   name: string
-  mode: FlashcardReviewMode
-  indefinite: boolean
-  sortMode: FlashcardReviewSort
   tags: string[]
-  frontSeconds: number
-  backSeconds: number
-  backSpeechRepeatCount: number
-  speechEnabled: boolean
-  frontLanguage: string
-  backLanguage: string
   queue: FlashcardReviewQueueCard[]
   startedAt: string
   endedAt?: string

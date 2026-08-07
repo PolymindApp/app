@@ -1,9 +1,10 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
-import { ApiError, api } from '@/lib/api'
+import { ApiError, api, apiAssetUrl } from '@/lib/api'
 import {
   cardMatchesTags,
   DEFAULT_FLASHCARD_BACK_SPEECH_REPEATS,
+  DEFAULT_FLASHCARD_REVIEW_CARD_SIDES,
   DEFAULT_FLASHCARD_SESSION_CARDS,
 } from '@/services/flashcards'
 import { useSnackbarStore } from '@/stores/snackbar'
@@ -18,7 +19,9 @@ import type {
   FlashcardReviewSession,
   FlashcardReviewSet,
   FlashcardReviewSetDraft,
+  FlashcardReviewSettings,
   FlashcardTag,
+  SquareImageSourceValue,
 } from '@/types/domain'
 
 function mapTag(record: Record<string, any>): FlashcardTag {
@@ -26,11 +29,15 @@ function mapTag(record: Record<string, any>): FlashcardTag {
 }
 
 function mapCard(record: Record<string, any>): Flashcard {
+  const imageFile = typeof record.image_file === 'string' ? record.image_file : ''
+  const imageUrl = typeof record.image_url === 'string' ? record.image_url : ''
   return {
     id: record.id,
     front: record.front,
     back: record.back,
     note: record.note || '',
+    image: imageFile ? apiAssetUrl(`/flashcard-images/${imageFile}`) : imageUrl,
+    imageSource: imageFile ? 'upload' : imageUrl ? 'url' : 'none',
     tags: Array.isArray(record.tags) ? record.tags : [],
     createdAt: record.created_at,
     updatedAt: record.updated_at,
@@ -47,6 +54,7 @@ function mapReviewSet(record: Record<string, any>): FlashcardReviewSet {
     name: record.name,
     tags: Array.isArray(record.tags) ? record.tags : [],
     mode: record.mode,
+    cardSides: record.card_sides || DEFAULT_FLASHCARD_REVIEW_CARD_SIDES,
     indefinite: Boolean(record.indefinite),
     maxCards: Number(record.max_cards || DEFAULT_FLASHCARD_SESSION_CARDS),
     frontSeconds: Number(record.front_seconds || 5),
@@ -71,7 +79,9 @@ function mapSession(record: Record<string, any>): FlashcardReviewSession {
     status: record.status,
     name: record.snapshot_name,
     mode: record.mode_snapshot,
+    cardSides: record.card_sides_snapshot || DEFAULT_FLASHCARD_REVIEW_CARD_SIDES,
     indefinite: Boolean(record.indefinite_snapshot),
+    maxCards: Number(record.max_cards_snapshot || DEFAULT_FLASHCARD_SESSION_CARDS),
     sortMode: record.sort_snapshot,
     tags: Array.isArray(record.tags_snapshot) ? record.tags_snapshot : [],
     frontSeconds: Number(record.front_seconds_snapshot || 5),
@@ -82,7 +92,12 @@ function mapSession(record: Record<string, any>): FlashcardReviewSession {
     speechEnabled: Boolean(record.speech_enabled_snapshot),
     frontLanguage: record.front_language_snapshot || '',
     backLanguage: record.back_language_snapshot || '',
-    queue: Array.isArray(record.queue_state) ? record.queue_state : [],
+    queue: Array.isArray(record.queue_state)
+      ? record.queue_state.map((card: Record<string, any>) => ({
+          ...card,
+          image: apiAssetUrl(typeof card.image === 'string' ? card.image : ''),
+        }))
+      : [],
     startedAt: record.started_at,
     endedAt: record.ended_at || undefined,
     updatedAt: record.updated_at,
@@ -206,21 +221,60 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     useSnackbarStore().showDeletion('Tag')
   }
 
-  async function saveCard(draft: FlashcardDraft) {
-    const payload = {
+  async function saveCard(draft: FlashcardDraft, image?: SquareImageSourceValue) {
+    const imageChanged = Boolean(image && (
+      image.upload
+      || image.source !== image.existingSource
+      || (image.source === 'url' && image.url.trim() !== image.existingUrl)
+    ))
+    const payload: Record<string, unknown> = {
       owner: api.authStore.record!.id,
       front: draft.front,
       back: draft.back,
       note: draft.note,
       tags: draft.tags,
     }
-    const record = draft.id
+    if (imageChanged && image?.source === 'url') payload.image_url = image.url.trim()
+
+    let record = draft.id
       ? await api.collection('flashcards').update(draft.id, payload)
       : await api.collection('flashcards').create(payload)
+    if (imageChanged && image) {
+      if (image.source === 'upload' && image.upload) {
+        record = await api.updateFlashcardImage(record.id, image.upload)
+      } else if (image.source === 'none' && draft.id) {
+        record = await api.removeFlashcardImage(record.id)
+      }
+    }
     const card = mapCard(record)
     const index = cards.value.findIndex(item => item.id === card.id)
     if (index >= 0) cards.value.splice(index, 1, card)
     else cards.value.unshift(card)
+    sessions.value
+      .filter(session => session.status === 'running' || session.status === 'paused')
+      .forEach(session => {
+        const queueIndex = session.queue.findIndex(item => item.id === card.id)
+        const snapshot = {
+          id: card.id,
+          front: card.front,
+          back: card.back,
+          note: card.note,
+          image: card.image,
+          tags: [...card.tags],
+        }
+        if (queueIndex >= 0) {
+          session.queue.splice(queueIndex, 1, snapshot)
+        } else if (
+          !draft.id
+          && cardMatchesTags(card, session.tags)
+          && session.totalCards < session.maxCards
+        ) {
+          session.queue.push(snapshot)
+          session.totalCards = session.indefinite
+            ? session.queue.length
+            : session.viewedCount + session.ejectedCount + session.queue.length
+        }
+      })
     return card
   }
 
@@ -271,6 +325,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       name: draft.name,
       tags: draft.tags,
       mode: draft.mode,
+      card_sides: draft.cardSides,
       indefinite: draft.mode === 'passive' && draft.indefinite,
       max_cards: draft.maxCards,
       front_seconds: draft.frontSeconds,
@@ -324,7 +379,15 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     reviewSetId: string,
     attribution: { task?: string; programStep?: string; taskDate?: string } = {},
   ) {
-    if (activeSession.value) return activeSession.value
+    const active = activeSession.value
+    if (active) {
+      const sameLaunch = active.reviewSet === reviewSetId
+        && (active.task || '') === (attribution.task || '')
+        && (active.programStep || '') === (attribution.programStep || '')
+        && (active.taskDate || '') === (attribution.taskDate || '')
+      if (sameLaunch) return active
+      throw new Error(`${active.name} is already in progress. Finish or end it before starting another review.`)
+    }
     const record = await api.startFlashcardReviewSession(reviewSetId, attribution)
     const session = mapSession(record)
     sessions.value.unshift(session)
@@ -349,6 +412,15 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       }
     }
     if (response.occurrence) useTaskStore().upsertOccurrenceRecord(response.occurrence)
+    return session
+  }
+
+  async function updateSessionSettings(sessionId: string, settings: FlashcardReviewSettings) {
+    const record = await api.updateFlashcardReviewSessionSettings(sessionId, settings)
+    const session = mapSession(record)
+    const index = sessions.value.findIndex(item => item.id === session.id)
+    if (index >= 0) sessions.value.splice(index, 1, session)
+    else sessions.value.unshift(session)
     return session
   }
 
@@ -378,5 +450,6 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     matchingCards,
     startReview,
     act,
+    updateSessionSettings,
   }
 })

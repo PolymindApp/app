@@ -2,6 +2,7 @@ import { Capacitor, registerPlugin } from '@capacitor/core'
 import type {
   BackgroundFlashcardReviewState,
   FlashcardReviewSession,
+  FlashcardReviewCardSides,
   FlashcardReviewSide,
   FlashcardSpeechLanguage,
   FlashcardSpeechSupport,
@@ -21,6 +22,7 @@ interface FlashcardSpeechPlugin {
     sessionName: string
     cards: Array<{ front: string; back: string }>
     indefinite: boolean
+    cardSides: FlashcardReviewCardSides
     side: FlashcardReviewSide
     remainingMs: number
     frontSeconds: number
@@ -237,6 +239,7 @@ export async function syncBackgroundFlashcardReview(
       sessionName: session.name,
       cards: session.queue.map(card => ({ front: card.front, back: card.back })),
       indefinite: session.indefinite,
+      cardSides: session.cardSides,
       side,
       remainingMs: Math.max(1, Math.round(remainingMs)),
       frontSeconds: session.frontSeconds,

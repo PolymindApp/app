@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { api } from '@/lib/api'
+import { isAndroidOrIosClient } from '@/services/platformAccess'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -7,13 +8,18 @@ const router = createRouter({
     return savedPosition || { top: 0, left: 0, behavior: 'auto' }
   },
   routes: [
+    {
+      path: '/',
+      name: 'landing',
+      component: () => import('@/views/LandingView.vue'),
+      meta: { desktopOnly: true, title: 'Mom — Management of Me' },
+    },
     { path: '/auth', name: 'auth', component: () => import('@/views/AuthView.vue'), meta: { guest: true } },
     {
       path: '/',
       component: () => import('@/layouts/AppShell.vue'),
       meta: { auth: true },
       children: [
-        { path: '', redirect: '/tasks' },
         { path: 'tasks', name: 'tasks', component: () => import('@/views/TodayView.vue'), meta: { title: 'Tasks', pageDepth: 0, pageOrder: 0 } },
         { path: 'today', redirect: '/tasks' },
         { path: 'intervals', name: 'intervals', component: () => import('@/views/IntervalsView.vue'), meta: { title: 'Intervals', pageDepth: 0, pageOrder: 1 } },
@@ -50,11 +56,13 @@ const router = createRouter({
         { path: 'plan/intervals/:id', redirect: to => `/intervals/${String(to.params.id)}/edit` },
       ],
     },
+    { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
 })
 
 router.beforeEach((to) => {
   const authenticated = api.authStore.isValid
+  if (to.meta.desktopOnly && isAndroidOrIosClient()) return { name: 'auth' }
   if (to.meta.auth && !authenticated) return { name: 'auth', query: { redirect: to.fullPath } }
   if (to.meta.guest && authenticated) return { name: 'tasks' }
 })

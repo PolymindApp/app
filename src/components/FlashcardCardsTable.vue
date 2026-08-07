@@ -141,9 +141,20 @@ function cardTagNames(card: Flashcard) {
             </td>
             <td>
               <span v-ripple class="card-library-table__row-ripple" aria-hidden="true" />
-              <div class="flashcard-table__faces">
-                <strong class="flashcard-table__text flashcard-table__front">{{ card.front }}</strong>
-                <span class="flashcard-table__text flashcard-table__back">{{ card.back }}</span>
+              <div class="flashcard-table__face-cell">
+                <v-img
+                  v-if="card.image"
+                  :src="card.image"
+                  alt=""
+                  width="48"
+                  height="48"
+                  cover
+                  class="flashcard-table__image"
+                />
+                <div class="flashcard-table__faces">
+                  <strong class="flashcard-table__text flashcard-table__front">{{ card.front }}</strong>
+                  <span class="flashcard-table__text flashcard-table__back">{{ card.back }}</span>
+                </div>
               </div>
             </td>
             <td>
@@ -202,7 +213,9 @@ function cardTagNames(card: Flashcard) {
 .card-library-load-more { display: flex; min-height: 2.75rem; align-items: center; justify-content: center; gap: .5rem; color: rgba(var(--v-theme-on-surface), .52); font-size: .68rem; font-weight: 800; }
 .card-library-pagination :deep(.v-btn) { min-width: 2.75rem; min-height: 2.75rem; }
 .flashcard-table__text { display: -webkit-box; overflow: hidden; overflow-wrap: anywhere; font-size: .78rem; line-height: 1.35; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-.flashcard-table__faces { display: grid; gap: .2rem; }
+.flashcard-table__face-cell { display: flex; min-width: 0; align-items: center; gap: .65rem; }
+.flashcard-table__faces { display: grid; min-width: 0; gap: .2rem; }
+.flashcard-table__image { flex: 0 0 auto; border-radius: .6rem; background: rgba(var(--v-theme-on-surface), .05); }
 .flashcard-table__front { color: rgb(var(--v-theme-on-surface)); font-weight: 900; }
 .flashcard-table__back { color: rgba(var(--v-theme-on-surface), .72); }
 .flashcard-table__tags { color: rgba(var(--v-theme-on-surface), .56); font-size: .7rem; }

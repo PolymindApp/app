@@ -4,10 +4,15 @@ import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppForm from '@/components/AppForm.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import FlashcardImageField from '@/components/FlashcardImageField.vue'
 import FlashcardTagCombobox from '@/components/FlashcardTagCombobox.vue'
 import FormActionBar from '@/components/FormActionBar.vue'
+import {
+  squareImageSourceIsValid,
+  squareImageSourceSignature,
+} from '@/services/avatarImage'
 import { useFlashcardStore } from '@/stores/flashcards'
-import type { FlashcardDraft } from '@/types/domain'
+import type { FlashcardDraft, SquareImageSourceValue } from '@/types/domain'
 
 const route = useRoute()
 const router = useRouter()
@@ -24,14 +29,26 @@ const error = ref('')
 const savedNotice = ref(false)
 const original = ref('')
 const draft = reactive<FlashcardDraft>({ front: '', back: '', note: '', tags: [] })
+const cardImage = ref<SquareImageSourceValue>({
+  source: 'none',
+  url: '',
+  existingUrl: '',
+  existingSource: 'none',
+})
 
 const cardId = computed(() => typeof route.params.id === 'string' ? route.params.id : '')
 const isEditing = computed(() => Boolean(cardId.value))
+const returnTo = computed(() => typeof route.query.returnTo === 'string'
+  && route.query.returnTo.startsWith('/')
+  && !route.query.returnTo.startsWith('//')
+  ? route.query.returnTo
+  : '')
 const signature = computed(() => JSON.stringify({
   front: draft.front,
   back: draft.back,
   note: draft.note,
   tags: draft.tags,
+  image: squareImageSourceSignature(cardImage.value),
 }))
 const canSave = computed(() => (
   ready.value
@@ -39,6 +56,7 @@ const canSave = computed(() => (
   && signature.value !== original.value
   && Boolean(draft.front.trim())
   && Boolean(draft.back.trim())
+  && squareImageSourceIsValid(cardImage.value)
 ))
 
 onMounted(async () => {
@@ -55,6 +73,12 @@ onMounted(async () => {
         note: card.note,
         tags: [...card.tags],
       })
+      cardImage.value = {
+        source: card.imageSource,
+        url: card.imageSource === 'url' ? card.image : '',
+        existingUrl: card.image,
+        existingSource: card.imageSource,
+      }
     }
     original.value = signature.value
     ready.value = true
@@ -78,14 +102,20 @@ async function save() {
       back: draft.back,
       note: draft.note,
       tags: draft.tags,
-    })
-    if (isEditing.value) {
-      await router.replace({ name: 'flashcard-cards' })
+    }, cardImage.value)
+    if (isEditing.value || returnTo.value) {
+      await router.replace(returnTo.value || { name: 'flashcard-cards' })
       return
     }
 
     const retainedTags = [...draft.tags]
     Object.assign(draft, { id: undefined, front: '', back: '', note: '', tags: retainedTags })
+    cardImage.value = {
+      source: 'none',
+      url: '',
+      existingUrl: '',
+      existingSource: 'none',
+    }
     original.value = signature.value
     savedNotice.value = true
     await nextTick()
@@ -105,7 +135,7 @@ async function remove() {
   try {
     await store.deleteCard(cardId.value)
     deleteDialog.value = false
-    await router.replace({ name: 'flashcard-cards' })
+    await router.replace(returnTo.value || { name: 'flashcard-cards' })
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Could not delete this flashcard.'
     deleteDialog.value = false
@@ -171,6 +201,11 @@ async function remove() {
             maxlength="2000"
             counter
             autocomplete="off"
+          />
+          <FlashcardImageField
+            v-model="cardImage"
+            :loading="saving"
+            @error="error = $event"
           />
           <FlashcardTagCombobox v-model="draft.tags" />
         </div>

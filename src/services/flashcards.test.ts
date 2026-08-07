@@ -45,10 +45,12 @@ const reviewSet: FlashcardReviewSet = {
   name: 'Math',
   tags: ['math'],
   mode: 'passive',
+  cardSides: 'both',
   indefinite: false,
   maxCards: 20,
   frontSeconds: 3,
   backSeconds: 4,
+  backSpeechRepeatCount: 3,
   speechEnabled: true,
   frontLanguage: 'en-US',
   backLanguage: 'fr-CA',
@@ -112,8 +114,19 @@ describe('flashcard review helpers', () => {
     const passive = createIntervalFlashcardReviewSnapshot(reviewSet, cards)
     const manual = createIntervalFlashcardReviewSnapshot({ ...reviewSet, mode: 'manual' }, cards)
 
-    expect(passive).toMatchObject({ frontSeconds: 3, backSeconds: 4, speechEnabled: true })
-    expect(manual).toMatchObject({ frontSeconds: 5, backSeconds: 5, speechEnabled: true })
+    expect(passive).toMatchObject({
+      cardSides: 'both',
+      frontSeconds: 3,
+      backSeconds: 4,
+      backSpeechRepeatCount: 3,
+      speechEnabled: true,
+    })
+    expect(manual).toMatchObject({
+      frontSeconds: 5,
+      backSeconds: 5,
+      backSpeechRepeatCount: 1,
+      speechEnabled: true,
+    })
   })
 
   it('limits interval Review set snapshots after sorting the matching cards', () => {
@@ -135,12 +148,47 @@ describe('flashcard review helpers', () => {
       side: 'front',
       progress: 0,
     })
-    expect(intervalFlashcardPhase(review, 3000)).toMatchObject({ cardIndex: 0, side: 'back' })
-    expect(intervalFlashcardPhase(review, 7000)).toMatchObject({ cardIndex: 1, side: 'front' })
-    expect(intervalFlashcardPhase(review, 14000)).toMatchObject({
+    expect(intervalFlashcardPhase(review, 3000)).toMatchObject({
+      cardIndex: 0,
+      side: 'back',
+      key: '0:back:0',
+    })
+    expect(intervalFlashcardPhase(review, 7000)).toMatchObject({
+      cardIndex: 0,
+      side: 'back',
+      key: '0:back:1',
+    })
+    expect(intervalFlashcardPhase(review, 11000)).toMatchObject({
+      cardIndex: 0,
+      side: 'back',
+      key: '0:back:2',
+    })
+    expect(intervalFlashcardPhase(review, 15000)).toMatchObject({ cardIndex: 1, side: 'front' })
+    expect(intervalFlashcardPhase(review, 30000)).toMatchObject({
       cardIndex: 0,
       cycle: 1,
       side: 'front',
     })
+  })
+
+  it('skips hidden card faces in attached interval reviews', () => {
+    const frontOnly = createIntervalFlashcardReviewSnapshot(
+      { ...reviewSet, cardSides: 'front' },
+      cards,
+    )!
+    const backOnly = createIntervalFlashcardReviewSnapshot(
+      { ...reviewSet, cardSides: 'back' },
+      cards,
+    )!
+
+    expect(intervalFlashcardPhase(frontOnly, 0)).toMatchObject({ side: 'front', cardIndex: 0 })
+    expect(intervalFlashcardPhase(frontOnly, 3000)).toMatchObject({ side: 'front', cardIndex: 1 })
+    expect(intervalFlashcardPhase(backOnly, 0)).toMatchObject({ side: 'back', cardIndex: 0 })
+    expect(intervalFlashcardPhase(backOnly, 4000)).toMatchObject({
+      side: 'back',
+      cardIndex: 0,
+      key: '0:back:1',
+    })
+    expect(intervalFlashcardPhase(backOnly, 12000)).toMatchObject({ side: 'back', cardIndex: 1 })
   })
 })

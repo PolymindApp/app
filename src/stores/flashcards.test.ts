@@ -5,20 +5,27 @@ const apiMocks = vi.hoisted(() => ({
   act: vi.fn(),
   bulkUpdateCards: vi.fn(),
   createTag: vi.fn(),
+  createCard: vi.fn(),
   importCards: vi.fn(),
+  startReview: vi.fn(),
+  updateCardImage: vi.fn(),
 }))
 
 vi.mock('@/lib/api', () => ({
   ApiError: class ApiError extends Error {
     details = {}
   },
+  apiAssetUrl: (value: string) => `/api${value}`,
   api: {
     authStore: { record: { id: 'user-1' } },
     actOnFlashcardReviewSession: apiMocks.act,
     bulkUpdateFlashcards: apiMocks.bulkUpdateCards,
     importFlashcards: apiMocks.importCards,
+    startFlashcardReviewSession: apiMocks.startReview,
+    updateFlashcardImage: apiMocks.updateCardImage,
     collection: (name: string) => {
       if (name === 'flashcard_tags') return { create: apiMocks.createTag }
+      if (name === 'flashcards') return { create: apiMocks.createCard }
       throw new Error(`Unexpected collection: ${name}`)
     },
   },
@@ -33,7 +40,10 @@ describe('flashcard store', () => {
     apiMocks.act.mockReset()
     apiMocks.bulkUpdateCards.mockReset()
     apiMocks.createTag.mockReset()
+    apiMocks.createCard.mockReset()
     apiMocks.importCards.mockReset()
+    apiMocks.startReview.mockReset()
+    apiMocks.updateCardImage.mockReset()
   })
 
   it('reuses an existing tag regardless of letter casing', async () => {
@@ -66,11 +76,17 @@ describe('flashcard store', () => {
       status: 'running',
       name: 'Daily review',
       mode: 'manual',
+      cardSides: 'both',
       indefinite: false,
+      maxCards: 20,
       sortMode: 'difficult',
       tags: [],
       frontSeconds: 5,
       backSeconds: 5,
+      backSpeechRepeatCount: 1,
+      speechEnabled: false,
+      frontLanguage: '',
+      backLanguage: '',
       queue: [{ id: 'card-1', front: 'Question', back: 'Answer', note: 'Explanation', tags: [] }],
       startedAt: '2026-08-05T10:00:00Z',
       updatedAt: '2026-08-05T10:00:00Z',
@@ -87,8 +103,12 @@ describe('flashcard store', () => {
       session: {
         id: 'session-1', review_set: 'set-1', status: 'completed',
         snapshot_name: 'Daily review', mode_snapshot: 'manual', sort_snapshot: 'difficult',
+        card_sides_snapshot: 'both',
         indefinite_snapshot: false,
+        max_cards_snapshot: 20,
         tags_snapshot: [], front_seconds_snapshot: 5, back_seconds_snapshot: 5,
+        back_speech_repeat_count_snapshot: 1,
+        speech_enabled_snapshot: false, front_language_snapshot: '', back_language_snapshot: '',
         queue_state: [], started_at: '2026-08-05T10:00:00Z',
         ended_at: '2026-08-05T10:00:07Z', updated_at: '2026-08-05T10:00:07Z',
         elapsed_seconds: 7, total_cards: 1, viewed_count: 1,
@@ -134,6 +154,43 @@ describe('flashcard store', () => {
     expect(imported).toHaveLength(1)
     expect(store.cards[0]).toEqual(expect.objectContaining({ id: 'card-imported', front: 'chisel' }))
     expect(store.tags.map(tag => tag.name)).toEqual(['Existing', 'Woodworking'])
+  })
+
+  it('uploads a prepared square image after creating its flashcard', async () => {
+    const store = useFlashcardStore()
+    const created = {
+      id: 'card-image', front: 'Joint', back: 'Assemblage', note: '', tags: [],
+      image_url: '', image_file: '',
+      created_at: '2026-08-07T10:00:00Z', updated_at: '2026-08-07T10:00:00Z',
+      last_reviewed_at: '', passive_views: 0, success_count: 0, error_count: 0,
+    }
+    apiMocks.createCard.mockResolvedValue(created)
+    apiMocks.updateCardImage.mockResolvedValue({
+      ...created,
+      image_file: 'a'.repeat(48) + '.jpg',
+    })
+    const upload = new Blob(['jpeg'], { type: 'image/jpeg' })
+
+    const card = await store.saveCard(
+      { front: 'Joint', back: 'Assemblage', note: '', tags: [] },
+      {
+        source: 'upload',
+        url: '',
+        existingUrl: '',
+        existingSource: 'none',
+        upload,
+      },
+    )
+
+    expect(apiMocks.createCard).toHaveBeenCalledWith(expect.objectContaining({
+      front: 'Joint',
+      back: 'Assemblage',
+    }))
+    expect(apiMocks.updateCardImage).toHaveBeenCalledWith('card-image', upload)
+    expect(card).toMatchObject({
+      imageSource: 'upload',
+      image: `/api/flashcard-images/${'a'.repeat(48)}.jpg`,
+    })
   })
 
   it('applies bulk card updates and removes deleted cards from local state', async () => {
@@ -185,5 +242,63 @@ describe('flashcard store', () => {
     await store.bulkUpdateCards('delete', ['card-1'])
 
     expect(store.cards.map(card => card.id)).toEqual(['card-2'])
+  })
+
+  it('does not reuse a looping session for a different task launch', async () => {
+    const store = useFlashcardStore()
+    const active = {
+      id: 'session-1',
+      reviewSet: 'set-1',
+      status: 'paused' as const,
+      name: 'Ongoing review',
+      mode: 'passive' as const,
+      cardSides: 'both' as const,
+      indefinite: true,
+      maxCards: 20,
+      sortMode: 'difficult' as const,
+      tags: [],
+      frontSeconds: 5,
+      backSeconds: 5,
+      backSpeechRepeatCount: 1,
+      speechEnabled: false,
+      frontLanguage: '',
+      backLanguage: '',
+      queue: [{
+        id: 'card-1',
+        front: 'Question',
+        back: 'Answer',
+        note: '',
+        image: '',
+        tags: [],
+      }],
+      startedAt: '2026-08-07T10:00:00Z',
+      updatedAt: '2026-08-07T10:01:00Z',
+      elapsedSeconds: 60,
+      totalCards: 1,
+      viewedCount: 12,
+      successCount: 0,
+      errorCount: 0,
+      ejectedCount: 0,
+      task: 'task-1',
+      taskDate: '2026-08-07',
+    }
+    store.sessions = [active]
+
+    await expect(store.startReview('set-1', {
+      task: 'task-1',
+      taskDate: '2026-08-08',
+    })).rejects.toThrow('Ongoing review is already in progress')
+
+    await expect(store.startReview('set-2', {
+      task: 'task-2',
+      taskDate: '2026-08-07',
+    })).rejects.toThrow('Ongoing review is already in progress')
+    expect(apiMocks.startReview).not.toHaveBeenCalled()
+
+    await expect(store.startReview('set-1', {
+      task: 'task-1',
+      taskDate: '2026-08-07',
+    })).resolves.toMatchObject({ id: active.id, task: active.task, taskDate: active.taskDate })
+    expect(apiMocks.startReview).not.toHaveBeenCalled()
   })
 })

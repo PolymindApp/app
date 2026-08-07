@@ -57,7 +57,7 @@ suffix="$(php -r 'echo bin2hex(random_bytes(5));')"
 password="correct-horse-battery"
 
 migration_count="$(sqlite3 "$test_db" 'SELECT COUNT(*) FROM mom_schema_migrations;')"
-[[ "$migration_count" == 20 ]] || {
+[[ "$migration_count" == 23 ]] || {
   echo "The API did not apply the complete database migration sequence." >&2
   exit 1
 }
@@ -886,7 +886,8 @@ duplicate_flashcard_tag_status="$(curl --silent --output /dev/null --write-out '
 flashcard_payload="$(php -r '
   echo json_encode([
     "front" => "What is 2 + 2?", "back" => "4",
-    "note" => "Basic addition", "tags" => [$argv[1]],
+    "note" => "Basic addition", "image_url" => "https://images.example.test/math.jpg",
+    "tags" => [$argv[1]],
   ], JSON_THROW_ON_ERROR);
 ' "$flashcard_tag_id")"
 flashcard_response="$(curl --silent --show-error --fail \
@@ -896,10 +897,50 @@ flashcard_response="$(curl --silent --show-error --fail \
   "$api_url/collections/flashcards/records")"
 flashcard_id="$(json_field id <<<"$flashcard_response")"
 flashcard_created_at="$(json_field created_at <<<"$flashcard_response")"
-[[ "$flashcard_created_at" =~ T ]] || {
+flashcard_image_url="$(json_field image_url <<<"$flashcard_response")"
+[[ "$flashcard_created_at" =~ T && "$flashcard_image_url" == "https://images.example.test/math.jpg" ]] || {
   echo "A new flashcard did not receive server-owned timestamps." >&2
   exit 1
 }
+
+invalid_flashcard_image_url_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  -X PATCH -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"image_url":"javascript:alert(1)"}' \
+  "$api_url/collections/flashcards/records/$flashcard_id")"
+[[ "$invalid_flashcard_image_url_status" == 422 ]] || {
+  echo "The flashcard API accepted an unsafe image URL." >&2
+  exit 1
+}
+
+flashcard_image_response="$(curl --silent --show-error --fail \
+  -X POST -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "{\"image\":\"data:image/jpeg;base64,$avatar_base64\"}" \
+  "$api_url/flashcards/$flashcard_id/image")"
+flashcard_image_file="$(json_field image_file <<<"$flashcard_image_response")"
+flashcard_image_url="$(json_field image_url <<<"$flashcard_image_response")"
+[[ "$flashcard_image_file" =~ ^[a-f0-9]{48}\.jpg$ && -z "$flashcard_image_url" ]] || {
+  echo "Uploading a flashcard image did not replace its external URL." >&2
+  exit 1
+}
+
+flashcard_image_headers="$test_dir/flashcard-image-headers.txt"
+curl --silent --show-error --fail \
+  --dump-header "$flashcard_image_headers" \
+  --output "$test_dir/flashcard.jpg" \
+  "$api_url/flashcard-images/$flashcard_image_file"
+grep -qi '^Content-Type: image/jpeg' "$flashcard_image_headers" || {
+  echo "The uploaded flashcard image was not served as a JPEG." >&2
+  exit 1
+}
+php -r '
+  $details = getimagesize($argv[1]);
+  if (!$details || $details[0] > 256 || $details[1] !== $details[0]) {
+      fwrite(STDERR, "The stored flashcard image dimensions are invalid.\n");
+      exit(1);
+  }
+' "$test_dir/flashcard.jpg"
 
 flashcard_import_payload='{"rows":[{"front":"Imported chisel","back":"formón","note":"Carving tool","tags":["algebra","Imported"]},{"front":"Imported plane","back":"cepillo","note":"","tags":[]}]}'
 flashcard_import_response="$(curl --silent --show-error --fail \
@@ -1158,9 +1199,10 @@ manual_session_response="$(curl --silent --show-error --fail \
 manual_session_id="$(json_field id <<<"$manual_session_response")"
 manual_session_summary="$(php -r '
   $data = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
-  echo $data["total_cards"] . ":" . $data["queue_state"][0]["note"];
+  echo $data["total_cards"] . ":" . $data["queue_state"][0]["note"] . ":"
+    . $data["queue_state"][0]["image"];
 ' <<<"$manual_session_response")"
-[[ "$manual_session_summary" == "1:Basic addition" ]] || {
+[[ "$manual_session_summary" == "1:Basic addition:/flashcard-images/$flashcard_image_file" ]] || {
   echo "A Review set did not snapshot its matching card queue." >&2
   exit 1
 }
@@ -1179,6 +1221,7 @@ manual_complete_status="$(php -r '$data=json_decode(stream_get_contents(STDIN), 
 passive_review_set_payload="$(php -r '
   echo json_encode([
     "name" => "Passive algebra", "tags" => [$argv[1]], "mode" => "passive",
+    "card_sides" => "back",
     "indefinite" => true,
     "front_seconds" => 3, "back_seconds" => 4,
     "back_speech_repeat_count" => 3,
@@ -1200,10 +1243,26 @@ passive_session_response="$(curl --silent --show-error --fail \
 passive_session_id="$(json_field id <<<"$passive_session_response")"
 passive_session_speech="$(php -r '
   $data=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
-  echo ((int) $data["speech_enabled_snapshot"]) . ":" . $data["front_language_snapshot"] . ":" . $data["back_language_snapshot"] . ":" . ((int) $data["indefinite_snapshot"]) . ":" . $data["back_speech_repeat_count_snapshot"];
+  echo ((int) $data["speech_enabled_snapshot"]) . ":" . $data["front_language_snapshot"] . ":" . $data["back_language_snapshot"] . ":" . ((int) $data["indefinite_snapshot"]) . ":" . $data["back_speech_repeat_count_snapshot"] . ":" . $data["card_sides_snapshot"] . ":" . $data["max_cards_snapshot"];
 ' <<<"$passive_session_response")"
-[[ "$passive_session_speech" == "1:en-US:fr-CA:1:3" ]] || {
+[[ "$passive_session_speech" == "1:en-US:fr-CA:1:3:back:20" ]] || {
   echo "A Review set did not snapshot its speech synthesis and looping settings." >&2
+  exit 1
+}
+passive_session_settings_response="$(curl --silent --show-error --fail \
+  -X PATCH -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"mode":"passive","card_sides":"front","indefinite":true,"max_cards":1,"front_seconds":4,"back_seconds":6,"back_speech_repeat_count":2,"speech_enabled":true,"front_language":"en-US","back_language":"fr-CA","sort_mode":"difficult"}' \
+  "$api_url/flashcard-review-sessions/$passive_session_id/settings")"
+passive_session_settings_summary="$(php -r '
+  $data=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+  echo $data["mode_snapshot"] . ":" . $data["card_sides_snapshot"] . ":"
+    . ((int) $data["indefinite_snapshot"]) . ":" . $data["max_cards_snapshot"] . ":"
+    . $data["front_seconds_snapshot"] . ":" . $data["back_seconds_snapshot"] . ":"
+    . $data["back_speech_repeat_count_snapshot"] . ":" . $data["sort_snapshot"];
+' <<<"$passive_session_settings_response")"
+[[ "$passive_session_settings_summary" == "passive:front:1:1:4:6:2:difficult" ]] || {
+  echo "An active Review set session did not apply its adjusted settings." >&2
   exit 1
 }
 passive_grade_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
@@ -1267,9 +1326,10 @@ interval_flashcard_snapshot="$(php -r '
   $snapshot = $data["flashcard_snapshot"];
   echo $snapshot["reviewSet"] . ":" . $snapshot["frontSeconds"] . ":"
     . $snapshot["backSeconds"] . ":" . ((int) $snapshot["speechEnabled"])
-    . ":" . $snapshot["backSpeechRepeatCount"] . ":" . count($snapshot["cards"]);
+    . ":" . $snapshot["backSpeechRepeatCount"] . ":" . $snapshot["cardSides"]
+    . ":" . count($snapshot["cards"]) . ":" . $snapshot["cards"][0]["image"];
 ' <<<"$interval_flashcard_session_response")"
-[[ "$interval_flashcard_snapshot" == "$passive_review_set_id:3:4:1:3:1" ]] || {
+[[ "$interval_flashcard_snapshot" == "$passive_review_set_id:3:4:1:3:back:1:/flashcard-images/$flashcard_image_file" ]] || {
   echo "An interval did not snapshot its attached Passive Review set." >&2
   exit 1
 }
@@ -1318,9 +1378,10 @@ manual_interval_timing="$(php -r '
   $data = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
   echo $data["flashcard_snapshot"]["frontSeconds"] . ":"
     . $data["flashcard_snapshot"]["backSeconds"] . ":"
-    . $data["flashcard_snapshot"]["backSpeechRepeatCount"];
+    . $data["flashcard_snapshot"]["backSpeechRepeatCount"] . ":"
+    . $data["flashcard_snapshot"]["cardSides"];
 ' <<<"$manual_interval_response")"
-[[ "$manual_interval_timing" == "5:5:1" ]] || {
+[[ "$manual_interval_timing" == "5:5:1:both" ]] || {
   echo "An interval did not apply the five-second fallback to a Manual Review set." >&2
   exit 1
 }
@@ -1372,11 +1433,63 @@ flashcard_occurrence_count="$(sqlite3 "$test_db" \
   exit 1
 }
 
+looping_flashcard_task_payload="$(php -r '
+  $payload = json_decode($argv[1], true, 512, JSON_THROW_ON_ERROR);
+  $payload["name"] = "Looping review task";
+  $payload["flashcard_review_set"] = $argv[2];
+  $payload["sort_order"] = 11;
+  echo json_encode($payload, JSON_THROW_ON_ERROR);
+' "$flashcard_task_payload" "$passive_review_set_id")"
+looping_flashcard_task_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "$looping_flashcard_task_payload" \
+  "$api_url/collections/tasks/records")"
+looping_flashcard_task_id="$(json_field id <<<"$looping_flashcard_task_response")"
+looping_flashcard_session_payload="$(php -r '
+  echo json_encode(["task" => $argv[1], "program_step" => "", "task_date" => $argv[2]], JSON_THROW_ON_ERROR);
+' "$looping_flashcard_task_id" "$flashcard_today")"
+looping_flashcard_session_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "$looping_flashcard_session_payload" \
+  "$api_url/flashcard-review-sets/$passive_review_set_id/sessions")"
+looping_flashcard_session_id="$(json_field id <<<"$looping_flashcard_session_response")"
+looping_flashcard_view_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"action":"view","elapsed_seconds":8}' \
+  "$api_url/flashcard-review-sessions/$looping_flashcard_session_id/actions")"
+looping_flashcard_view_summary="$(php -r '
+  $session = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR)["session"];
+  echo $session["status"] . ":" . $session["viewed_count"] . ":"
+    . count($session["queue_state"]) . ":" . $session["total_cards"];
+' <<<"$looping_flashcard_view_response")"
+[[ "$looping_flashcard_view_summary" == "running:1:1:1" ]] || {
+  echo "An attached looping review corrupted its queue or cycle progress." >&2
+  exit 1
+}
+looping_flashcard_end_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"action":"end","elapsed_seconds":8}' \
+  "$api_url/flashcard-review-sessions/$looping_flashcard_session_id/actions")"
+looping_flashcard_end_status="$(php -r '
+  $data = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+  echo $data["session"]["status"] . ":" . ($data["occurrence"]["status"] ?? "");
+' <<<"$looping_flashcard_end_response")"
+[[ "$looping_flashcard_end_status" == "completed:completed" ]] || {
+  echo "Stopping a reviewed indefinite session did not complete its attached task." >&2
+  exit 1
+}
+
 flashcard_counts="$(sqlite3 "$test_db" \
   "SELECT success_count || ':' || error_count || ':' || passive_views FROM flashcards WHERE id = '$flashcard_id';")"
 flashcard_event_count="$(sqlite3 "$test_db" \
   "SELECT COUNT(*) FROM flashcard_review_events WHERE card = '$flashcard_id';")"
-[[ "$flashcard_counts" == "1:0:1" && "$flashcard_event_count" == 2 ]] || {
+flashcard_ejected_event_count="$(sqlite3 "$test_db" \
+  "SELECT COUNT(*) FROM flashcard_review_events WHERE card = '$flashcard_id' AND outcome = 'ejected';")"
+[[ "$flashcard_counts" == "1:0:2" && "$flashcard_event_count" == 4 && "$flashcard_ejected_event_count" == 1 ]] || {
   echo "Flashcard aggregate and immutable event statistics drifted apart." >&2
   exit 1
 }
@@ -1458,7 +1571,7 @@ flashcard_delete_status="$(curl --silent --output /dev/null --write-out '%{http_
   "$api_url/collections/flashcards/records/$flashcard_id")"
 flashcard_history_snapshot="$(sqlite3 "$test_db" \
   "SELECT COUNT(*) FROM flashcard_review_events WHERE card = '' AND front_snapshot = 'What is 2 + 2?' AND back_snapshot = '4';")"
-[[ "$flashcard_delete_status" == 204 && "$flashcard_history_snapshot" == 2 ]] || {
+[[ "$flashcard_delete_status" == 204 && "$flashcard_history_snapshot" == 4 ]] || {
   echo "Deleting a flashcard did not preserve and detach its review history snapshots." >&2
   exit 1
 }
@@ -1470,6 +1583,16 @@ detached_flashcard_session_count="$(sqlite3 "$test_db" \
   "SELECT COUNT(*) FROM flashcard_review_sessions WHERE id = '$attached_flashcard_session_id' AND task = '' AND program_step = '';")"
 [[ "$flashcard_task_delete_status" == 204 && "$detached_flashcard_session_count" == 1 ]] || {
   echo "Deleting a flashcard task did not preserve and detach its session history." >&2
+  exit 1
+}
+
+looping_flashcard_task_delete_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  -X DELETE -H "Authorization: Bearer $alice_token" \
+  "$api_url/collections/tasks/records/$looping_flashcard_task_id")"
+detached_looping_session_count="$(sqlite3 "$test_db" \
+  "SELECT COUNT(*) FROM flashcard_review_sessions WHERE id = '$looping_flashcard_session_id' AND task = '' AND program_step = '';")"
+[[ "$looping_flashcard_task_delete_status" == 204 && "$detached_looping_session_count" == 1 ]] || {
+  echo "Deleting a looping flashcard task did not preserve and detach its session history." >&2
   exit 1
 }
 

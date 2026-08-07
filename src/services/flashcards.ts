@@ -3,6 +3,8 @@ import type {
   FlashcardBulkAction,
   FlashcardReviewSession,
   FlashcardReviewSet,
+  FlashcardReviewCardSides,
+  FlashcardReviewSettings,
   FlashcardReviewSide,
   FlashcardReviewSort,
   IntervalFlashcardReviewSnapshot,
@@ -14,6 +16,79 @@ export const DEFAULT_FLASHCARD_SESSION_CARDS = 20
 export const MIN_FLASHCARD_BACK_SPEECH_REPEATS = 1
 export const MAX_FLASHCARD_BACK_SPEECH_REPEATS = 5
 export const DEFAULT_FLASHCARD_BACK_SPEECH_REPEATS = 1
+export const DEFAULT_FLASHCARD_REVIEW_CARD_SIDES: FlashcardReviewCardSides = 'both'
+
+export const FLASHCARD_REVIEW_CARD_SIDE_OPTIONS: Array<{
+  title: string
+  value: FlashcardReviewCardSides
+  icon: string
+  hint: string
+}> = [
+  {
+    title: 'Both',
+    value: 'both',
+    icon: 'mdi-card-multiple-outline',
+    hint: 'Show the front first, then the back.',
+  },
+  {
+    title: 'Front',
+    value: 'front',
+    icon: 'mdi-card-outline',
+    hint: 'Show only the front of each card.',
+  },
+  {
+    title: 'Back',
+    value: 'back',
+    icon: 'mdi-card-text-outline',
+    hint: 'Show only the back of each card.',
+  },
+]
+
+export const FLASHCARD_REVIEW_SESSION_MENU_ITEMS = [
+  { action: 'add', title: 'Add card', icon: 'mdi-card-plus-outline' },
+  { action: 'edit', title: 'Edit this card', icon: 'mdi-pencil-outline', requiresCard: true },
+  { action: 'settings', title: 'Session settings', icon: 'mdi-tune-variant' },
+  {
+    action: 'delete',
+    title: 'Delete this card',
+    icon: 'mdi-delete-outline',
+    color: 'error',
+    divider: true,
+    requiresCard: true,
+  },
+] as const
+
+export function flashcardReviewSettingsSignature(settings: FlashcardReviewSettings) {
+  return JSON.stringify({
+    mode: settings.mode,
+    cardSides: settings.cardSides,
+    indefinite: settings.indefinite,
+    maxCards: settings.maxCards,
+    frontSeconds: settings.frontSeconds,
+    backSeconds: settings.backSeconds,
+    backSpeechRepeatCount: settings.backSpeechRepeatCount,
+    speechEnabled: settings.speechEnabled,
+    frontLanguage: settings.frontLanguage,
+    backLanguage: settings.backLanguage,
+    sortMode: settings.sortMode,
+  })
+}
+
+export function flashcardReviewSettingsAreValid(
+  settings: FlashcardReviewSettings,
+  minCards = MIN_FLASHCARD_SESSION_CARDS,
+) {
+  return Number.isInteger(settings.maxCards)
+    && settings.maxCards >= minCards
+    && settings.maxCards <= MAX_FLASHCARD_SESSION_CARDS
+    && Number.isInteger(settings.backSpeechRepeatCount)
+    && settings.backSpeechRepeatCount >= MIN_FLASHCARD_BACK_SPEECH_REPEATS
+    && settings.backSpeechRepeatCount <= MAX_FLASHCARD_BACK_SPEECH_REPEATS
+    && (!settings.speechEnabled || Boolean(
+      (settings.cardSides === 'back' || settings.frontLanguage)
+      && (settings.cardSides === 'front' || settings.backLanguage),
+    ))
+}
 
 export const FLASHCARD_BULK_MENU_ITEMS = [
   { action: 'add_tags', title: 'Add tags', icon: 'mdi-tag-plus-outline' },
@@ -176,6 +251,7 @@ export function createIntervalFlashcardReviewSnapshot(
     name: reviewSet.name,
     tags: [...reviewSet.tags],
     sortMode: reviewSet.sortMode,
+    cardSides: reviewSet.cardSides,
     frontSeconds: effectiveSeconds.front,
     backSeconds: effectiveSeconds.back,
     backSpeechRepeatCount: reviewSet.mode === 'passive' && reviewSet.speechEnabled
@@ -191,6 +267,7 @@ export function createIntervalFlashcardReviewSnapshot(
         front: card.front,
         back: card.back,
         note: card.note,
+        image: card.image,
         tags: [...card.tags],
       })),
   }
@@ -219,21 +296,36 @@ export function flashcardBackDurationMs(backSeconds: number, repeatCount: number
   return durationMs * normalizeFlashcardBackSpeechRepeatCount(repeatCount)
 }
 
+export function flashcardReviewShowsSide(
+  cardSides: FlashcardReviewCardSides,
+  side: FlashcardReviewSide,
+) {
+  return cardSides === 'both' || cardSides === side
+}
+
+export function firstFlashcardReviewSide(cardSides: FlashcardReviewCardSides): FlashcardReviewSide {
+  return cardSides === 'back' ? 'back' : 'front'
+}
+
 export function intervalFlashcardPhase(
   review: IntervalFlashcardReviewSnapshot,
   elapsedMs: number,
 ): IntervalFlashcardPhase | undefined {
   if (!review.cards.length) return undefined
+  const showsFront = flashcardReviewShowsSide(review.cardSides, 'front')
+  const showsBack = flashcardReviewShowsSide(review.cardSides, 'back')
   const frontMs = Math.max(1000, review.frontSeconds * 1000)
   const baseBackMs = Math.max(1000, review.backSeconds * 1000)
   const backMs = flashcardBackDurationMs(review.backSeconds, review.backSpeechRepeatCount)
-  const cardDurationMs = frontMs + backMs
+  const cardDurationMs = (showsFront ? frontMs : 0) + (showsBack ? backMs : 0)
   const safeElapsedMs = Number.isFinite(elapsedMs) ? Math.max(0, elapsedMs) : 0
   const absoluteCardIndex = Math.floor(safeElapsedMs / cardDurationMs)
   const cardIndex = absoluteCardIndex % review.cards.length
   const elapsedInCard = safeElapsedMs % cardDurationMs
-  const side: FlashcardReviewSide = elapsedInCard < frontMs ? 'front' : 'back'
-  const sideElapsedMs = side === 'front' ? elapsedInCard : elapsedInCard - frontMs
+  const side: FlashcardReviewSide = showsFront && elapsedInCard < frontMs ? 'front' : 'back'
+  const sideElapsedMs = side === 'front'
+    ? elapsedInCard
+    : elapsedInCard - (showsFront ? frontMs : 0)
   const sideDurationMs = side === 'front' ? frontMs : backMs
   const backSpeechRepeatIndex = side === 'back'
     ? Math.min(

@@ -25,6 +25,7 @@ interface BackgroundIntervalPlugin {
     flashcardReview?: {
       name: string
       cards: Array<{ front: string; back: string }>
+      cardSides: 'both' | 'front' | 'back'
       frontSeconds: number
       backSeconds: number
       backSpeechRepeatCount: number
@@ -84,6 +85,7 @@ export async function syncBackgroundInterval(session: IntervalSession) {
                 front: card.front,
                 back: card.back,
               })),
+              cardSides: session.flashcardReview.cardSides,
               frontSeconds: session.flashcardReview.frontSeconds,
               backSeconds: session.flashcardReview.backSeconds,
               backSpeechRepeatCount: session.flashcardReview.backSpeechRepeatCount,

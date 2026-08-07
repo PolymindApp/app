@@ -1,6 +1,6 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
-import { ApiError, api } from '@/lib/api'
+import { ApiError, api, apiAssetUrl } from '@/lib/api'
 import { useSnackbarStore } from '@/stores/snackbar'
 import { useTaskStore } from '@/stores/tasks'
 import {
@@ -49,7 +49,12 @@ function mapSession(record: Record<string, any>): IntervalSession {
     && flashcardSnapshot.cards.length
       ? {
           ...flashcardSnapshot,
+          cardSides: flashcardSnapshot.cardSides || 'both',
           backSpeechRepeatCount: Number(flashcardSnapshot.backSpeechRepeatCount || 1),
+          cards: flashcardSnapshot.cards.map((card: Record<string, any>) => ({
+            ...card,
+            image: apiAssetUrl(typeof card.image === 'string' ? card.image : ''),
+          })),
         } as IntervalFlashcardReviewSnapshot
       : undefined
   return {

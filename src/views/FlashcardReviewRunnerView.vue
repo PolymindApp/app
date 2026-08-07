@@ -1,9 +1,13 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
+import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
+import AppForm from '@/components/AppForm.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import FlashcardReviewSettingsFields from '@/components/FlashcardReviewSettingsFields.vue'
 import {
   backgroundFlashcardReviewState,
+  loadFlashcardSpeechSupport,
   nativeFlashcardBackgroundIsAvailable,
   speakFlashcardText,
   stopBackgroundFlashcardReview,
@@ -13,11 +17,16 @@ import {
 import { playReviewCompleteCue } from '@/services/intervalCues'
 import { requestScreenWakeLock, type ScreenWakeLock } from '@/services/screenWakeLock'
 import {
+  firstFlashcardReviewSide,
   flashcardBackDurationMs,
+  flashcardReviewShowsSide,
+  flashcardReviewSettingsAreValid,
+  flashcardReviewSettingsSignature,
   flashcardSideFromSwipe,
   flashcardTextFontSize,
   formatReviewDuration,
   normalizeFlashcardBackSpeechRepeatCount,
+  FLASHCARD_REVIEW_SESSION_MENU_ITEMS,
   sessionAccuracy,
 } from '@/services/flashcards'
 import { useFlashcardStore } from '@/stores/flashcards'
@@ -25,7 +34,9 @@ import type {
   BackgroundFlashcardReviewState,
   FlashcardReviewAction,
   FlashcardReviewSession,
+  FlashcardReviewSettings,
   FlashcardReviewSide,
+  FlashcardSpeechSupport,
 } from '@/types/domain'
 
 const route = useRoute()
@@ -36,6 +47,30 @@ const busy = ref(false)
 const error = ref('')
 const revealed = ref(false)
 const endDialog = ref(false)
+const cardMenuOpen = ref(false)
+const deleteCardDialog = ref(false)
+const deleteCardId = ref('')
+const deletingCard = ref(false)
+const sessionSettingsDialog = ref(false)
+const sessionSettingsForm = ref()
+const sessionSettingsSaving = ref(false)
+const sessionSettingsError = ref('')
+const sessionSettingsOriginal = ref('')
+const sessionSpeechLoading = ref(false)
+const sessionSpeechSupport = ref<FlashcardSpeechSupport>({ available: false, languages: [] })
+const sessionSettingsDraft = reactive<FlashcardReviewSettings>({
+  mode: 'manual',
+  cardSides: 'both',
+  indefinite: false,
+  maxCards: 20,
+  frontSeconds: 5,
+  backSeconds: 5,
+  backSpeechRepeatCount: 1,
+  speechEnabled: false,
+  frontLanguage: '',
+  backLanguage: '',
+  sortMode: 'difficult',
+})
 const tickVersion = ref(0)
 const passiveSide = ref<'front' | 'back'>('front')
 const passiveRemainingMs = ref(0)
@@ -59,6 +94,7 @@ let wakeLockRetryRequested = false
 let manualSwipeStart: { pointerId: number; x: number; y: number } | undefined
 let suppressManualCardTap = false
 let manualCardTapResetTimer: number | undefined
+let resumeAfterSessionSettings = false
 
 const currentSessionId = ref('')
 const session = computed(() => store.sessions.find(item => item.id === currentSessionId.value))
@@ -82,6 +118,9 @@ const progressCards = computed(() => {
 const progress = computed(() => session.value?.totalCards
   ? Math.round(progressCards.value / session.value.totalCards * 100)
   : 0)
+const firstReviewSide = computed(() => firstFlashcardReviewSide(session.value?.cardSides || 'both'))
+const manualShowingBack = computed(() => session.value?.cardSides === 'back'
+  || (session.value?.cardSides === 'both' && revealed.value))
 const backSpeechRepeatCount = computed(() => session.value?.mode === 'passive'
   && session.value.speechEnabled
   ? normalizeFlashcardBackSpeechRepeatCount(session.value.backSpeechRepeatCount)
@@ -114,7 +153,7 @@ const accuracy = computed(() => session.value ? sessionAccuracy(session.value) :
 const exitDestination = computed(() => route.query.from === 'tasks' ? '/tasks' : '/flashcards')
 const speechWarning = computed(() => speechPlaybackWarning.value || backgroundSpeechWarning.value)
 const currentSpeechSide = computed<FlashcardReviewSide>(() => session.value?.mode === 'manual'
-  ? (revealed.value ? 'back' : 'front')
+  ? (manualShowingBack.value ? 'back' : 'front')
   : passiveSide.value)
 const canUseNativeBackground = computed(() => Boolean(
   nativeFlashcardBackgroundIsAvailable()
@@ -128,6 +167,14 @@ const canNavigateCards = computed(() => Boolean(
   session.value?.status === 'running'
   && session.value.queue.length > 1,
 ))
+const sessionSettingsMinimumCards = computed(() => {
+  if (sessionSettingsDraft.mode === 'passive' && sessionSettingsDraft.indefinite) return 1
+  return Math.min(100, (session.value?.viewedCount || 0) + (session.value?.ejectedCount || 0) + 1)
+})
+const sessionSettingsChanged = computed(() => sessionSettingsDialog.value
+  && flashcardReviewSettingsSignature(sessionSettingsDraft) !== sessionSettingsOriginal.value)
+const canSaveSessionSettings = computed(() => sessionSettingsChanged.value
+  && flashcardReviewSettingsAreValid(sessionSettingsDraft, sessionSettingsMinimumCards.value))
 
 watch([
   loading,
@@ -154,8 +201,7 @@ onMounted(async () => {
       currentSessionId.value = loaded.id
       initializeLocalState(loaded)
     } else if (typeof route.params.reviewSetId === 'string') {
-      const active = store.activeSession
-      const started = active || await store.startReview(route.params.reviewSetId, {
+      const started = await store.startReview(route.params.reviewSetId, {
         task: typeof route.query.task === 'string' ? route.query.task : undefined,
         programStep: typeof route.query.step === 'string' ? route.query.step : undefined,
         taskDate: typeof route.query.date === 'string' ? route.query.date : undefined,
@@ -251,12 +297,16 @@ function passiveStorageKey(id: string) {
 }
 
 function restorePassiveState(value: FlashcardReviewSession) {
-  passiveSide.value = 'front'
-  passiveRemainingMs.value = value.frontSeconds * 1000
+  passiveSide.value = firstFlashcardReviewSide(value.cardSides)
+  passiveRemainingMs.value = passiveDurationMs.value
   if (value.mode !== 'passive') return
   try {
     const saved = JSON.parse(localStorage.getItem(passiveStorageKey(value.id)) || '')
-    if (saved?.cardId === value.queue[0]?.id && (saved.side === 'front' || saved.side === 'back')) {
+    if (
+      saved?.cardId === value.queue[0]?.id
+      && (saved.side === 'front' || saved.side === 'back')
+      && flashcardReviewShowsSide(value.cardSides, saved.side)
+    ) {
       passiveSide.value = saved.side
       passiveRemainingMs.value = Math.max(1, Number(saved.remainingMs) || passiveDurationMs.value)
     }
@@ -302,7 +352,7 @@ function tick() {
 
 async function advancePassive() {
   if (!session.value || session.value.mode !== 'passive' || passiveAdvancing) return
-  if (passiveSide.value === 'front') {
+  if (session.value.cardSides === 'both' && passiveSide.value === 'front') {
     passiveSide.value = 'back'
     passiveRemainingMs.value = flashcardBackDurationMs(
       session.value.backSeconds,
@@ -322,8 +372,8 @@ async function advancePassive() {
 
 function resetCurrentCardPhase() {
   revealed.value = false
-  passiveSide.value = 'front'
-  passiveRemainingMs.value = (session.value?.frontSeconds || 5) * 1000
+  passiveSide.value = firstReviewSide.value
+  passiveRemainingMs.value = passiveDurationMs.value
   if (isFinished.value) clearPassiveState()
   else savePassiveState()
 }
@@ -496,12 +546,18 @@ function handleManualCardTap() {
     return
   }
   if (replayCurrentSide()) return
-  if (!revealed.value && session.value?.status === 'running' && !busy.value) revealed.value = true
+  if (
+    session.value?.cardSides === 'both'
+    && !revealed.value
+    && session.value.status === 'running'
+    && !busy.value
+  ) revealed.value = true
 }
 
 function beginManualCardSwipe(event: PointerEvent) {
   if (
     session.value?.mode !== 'manual'
+    || session.value.cardSides !== 'both'
     || session.value.status !== 'running'
     || busy.value
     || (event.pointerType === 'mouse' && event.button !== 0)
@@ -619,6 +675,125 @@ async function reconcileBackgroundReview(
   return true
 }
 
+function copySessionSettings(value: FlashcardReviewSession) {
+  Object.assign(sessionSettingsDraft, {
+    mode: value.mode,
+    cardSides: value.cardSides,
+    indefinite: value.indefinite,
+    maxCards: value.maxCards,
+    frontSeconds: value.frontSeconds,
+    backSeconds: value.backSeconds,
+    backSpeechRepeatCount: value.backSpeechRepeatCount,
+    speechEnabled: value.speechEnabled,
+    frontLanguage: value.frontLanguage,
+    backLanguage: value.backLanguage,
+    sortMode: value.sortMode,
+  })
+}
+
+async function openSessionSettings() {
+  cardMenuOpen.value = false
+  const value = session.value
+  if (!value || busy.value) return
+  resumeAfterSessionSettings = value.status === 'running'
+  if (resumeAfterSessionSettings) await pauseReview(false)
+  if (!session.value || isFinished.value) return
+  copySessionSettings(session.value)
+  sessionSettingsOriginal.value = flashcardReviewSettingsSignature(sessionSettingsDraft)
+  sessionSettingsError.value = ''
+  sessionSettingsDialog.value = true
+  sessionSpeechLoading.value = true
+  try {
+    sessionSpeechSupport.value = await loadFlashcardSpeechSupport()
+  } finally {
+    sessionSpeechLoading.value = false
+  }
+}
+
+async function closeSessionSettings() {
+  sessionSettingsDialog.value = false
+  sessionSettingsError.value = ''
+  if (resumeAfterSessionSettings && session.value?.status === 'paused') {
+    await resumeReview()
+  }
+  resumeAfterSessionSettings = false
+}
+
+async function saveSessionSettings() {
+  const result = await sessionSettingsForm.value?.validate()
+  if (!result?.valid || !canSaveSessionSettings.value || !session.value) return
+  sessionSettingsSaving.value = true
+  sessionSettingsError.value = ''
+  try {
+    const updated = await store.updateSessionSettings(session.value.id, sessionSettingsDraft)
+    localElapsedMs.value = updated.elapsedSeconds * 1000
+    lastTickAt = Date.now()
+    lastSpokenKey = ''
+    speechPlaybackWarning.value = ''
+    resetCurrentCardPhase()
+    await closeSessionSettings()
+  } catch (cause) {
+    sessionSettingsError.value = cause instanceof Error
+      ? cause.message
+      : 'Could not update this review session.'
+  } finally {
+    sessionSettingsSaving.value = false
+  }
+}
+
+async function openCardEditor(action: 'add' | 'edit') {
+  cardMenuOpen.value = false
+  if (!session.value || busy.value) return
+  if (session.value.status === 'running') await pauseReview(false)
+  const returnTo = route.fullPath
+  if (action === 'add') {
+    await router.push({ name: 'flashcard-new', query: { returnTo } })
+    return
+  }
+  if (!currentCard.value) return
+  await router.push({
+    name: 'flashcard-edit',
+    params: { id: currentCard.value.id },
+    query: { returnTo },
+  })
+}
+
+function requestCurrentCardDeletion() {
+  cardMenuOpen.value = false
+  deleteCardId.value = currentCard.value?.id || ''
+  deleteCardDialog.value = Boolean(deleteCardId.value)
+}
+
+async function deleteCurrentCard() {
+  const cardId = deleteCardId.value
+  if (!cardId || !session.value || deletingCard.value) return
+  const restorePaused = session.value.status === 'paused'
+  deletingCard.value = true
+  try {
+    if (restorePaused) await resumeReview()
+    const removed = await performAction('eject')
+    if (!removed) return
+    await store.deleteCard(cardId)
+    deleteCardDialog.value = false
+    deleteCardId.value = ''
+    if (restorePaused && session.value?.status === 'running') await pauseReview(false)
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : 'Could not delete this flashcard.'
+  } finally {
+    deletingCard.value = false
+  }
+}
+
+function handleSessionMenuAction(action: string) {
+  if (action === 'add' || action === 'edit') {
+    void openCardEditor(action)
+  } else if (action === 'settings') {
+    void openSessionSettings()
+  } else if (action === 'delete') {
+    requestCurrentCardDeletion()
+  }
+}
+
 async function finishEarly() {
   endDialog.value = false
   await performAction('end')
@@ -700,7 +875,11 @@ async function leaveRunner() {
         </div>
         <h1 class="display-title">{{ session.status === 'completed' ? 'Review complete' : 'Review ended' }}</h1>
         <p class="muted">
-          {{ session.status === 'completed' ? 'You reached the end of the queue.' : 'Your partial progress has been saved.' }}
+          {{ session.status === 'completed'
+            ? session.indefinite
+              ? 'Your looping review has been completed.'
+              : 'You reached the end of the queue.'
+            : 'Your partial progress has been saved.' }}
         </p>
         <div class="completion-stats">
           <div><strong>{{ formatReviewDuration(session.elapsedSeconds) }}</strong><span>Active time</span></div>
@@ -727,10 +906,10 @@ async function leaveRunner() {
           v-ripple
           type="button"
           class="review-card"
-          :class="{ 'review-card--revealed': revealed }"
+          :class="{ 'review-card--revealed': manualShowingBack }"
           :aria-label="session.speechEnabled
-            ? `Replay ${revealed ? 'back' : 'front'} speech`
-            : revealed ? 'Answer shown' : 'Show answer'"
+            ? `Replay ${currentSpeechSide} speech`
+            : session.cardSides === 'both' && !revealed ? 'Show answer' : `${currentSpeechSide} shown`"
           :disabled="session.status === 'paused' || busy"
           @pointerdown="beginManualCardSwipe"
           @pointerup="finishManualCardSwipe"
@@ -738,22 +917,40 @@ async function leaveRunner() {
           @click="handleManualCardTap"
         >
           <span class="review-card__inner">
-            <span class="review-card__face review-card__front">
+            <span class="review-card__face review-card__front" :aria-hidden="manualShowingBack">
               <small>Front</small>
+              <img
+                v-if="currentCard.image"
+                :src="currentCard.image"
+                alt=""
+                class="review-card__image"
+                width="256"
+                height="256"
+              />
               <strong :style="{ fontSize: flashcardTextFontSize(currentCard.front) }">
                 {{ currentCard.front }}
               </strong>
               <span v-if="session.speechEnabled" class="review-card__hint">
                 <v-icon icon="mdi-volume-high" size="18" /> Tap to replay
               </span>
-              <span v-else-if="!revealed" class="review-card__hint">
+              <span v-else-if="session.cardSides === 'both' && !revealed" class="review-card__hint">
                 <v-icon icon="mdi-gesture-tap" size="18" /> Tap to reveal
               </span>
             </span>
-            <span class="review-card__face review-card__back">
+            <span class="review-card__face review-card__back" :aria-hidden="!manualShowingBack">
               <small>Back</small>
+              <img
+                v-if="currentCard.image"
+                :src="currentCard.image"
+                alt=""
+                class="review-card__image"
+                width="256"
+                height="256"
+              />
               <span class="review-card__answer">
-                <span class="review-card__front-reference">{{ currentCard.front }}</span>
+                <span v-if="session.cardSides === 'both'" class="review-card__front-reference">
+                  {{ currentCard.front }}
+                </span>
                 <strong
                   class="text-secondary"
                   :style="{ fontSize: flashcardTextFontSize(currentCard.back) }"
@@ -790,6 +987,14 @@ async function leaveRunner() {
         >
           <div class="passive-card__content">
             <small>{{ passiveSide === 'front' ? 'Front' : 'Back' }}</small>
+            <img
+              v-if="currentCard.image"
+              :src="currentCard.image"
+              alt=""
+              class="review-card__image"
+              width="256"
+              height="256"
+            />
             <span class="review-card__answer">
               <strong
                 :class="{ 'text-secondary': passiveSide === 'back' }"
@@ -808,7 +1013,12 @@ async function leaveRunner() {
               >
                 {{ currentCard.note }}
               </span>
-              <span class="review-card__front-reference">{{ currentCard.front }}</span>
+              <span
+                v-if="passiveSide === 'back' && session.cardSides === 'both'"
+                class="review-card__front-reference"
+              >
+                {{ currentCard.front }}
+              </span>
             </span>
             <span v-if="session.speechEnabled" class="review-card__hint">
               <v-icon icon="mdi-volume-high" size="18" /> Tap to replay
@@ -825,7 +1035,7 @@ async function leaveRunner() {
 
         <div v-if="session.mode === 'manual'" class="grading-actions">
           <v-btn
-            v-if="!revealed"
+            v-if="session.cardSides === 'both' && !revealed"
             size="large"
             color="secondary"
             prepend-icon="mdi-eye-outline"
@@ -894,11 +1104,11 @@ async function leaveRunner() {
         <div class="queue-actions">
           <v-btn
             variant="text"
-            prepend-icon="mdi-arrow-down-bold-box-outline"
-            :disabled="busy || session.status === 'paused'"
-            @click="performAction('push')"
+            prepend-icon="mdi-dots-horizontal"
+            :disabled="busy"
+            @click="cardMenuOpen = true"
           >
-            Push later
+            Card menu
           </v-btn>
           <v-btn
             variant="text"
@@ -913,6 +1123,73 @@ async function leaveRunner() {
       </section>
     </template>
 
+    <ActionBottomSheet
+      v-model="cardMenuOpen"
+      title="Card actions"
+      aria-label="Card and session actions"
+      hide-title
+    >
+      <template v-for="item in FLASHCARD_REVIEW_SESSION_MENU_ITEMS" :key="item.action">
+        <v-divider v-if="item.divider" class="my-1" />
+        <v-list-item
+          :title="item.title"
+          :prepend-icon="item.icon"
+          :base-color="item.color"
+          :disabled="Boolean(item.requiresCard && !currentCard) || busy"
+          @click="handleSessionMenuAction(item.action)"
+        />
+      </template>
+    </ActionBottomSheet>
+
+    <v-dialog
+      v-model="sessionSettingsDialog"
+      persistent
+      scrollable
+      max-width="44rem"
+    >
+      <v-card class="session-settings-dialog">
+        <v-card-title class="d-flex align-center ga-3 px-5 pt-5">
+          <v-icon icon="mdi-tune-variant" color="secondary" />
+          <span>Session settings</span>
+        </v-card-title>
+        <v-card-text class="px-5 py-4">
+          <v-alert
+            v-if="sessionSettingsError"
+            type="error"
+            variant="tonal"
+            density="compact"
+            class="mb-4"
+          >
+            {{ sessionSettingsError }}
+          </v-alert>
+          <AppForm ref="sessionSettingsForm" @submit.prevent="saveSessionSettings">
+            <FlashcardReviewSettingsFields
+              :model-value="sessionSettingsDraft"
+              :speech-support="sessionSpeechSupport"
+              :speech-loading="sessionSpeechLoading"
+              :min-cards="sessionSettingsMinimumCards"
+              session
+            />
+          </AppForm>
+        </v-card-text>
+        <v-divider />
+        <v-card-actions class="pa-4 ga-2">
+          <v-spacer />
+          <v-btn variant="text" :disabled="sessionSettingsSaving" @click="closeSessionSettings">
+            Cancel
+          </v-btn>
+          <v-btn
+            color="secondary"
+            :loading="sessionSettingsSaving"
+            :disabled="!canSaveSessionSettings"
+            @click="saveSessionSettings"
+          >
+            Save
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
     <ConfirmDialog
       v-model="endDialog"
       title="End this review?"
@@ -922,6 +1199,16 @@ async function leaveRunner() {
       icon="mdi-stop-circle-outline"
       :loading="busy"
       @confirm="finishEarly"
+    />
+    <ConfirmDialog
+      v-model="deleteCardDialog"
+      title="Delete this flashcard?"
+      message="The current card will be removed from this session and from future reviews. Existing review history keeps its saved faces."
+      confirm-text="Delete flashcard"
+      confirm-color="error"
+      icon="mdi-delete-outline"
+      :loading="busy || deletingCard"
+      @confirm="deleteCurrentCard"
     />
   </main>
 </template>
@@ -952,6 +1239,7 @@ async function leaveRunner() {
 .review-card__face strong,
 .passive-card strong { max-width: 34rem; overflow-wrap: anywhere; font-size: clamp(1.3rem, 5vw, 2.1rem); font-weight: 850; line-height: 1.35; white-space: pre-wrap; }
 .review-card__answer { display: flex; align-items: center; flex-direction: column; gap: .45rem; }
+.review-card__image { width: min(100%, 16rem); height: auto; max-height: 16rem; flex: 0 1 auto; border-radius: 1rem; object-fit: contain; }
 .review-card__front-reference { max-width: 30rem; overflow-wrap: anywhere; color: rgba(var(--v-theme-on-surface), .48); font-size: clamp(.72rem, 2.2vw, .88rem); line-height: 1.4; white-space: pre-wrap; }
 .review-card__note { max-width: 32rem; color: rgba(var(--v-theme-on-surface), .6); font-size: .82rem; font-weight: 650; line-height: 1.5; white-space: pre-wrap; }
 .review-card__back { border-color: rgba(var(--v-theme-secondary), .34); transform: rotateY(180deg); }
@@ -967,6 +1255,7 @@ async function leaveRunner() {
 .queue-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
 .queue-actions .v-btn,
 .grading-actions .v-btn { min-height: 3.25rem; }
+.session-settings-dialog { max-height: calc(100dvh - 2rem); }
 .completion-panel { display: flex; width: min(42rem, calc(100% - 2rem)); min-height: 0; margin: 0 auto; padding: 2rem 0; align-items: center; justify-content: center; flex: 1 1 auto; flex-direction: column; gap: 1.25rem; overflow-y: auto; text-align: center; }
 .completion-panel__icon { display: grid; width: 6rem; height: 6rem; place-items: center; border-radius: 2rem; background: rgba(var(--v-theme-secondary), .16); color: rgb(var(--v-theme-secondary)); }
 .completion-panel h1 { font-size: clamp(2.6rem, 10vw, 5rem); }
