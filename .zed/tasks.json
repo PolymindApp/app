@@ -10,5 +10,9 @@
   {
     "label": "Push to Android",
     "command": "pnpm android:build:install:release"
+  },
+  {
+    "label": "Deploy (patch) version",
+    "command": "bash scripts/release-android.sh"
   }
 ]
