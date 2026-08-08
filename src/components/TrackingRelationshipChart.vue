@@ -241,6 +241,8 @@ function displayValue(value: number, unit: string) {
   --factor-contrast: color-mix(in srgb, var(--factor-color) 72%, rgb(var(--v-theme-on-surface)));
   --outcome-contrast: color-mix(in srgb, var(--outcome-color) 72%, rgb(var(--v-theme-on-surface)));
 
+  display: grid;
+  gap: 1rem;
   outline: none;
 }
 
