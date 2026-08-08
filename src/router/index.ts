@@ -1,6 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { api } from '@/lib/api'
-import { isAndroidOrIosClient } from '@/services/platformAccess'
+import { isNativeAndroidOrIosApp } from '@/services/platformAccess'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -12,7 +12,7 @@ const router = createRouter({
       path: '/',
       name: 'landing',
       component: () => import('@/views/LandingView.vue'),
-      meta: { desktopOnly: true, title: 'Polymind — Many systems. One mind.' },
+      meta: { webOnly: true, title: 'Polymind — Many systems. One mind.' },
     },
     { path: '/auth', name: 'auth', component: () => import('@/views/AuthView.vue'), meta: { guest: true } },
     {
@@ -66,7 +66,7 @@ const router = createRouter({
 
 router.beforeEach((to) => {
   const authenticated = api.authStore.isValid
-  if (to.meta.desktopOnly && isAndroidOrIosClient()) return { name: 'auth' }
+  if (to.meta.webOnly && isNativeAndroidOrIosApp()) return { name: 'auth' }
   if (to.meta.auth && !authenticated) return { name: 'auth', query: { redirect: to.fullPath } }
   if (to.meta.guest && authenticated) return { name: 'tasks' }
 })
