@@ -171,6 +171,9 @@ const sessionSettingsMinimumCards = computed(() => {
   if (sessionSettingsDraft.mode === 'passive' && sessionSettingsDraft.indefinite) return 1
   return Math.min(100, (session.value?.viewedCount || 0) + (session.value?.ejectedCount || 0) + 1)
 })
+const sessionSettingsAvailableCards = computed(() => store.reviewSets
+  .find(reviewSet => reviewSet.id === session.value?.reviewSet)
+  ?.matchingCardCount || 0)
 const sessionSettingsChanged = computed(() => sessionSettingsDialog.value
   && flashcardReviewSettingsSignature(sessionSettingsDraft) !== sessionSettingsOriginal.value)
 const canSaveSessionSettings = computed(() => sessionSettingsChanged.value
@@ -1168,6 +1171,7 @@ async function leaveRunner() {
               :speech-support="sessionSpeechSupport"
               :speech-loading="sessionSpeechLoading"
               :min-cards="sessionSettingsMinimumCards"
+              :available-cards="sessionSettingsAvailableCards"
               session
             />
           </AppForm>

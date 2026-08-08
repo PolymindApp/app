@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import LabeledSlider from '@/components/LabeledSlider.vue'
 import {
   FLASHCARD_REVIEW_CARD_SIDE_OPTIONS,
@@ -20,15 +20,55 @@ const props = withDefaults(defineProps<{
   speechLoading?: boolean
   minCards?: number
   maxCards?: number
+  availableCards?: number
   session?: boolean
 }>(), {
   speechLoading: false,
   minCards: 1,
   maxCards: MAX_FLASHCARD_SESSION_CARDS,
+  availableCards: 0,
   session: false,
 })
 
+const CUSTOM_MAX_CARDS_THRESHOLD = 50
 const settings = computed(() => props.modelValue)
+const customMaxCardsActive = ref(settings.value.maxCards >= CUSTOM_MAX_CARDS_THRESHOLD)
+const cardLimit = computed(() => {
+  const minimum = Math.min(
+    MAX_FLASHCARD_SESSION_CARDS,
+    Math.max(1, Math.floor(props.minCards)),
+  )
+  const configuredMaximum = Math.min(
+    MAX_FLASHCARD_SESSION_CARDS,
+    Math.max(minimum, Math.floor(props.maxCards)),
+  )
+  const availableMaximum = props.availableCards > 0
+    ? Math.min(configuredMaximum, Math.floor(props.availableCards))
+    : configuredMaximum
+  const maximum = Math.max(minimum, availableMaximum)
+  const sliderMaximum = Math.min(CUSTOM_MAX_CARDS_THRESHOLD, maximum)
+
+  return {
+    minimum,
+    maximum,
+    sliderMinimum: Math.min(minimum, sliderMaximum),
+    sliderMaximum,
+  }
+})
+const sliderMaxCards = computed({
+  get: () => customMaxCardsActive.value
+    ? cardLimit.value.sliderMaximum
+    : Math.min(settings.value.maxCards, cardLimit.value.sliderMaximum),
+  set: (value: number) => {
+    customMaxCardsActive.value = value === CUSTOM_MAX_CARDS_THRESHOLD
+      && cardLimit.value.maximum > CUSTOM_MAX_CARDS_THRESHOLD
+    settings.value.maxCards = value
+  },
+})
+const customMaxCardsVisible = computed(() => (
+  cardLimit.value.maximum > CUSTOM_MAX_CARDS_THRESHOLD
+  && customMaxCardsActive.value
+))
 const selectedCardSides = computed(() => FLASHCARD_REVIEW_CARD_SIDE_OPTIONS
   .find(option => option.value === settings.value.cardSides)!)
 const speechLanguages = computed(() => speechLanguageOptions([
@@ -36,6 +76,13 @@ const speechLanguages = computed(() => speechLanguageOptions([
   settings.value.frontLanguage,
   settings.value.backLanguage,
 ]))
+
+watch(cardLimit, ({ minimum, maximum }) => {
+  if (settings.value.maxCards < minimum) settings.value.maxCards = minimum
+  if (settings.value.maxCards > maximum) settings.value.maxCards = maximum
+  customMaxCardsActive.value = maximum > CUSTOM_MAX_CARDS_THRESHOLD
+    && settings.value.maxCards >= CUSTOM_MAX_CARDS_THRESHOLD
+}, { immediate: true })
 
 function updateMode(mode: 'manual' | 'passive') {
   settings.value.mode = mode
@@ -233,16 +280,37 @@ function updateSpeechEnabled(enabled: boolean | null) {
       </v-select>
       <v-divider class="my-5" />
       <LabeledSlider
-        v-model="settings.maxCards"
+        v-model="sliderMaxCards"
         title="Max cards per session"
-        :min="minCards"
-        :max="maxCards"
+        :min="cardLimit.sliderMinimum"
+        :max="cardLimit.sliderMaximum"
         :step="1"
         :value-label="`${settings.maxCards} cards`"
-        :min-label="`${minCards} ${minCards === 1 ? 'card' : 'cards'}`"
-        :max-label="`${maxCards} cards`"
+        :min-label="`${cardLimit.sliderMinimum} ${cardLimit.sliderMinimum === 1 ? 'card' : 'cards'}`"
+        :max-label="cardLimit.maximum > CUSTOM_MAX_CARDS_THRESHOLD ? `${CUSTOM_MAX_CARDS_THRESHOLD}+ cards` : `${cardLimit.sliderMaximum} cards`"
         aria-label="Maximum cards per Review set session"
       />
+      <v-expand-transition>
+        <v-number-input
+          v-if="customMaxCardsVisible"
+          v-model="settings.maxCards"
+          class="mt-4"
+          :min="Math.max(CUSTOM_MAX_CARDS_THRESHOLD, cardLimit.minimum)"
+          :max="cardLimit.maximum"
+          :step="1"
+          :rules="[
+            value => Number.isInteger(Number(value)) || 'Use a whole number',
+            value => Number(value) >= Math.max(CUSTOM_MAX_CARDS_THRESHOLD, cardLimit.minimum)
+              && Number(value) <= cardLimit.maximum
+              || `Use ${Math.max(CUSTOM_MAX_CARDS_THRESHOLD, cardLimit.minimum)}–${cardLimit.maximum} cards`,
+          ]"
+          autocomplete="off"
+          persistent-hint
+          :hint="`Choose a custom limit up to ${cardLimit.maximum} available cards`"
+        >
+          <template #label>Custom max cards <span class="required-mark">*</span></template>
+        </v-number-input>
+      </v-expand-transition>
       <p class="mode-hint mt-3">
         <v-icon icon="mdi-information-outline" size="18" />
         <span v-if="session">The limit and order are applied to the cards remaining in this session.</span>

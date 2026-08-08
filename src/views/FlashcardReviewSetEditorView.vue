@@ -202,6 +202,7 @@ async function remove() {
         :model-value="draft"
         :speech-support="speechSupport"
         :speech-loading="speechLoading"
+        :available-cards="matchingCardCount"
       />
     </AppForm>
 
