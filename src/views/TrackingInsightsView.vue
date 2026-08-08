@@ -17,16 +17,29 @@ import {
   taskInsightDateKeys,
   taskInsightProfile,
 } from '@/services/taskInsights'
+import {
+  reviewSetInsightDailyValues,
+  reviewSetInsightRangeBounds,
+} from '@/services/reviewSetInsights'
 import { useIntervalStore } from '@/stores/intervals'
 import { useTaskStore } from '@/stores/tasks'
 import { useTrackingStore } from '@/stores/tracking'
-import type { TrackingAnalysisSource, TrackingDailyValue } from '@/types/domain'
+import type {
+  FlashcardReviewSession,
+  FlashcardReviewSet,
+  TrackingAnalysisSource,
+  TrackingDailyValue,
+} from '@/types/domain'
 
 type DatePreset = '7' | '14' | '30' | '60' | '90' | 'custom'
+type TrackingFactorSource = Omit<TrackingAnalysisSource, 'source'> & {
+  source: TrackingAnalysisSource['source'] | 'review_set'
+}
 
 const tracking = useTrackingStore()
 const tasks = useTaskStore()
 const intervals = useIntervalStore()
+const reviewSets = ref<Array<Pick<FlashcardReviewSet, 'id' | 'name'>>>([])
 const factorId = ref('')
 const outcomeId = ref('')
 const datePreset = ref<DatePreset>('7')
@@ -48,7 +61,7 @@ const datePresets: Array<{ title: string; value: DatePreset }> = [
   { title: 'Custom', value: 'custom' },
 ]
 
-const factorSources = computed<TrackingAnalysisSource[]>(() => [
+const factorSources = computed<TrackingFactorSource[]>(() => [
   ...tracking.activeTrackers.filter((tracker) => tracker.role === 'factor').map((tracker) => ({
     id: `tracker:${tracker.id}`,
     source: 'tracker' as const,
@@ -81,6 +94,17 @@ const factorSources = computed<TrackingAnalysisSource[]>(() => [
     factorMode: 'presence' as const,
     scaleMin: 0,
   })),
+  ...reviewSets.value.map((reviewSet) => ({
+    id: `review_set:${reviewSet.id}`,
+    source: 'review_set' as const,
+    name: `Review set · ${reviewSet.name}`,
+    role: 'factor' as const,
+    favorableDirection: 'neutral' as const,
+    unit: 'cards',
+    color: 'rgb(var(--v-theme-secondary))',
+    factorMode: 'quantity' as const,
+    scaleMin: 0,
+  })),
 ])
 
 const outcomeSources = computed<TrackingAnalysisSource[]>(() =>
@@ -102,6 +126,7 @@ const factorItems = computed(() => [
   { title: 'Trackers', source: 'tracker' as const },
   { title: 'Tasks', source: 'task' as const },
   { title: 'Intervals', source: 'interval' as const },
+  { title: 'Review sets', source: 'review_set' as const },
 ].flatMap((group) => {
   const items = factorSources.value
     .filter((source) => source.source === group.source)
@@ -130,6 +155,12 @@ onMounted(async () => {
     tracking.loaded ? Promise.resolve() : tracking.load(),
     tasks.tasks.length ? Promise.resolve() : tasks.load(),
     intervals.loaded ? Promise.resolve() : intervals.load(),
+    api.getAccessibleFlashcardReviewSets().then((records) => {
+      reviewSets.value = records.map((record) => ({
+        id: String(record.id),
+        name: String(record.name),
+      }))
+    }),
   ]).catch((cause) => {
     error.value = cause instanceof Error ? cause.message : 'Could not load insight sources.'
   })
@@ -256,6 +287,20 @@ async function factorDailyValues(sourceId: string, start: string, end: string): 
     })
     return dates.map((date) => ({ date, value: counts.get(date) || 0 }))
   }
+  if (source === 'review_set') {
+    const bounds = reviewSetInsightRangeBounds(start, end)
+    const records = await api.collection('flashcard_review_sessions').getFullList({
+      filter: `review_set = "${id}" && started_at >= "${bounds.startAt}" && started_at < "${bounds.endAt}"`,
+      sort: 'started_at',
+    })
+    const sessions: Array<Pick<FlashcardReviewSession, 'reviewSet' | 'startedAt' | 'viewedCount'>> = records
+      .map((record) => ({
+        reviewSet: String(record.review_set || ''),
+        startedAt: String(record.started_at || ''),
+        viewedCount: Number(record.viewed_count || 0),
+      }))
+    return reviewSetInsightDailyValues(id || '', sessions, start, end)
+  }
   return []
 }
 
@@ -283,7 +328,7 @@ function trackerDailyValues(trackerId: string, start: string, end: string) {
             v-model="factorId"
             label="Factor"
             :items="factorItems"
-            no-data-text="Create a factor, task, or interval first"
+            no-data-text="Create a factor, task, interval, or Review set first"
           />
         </v-col>
         <v-col cols="12" sm="6">
@@ -330,7 +375,7 @@ function trackerDailyValues(trackerId: string, start: string, end: string) {
       <v-icon icon="mdi-chart-timeline-variant-shimmer" size="42" color="secondary" />
       <h2 class="mt-3">More tracking data is needed</h2>
       <p v-if="!outcomeSources.length">Create an outcome tracker, such as Mood or Energy, before exploring insights.</p>
-      <p v-else>Create a factor tracker, task, or interval to compare with an outcome.</p>
+      <p v-else>Create a factor tracker, task, interval, or Review set to compare with an outcome.</p>
       <v-btn class="mt-4" color="secondary" to="/tracking/new" prepend-icon="mdi-plus">Create tracker</v-btn>
     </v-card>
 
