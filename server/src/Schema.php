@@ -343,11 +343,11 @@ final class Schema
                     'local_date' => self::dateKey(true),
                     'timezone_offset' => self::integer(-840, 840),
                     'task' => self::relation(false, true),
-                    'tracker' => self::relation(false, true),
+                    'tracker' => self::jsonArray(5000),
                 ],
                 'required' => ['body', 'occurred_at', 'local_date', 'timezone_offset'],
                 'sort' => ['occurred_at', 'local_date', 'created_at', 'updated_at'],
-                'filter' => ['task', 'tracker', 'occurred_at', 'local_date'],
+                'filter' => ['task', 'occurred_at', 'local_date'],
             ],
         ];
 

@@ -10,8 +10,9 @@ function entry(id: string, date: string, context: Partial<JournalEntry> = {}): J
     occurredAt: `${date}T12:00:00.000Z`,
     localDate: date,
     timezoneOffset: 240,
+    trackers: [],
     taskSnapshot: '',
-    trackerSnapshot: '',
+    trackerSnapshots: {},
     createdAt: `${date}T12:00:00.000Z`,
     updatedAt: `${date}T12:00:00.000Z`,
     ...context,
@@ -21,9 +22,10 @@ function entry(id: string, date: string, context: Partial<JournalEntry> = {}): J
 describe('journal timeline helpers', () => {
   const entries = [
     entry('task', '2026-08-01', { task: 'task-1' }),
-    entry('tracker', '2026-08-02', { tracker: 'tracker-1' }),
-    entry('both', '2026-08-02', { task: 'task-1', tracker: 'tracker-1', occurredAt: '2026-08-02T18:00:00.000Z' }),
+    entry('tracker', '2026-08-02', { trackers: ['tracker-1', 'tracker-2'] }),
+    entry('both', '2026-08-02', { task: 'task-1', trackers: ['tracker-1'], occurredAt: '2026-08-02T18:00:00.000Z' }),
     entry('detached-task', '2026-08-02', { taskSnapshot: 'Deleted task' }),
+    entry('detached-tracker', '2026-08-03', { trackerSnapshots: { 'deleted-tracker': 'Deleted tracker' } }),
     entry('unlinked', '2026-08-03'),
   ]
 
@@ -31,6 +33,7 @@ describe('journal timeline helpers', () => {
     expect(filterJournalEntries(entries, 'tasks').map(item => item.id)).toEqual(['task', 'both', 'detached-task'])
     expect(filterJournalEntries(entries, 'unlinked').map(item => item.id)).toEqual(['unlinked'])
     expect(filterJournalEntries(entries, 'all', 'task-1').map(item => item.id)).toEqual(['task', 'both'])
+    expect(filterJournalEntries(entries, 'all', '', 'tracker-2').map(item => item.id)).toEqual(['tracker'])
   })
 
   it('groups entries by day in reverse chronological order', () => {
@@ -38,7 +41,7 @@ describe('journal timeline helpers', () => {
       date: group.date,
       entries: group.entries.map(item => item.id),
     }))).toEqual([
-      { date: '2026-08-03', entries: ['unlinked'] },
+      { date: '2026-08-03', entries: ['detached-tracker', 'unlinked'] },
       { date: '2026-08-02', entries: ['both', 'tracker', 'detached-task'] },
       { date: '2026-08-01', entries: ['task'] },
     ])
@@ -50,7 +53,7 @@ describe('journal timeline helpers', () => {
       entries: group.entries.map(item => item.id),
     }))).toEqual([
       { context: 'tasks', entries: ['detached-task', 'task'] },
-      { context: 'tracking', entries: ['tracker'] },
+      { context: 'tracking', entries: ['detached-tracker', 'tracker'] },
       { context: 'connected', entries: ['both'] },
       { context: 'general', entries: ['unlinked'] },
     ])

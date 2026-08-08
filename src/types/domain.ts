@@ -508,9 +508,9 @@ export interface JournalEntry {
   localDate: string
   timezoneOffset: number
   task?: string
-  tracker?: string
+  trackers: string[]
   taskSnapshot: string
-  trackerSnapshot: string
+  trackerSnapshots: Record<string, string>
   createdAt: string
   updatedAt: string
 }
@@ -523,7 +523,7 @@ export interface JournalEntryDraft {
   localDate: string
   timezoneOffset: number
   task?: string
-  tracker?: string
+  trackers: string[]
 }
 
 export type TrackingSourceKind = 'tracker' | 'task' | 'interval'

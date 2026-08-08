@@ -639,8 +639,9 @@ describe('journaling task completion', () => {
       localDate,
       timezoneOffset: 240,
       task: taskId,
+      trackers: [],
       taskSnapshot: journalTask.name,
-      trackerSnapshot: '',
+      trackerSnapshots: {},
       createdAt: `${localDate}T20:00:00.000Z`,
       updatedAt: `${localDate}T20:00:00.000Z`,
     })

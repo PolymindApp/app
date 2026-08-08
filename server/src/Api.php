@@ -2179,6 +2179,10 @@ final class Api
         if ($collection['name'] === 'interval_sessions') {
             $this->rejectFields($body, ['flashcard_snapshot']);
         }
+        if ($collection['name'] === 'journal_entries') {
+            $body = $this->normalizeJournalTrackerInput($body);
+            $body += ['tracker' => []];
+        }
         $values = $this->validateRecordInput($collection, $body, true);
         if ($collection['name'] === 'flashcards') {
             $values['image_url'] = $this->validateFlashcardImageUrl(
@@ -2318,6 +2322,9 @@ final class Api
                 throw new ApiException(422, 'Use the interval completion endpoint to complete a session.');
             }
         }
+        if ($collection['name'] === 'journal_entries') {
+            $body = $this->normalizeJournalTrackerInput($body);
+        }
         $values = $this->validateRecordInput($collection, $body, false);
         if ($values === []) {
             throw new ApiException(422, 'At least one writable field is required.');
@@ -2348,10 +2355,9 @@ final class Api
                 );
             }
             if (array_key_exists('tracker', $values)) {
-                $values['tracker_snapshot'] = $this->journalContextName(
-                    'tracking_trackers',
-                    (string) $values['tracker'],
-                    (string) $user['id'],
+                $values['tracker_snapshot'] = json_encode(
+                    $this->journalTrackerSnapshots($values['tracker'], (string) $user['id']),
+                    JSON_THROW_ON_ERROR,
                 );
             }
             $values['updated_at'] = (new DateTimeImmutable('now'))->format('Y-m-d\TH:i:s.v\Z');
@@ -4695,9 +4701,26 @@ final class Api
             );
         }
         $statement = $this->database->pdo->prepare(
-            "UPDATE journal_entries SET tracker = '' WHERE tracker = :id AND owner = :owner",
+            'SELECT id, tracker FROM journal_entries WHERE owner = :owner',
         );
-        $statement->execute(['id' => $id, 'owner' => $owner]);
+        $statement->execute(['owner' => $owner]);
+        $updateJournal = $this->database->pdo->prepare(
+            'UPDATE journal_entries SET tracker = :tracker WHERE id = :id AND owner = :owner',
+        );
+        foreach ($statement->fetchAll() as $journalEntry) {
+            $trackers = $this->journalTrackerIds($journalEntry['tracker'] ?? '');
+            if (!in_array($id, $trackers, true)) {
+                continue;
+            }
+            $updateJournal->execute([
+                'tracker' => json_encode(
+                    array_values(array_filter($trackers, static fn (string $tracker): bool => $tracker !== $id)),
+                    JSON_THROW_ON_ERROR,
+                ),
+                'id' => $journalEntry['id'],
+                'owner' => $owner,
+            ]);
+        }
         $statement = $this->database->pdo->prepare(
             'DELETE FROM tracking_entries WHERE tracker = :id AND owner = :owner',
         );
@@ -5181,9 +5204,21 @@ final class Api
             if ($task !== '' && !$this->relationExists('tasks', $task, $owner)) {
                 throw new ApiException(422, 'The selected journal task is invalid.');
             }
-            $tracker = (string) ($record['tracker'] ?? '');
-            if ($tracker !== '' && !$this->relationExists('tracking_trackers', $tracker, $owner)) {
-                throw new ApiException(422, 'The selected journal tracker is invalid.');
+            $trackers = $record['tracker'] ?? [];
+            if (!is_array($trackers) || !array_is_list($trackers)) {
+                throw new ApiException(422, 'The selected journal trackers are invalid.');
+            }
+            foreach ($trackers as $tracker) {
+                if (
+                    !is_string($tracker)
+                    || $tracker === ''
+                    || !$this->relationExists('tracking_trackers', $tracker, $owner)
+                ) {
+                    throw new ApiException(422, 'A selected journal tracker is invalid.');
+                }
+            }
+            if (count(array_unique($trackers)) !== count($trackers)) {
+                throw new ApiException(422, 'A journal tracker can only be attached once.');
             }
         }
     }
@@ -5197,12 +5232,96 @@ final class Api
                 (string) ($record['task'] ?? ''),
                 $owner,
             ),
-            'tracker_snapshot' => $this->journalContextName(
-                'tracking_trackers',
-                (string) ($record['tracker'] ?? ''),
-                $owner,
+            'tracker_snapshot' => json_encode(
+                $this->journalTrackerSnapshots($record['tracker'] ?? [], $owner),
+                JSON_THROW_ON_ERROR,
             ),
         ];
+    }
+
+    private function normalizeJournalTrackerInput(array $body): array
+    {
+        if (!array_key_exists('tracker', $body) || !is_string($body['tracker'])) {
+            return $body;
+        }
+        $body['tracker'] = $body['tracker'] === '' ? [] : [$body['tracker']];
+        return $body;
+    }
+
+    /** @return array<string, string> */
+    private function journalTrackerSnapshots(mixed $trackers, string $owner): array
+    {
+        if (!is_array($trackers)) {
+            return [];
+        }
+        $snapshots = [];
+        foreach ($trackers as $tracker) {
+            if (!is_string($tracker) || $tracker === '') {
+                continue;
+            }
+            $snapshots[$tracker] = $this->journalContextName(
+                'tracking_trackers',
+                $tracker,
+                $owner,
+            );
+        }
+        return $snapshots;
+    }
+
+    /** @return string[] */
+    private function journalTrackerIds(mixed $value): array
+    {
+        if (is_array($value)) {
+            return array_values(array_filter($value, static fn (mixed $id): bool => is_string($id) && $id !== ''));
+        }
+        $stored = (string) $value;
+        if ($stored === '') {
+            return [];
+        }
+        try {
+            $decoded = json_decode($stored, true, flags: JSON_THROW_ON_ERROR);
+        } catch (JsonException) {
+            return [$stored];
+        }
+        if (!is_array($decoded) || !array_is_list($decoded)) {
+            throw new ApiException(500, 'The database contains invalid journal tracker data.');
+        }
+        return array_values(array_filter($decoded, static fn (mixed $id): bool => is_string($id) && $id !== ''));
+    }
+
+    /** @return array<string, string> */
+    private function journalStoredTrackerSnapshots(mixed $value, array $trackers): array
+    {
+        if (is_array($value)) {
+            $decoded = $value;
+        } else {
+            $stored = (string) $value;
+            if ($stored === '') {
+                return [];
+            }
+            try {
+                $decoded = json_decode($stored, true, flags: JSON_THROW_ON_ERROR);
+            } catch (JsonException) {
+                return [$trackers[0] ?? 'detached:0' => $stored];
+            }
+        }
+        if (!is_array($decoded)) {
+            throw new ApiException(500, 'The database contains invalid journal tracker snapshots.');
+        }
+        if (array_is_list($decoded)) {
+            $snapshots = [];
+            foreach ($decoded as $index => $name) {
+                if (is_string($name) && $name !== '') {
+                    $snapshots[$trackers[$index] ?? 'detached:' . $index] = $name;
+                }
+            }
+            return $snapshots;
+        }
+        return array_filter(
+            $decoded,
+            static fn (mixed $name, mixed $id): bool => is_string($id) && is_string($name) && $name !== '',
+            ARRAY_FILTER_USE_BOTH,
+        );
     }
 
     private function journalContextName(string $table, string $id, string $owner): string
@@ -5922,6 +6041,14 @@ final class Api
 
     private function normalizeRecord(array $collection, array $record): array
     {
+        if ($collection['name'] === 'journal_entries') {
+            $trackers = $this->journalTrackerIds($record['tracker'] ?? '');
+            $record['tracker'] = json_encode($trackers, JSON_THROW_ON_ERROR);
+            $record['tracker_snapshot'] = $this->journalStoredTrackerSnapshots(
+                $record['tracker_snapshot'] ?? '',
+                $trackers,
+            );
+        }
         foreach ($collection['config']['fields'] as $field => $rules) {
             if (!array_key_exists($field, $record)) {
                 continue;

@@ -22,7 +22,7 @@ const title = ref('')
 const body = ref('')
 const occurredLocal = ref('')
 const task = ref<string>()
-const tracker = ref<string>()
+const trackers = ref<string[]>([])
 const loading = ref(true)
 const saving = ref(false)
 const deleting = ref(false)
@@ -61,7 +61,7 @@ const signature = computed(() => JSON.stringify({
   body: body.value,
   occurredLocal: occurredLocal.value,
   task: task.value || '',
-  tracker: tracker.value || '',
+  trackers: trackers.value,
 }))
 const canSave = computed(() =>
   Boolean(body.value.trim() && occurredLocal.value)
@@ -104,17 +104,17 @@ onMounted(async () => {
       body.value = entry.body
       occurredLocal.value = format(new Date(entry.occurredAt), "yyyy-MM-dd'T'HH:mm")
       task.value = entry.task
-      tracker.value = entry.tracker
+      trackers.value = [...entry.trackers]
     } else {
       occurredLocal.value = defaultOccurredLocal()
       task.value = typeof route.query.task === 'string'
         && taskStore.tasks.some(item => item.id === route.query.task)
         ? route.query.task
         : undefined
-      tracker.value = typeof route.query.tracker === 'string'
+      trackers.value = typeof route.query.tracker === 'string'
         && trackingStore.trackers.some(item => item.id === route.query.tracker)
-        ? route.query.tracker
-        : undefined
+        ? [route.query.tracker]
+        : []
     }
     original.value = signature.value
   } catch (cause) {
@@ -139,7 +139,7 @@ async function save() {
       localDate: format(occurred, 'yyyy-MM-dd'),
       timezoneOffset: occurred.getTimezoneOffset(),
       task: task.value,
-      tracker: tracker.value,
+      trackers: trackers.value,
     })
     await router.replace(destinationRoute())
   } catch (cause) {
@@ -218,10 +218,13 @@ async function removeEntry() {
             hide-details="auto"
           />
           <v-select
-            v-model="tracker"
-            label="Tracker (optional)"
+            v-model="trackers"
+            label="Trackers (optional)"
             :items="trackerItems"
             clearable
+            multiple
+            chips
+            closable-chips
             variant="outlined"
             hide-details="auto"
           />
@@ -245,7 +248,7 @@ async function removeEntry() {
     <ConfirmDialog
       v-model="deleteDialog"
       title="Delete this reflection?"
-      message="This permanently removes the journal entry. Its linked task and tracker are not affected."
+      message="This permanently removes the journal entry. Its linked task and trackers are not affected."
       confirm-text="Delete reflection"
       icon="mdi-delete-outline"
       :loading="deleting"

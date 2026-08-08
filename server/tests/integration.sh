@@ -837,6 +837,13 @@ tracker_response="$(curl --silent --show-error --fail \
   "$api_url/collections/tracking_trackers/records")"
 tracker_id="$(json_field id <<<"$tracker_response")"
 
+second_tracker_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"name":"Energy","description":"Daily energy","role":"outcome","kind":"rating","category":"mood","unit":"/ 10","scale_min":1,"scale_max":10,"favorable_direction":"higher","daily_aggregation":"average","active":true,"sort_order":1,"color":"#C7F464","icon":"mdi-lightning-bolt-outline","reminder_enabled":false,"reminder_time":"20:30","reminder_show_name":false}' \
+  "$api_url/collections/tracking_trackers/records")"
+second_tracker_id="$(json_field id <<<"$second_tracker_response")"
+
 tracking_task_payload="$(php -r '
   echo json_encode([
     "name" => "Log wellbeing", "description" => "Complete the daily check-in",
@@ -894,9 +901,9 @@ journal_payload="$(php -r '
   echo json_encode([
     "title" => "After training", "body" => "I felt calmer after the final round.\nKeep the slower pace.",
     "occurred_at" => "2026-08-02T16:00:00Z", "local_date" => "2026-08-02",
-    "timezone_offset" => 240, "task" => $argv[1], "tracker" => $argv[2],
+    "timezone_offset" => 240, "task" => $argv[1], "tracker" => [$argv[2], $argv[3]],
   ], JSON_THROW_ON_ERROR);
-' "$task_id" "$tracker_id")"
+' "$task_id" "$tracker_id" "$second_tracker_id")"
 journal_response="$(curl --silent --show-error --fail \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $alice_token" \
@@ -904,9 +911,19 @@ journal_response="$(curl --silent --show-error --fail \
   "$api_url/collections/journal_entries/records")"
 journal_id="$(json_field id <<<"$journal_response")"
 journal_task_snapshot="$(json_field task_snapshot <<<"$journal_response")"
-journal_tracker_snapshot="$(json_field tracker_snapshot <<<"$journal_response")"
 journal_created_at="$(json_field created_at <<<"$journal_response")"
-[[ "$journal_task_snapshot" == "Secure task" && "$journal_tracker_snapshot" == "Mood" && "$journal_created_at" =~ T ]] || {
+php -r '
+  $entry = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+  if (
+      ($entry["tracker"] ?? []) !== [$argv[1], $argv[2]]
+      || ($entry["tracker_snapshot"][$argv[1]] ?? "") !== "Mood"
+      || ($entry["tracker_snapshot"][$argv[2]] ?? "") !== "Energy"
+  ) {
+      fwrite(STDERR, "A journal entry did not retain all tracker context snapshots.\n");
+      exit(1);
+  }
+' "$tracker_id" "$second_tracker_id" <<<"$journal_response"
+[[ "$journal_task_snapshot" == "Secure task" && "$journal_created_at" =~ T ]] || {
   echo "A journal entry did not retain its task and tracker context snapshots." >&2
   exit 1
 }
@@ -938,7 +955,7 @@ long_journal_payload="$(php -r '
   echo json_encode([
     "title" => "Too long", "body" => $argv[1],
     "occurred_at" => "2026-08-02T16:00:00Z", "local_date" => "2026-08-02",
-    "timezone_offset" => 240, "task" => "", "tracker" => "",
+    "timezone_offset" => 240, "task" => "", "tracker" => [],
   ], JSON_THROW_ON_ERROR);
 ' "$long_journal_body")"
 long_journal_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
@@ -2254,12 +2271,20 @@ remaining_tracking_entries="$(sqlite3 "$test_db" \
   echo "Permanent tracker deletion did not cascade to its entries." >&2
   exit 1
 }
-journal_after_tracker_delete="$(sqlite3 "$test_db" \
-  "SELECT tracker || ':' || tracker_snapshot FROM journal_entries WHERE id = '$journal_id';")"
-[[ "$journal_after_tracker_delete" == ":Mood" ]] || {
-  echo "Tracker deletion did not safely detach its journal context." >&2
-  exit 1
-}
+journal_after_tracker_delete="$(curl --silent --show-error --fail \
+  -H "Authorization: Bearer $alice_token" \
+  "$api_url/collections/journal_entries/records/$journal_id")"
+php -r '
+  $entry = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+  if (
+      ($entry["tracker"] ?? []) !== [$argv[2]]
+      || ($entry["tracker_snapshot"][$argv[1]] ?? "") !== "Mood"
+      || ($entry["tracker_snapshot"][$argv[2]] ?? "") !== "Energy"
+  ) {
+      fwrite(STDERR, "Tracker deletion did not safely detach one journal context.\n");
+      exit(1);
+  }
+' "$tracker_id" "$second_tracker_id" <<<"$journal_after_tracker_delete"
 
 delete_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
   -X DELETE -H "Authorization: Bearer $alice_token" \

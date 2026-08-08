@@ -48,8 +48,9 @@ function entry(id: string, date: string, body: string) {
     occurredAt: `${date}T16:00:00.000Z`,
     localDate: date,
     timezoneOffset: 240,
+    trackers: [],
     taskSnapshot: '',
-    trackerSnapshot: '',
+    trackerSnapshots: {},
     createdAt: `${date}T16:00:00.000Z`,
     updatedAt: `${date}T16:00:00.000Z`,
   }
@@ -64,6 +65,7 @@ describe('JournalView date navigation', () => {
     ]
     mocks.journalStore.loadRange.mockReset().mockResolvedValue(true)
     mocks.taskStore.load.mockReset().mockResolvedValue(undefined)
+    mocks.trackingStore.trackers = []
     mocks.trackingStore.load.mockReset().mockResolvedValue(undefined)
   })
 
@@ -100,5 +102,33 @@ describe('JournalView date navigation', () => {
     expect(wrapper.get('transition-stub').attributes('name')).toBe('page-level-back')
     expect(wrapper.text()).toContain('Previous reflection')
     expect(wrapper.get('.journal-date-content').element).not.toBe(nextContent)
+  })
+
+  it('shows every tracker attached to a reflection', () => {
+    mocks.journalStore.entries = [{
+      ...entry('selected', '2026-08-05', 'Tracked reflection'),
+      trackers: ['mood', 'energy'],
+      trackerSnapshots: { mood: 'Mood snapshot', energy: 'Energy snapshot' },
+    }]
+    mocks.trackingStore.trackers = [
+      { id: 'mood', name: 'Mood', color: '#D4A5FF', icon: 'mdi-emoticon-outline' },
+      { id: 'energy', name: 'Energy', color: '#C7F464', icon: 'mdi-lightning-bolt-outline' },
+    ]
+    const wrapper = mount(JournalView, {
+      global: {
+        stubs: {
+          WeekDateNavigator: WeekDateNavigatorStub,
+          VAlert: { template: '<div><slot /><slot name="append" /></div>' },
+          VBtn: { template: '<button><slot /></button>' },
+          VCard: { template: '<article><slot /></article>' },
+          VChip: { template: '<span><slot /></span>' },
+          VIcon: true,
+          VProgressCircular: true,
+        },
+      },
+    })
+
+    expect(wrapper.text()).toContain('Mood')
+    expect(wrapper.text()).toContain('Energy')
   })
 })

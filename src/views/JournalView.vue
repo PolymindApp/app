@@ -57,16 +57,29 @@ function sourceTask(entry: JournalEntry) {
   return taskStore.tasks.find((task) => task.id === entry.task)
 }
 
-function sourceTracker(entry: JournalEntry) {
-  return trackingStore.trackers.find((tracker) => tracker.id === entry.tracker)
-}
-
 function taskName(entry: JournalEntry) {
   return sourceTask(entry)?.name || entry.taskSnapshot
 }
 
-function trackerName(entry: JournalEntry) {
-  return sourceTracker(entry)?.name || entry.trackerSnapshot
+function trackerContexts(entry: JournalEntry) {
+  const attached = new Set(entry.trackers)
+  const snapshots = new Map(Object.entries(entry.trackerSnapshots))
+  entry.trackers.forEach((trackerId) => {
+    if (!snapshots.has(trackerId)) snapshots.set(trackerId, '')
+  })
+
+  return [...snapshots].flatMap(([trackerId, snapshot]) => {
+    const tracker = attached.has(trackerId)
+      ? trackingStore.trackers.find((item) => item.id === trackerId)
+      : undefined
+    const name = tracker?.name || snapshot
+    return name ? [{
+      id: trackerId,
+      name,
+      color: tracker?.color,
+      icon: tracker?.icon || 'mdi-chart-timeline-variant',
+    }] : []
+  })
 }
 
 function newEntryQuery() {
@@ -192,7 +205,7 @@ onMounted(async () => {
                       {{ format(new Date(entry.occurredAt), 'h:mm a') }}
                     </span>
                   </div>
-                  <div v-if="taskName(entry) || trackerName(entry)" class="d-flex flex-wrap ga-2 mt-3">
+                  <div v-if="taskName(entry) || trackerContexts(entry).length" class="d-flex flex-wrap ga-2 mt-3">
                     <v-chip
                       v-if="taskName(entry)"
                       size="small"
@@ -203,13 +216,14 @@ onMounted(async () => {
                       {{ taskName(entry) }}
                     </v-chip>
                     <v-chip
-                      v-if="trackerName(entry)"
+                      v-for="context in trackerContexts(entry)"
+                      :key="context.id"
                       size="small"
                       variant="tonal"
-                      :color="sourceTracker(entry)?.color || undefined"
-                      :prepend-icon="sourceTracker(entry)?.icon || 'mdi-chart-timeline-variant'"
+                      :color="context.color"
+                      :prepend-icon="context.icon"
                     >
-                      {{ trackerName(entry) }}
+                      {{ context.name }}
                     </v-chip>
                   </div>
                 </v-card>

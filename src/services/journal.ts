@@ -11,9 +11,9 @@ export function filterJournalEntries(
 ) {
   return entries.filter((entry) => {
     if (taskId && entry.task !== taskId) return false
-    if (trackerId && entry.tracker !== trackerId) return false
+    if (trackerId && !entry.trackers.includes(trackerId)) return false
     const hasTaskContext = Boolean(entry.task || entry.taskSnapshot)
-    const hasTrackerContext = Boolean(entry.tracker || entry.trackerSnapshot)
+    const hasTrackerContext = Boolean(entry.trackers.length || Object.keys(entry.trackerSnapshots).length)
     if (filter === 'tasks' && !hasTaskContext) return false
     if (filter === 'tracking' && !hasTrackerContext) return false
     if (filter === 'unlinked' && (hasTaskContext || hasTrackerContext)) return false
@@ -43,7 +43,7 @@ export function groupJournalEntriesByContext(entries: JournalEntry[]) {
 
   for (const entry of sorted) {
     const hasTaskContext = Boolean(entry.task || entry.taskSnapshot)
-    const hasTrackerContext = Boolean(entry.tracker || entry.trackerSnapshot)
+    const hasTrackerContext = Boolean(entry.trackers.length || Object.keys(entry.trackerSnapshots).length)
     const context: JournalContextGroup = hasTaskContext && hasTrackerContext
       ? 'connected'
       : hasTaskContext

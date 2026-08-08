@@ -5,6 +5,7 @@ import { useSnackbarStore } from '@/stores/snackbar'
 import type { JournalEntry, JournalEntryDraft } from '@/types/domain'
 
 export function mapJournalEntry(record: Record<string, any>): JournalEntry {
+  const trackers = stringList(record.tracker)
   return {
     id: record.id,
     title: record.title || '',
@@ -13,12 +14,29 @@ export function mapJournalEntry(record: Record<string, any>): JournalEntry {
     localDate: record.local_date,
     timezoneOffset: Number(record.timezone_offset || 0),
     task: record.task || undefined,
-    tracker: record.tracker || undefined,
+    trackers,
     taskSnapshot: record.task_snapshot || '',
-    trackerSnapshot: record.tracker_snapshot || '',
+    trackerSnapshots: trackerSnapshotMap(record.tracker_snapshot, trackers),
     createdAt: record.created_at || '',
     updatedAt: record.updated_at || '',
   }
+}
+
+function stringList(value: unknown) {
+  if (Array.isArray(value)) return value.filter((item): item is string => typeof item === 'string' && Boolean(item))
+  return typeof value === 'string' && value ? [value] : []
+}
+
+function trackerSnapshotMap(value: unknown, trackers: string[]) {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return Object.fromEntries(Object.entries(value)
+      .filter((entry): entry is [string, string] => typeof entry[1] === 'string' && Boolean(entry[1])))
+  }
+
+  return stringList(value).reduce<Record<string, string>>((snapshots, name, index) => {
+    snapshots[trackers[index] || `detached:${index}`] = name
+    return snapshots
+  }, {})
 }
 
 export const useJournalStore = defineStore('journal', () => {
@@ -65,7 +83,7 @@ export const useJournalStore = defineStore('journal', () => {
       local_date: draft.localDate,
       timezone_offset: draft.timezoneOffset,
       task: draft.task || '',
-      tracker: draft.tracker || '',
+      tracker: draft.trackers,
     }
     const record = draft.id
       ? await api.collection('journal_entries').update(draft.id, payload)

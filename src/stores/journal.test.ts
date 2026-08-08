@@ -30,9 +30,9 @@ function record(id: string, date = '2026-08-02') {
     local_date: date,
     timezone_offset: 240,
     task: 'task-1',
-    tracker: 'tracker-1',
+    tracker: ['tracker-1', 'tracker-2'],
     task_snapshot: 'Train',
-    tracker_snapshot: 'Mood',
+    tracker_snapshot: { 'tracker-1': 'Mood', 'tracker-2': 'Energy' },
     created_at: `${date}T16:00:00.000Z`,
     updated_at: `${date}T16:00:00.000Z`,
   }
@@ -57,9 +57,9 @@ describe('journal store', () => {
     expect(store.entries[0]).toMatchObject({
       id: 'journal-1',
       task: 'task-1',
-      tracker: 'tracker-1',
+      trackers: ['tracker-1', 'tracker-2'],
       taskSnapshot: 'Train',
-      trackerSnapshot: 'Mood',
+      trackerSnapshots: { 'tracker-1': 'Mood', 'tracker-2': 'Energy' },
     })
   })
 
@@ -74,7 +74,7 @@ describe('journal store', () => {
       localDate: '2026-08-02',
       timezoneOffset: 240,
       task: 'task-1',
-      tracker: 'tracker-1',
+      trackers: ['tracker-1', 'tracker-2'],
     })
 
     expect(apiMocks.create).toHaveBeenCalledWith({
@@ -84,7 +84,7 @@ describe('journal store', () => {
       local_date: '2026-08-02',
       timezone_offset: 240,
       task: 'task-1',
-      tracker: 'tracker-1',
+      tracker: ['tracker-1', 'tracker-2'],
     })
     expect(store.entries[0]?.id).toBe('journal-2')
   })
@@ -116,8 +116,9 @@ describe('journal store', () => {
       occurredAt: '2026-08-02T16:00:00.000Z',
       localDate: '2026-08-02',
       timezoneOffset: 240,
+      trackers: [],
       taskSnapshot: '',
-      trackerSnapshot: '',
+      trackerSnapshots: {},
       createdAt: '2026-08-02T16:00:00.000Z',
       updatedAt: '2026-08-02T16:00:00.000Z',
     }]
