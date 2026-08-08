@@ -72,7 +72,7 @@ async function signInWithPasskey() {
           </div>
           <h1 class="display-title auth-title mt-3">
             <span class="auth-title__lead">MAKE LIFE</span>
-            <span class="auth-title__programmable">PROGRAMMABLE<span class="text-secondary">.</span></span>
+            <span class="auth-title__programmable text-secondary">PROGRAMMABLE.</span>
           </h1>
           <p class="auth-copy mt-5">
               Plan tasks and workouts, run intervals, review flashcards with audio, track habits and Health Connect progress, explore insights, and journal reflections, all in one flexible system for real life.
