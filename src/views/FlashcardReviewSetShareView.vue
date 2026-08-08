@@ -181,6 +181,7 @@ async function revoke() {
             Editors can add, change, and permanently delete matching cards from your library.
           </v-alert>
           <v-btn
+            block
             color="secondary"
             prepend-icon="mdi-account-plus-outline"
             class="mt-4"
