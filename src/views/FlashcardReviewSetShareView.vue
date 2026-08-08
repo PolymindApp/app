@@ -177,12 +177,13 @@ async function revoke() {
               </v-btn-toggle>
             </v-col>
           </v-row>
-          <v-alert v-if="role === 'editor'" type="warning" variant="tonal" density="compact" class="mb-4">
+          <v-alert v-if="role === 'editor'" type="warning" variant="tonal" density="compact">
             Editors can add, change, and permanently delete matching cards from your library.
           </v-alert>
           <v-btn
             color="secondary"
             prepend-icon="mdi-account-plus-outline"
+            class="mt-4"
             :loading="saving"
             :disabled="!canShare"
             @click="addShare"
