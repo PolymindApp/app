@@ -146,16 +146,16 @@ async function save() {
               counter
               autocomplete="off"
             />
+            <FlashcardTagCombobox v-if="!isReviewSetCard" v-model="draft.tags" />
+            <v-alert v-else type="info" variant="tonal" density="compact">
+              Card tags are controlled by the Review set owner.
+            </v-alert>
             <FlashcardImageField
               v-model="cardImage"
               :loading="saving"
               :initial-search="draft.front || draft.back"
               @error="error = $event"
             />
-            <FlashcardTagCombobox v-if="!isReviewSetCard" v-model="draft.tags" />
-            <v-alert v-else type="info" variant="tonal" density="compact">
-              Card tags are controlled by the Review set owner.
-            </v-alert>
           </div>
         </AppForm>
       </v-card-text>
