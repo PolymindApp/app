@@ -55,7 +55,13 @@ onBeforeUnmount(() => {
     <div class="section-heading mt-0">
       <h2>Your intervals</h2>
       <div class="d-flex ga-1">
-        <v-btn size="small" variant="text" prepend-icon="mdi-flash" to="/intervals/quick">
+        <v-btn
+          size="small"
+          color="secondary"
+          variant="text"
+          prepend-icon="mdi-flash"
+          to="/intervals/quick"
+        >
           Quick
         </v-btn>
         <v-btn size="small" variant="text" prepend-icon="mdi-plus" to="/intervals/new">
