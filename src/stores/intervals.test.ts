@@ -7,13 +7,16 @@ const apiMocks = vi.hoisted(() => ({
   getIntervalSessions: vi.fn(),
   updateTemplate: vi.fn(),
   updateIntervalSession: vi.fn(),
+  updateIntervalSessionFlashcards: vi.fn(),
   completeIntervalSession: vi.fn(),
 }))
 
 vi.mock('@/lib/api', () => ({
+  apiAssetUrl: (value: string) => value,
   api: {
     authStore: { record: { id: 'user-1' } },
     completeIntervalSession: apiMocks.completeIntervalSession,
+    updateIntervalSessionFlashcards: apiMocks.updateIntervalSessionFlashcards,
     collection: (name: string) => {
       if (name === 'interval_templates') return { update: apiMocks.updateTemplate }
       if (name === 'interval_sessions') return {
@@ -88,6 +91,7 @@ describe('interval task attribution', () => {
     apiMocks.createIntervalSession.mockReset()
     apiMocks.getIntervalSessions.mockReset()
     apiMocks.updateIntervalSession.mockReset()
+    apiMocks.updateIntervalSessionFlashcards.mockReset()
     apiMocks.completeIntervalSession.mockReset()
     apiMocks.getIntervalSessions.mockResolvedValue({ items: [] })
   })
@@ -216,5 +220,45 @@ describe('interval task attribution', () => {
       note: 'Felt strong throughout.',
     })
     expect(updated.note).toBe('Felt strong throughout.')
+  })
+
+  it('persists changes to the active interval flashcard snapshot', async () => {
+    const flashcardReview = {
+      reviewSet: 'set-1',
+      name: 'Spanish',
+      tags: ['tag-1'],
+      sortMode: 'difficult' as const,
+      cardSides: 'both' as const,
+      frontSeconds: 4,
+      backSeconds: 6,
+      backSpeechRepeatCount: 1,
+      speechEnabled: false,
+      frontLanguage: '',
+      backLanguage: '',
+      cards: [{ id: 'card-1', front: 'Hola', back: 'Hello', note: '', image: '', tags: ['tag-1'] }],
+    }
+    apiMocks.updateIntervalSessionFlashcards.mockResolvedValue({
+      id: 'session-1',
+      source: 'template',
+      status: 'paused',
+      snapshot_name: 'Study',
+      definition_snapshot: { version: 1, children: [] },
+      cue_snapshot: { soundEnabled: true, vibrationEnabled: true },
+      flashcard_snapshot: flashcardReview,
+      started_at: '2026-08-08T14:00:00.000Z',
+      planned_seconds: 60,
+      elapsed_seconds: 5,
+      runtime_state: {
+        stepIndex: 0,
+        remainingMs: 55000,
+        accumulatedMs: 5000,
+        updatedAt: '2026-08-08T14:00:05.000Z',
+      },
+    })
+
+    const updated = await useIntervalStore().updateSessionFlashcardReview('session-1', flashcardReview)
+
+    expect(apiMocks.updateIntervalSessionFlashcards).toHaveBeenCalledWith('session-1', flashcardReview)
+    expect(updated.flashcardReview?.cards[0]?.front).toBe('Hola')
   })
 })

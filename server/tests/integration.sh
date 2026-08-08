@@ -1531,6 +1531,23 @@ interval_flashcard_snapshot_update_status="$(curl --silent --output /dev/null --
   echo "An interval session accepted a client-authored Review set snapshot." >&2
   exit 1
 }
+interval_flashcard_context_payload="$(php -r '
+  $data = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+  $data["flashcard_snapshot"]["frontSeconds"] = 7;
+  echo json_encode(["flashcard_snapshot" => $data["flashcard_snapshot"]], JSON_THROW_ON_ERROR);
+' <<<"$interval_flashcard_session_response")"
+interval_flashcard_context_response="$(curl --silent --show-error --fail \
+  -X PATCH -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "$interval_flashcard_context_payload" \
+  "$api_url/interval-sessions/$interval_flashcard_session_id/flashcards")"
+[[ "$(php -r '
+  $data = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+  echo $data["flashcard_snapshot"]["frontSeconds"];
+' <<<"$interval_flashcard_context_response")" == 7 ]] || {
+  echo "An active interval did not persist its managed flashcard context." >&2
+  exit 1
+}
 curl --silent --show-error --fail \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $alice_token" \

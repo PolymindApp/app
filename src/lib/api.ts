@@ -424,6 +424,17 @@ class ApiClient {
     )
   }
 
+  updateIntervalSessionFlashcards(sessionId: string, flashcardSnapshot: unknown) {
+    return request<RecordModel>(
+      `/interval-sessions/${encodeURIComponent(sessionId)}/flashcards`,
+      {
+        method: 'PATCH',
+        body: { flashcard_snapshot: flashcardSnapshot },
+      },
+      this.authStore,
+    )
+  }
+
   startFlashcardReviewSession(
     reviewSetId: string,
     input: { task?: string; programStep?: string; taskDate?: string } = {},

@@ -313,6 +313,18 @@ export const useIntervalStore = defineStore('intervals', () => {
     return mapped
   }
 
+  async function updateSessionFlashcardReview(
+    sessionId: string,
+    flashcardReview: IntervalFlashcardReviewSnapshot,
+  ) {
+    const record = await api.updateIntervalSessionFlashcards(sessionId, flashcardReview)
+    const mapped = mapSession(record)
+    const index = sessions.value.findIndex((session) => session.id === sessionId)
+    if (index >= 0) sessions.value.splice(index, 1, mapped)
+    if (mapped.status === 'running' || mapped.status === 'paused') saveRecovery(mapped.id, mapped.runtime)
+    return mapped
+  }
+
   async function completeSession(
     sessionId: string,
     changes: {
@@ -395,6 +407,7 @@ export const useIntervalStore = defineStore('intervals', () => {
     reorderTemplates,
     startSession,
     updateSession,
+    updateSessionFlashcardReview,
     completeSession,
     reconcileActiveSession,
     mirrorRuntime,

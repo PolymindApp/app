@@ -1,9 +1,13 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { isValid, parseISO } from 'date-fns'
 import { useRoute, useRouter } from 'vue-router'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import FlashcardCardDialog from '@/components/FlashcardCardDialog.vue'
+import FlashcardContextActions, { type FlashcardContextAction } from '@/components/FlashcardContextActions.vue'
+import FlashcardReviewSettingsFields from '@/components/FlashcardReviewSettingsFields.vue'
+import AppForm from '@/components/AppForm.vue'
 import IntervalTypeIcon from '@/components/IntervalTypeIcon.vue'
 import LabeledSlider from '@/components/LabeledSlider.vue'
 import { stopBackgroundInterval, syncBackgroundInterval } from '@/services/backgroundInterval'
@@ -12,10 +16,14 @@ import {
   stopFlashcardSpeech,
 } from '@/services/flashcardSpeech'
 import {
+  cardMatchesTags,
   createIntervalFlashcardReviewSnapshot,
   intervalFlashcardPhase,
   flashcardTextFontSize,
+  flashcardReviewSettingsAreValid,
+  flashcardReviewSettingsSignature,
 } from '@/services/flashcards'
+import { loadFlashcardSpeechSupport } from '@/services/flashcardSpeech'
 import { createIntervalCueHandoff } from '@/services/intervalCueHandoff'
 import {
   notifyIntervalTransition,
@@ -42,7 +50,15 @@ import { isTaskScheduled, stepsForDate, toDateKey } from '@/services/schedule'
 import { useFlashcardStore } from '@/stores/flashcards'
 import { useIntervalStore } from '@/stores/intervals'
 import { useTaskStore } from '@/stores/tasks'
-import type { IntervalDefinition, IntervalRuntimeState, IntervalSession } from '@/types/domain'
+import type {
+  Flashcard,
+  FlashcardReviewSettings,
+  FlashcardSpeechSupport,
+  IntervalDefinition,
+  IntervalFlashcardReviewSnapshot,
+  IntervalRuntimeState,
+  IntervalSession,
+} from '@/types/domain'
 
 const route = useRoute()
 const router = useRouter()
@@ -68,6 +84,31 @@ const pendingRepetitionStart = ref<
 const repetitionError = ref('')
 const attributionSheet = ref(false)
 const activeSessionSheet = ref(false)
+const flashcardContextSheet = ref(false)
+const flashcardEditorDialog = ref(false)
+const flashcardEditorCard = ref<Flashcard>()
+const flashcardDeleteDialog = ref(false)
+const flashcardDeleting = ref(false)
+const flashcardSettingsDialog = ref(false)
+const flashcardSettingsForm = ref()
+const flashcardSettingsSaving = ref(false)
+const flashcardSettingsError = ref('')
+const flashcardSettingsOriginal = ref('')
+const flashcardSpeechLoading = ref(false)
+const flashcardSpeechSupport = ref<FlashcardSpeechSupport>({ available: false, languages: [] })
+const flashcardSettingsDraft = reactive<FlashcardReviewSettings>({
+  mode: 'passive',
+  cardSides: 'both',
+  indefinite: true,
+  maxCards: 1,
+  frontSeconds: 5,
+  backSeconds: 5,
+  backSpeechRepeatCount: 1,
+  speechEnabled: false,
+  frontLanguage: '',
+  backLanguage: '',
+  sortMode: 'difficult',
+})
 const error = ref('')
 const completionError = ref('')
 const pendingCompletion = ref<{
@@ -85,6 +126,8 @@ let runnerMounted = false
 let lastCountCue = ''
 let timerEffectTimeout: number | undefined
 let lastSpokenFlashcardKey = ''
+let resumeAfterFlashcardModal = false
+let flashcardSaveWork: Promise<void> = Promise.resolve()
 const cueHandoff = createIntervalCueHandoff(document.visibilityState)
 
 const previewSession = ref<IntervalSession>()
@@ -106,6 +149,24 @@ const sessionElapsedMs = computed(() => {
 const flashcardPhase = computed(() => session.value?.flashcardReview
   ? intervalFlashcardPhase(session.value.flashcardReview, sessionElapsedMs.value)
   : undefined)
+const flashcardReviewSet = computed(() => flashcardStore.reviewSets
+  .find(item => item.id === session.value?.flashcardReview?.reviewSet))
+const canManageIntervalCards = computed(() => Boolean(
+  flashcardReviewSet.value && flashcardReviewSet.value.accessRole !== 'readonly',
+))
+const intervalFlashcardSource = computed(() => {
+  const reviewSet = flashcardReviewSet.value
+  if (!reviewSet) return []
+  return reviewSet.accessRole === 'owner'
+    ? flashcardStore.cards
+    : flashcardStore.reviewSetCards[reviewSet.id] || []
+})
+const currentFlashcardRecord = computed(() => intervalFlashcardSource.value
+  .find(card => card.id === flashcardPhase.value?.card.id))
+const flashcardSettingsChanged = computed(() => flashcardSettingsDialog.value
+  && flashcardReviewSettingsSignature(flashcardSettingsDraft) !== flashcardSettingsOriginal.value)
+const canSaveFlashcardSettings = computed(() => flashcardSettingsChanged.value
+  && flashcardReviewSettingsAreValid(flashcardSettingsDraft))
 const remainingLabel = computed(() => {
   const totalSeconds = Math.max(0, Math.ceil(displayRemainingMs.value / 1000))
   const minutes = Math.floor(totalSeconds / 60)
@@ -754,6 +815,188 @@ async function restart() {
   if (updated.status === 'running') await syncNativeTimer(updated)
 }
 
+async function ensureIntervalFlashcardSource() {
+  const reviewSet = flashcardReviewSet.value
+  if (reviewSet && reviewSet.accessRole !== 'owner') {
+    await flashcardStore.loadReviewSetCards(reviewSet.id)
+  }
+}
+
+async function pauseForFlashcardModal() {
+  resumeAfterFlashcardModal = session.value?.status === 'running'
+  if (resumeAfterFlashcardModal) await pause()
+}
+
+async function finishFlashcardModal() {
+  if (resumeAfterFlashcardModal && session.value?.status === 'paused') await resume()
+  resumeAfterFlashcardModal = false
+}
+
+async function updateFlashcardSnapshot(review: IntervalFlashcardReviewSnapshot) {
+  const item = session.value
+  if (!item || isTemplatePreview.value) return
+  await store.updateSessionFlashcardReview(item.id, review)
+  lastSpokenFlashcardKey = ''
+}
+
+function snapshotCard(card: Flashcard) {
+  return {
+    id: card.id,
+    front: card.front,
+    back: card.back,
+    note: card.note,
+    image: card.image,
+    tags: [...card.tags],
+  }
+}
+
+async function openFlashcardEditor(action: 'add' | 'edit') {
+  if (!session.value?.flashcardReview || !canManageIntervalCards.value || syncing.value) return
+  await pauseForFlashcardModal()
+  try {
+    await ensureIntervalFlashcardSource()
+    flashcardEditorCard.value = action === 'edit' ? currentFlashcardRecord.value : undefined
+    if (action === 'edit' && !flashcardEditorCard.value) {
+      throw new Error('That flashcard could not be found.')
+    }
+    flashcardEditorDialog.value = true
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : 'Could not open this flashcard.'
+    await finishFlashcardModal()
+  }
+}
+
+async function closeFlashcardEditor(open: boolean) {
+  flashcardEditorDialog.value = open
+  if (!open) {
+    await flashcardSaveWork
+    await finishFlashcardModal()
+  }
+}
+
+async function saveIntervalFlashcard(card: Flashcard) {
+  const review = session.value?.flashcardReview
+  if (!review) return
+  const existing = review.cards.findIndex(item => item.id === card.id)
+  const cards = [...review.cards]
+  if (existing >= 0) cards.splice(existing, 1, snapshotCard(card))
+  else if (cardMatchesTags(card, review.tags)) cards.push(snapshotCard(card))
+  await updateFlashcardSnapshot({ ...review, cards })
+}
+
+function handleIntervalFlashcardSaved(card: Flashcard) {
+  flashcardSaveWork = saveIntervalFlashcard(card)
+}
+
+async function requestFlashcardRemoval() {
+  if (!flashcardPhase.value || !canManageIntervalCards.value) return
+  await pauseForFlashcardModal()
+  try {
+    await ensureIntervalFlashcardSource()
+    if (!currentFlashcardRecord.value) throw new Error('That flashcard could not be found.')
+    flashcardDeleteDialog.value = true
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : 'Could not open this flashcard.'
+    await finishFlashcardModal()
+  }
+}
+
+async function cancelFlashcardRemoval() {
+  flashcardDeleteDialog.value = false
+  await finishFlashcardModal()
+}
+
+async function removeIntervalFlashcard() {
+  const review = session.value?.flashcardReview
+  const card = currentFlashcardRecord.value
+  const reviewSet = flashcardReviewSet.value
+  if (!review || !card || !reviewSet || flashcardDeleting.value) return
+  flashcardDeleting.value = true
+  try {
+    if (reviewSet.accessRole === 'owner') await flashcardStore.deleteCard(card.id)
+    else await flashcardStore.deleteReviewSetCard(reviewSet.id, card.id)
+    await updateFlashcardSnapshot({
+      ...review,
+      cards: review.cards.filter(item => item.id !== card.id),
+    })
+    flashcardDeleteDialog.value = false
+    await finishFlashcardModal()
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : 'Could not remove this flashcard.'
+  } finally {
+    flashcardDeleting.value = false
+  }
+}
+
+async function openFlashcardSettings() {
+  const review = session.value?.flashcardReview
+  if (!review || syncing.value) return
+  await pauseForFlashcardModal()
+  Object.assign(flashcardSettingsDraft, {
+    mode: 'passive',
+    cardSides: review.cardSides,
+    indefinite: true,
+    maxCards: review.cards.length,
+    frontSeconds: review.frontSeconds,
+    backSeconds: review.backSeconds,
+    backSpeechRepeatCount: review.backSpeechRepeatCount,
+    speechEnabled: review.speechEnabled,
+    frontLanguage: review.frontLanguage,
+    backLanguage: review.backLanguage,
+    sortMode: review.sortMode,
+  })
+  flashcardSettingsOriginal.value = flashcardReviewSettingsSignature(flashcardSettingsDraft)
+  flashcardSettingsError.value = ''
+  flashcardSettingsDialog.value = true
+  flashcardSpeechLoading.value = true
+  try {
+    await ensureIntervalFlashcardSource()
+    flashcardSpeechSupport.value = await loadFlashcardSpeechSupport()
+  } finally {
+    flashcardSpeechLoading.value = false
+  }
+}
+
+async function closeFlashcardSettings() {
+  flashcardSettingsDialog.value = false
+  flashcardSettingsError.value = ''
+  await finishFlashcardModal()
+}
+
+async function saveFlashcardSettings() {
+  const validation = await flashcardSettingsForm.value?.validate()
+  const review = session.value?.flashcardReview
+  const reviewSet = flashcardReviewSet.value
+  if (!validation?.valid || !canSaveFlashcardSettings.value || !review || !reviewSet) return
+  flashcardSettingsSaving.value = true
+  flashcardSettingsError.value = ''
+  try {
+    const snapshot = createIntervalFlashcardReviewSnapshot(
+      { ...reviewSet, ...flashcardSettingsDraft },
+      intervalFlashcardSource.value,
+    )
+    if (!snapshot) throw new Error('These settings do not match any available cards.')
+    await updateFlashcardSnapshot(snapshot)
+    await closeFlashcardSettings()
+  } catch (cause) {
+    flashcardSettingsError.value = cause instanceof Error
+      ? cause.message
+      : 'Could not update the flashcard settings.'
+  } finally {
+    flashcardSettingsSaving.value = false
+  }
+}
+
+function handleFlashcardContextAction(action: FlashcardContextAction) {
+  if (action === 'previous') void previous()
+  else if (action === 'next') void skip()
+  else if (action === 'toggle-pause') {
+    void (session.value?.status === 'paused' ? resume() : pause())
+  } else if (action === 'add' || action === 'edit') void openFlashcardEditor(action)
+  else if (action === 'remove') void requestFlashcardRemoval()
+  else if (action === 'settings') void openFlashcardSettings()
+}
+
 async function endEarly() {
   const item = session.value
   if (!item) return
@@ -947,10 +1190,14 @@ async function runAgain(repetitions?: number) {
                   </div>
                 </div>
               </div>
-              <section
+              <button
                 v-if="flashcardPhase && session.flashcardReview"
+                v-ripple
+                type="button"
                 class="interval-review-card"
                 :aria-label="`${session.flashcardReview.name}, ${flashcardPhase.side}, card ${flashcardPhase.cardIndex + 1} of ${session.flashcardReview.cards.length}`"
+                :disabled="isTemplatePreview || syncing"
+                @click="flashcardContextSheet = true"
               >
                 <div class="interval-review-card__content">
                   <div class="interval-review-card__heading">
@@ -1003,7 +1250,7 @@ async function runAgain(repetitions?: number) {
                   rounded
                   :aria-label="`${Math.round(flashcardPhase.progress)}% through the ${flashcardPhase.side}`"
                 />
-              </section>
+              </button>
             </div>
             <p class="next-copy">{{ next ? `Next: ${next.step.name}` : 'Final interval' }}</p>
           </section>
@@ -1069,6 +1316,88 @@ async function runAgain(repetitions?: number) {
         </div>
       </div>
     </transition>
+
+    <FlashcardContextActions
+      v-model="flashcardContextSheet"
+      :paused="session?.status === 'paused'"
+      :busy="syncing || starting"
+      :can-previous="!isTemplatePreview && Boolean(current?.index)"
+      :can-next="!isTemplatePreview && !currentConfirmation"
+      :can-manage-card="!isTemplatePreview && canManageIntervalCards && Boolean(flashcardPhase)"
+      :can-add-card="!isTemplatePreview && canManageIntervalCards"
+      @action="handleFlashcardContextAction"
+    />
+
+    <FlashcardCardDialog
+      :model-value="flashcardEditorDialog"
+      :card="flashcardEditorCard"
+      :review-set-id="flashcardReviewSet?.accessRole === 'owner' ? undefined : flashcardReviewSet?.id"
+      :initial-tags="session?.flashcardReview?.tags"
+      @update:model-value="closeFlashcardEditor"
+      @saved="handleIntervalFlashcardSaved"
+    />
+
+    <v-dialog
+      v-model="flashcardSettingsDialog"
+      persistent
+      scrollable
+      fullscreen
+    >
+      <v-card class="flashcard-settings-card" rounded="0">
+        <v-card-title class="flashcard-settings-header d-flex align-center ga-3">
+          <v-icon icon="mdi-tune-variant" color="secondary" />
+          <span>Flashcard settings</span>
+        </v-card-title>
+        <v-card-text class="px-5 py-4">
+          <v-alert
+            v-if="flashcardSettingsError"
+            type="error"
+            variant="tonal"
+            density="compact"
+            class="mb-4"
+          >
+            {{ flashcardSettingsError }}
+          </v-alert>
+          <AppForm ref="flashcardSettingsForm" @submit.prevent="saveFlashcardSettings">
+            <FlashcardReviewSettingsFields
+              :model-value="flashcardSettingsDraft"
+              :speech-support="flashcardSpeechSupport"
+              :speech-loading="flashcardSpeechLoading"
+              :available-cards="intervalFlashcardSource.length"
+              session
+              interval
+            />
+          </AppForm>
+        </v-card-text>
+        <v-divider />
+        <v-card-actions class="flashcard-settings-actions ga-2">
+          <v-spacer />
+          <v-btn variant="text" :disabled="flashcardSettingsSaving" @click="closeFlashcardSettings">
+            Cancel
+          </v-btn>
+          <v-btn
+            color="secondary"
+            :loading="flashcardSettingsSaving"
+            :disabled="!canSaveFlashcardSettings"
+            @click="saveFlashcardSettings"
+          >
+            Save
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <ConfirmDialog
+      :model-value="flashcardDeleteDialog"
+      title="Remove this flashcard?"
+      message="The card will be deleted from future reviews and removed from this interval. Existing review history keeps its saved faces."
+      confirm-text="Remove card"
+      confirm-color="error"
+      icon="mdi-delete-outline"
+      :loading="flashcardDeleting"
+      @update:model-value="!$event && cancelFlashcardRemoval()"
+      @confirm="removeIntervalFlashcard"
+    />
 
     <ConfirmDialog
       v-model="endDialog"
@@ -1269,7 +1598,10 @@ async function runAgain(repetitions?: number) {
 .group-breadcrumb { display: flex; flex-wrap: wrap; justify-content: center; gap: .35rem; margin-bottom: 1.25rem; }
 .group-breadcrumb span { padding: 4px 8px; border-radius: 999px; background: rgb(var(--v-theme-surface-variant)); color: rgb(var(--v-theme-on-surface) / .7); font-size: .65rem; }
 .runner-step { min-width: 0; max-width: 40rem; margin-top: .5rem; font-size: clamp(2rem, 10vw, 4.5rem); font-weight: 900; line-height: 1; }
-.interval-review-card { width: min(100%, 34rem); overflow: hidden; border: 1px solid rgba(var(--v-theme-on-surface), .08); border-radius: .75rem; background: rgba(var(--v-theme-on-surface), .055); box-shadow: none; text-align: left; }
+.interval-review-card { position: relative; width: min(100%, 34rem); padding: 0; overflow: hidden; border: 1px solid rgba(var(--v-theme-on-surface), .08); border-radius: .75rem; background: rgba(var(--v-theme-on-surface), .055); box-shadow: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.interval-review-card:focus-visible { outline: .1875rem solid rgba(var(--v-theme-secondary), .72); outline-offset: .25rem; }
+.interval-review-card:disabled { cursor: default; opacity: .72; }
+.interval-review-card :deep(.v-ripple__container) { z-index: 2; }
 .interval-review-card__content { display: flex; padding: 1rem; align-items: center; justify-content: center; flex-direction: column; gap: .65rem; text-align: center; }
 .interval-review-card__heading { display: flex; width: 100%; min-width: 0; align-items: center; justify-content: space-between; gap: .75rem; }
 .interval-review-card__meta { display: flex; flex: 0 0 auto; align-items: center; justify-content: flex-end; gap: .75rem; color: rgba(var(--v-theme-on-surface), .58); font-size: .62rem; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
@@ -1378,6 +1710,21 @@ async function runAgain(repetitions?: number) {
   color: rgb(var(--v-theme-secondary));
 }
 .note-dialog-actions { display: flex; justify-content: flex-end; gap: .5rem; }
+.flashcard-settings-card { min-height: 100dvh; }
+.flashcard-settings-header {
+  padding:
+    calc(1.25rem + max(env(safe-area-inset-top, 0rem), var(--safe-area-inset-top, 0rem)))
+    calc(1.25rem + env(safe-area-inset-right, 0rem))
+    1rem
+    calc(1.25rem + env(safe-area-inset-left, 0rem)) !important;
+}
+.flashcard-settings-actions {
+  padding:
+    1rem
+    calc(1rem + env(safe-area-inset-right, 0rem))
+    calc(1rem + max(env(safe-area-inset-bottom, 0rem), var(--safe-area-inset-bottom, 0rem)))
+    calc(1rem + env(safe-area-inset-left, 0rem)) !important;
+}
 .repetition-summary {
   color: rgb(var(--v-theme-on-surface) / .62);
   font-size: .75rem;

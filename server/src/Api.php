@@ -135,6 +135,16 @@ final class Api
             ) {
                 $this->completeIntervalSession($intervalMatches[1], $this->authenticate());
             }
+            if (
+                $method === 'PATCH'
+                && preg_match(
+                    '#^/interval-sessions/([a-zA-Z0-9_-]{1,64})/flashcards/?$#',
+                    $path,
+                    $intervalFlashcardMatches,
+                ) === 1
+            ) {
+                $this->updateIntervalFlashcards($intervalFlashcardMatches[1], $this->authenticate());
+            }
             if ($method === 'GET' && $path === '/flashcard-review-sets') {
                 $this->listAccessibleFlashcardReviewSets($this->authenticate());
             }
@@ -4220,6 +4230,57 @@ final class Api
             'session' => $this->normalizeRecord($sessionCollection, $session),
             'occurrence' => $occurrence,
         ]);
+    }
+
+    private function updateIntervalFlashcards(string $id, array $user): never
+    {
+        $body = $this->jsonBody();
+        $this->allowOnlyFields($body, ['flashcard_snapshot']);
+        if (!array_key_exists('flashcard_snapshot', $body)) {
+            throw new ApiException(422, 'The flashcard snapshot is required.', [
+                'flashcard_snapshot' => 'required',
+            ]);
+        }
+
+        $collection = $this->requireCollection('interval_sessions');
+        $snapshot = $this->validateField(
+            'flashcard_snapshot',
+            $body['flashcard_snapshot'],
+            $collection['config']['fields']['flashcard_snapshot'],
+        );
+        $owner = (string) $user['id'];
+        $session = $this->ownedRecord('interval_sessions', $id, $owner);
+        if (!in_array((string) $session['status'], ['running', 'paused'], true)) {
+            throw new ApiException(409, 'Only an active interval can change its flashcards.');
+        }
+
+        $existing = $this->decodeJsonColumn($session['flashcard_snapshot'] ?? '{}');
+        if (!is_array($existing) || (string) ($existing['reviewSet'] ?? '') === '') {
+            throw new ApiException(409, 'This interval does not have a flashcard context.');
+        }
+        if (
+            !is_array($snapshot)
+            || (string) ($snapshot['reviewSet'] ?? '') !== (string) $existing['reviewSet']
+            || !isset($snapshot['cards'])
+            || !is_array($snapshot['cards'])
+            || !array_is_list($snapshot['cards'])
+        ) {
+            throw new ApiException(422, 'The flashcard snapshot is invalid.', [
+                'flashcard_snapshot' => 'invalid',
+            ]);
+        }
+
+        $statement = $this->database->pdo->prepare(
+            'UPDATE interval_sessions SET flashcard_snapshot = :flashcard_snapshot
+             WHERE id = :id AND owner = :owner',
+        );
+        $statement->execute([
+            'flashcard_snapshot' => json_encode($snapshot, JSON_THROW_ON_ERROR),
+            'id' => $id,
+            'owner' => $owner,
+        ]);
+        $session = $this->ownedRecord('interval_sessions', $id, $owner);
+        $this->respond($this->normalizeRecord($collection, $session));
     }
 
     private function completeAttributedIntervalTask(

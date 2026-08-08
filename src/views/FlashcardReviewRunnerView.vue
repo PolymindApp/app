@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
-import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import AppForm from '@/components/AppForm.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import FlashcardCardDialog from '@/components/FlashcardCardDialog.vue'
+import FlashcardContextActions, { type FlashcardContextAction } from '@/components/FlashcardContextActions.vue'
 import FlashcardReviewSettingsFields from '@/components/FlashcardReviewSettingsFields.vue'
 import {
   backgroundFlashcardReviewState,
@@ -26,12 +27,12 @@ import {
   flashcardTextFontSize,
   formatReviewDuration,
   normalizeFlashcardBackSpeechRepeatCount,
-  FLASHCARD_REVIEW_SESSION_MENU_ITEMS,
   sessionAccuracy,
 } from '@/services/flashcards'
 import { useFlashcardStore } from '@/stores/flashcards'
 import type {
   BackgroundFlashcardReviewState,
+  Flashcard,
   FlashcardReviewAction,
   FlashcardReviewSession,
   FlashcardReviewSettings,
@@ -48,6 +49,8 @@ const error = ref('')
 const revealed = ref(false)
 const endDialog = ref(false)
 const cardMenuOpen = ref(false)
+const cardEditorDialog = ref(false)
+const cardEditorCard = ref<Flashcard>()
 const deleteCardDialog = ref(false)
 const deleteCardId = ref('')
 const deletingCard = ref(false)
@@ -95,10 +98,21 @@ let manualSwipeStart: { pointerId: number; x: number; y: number } | undefined
 let suppressManualCardTap = false
 let manualCardTapResetTimer: number | undefined
 let resumeAfterSessionSettings = false
+let resumeAfterCardEditor = false
 
 const currentSessionId = ref('')
 const session = computed(() => store.sessions.find(item => item.id === currentSessionId.value))
 const currentCard = computed(() => session.value?.queue[0])
+const currentReviewSet = computed(() => store.reviewSets.find(item => item.id === session.value?.reviewSet))
+const currentSourceCards = computed(() => {
+  if (!currentReviewSet.value) return store.cards
+  return currentReviewSet.value.accessRole === 'owner'
+    ? store.cards
+    : store.reviewSetCards[currentReviewSet.value.id] || []
+})
+const currentSourceCard = computed(() => currentSourceCards.value.find(card => card.id === currentCard.value?.id))
+const canManageCurrentCard = computed(() => !currentReviewSet.value
+  || currentReviewSet.value.accessRole !== 'readonly')
 const isFinished = computed(() => session.value?.status === 'completed' || session.value?.status === 'ended')
 const isRunning = computed(() => session.value?.status === 'running')
 const shouldKeepScreenAwake = computed(() => Boolean(session.value && !isFinished.value))
@@ -746,23 +760,50 @@ async function saveSessionSettings() {
 
 async function openCardEditor(action: 'add' | 'edit') {
   cardMenuOpen.value = false
-  if (!session.value || busy.value) return
-  if (session.value.status === 'running') await pauseReview(false)
-  const returnTo = route.fullPath
-  if (action === 'add') {
-    await router.push({ name: 'flashcard-new', query: { returnTo } })
-    return
+  if (!session.value || busy.value || !canManageCurrentCard.value) return
+  resumeAfterCardEditor = session.value.status === 'running'
+  if (resumeAfterCardEditor) await pauseReview(false)
+  try {
+    if (currentReviewSet.value && currentReviewSet.value.accessRole !== 'owner') {
+      await store.loadReviewSetCards(currentReviewSet.value.id)
+    }
+    cardEditorCard.value = action === 'edit' ? currentSourceCard.value : undefined
+    if (action === 'edit' && !cardEditorCard.value) throw new Error('That flashcard could not be found.')
+    cardEditorDialog.value = true
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : 'Could not open this flashcard.'
+    await closeCardEditor(false)
   }
-  if (!currentCard.value) return
-  await router.push({
-    name: 'flashcard-edit',
-    params: { id: currentCard.value.id },
-    query: { returnTo },
-  })
+}
+
+async function closeCardEditor(open: boolean) {
+  cardEditorDialog.value = open
+  if (!open && resumeAfterCardEditor && session.value?.status === 'paused') await resumeReview()
+  if (!open) resumeAfterCardEditor = false
+}
+
+function handleCardSaved(card: Flashcard) {
+  const value = session.value
+  if (!value) return
+  const snapshot = {
+    id: card.id,
+    front: card.front,
+    back: card.back,
+    note: card.note,
+    image: card.image,
+    tags: [...card.tags],
+  }
+  const index = value.queue.findIndex(item => item.id === card.id)
+  if (index >= 0) value.queue.splice(index, 1, snapshot)
+  else if (value.queue.length < value.maxCards) {
+    value.queue.push(snapshot)
+    value.totalCards += 1
+  }
 }
 
 function requestCurrentCardDeletion() {
   cardMenuOpen.value = false
+  if (!canManageCurrentCard.value) return
   deleteCardId.value = currentCard.value?.id || ''
   deleteCardDialog.value = Boolean(deleteCardId.value)
 }
@@ -776,7 +817,11 @@ async function deleteCurrentCard() {
     if (restorePaused) await resumeReview()
     const removed = await performAction('eject')
     if (!removed) return
-    await store.deleteCard(cardId)
+    if (currentReviewSet.value?.accessRole && currentReviewSet.value.accessRole !== 'owner') {
+      await store.deleteReviewSetCard(currentReviewSet.value.id, cardId)
+    } else {
+      await store.deleteCard(cardId)
+    }
     deleteCardDialog.value = false
     deleteCardId.value = ''
     if (restorePaused && session.value?.status === 'running') await pauseReview(false)
@@ -787,12 +832,17 @@ async function deleteCurrentCard() {
   }
 }
 
-function handleSessionMenuAction(action: string) {
+function handleSessionMenuAction(action: FlashcardContextAction) {
+  if (action === 'previous') void navigateLeft()
+  else if (action === 'next') void navigateRight()
+  else if (action === 'toggle-pause') {
+    void (session.value?.status === 'paused' ? resumeReview() : pauseReview(false))
+  }
   if (action === 'add' || action === 'edit') {
     void openCardEditor(action)
   } else if (action === 'settings') {
     void openSessionSettings()
-  } else if (action === 'delete') {
+  } else if (action === 'remove') {
     requestCurrentCardDeletion()
   }
 }
@@ -1126,23 +1176,25 @@ async function leaveRunner() {
       </section>
     </template>
 
-    <ActionBottomSheet
+    <FlashcardContextActions
       v-model="cardMenuOpen"
-      title="Card actions"
-      aria-label="Card and session actions"
-      hide-title
-    >
-      <template v-for="item in FLASHCARD_REVIEW_SESSION_MENU_ITEMS" :key="item.action">
-        <v-divider v-if="item.divider" class="my-1" />
-        <v-list-item
-          :title="item.title"
-          :prepend-icon="item.icon"
-          :base-color="item.color"
-          :disabled="Boolean(item.requiresCard && !currentCard) || busy"
-          @click="handleSessionMenuAction(item.action)"
-        />
-      </template>
-    </ActionBottomSheet>
+      :paused="session?.status === 'paused'"
+      :busy="busy"
+      :can-previous="canNavigateCards"
+      :can-next="canNavigateCards"
+      :can-manage-card="canManageCurrentCard && Boolean(currentCard)"
+      :can-add-card="canManageCurrentCard"
+      @action="handleSessionMenuAction"
+    />
+
+    <FlashcardCardDialog
+      :model-value="cardEditorDialog"
+      :card="cardEditorCard"
+      :review-set-id="currentReviewSet?.accessRole === 'owner' ? undefined : currentReviewSet?.id"
+      :initial-tags="session?.tags"
+      @update:model-value="closeCardEditor"
+      @saved="handleCardSaved"
+    />
 
     <v-dialog
       v-model="sessionSettingsDialog"

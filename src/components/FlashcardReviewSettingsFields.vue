@@ -22,12 +22,14 @@ const props = withDefaults(defineProps<{
   maxCards?: number
   availableCards?: number
   session?: boolean
+  interval?: boolean
 }>(), {
   speechLoading: false,
   minCards: 1,
   maxCards: MAX_FLASHCARD_SESSION_CARDS,
   availableCards: 0,
   session: false,
+  interval: false,
 })
 
 const CUSTOM_MAX_CARDS_THRESHOLD = 50
@@ -100,35 +102,36 @@ function updateSpeechEnabled(enabled: boolean | null) {
 <template>
   <div class="flashcard-review-settings-fields">
     <v-card class="surface-card pa-5">
-      <label class="field-label">Review mode <span class="required-mark">*</span></label>
-      <v-btn-toggle
-        :model-value="settings.mode"
-        mandatory
-        color="secondary"
-        variant="tonal"
-        class="mode-toggle mt-2"
-        @update:model-value="updateMode"
-      >
-        <v-btn value="manual" prepend-icon="mdi-gesture-tap">Manual</v-btn>
-        <v-btn value="passive" prepend-icon="mdi-play-speed">Passive</v-btn>
-      </v-btn-toggle>
-      <p class="mode-hint mt-3" aria-live="polite">
-        <v-icon icon="mdi-information-outline" size="18" />
-        <span v-if="settings.mode === 'manual' && settings.cardSides === 'both'">
-          Reveal the back when you're ready, then mark the card as a success or error.
-        </span>
-        <span v-else-if="settings.mode === 'manual'">
-          Grade each card immediately after viewing its selected face.
-        </span>
-        <span v-else-if="settings.cardSides === 'both'">
-          Front and back advance automatically using the durations below; cards count as viewed, not graded.
-        </span>
-        <span v-else>
-          The selected face advances automatically using its duration below; cards count as viewed, not graded.
-        </span>
-      </p>
-
-      <v-divider class="my-5" />
+      <template v-if="!interval">
+        <label class="field-label">Review mode <span class="required-mark">*</span></label>
+        <v-btn-toggle
+          :model-value="settings.mode"
+          mandatory
+          color="secondary"
+          variant="tonal"
+          class="mode-toggle mt-2"
+          @update:model-value="updateMode"
+        >
+          <v-btn value="manual" prepend-icon="mdi-gesture-tap">Manual</v-btn>
+          <v-btn value="passive" prepend-icon="mdi-play-speed">Passive</v-btn>
+        </v-btn-toggle>
+        <p class="mode-hint mt-3" aria-live="polite">
+          <v-icon icon="mdi-information-outline" size="18" />
+          <span v-if="settings.mode === 'manual' && settings.cardSides === 'both'">
+            Reveal the back when you're ready, then mark the card as a success or error.
+          </span>
+          <span v-else-if="settings.mode === 'manual'">
+            Grade each card immediately after viewing its selected face.
+          </span>
+          <span v-else-if="settings.cardSides === 'both'">
+            Front and back advance automatically using the durations below; cards count as viewed, not graded.
+          </span>
+          <span v-else>
+            The selected face advances automatically using its duration below; cards count as viewed, not graded.
+          </span>
+        </p>
+        <v-divider class="my-5" />
+      </template>
       <label class="field-label">Faces to show <span class="required-mark">*</span></label>
       <v-btn-toggle
         v-model="settings.cardSides"
@@ -173,7 +176,7 @@ function updateSpeechEnabled(enabled: boolean | null) {
             :step="1"
             :rules="[value => value >= 1 && value <= 60 || 'Use 1–60 seconds']"
           />
-          <div class="setting-row passive-settings__indefinite">
+          <div v-if="!interval" class="setting-row passive-settings__indefinite">
             <div>
               <strong>Run indefinitely</strong>
               <p>Loop through these cards until you end the review; it will not finish on its own</p>

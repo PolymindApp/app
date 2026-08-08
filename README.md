@@ -158,6 +158,7 @@ DELETE /flashcard-review-sets/{id}/cards/{cardId}
 POST   /flashcard-review-sets/{id}/cards/{cardId}/image
 DELETE /flashcard-review-sets/{id}/cards/{cardId}/image
 POST   /flashcard-review-sets/{id}/cards/{cardId}/library-image
+PATCH  /interval-sessions/{id}/flashcards
 GET    /collections/{collection}/records
 POST   /collections/{collection}/records
 GET    /collections/{collection}/records/{id}
@@ -165,7 +166,7 @@ PATCH  /collections/{collection}/records/{id}
 DELETE /collections/{collection}/records/{id}
 ```
 
-Only the application’s known collections, fields, sorts, and filters are accepted. Every data request requires a signed bearer token, and `owner` is always derived from that token. Related task, occurrence, program-step, tag, and interval records are checked for matching ownership before writes.
+Only the application’s known collections, fields, sorts, and filters are accepted. Every data request requires a signed bearer token, and `owner` is always derived from that token. Related task, occurrence, program-step, tag, and interval records are checked for matching ownership before writes. The interval flashcard route updates only the existing Review set snapshot of an active, owned session; generic interval writes still reject client-authored snapshots.
 
 Passwords are stored as bcrypt hashes. Signed tokens are bound to a per-user `token_key`, and `mom_rate_limits` provides login and registration throttling.
 
