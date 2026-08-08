@@ -5,7 +5,7 @@ import { useRoute, useRouter } from 'vue-router'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import FlashcardCardDialog from '@/components/FlashcardCardDialog.vue'
-import FlashcardContextActions, { type FlashcardContextAction } from '@/components/FlashcardContextActions.vue'
+import FlashcardContextActions from '@/components/FlashcardContextActions.vue'
 import FlashcardReviewSettingsFields from '@/components/FlashcardReviewSettingsFields.vue'
 import AppForm from '@/components/AppForm.vue'
 import IntervalTypeIcon from '@/components/IntervalTypeIcon.vue'
@@ -52,6 +52,7 @@ import { useIntervalStore } from '@/stores/intervals'
 import { useTaskStore } from '@/stores/tasks'
 import type {
   Flashcard,
+  FlashcardContextAction,
   FlashcardReviewSettings,
   FlashcardSpeechSupport,
   IntervalDefinition,
@@ -85,10 +86,13 @@ const repetitionError = ref('')
 const attributionSheet = ref(false)
 const activeSessionSheet = ref(false)
 const flashcardContextSheet = ref(false)
+const openingFlashcardContext = ref(false)
 const flashcardEditorDialog = ref(false)
 const flashcardEditorCard = ref<Flashcard>()
 const flashcardDeleteDialog = ref(false)
 const flashcardDeleting = ref(false)
+const flashcardEjectDialog = ref(false)
+const flashcardEjecting = ref(false)
 const flashcardSettingsDialog = ref(false)
 const flashcardSettingsForm = ref()
 const flashcardSettingsSaving = ref(false)
@@ -822,6 +826,20 @@ async function ensureIntervalFlashcardSource() {
   }
 }
 
+async function openFlashcardContext() {
+  const item = session.value
+  if (!item || isTemplatePreview.value || syncing.value || openingFlashcardContext.value) return
+  openingFlashcardContext.value = true
+  try {
+    if (item.status === 'running') await pause()
+    if (session.value?.id === item.id && !finished.value) flashcardContextSheet.value = true
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : 'Could not pause this interval.'
+  } finally {
+    openingFlashcardContext.value = false
+  }
+}
+
 async function pauseForFlashcardModal() {
   resumeAfterFlashcardModal = session.value?.status === 'running'
   if (resumeAfterFlashcardModal) await pause()
@@ -898,6 +916,29 @@ async function requestFlashcardRemoval() {
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Could not open this flashcard.'
     await finishFlashcardModal()
+  }
+}
+
+function requestFlashcardEjection() {
+  if (!flashcardPhase.value) return
+  flashcardEjectDialog.value = true
+}
+
+async function ejectIntervalFlashcard() {
+  const review = session.value?.flashcardReview
+  const cardId = flashcardPhase.value?.card.id
+  if (!review || !cardId || flashcardEjecting.value) return
+  flashcardEjecting.value = true
+  try {
+    await updateFlashcardSnapshot({
+      ...review,
+      cards: review.cards.filter(card => card.id !== cardId),
+    })
+    flashcardEjectDialog.value = false
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : 'Could not eject this flashcard.'
+  } finally {
+    flashcardEjecting.value = false
   }
 }
 
@@ -988,11 +1029,8 @@ async function saveFlashcardSettings() {
 }
 
 function handleFlashcardContextAction(action: FlashcardContextAction) {
-  if (action === 'previous') void previous()
-  else if (action === 'next') void skip()
-  else if (action === 'toggle-pause') {
-    void (session.value?.status === 'paused' ? resume() : pause())
-  } else if (action === 'add' || action === 'edit') void openFlashcardEditor(action)
+  if (action === 'add' || action === 'edit') void openFlashcardEditor(action)
+  else if (action === 'eject') requestFlashcardEjection()
   else if (action === 'remove') void requestFlashcardRemoval()
   else if (action === 'settings') void openFlashcardSettings()
 }
@@ -1196,8 +1234,8 @@ async function runAgain(repetitions?: number) {
                 type="button"
                 class="interval-review-card"
                 :aria-label="`${session.flashcardReview.name}, ${flashcardPhase.side}, card ${flashcardPhase.cardIndex + 1} of ${session.flashcardReview.cards.length}`"
-                :disabled="isTemplatePreview || syncing"
-                @click="flashcardContextSheet = true"
+                :disabled="isTemplatePreview || syncing || openingFlashcardContext"
+                @click="openFlashcardContext"
               >
                 <div class="interval-review-card__content">
                   <div class="interval-review-card__heading">
@@ -1319,12 +1357,10 @@ async function runAgain(repetitions?: number) {
 
     <FlashcardContextActions
       v-model="flashcardContextSheet"
-      :paused="session?.status === 'paused'"
       :busy="syncing || starting"
-      :can-previous="!isTemplatePreview && Boolean(current?.index)"
-      :can-next="!isTemplatePreview && !currentConfirmation"
       :can-manage-card="!isTemplatePreview && canManageIntervalCards && Boolean(flashcardPhase)"
       :can-add-card="!isTemplatePreview && canManageIntervalCards"
+      :can-eject-card="!isTemplatePreview && Boolean(flashcardPhase)"
       @action="handleFlashcardContextAction"
     />
 
@@ -1386,6 +1422,17 @@ async function runAgain(repetitions?: number) {
         </v-card-actions>
       </v-card>
     </v-dialog>
+
+    <ConfirmDialog
+      v-model="flashcardEjectDialog"
+      title="Eject this flashcard?"
+      message="The card will leave this interval only. It will remain available in the Review set and future sessions."
+      confirm-text="Eject card"
+      confirm-color="warning"
+      icon="mdi-eject-outline"
+      :loading="flashcardEjecting"
+      @confirm="ejectIntervalFlashcard"
+    />
 
     <ConfirmDialog
       :model-value="flashcardDeleteDialog"

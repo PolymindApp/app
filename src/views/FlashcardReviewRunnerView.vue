@@ -4,7 +4,7 @@ import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import AppForm from '@/components/AppForm.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import FlashcardCardDialog from '@/components/FlashcardCardDialog.vue'
-import FlashcardContextActions, { type FlashcardContextAction } from '@/components/FlashcardContextActions.vue'
+import FlashcardContextActions from '@/components/FlashcardContextActions.vue'
 import FlashcardReviewSettingsFields from '@/components/FlashcardReviewSettingsFields.vue'
 import {
   backgroundFlashcardReviewState,
@@ -33,6 +33,7 @@ import { useFlashcardStore } from '@/stores/flashcards'
 import type {
   BackgroundFlashcardReviewState,
   Flashcard,
+  FlashcardContextAction,
   FlashcardReviewAction,
   FlashcardReviewSession,
   FlashcardReviewSettings,
@@ -52,6 +53,7 @@ const cardMenuOpen = ref(false)
 const cardEditorDialog = ref(false)
 const cardEditorCard = ref<Flashcard>()
 const deleteCardDialog = ref(false)
+const ejectCardDialog = ref(false)
 const deleteCardId = ref('')
 const deletingCard = ref(false)
 const sessionSettingsDialog = ref(false)
@@ -833,18 +835,25 @@ async function deleteCurrentCard() {
 }
 
 function handleSessionMenuAction(action: FlashcardContextAction) {
-  if (action === 'previous') void navigateLeft()
-  else if (action === 'next') void navigateRight()
-  else if (action === 'toggle-pause') {
-    void (session.value?.status === 'paused' ? resumeReview() : pauseReview(false))
-  }
   if (action === 'add' || action === 'edit') {
     void openCardEditor(action)
   } else if (action === 'settings') {
     void openSessionSettings()
   } else if (action === 'remove') {
     requestCurrentCardDeletion()
+  } else if (action === 'eject') {
+    ejectCardDialog.value = Boolean(currentCard.value)
   }
+}
+
+async function ejectCurrentCard() {
+  if (!session.value || busy.value) return
+  const restorePaused = session.value.status === 'paused'
+  if (restorePaused) await resumeReview()
+  const ejected = await performAction('eject')
+  if (!ejected) return
+  ejectCardDialog.value = false
+  if (restorePaused && session.value?.status === 'running') await pauseReview(false)
 }
 
 async function finishEarly() {
@@ -1154,36 +1163,23 @@ async function leaveRunner() {
           </div>
         </footer>
 
-        <div class="queue-actions">
-          <v-btn
-            variant="text"
-            prepend-icon="mdi-dots-horizontal"
-            :disabled="busy"
-            @click="cardMenuOpen = true"
-          >
-            Options
-          </v-btn>
-          <v-btn
-            variant="text"
-            color="warning"
-            prepend-icon="mdi-eject-outline"
-            :disabled="busy || session.status === 'paused'"
-            @click="performAction('eject')"
-          >
-            Eject
-          </v-btn>
-        </div>
+        <v-btn
+          variant="text"
+          prepend-icon="mdi-dots-horizontal"
+          :disabled="busy"
+          @click="cardMenuOpen = true"
+        >
+          Options
+        </v-btn>
       </section>
     </template>
 
     <FlashcardContextActions
       v-model="cardMenuOpen"
-      :paused="session?.status === 'paused'"
       :busy="busy"
-      :can-previous="canNavigateCards"
-      :can-next="canNavigateCards"
       :can-manage-card="canManageCurrentCard && Boolean(currentCard)"
       :can-add-card="canManageCurrentCard"
+      :can-eject-card="Boolean(currentCard)"
       @action="handleSessionMenuAction"
     />
 
@@ -1257,6 +1253,16 @@ async function leaveRunner() {
       @confirm="finishEarly"
     />
     <ConfirmDialog
+      v-model="ejectCardDialog"
+      title="Eject this flashcard?"
+      message="The card will leave this review only. It will remain available in the Review set and future sessions."
+      confirm-text="Eject card"
+      confirm-color="warning"
+      icon="mdi-eject-outline"
+      :loading="busy"
+      @confirm="ejectCurrentCard"
+    />
+    <ConfirmDialog
       v-model="deleteCardDialog"
       title="Delete this flashcard?"
       message="The current card will be removed from this session and from future reviews. Existing review history keeps its saved faces."
@@ -1308,8 +1314,6 @@ async function leaveRunner() {
 .review-navigation__control { display: flex; min-width: 0; align-items: center; }
 .grading-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
 .grading-actions > .v-btn:only-child { grid-column: 1 / -1; }
-.queue-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
-.queue-actions .v-btn,
 .grading-actions .v-btn { min-height: 3.25rem; }
 .session-settings-card { min-height: 100dvh; }
 .session-settings-header {

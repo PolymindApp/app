@@ -45,16 +45,27 @@ export const FLASHCARD_REVIEW_CARD_SIDE_OPTIONS: Array<{
 ]
 
 export const FLASHCARD_REVIEW_SESSION_MENU_ITEMS = [
-  { action: 'add', title: 'Add card', icon: 'mdi-card-plus-outline' },
-  { action: 'edit', title: 'Edit this card', icon: 'mdi-pencil-outline', requiresCard: true },
-  { action: 'settings', title: 'Session settings', icon: 'mdi-tune-variant' },
+  { action: 'add', title: 'Add card', icon: 'mdi-card-plus-outline', permission: 'add' },
+  { action: 'edit', title: 'Edit card', icon: 'mdi-pencil-outline', permission: 'manage' },
   {
-    action: 'delete',
-    title: 'Delete this card',
+    action: 'eject',
+    title: 'Eject card',
+    icon: 'mdi-eject-outline',
+    color: 'warning',
+    permission: 'eject',
+  },
+  {
+    action: 'remove',
+    title: 'Remove card',
     icon: 'mdi-delete-outline',
     color: 'error',
+    permission: 'manage',
+  },
+  {
+    action: 'settings',
+    title: 'Settings',
+    icon: 'mdi-tune-variant',
     divider: true,
-    requiresCard: true,
   },
 ] as const
 

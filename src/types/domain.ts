@@ -237,6 +237,7 @@ export type FlashcardReviewSort = 'difficult' | 'never_reviewed' | 'least_recent
 export type FlashcardReviewStatus = 'running' | 'paused' | 'completed' | 'ended'
 export type FlashcardReviewOutcome = 'success' | 'error' | 'passive' | 'ejected'
 export type FlashcardReviewAction = 'success' | 'error' | 'view' | 'previous' | 'next' | 'push' | 'eject' | 'pause' | 'resume' | 'end'
+export type FlashcardContextAction = 'add' | 'edit' | 'eject' | 'remove' | 'settings'
 export type FlashcardBulkAction = 'assign_images' | 'add_tags' | 'set_tags' | 'remove_tags' | 'clear_tags' | 'delete'
 export type FlashcardBulkRecordAction = Exclude<FlashcardBulkAction, 'assign_images'>
 export type FlashcardReviewSetAccessRole = 'owner' | 'readonly' | 'editor'

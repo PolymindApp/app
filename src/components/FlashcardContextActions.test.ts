@@ -54,14 +54,13 @@ describe('FlashcardContextActions', () => {
     expect(wrapper.emitted('action')).toEqual([['edit']])
   })
 
-  it('disables unavailable navigation and card management actions', () => {
+  it('shows only card context actions and disables unavailable ones', () => {
     const wrapper = mount(FlashcardContextActions, {
       props: {
         modelValue: true,
-        canPrevious: false,
-        canNext: false,
         canManageCard: false,
         canAddCard: false,
+        canEjectCard: false,
       },
       global: {
         stubs: {
@@ -73,9 +72,11 @@ describe('FlashcardContextActions', () => {
       },
     })
 
-    expect(wrapper.get('[aria-label="Previous"]').attributes('disabled')).toBeDefined()
-    expect(wrapper.get('[aria-label="Next"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).not.toContain('Previous')
+    expect(wrapper.text()).not.toContain('Pause')
+    expect(wrapper.text()).not.toContain('Next')
     expect(wrapper.findAll('button').find(button => button.text() === 'Add card')!.attributes('disabled')).toBeDefined()
+    expect(wrapper.findAll('button').find(button => button.text() === 'Eject card')!.attributes('disabled')).toBeDefined()
     expect(wrapper.findAll('button').find(button => button.text() === 'Remove card')!.attributes('disabled')).toBeDefined()
   })
 })
