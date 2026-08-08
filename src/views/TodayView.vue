@@ -683,7 +683,6 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
         <div class="section-heading task-section-heading">
           <h2>Tasks</h2>
           <div class="task-section-heading__controls">
-            <span class="text-caption muted">{{ required.filter(i => i.complete).length }}/{{ required.length }}</span>
             <v-btn
               size="small"
               :variant="showCompleted ? 'tonal' : 'text'"
@@ -740,7 +739,6 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
           <h2>Extra credit</h2>
           <span v-if="required.length" class="text-caption muted">Optional</span>
           <div v-else class="task-section-heading__controls">
-            <span class="text-caption muted">{{ optional.filter(i => i.complete).length }}/{{ optional.length }}</span>
             <v-btn
               size="small"
               :variant="showCompleted ? 'tonal' : 'text'"
