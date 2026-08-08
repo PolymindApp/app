@@ -33,17 +33,6 @@ async function removeTemplate() {
   }
 }
 
-async function move(template: IntervalTemplate, direction: -1 | 1) {
-  const index = store.templates.findIndex((item) => item.id === template.id)
-  const target = index + direction
-  if (index < 0 || target < 0 || target >= store.templates.length) return
-  const ordered = [...store.templates]
-  const [item] = ordered.splice(index, 1)
-  if (!item) return
-  ordered.splice(target, 0, item)
-  await saveTemplateOrder(ordered)
-}
-
 async function saveTemplateOrder(ordered: IntervalTemplate[]) {
   reordering.value = true
   try {
@@ -84,11 +73,6 @@ function openOverflowActions(template: IntervalTemplate) {
 async function duplicateTemplate(template: IntervalTemplate) {
   overflowActionsDrawer.value = false
   await store.duplicateTemplate(template)
-}
-
-async function moveTemplate(template: IntervalTemplate, direction: -1 | 1) {
-  overflowActionsDrawer.value = false
-  await move(template, direction)
 }
 
 function requestDelete(template: IntervalTemplate) {
@@ -163,20 +147,6 @@ function requestDelete(template: IntervalTemplate) {
     <template v-if="selectedTemplate">
       <v-list-item prepend-icon="mdi-pencil-outline" title="Edit" rounded="lg" @click="editTemplate(selectedTemplate)" />
       <v-list-item prepend-icon="mdi-content-copy" title="Duplicate" rounded="lg" @click="duplicateTemplate(selectedTemplate)" />
-      <v-list-item
-        prepend-icon="mdi-arrow-up"
-        title="Move up"
-        rounded="lg"
-        :disabled="store.templates.findIndex(item => item.id === selectedTemplate?.id) === 0"
-        @click="moveTemplate(selectedTemplate, -1)"
-      />
-      <v-list-item
-        prepend-icon="mdi-arrow-down"
-        title="Move down"
-        rounded="lg"
-        :disabled="store.templates.findIndex(item => item.id === selectedTemplate?.id) === store.templates.length - 1"
-        @click="moveTemplate(selectedTemplate, 1)"
-      />
       <v-list-item prepend-icon="mdi-delete-outline" title="Delete" rounded="lg" base-color="error" @click="requestDelete(selectedTemplate)" />
     </template>
   </ActionBottomSheet>

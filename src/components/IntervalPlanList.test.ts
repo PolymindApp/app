@@ -104,13 +104,13 @@ describe('IntervalPlanList actions', () => {
     expect(mocks.router.push).toHaveBeenCalledWith('/intervals/run/template/morning-hiit')
   })
 
-  it('shows Edit above Duplicate in the three-dot menu', async () => {
+  it('shows only Edit, Duplicate, and Delete in the three-dot menu', async () => {
     const wrapper = mountList()
 
     await wrapper.get('button[aria-label="Morning HIIT more actions"]').trigger('click')
 
     const actions = wrapper.findAll('section button').map(button => button.text())
-    expect(actions.slice(0, 2)).toEqual(['Edit', 'Duplicate'])
+    expect(actions).toEqual(['Edit', 'Duplicate', 'Delete'])
 
     await wrapper.findAll('section button')[0]!.trigger('click')
     expect(mocks.router.push).toHaveBeenCalledWith('/intervals/morning-hiit/edit')
