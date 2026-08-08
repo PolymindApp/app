@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, watch } from 'vue'
 import LabeledSlider from '@/components/LabeledSlider.vue'
 import {
   FLASHCARD_REVIEW_CARD_SIDE_OPTIONS,
@@ -34,7 +34,6 @@ const props = withDefaults(defineProps<{
 
 const CUSTOM_MAX_CARDS_THRESHOLD = 50
 const settings = computed(() => props.modelValue)
-const customMaxCardsActive = ref(settings.value.maxCards >= CUSTOM_MAX_CARDS_THRESHOLD)
 const cardLimit = computed(() => {
   const minimum = Math.min(
     MAX_FLASHCARD_SESSION_CARDS,
@@ -58,18 +57,14 @@ const cardLimit = computed(() => {
   }
 })
 const sliderMaxCards = computed({
-  get: () => customMaxCardsActive.value
-    ? cardLimit.value.sliderMaximum
-    : Math.min(settings.value.maxCards, cardLimit.value.sliderMaximum),
+  get: () => Math.min(Number(settings.value.maxCards), cardLimit.value.sliderMaximum),
   set: (value: number) => {
-    customMaxCardsActive.value = value === CUSTOM_MAX_CARDS_THRESHOLD
-      && cardLimit.value.maximum > CUSTOM_MAX_CARDS_THRESHOLD
-    settings.value.maxCards = value
+    settings.value.maxCards = Number(value)
   },
 })
 const customMaxCardsVisible = computed(() => (
   cardLimit.value.maximum > CUSTOM_MAX_CARDS_THRESHOLD
-  && customMaxCardsActive.value
+  && Number(settings.value.maxCards) >= CUSTOM_MAX_CARDS_THRESHOLD
 ))
 const selectedCardSides = computed(() => FLASHCARD_REVIEW_CARD_SIDE_OPTIONS
   .find(option => option.value === settings.value.cardSides)!)
@@ -82,8 +77,6 @@ const speechLanguages = computed(() => speechLanguageOptions([
 watch(cardLimit, ({ minimum, maximum }) => {
   if (settings.value.maxCards < minimum) settings.value.maxCards = minimum
   if (settings.value.maxCards > maximum) settings.value.maxCards = maximum
-  customMaxCardsActive.value = maximum > CUSTOM_MAX_CARDS_THRESHOLD
-    && settings.value.maxCards >= CUSTOM_MAX_CARDS_THRESHOLD
 }, { immediate: true })
 
 function updateMode(mode: 'manual' | 'passive') {
