@@ -229,7 +229,7 @@ async function loadVisibleWeekEntries() {
       class="mb-5"
     />
 
-    <v-card v-if="store.trackers.length" class="weekly-chart-card surface-card pa-5 mb-5">
+    <v-card v-if="store.trackers.length" class="weekly-chart-card surface-card pa-5 mb-3">
       <v-progress-linear
         v-if="weeklyChartLoading"
         indeterminate
@@ -246,6 +246,24 @@ async function loadVisibleWeekEntries() {
         :week-start="visibleWeekStart"
         :selected-date="selectedDate"
       />
+    </v-card>
+
+    <v-card
+      v-if="store.trackers.length"
+      class="insight-card surface-card pa-4 mb-5"
+      to="/tracking/insights/compare"
+      aria-label="Open tracking insights"
+    >
+      <div class="insight-card__content">
+        <div class="insight-card__icon"><v-icon icon="mdi-chart-box-outline" /></div>
+        <div class="min-width-0">
+          <strong>Explore your patterns</strong>
+          <p>Compare trackers over time and see how they relate.</p>
+        </div>
+        <span class="insight-card__chevron" aria-hidden="true">
+          <v-icon icon="mdi-chevron-right" />
+        </span>
+      </div>
     </v-card>
 
     <div v-if="store.loading && !store.loaded" class="d-flex justify-center py-12">
@@ -291,23 +309,6 @@ async function loadVisibleWeekEntries() {
       >
         New tracker
       </v-btn>
-
-      <v-card
-        class="insight-card surface-card pa-4 mt-6"
-        to="/tracking/insights/compare"
-        aria-label="Open tracking insights"
-      >
-        <div class="insight-card__content">
-          <div class="insight-card__icon"><v-icon icon="mdi-chart-box-outline" /></div>
-          <div class="min-width-0">
-            <strong>Explore your patterns</strong>
-            <p>Compare trackers over time and see how they relate.</p>
-          </div>
-          <span class="insight-card__chevron" aria-hidden="true">
-            <v-icon icon="mdi-chevron-right" />
-          </span>
-        </div>
-      </v-card>
 
       <section v-if="archivedTrackers.length">
         <div class="section-heading"><h2>Archived</h2><span class="muted text-caption">{{ archivedTrackers.length }}</span></div>
