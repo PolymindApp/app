@@ -2,7 +2,6 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { addDays, format, isValid, parseISO, startOfWeek } from 'date-fns'
 import { useRoute, useRouter } from 'vue-router'
-import { Ripple } from 'vuetify/directives'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import TrackingLogBottomSheet from '@/components/TrackingLogBottomSheet.vue'
 import TrackingTrackerCard from '@/components/TrackingTrackerCard.vue'
@@ -30,7 +29,6 @@ const error = ref('')
 const weeklyChartLoading = ref(false)
 const weeklyChartError = ref('')
 let weeklyLoadRequest = 0
-const vRipple = Ripple
 
 const dateKey = computed(() => format(selectedDate.value, 'yyyy-MM-dd'))
 const visibleWeekLabel = computed(() =>
@@ -234,6 +232,29 @@ async function loadVisibleWeekEntries() {
       class="mb-5"
     />
 
+    <v-card v-if="store.trackers.length" class="weekly-chart-card surface-card pa-5 mb-5">
+      <v-progress-linear
+        v-if="weeklyChartLoading"
+        indeterminate
+        color="secondary"
+        class="mb-4"
+        aria-label="Loading weekly tracking entries"
+      />
+      <v-alert v-if="weeklyChartError" type="error" variant="tonal" class="mb-4">
+        {{ weeklyChartError }}
+      </v-alert>
+      <TrackingWeeklyBarChart
+        :trackers="store.trackers"
+        :entries="store.entries"
+        :week-start="visibleWeekStart"
+        :selected-date="selectedDate"
+      />
+      <div class="weekly-hint mt-4">
+        <v-icon icon="mdi-calendar-week-outline" size="18" />
+        <span><strong>{{ visibleWeekLabel }}</strong> · This chart shows the full visible week, not only the selected day.</span>
+      </div>
+    </v-card>
+
     <div v-if="store.loading && !store.loaded" class="d-flex justify-center py-12">
       <v-progress-circular indeterminate color="secondary" />
     </div>
@@ -278,43 +299,20 @@ async function loadVisibleWeekEntries() {
         New tracker
       </v-btn>
 
-      <v-card class="insight-card surface-card pa-5 mt-6">
-        <router-link
-          v-ripple
-          class="insight-card__header"
-          to="/tracking/insights/compare"
-          aria-label="Open tracking insights"
-        >
+      <v-card
+        class="insight-card surface-card pa-4 mt-6"
+        to="/tracking/insights/compare"
+        aria-label="Open tracking insights"
+      >
+        <div class="insight-card__content">
           <div class="insight-card__icon"><v-icon icon="mdi-chart-box-outline" /></div>
           <div class="min-width-0">
             <strong>Explore your patterns</strong>
-            <p>See how every tracker changed across the week.</p>
+            <p>Compare trackers over time and see how they relate.</p>
           </div>
           <span class="insight-card__chevron" aria-hidden="true">
             <v-icon icon="mdi-chevron-right" />
           </span>
-        </router-link>
-
-        <v-progress-linear
-          v-if="weeklyChartLoading"
-          indeterminate
-          color="secondary"
-          class="mt-4"
-          aria-label="Loading weekly tracking entries"
-        />
-        <v-alert v-if="weeklyChartError" type="error" variant="tonal" class="mt-4">
-          {{ weeklyChartError }}
-        </v-alert>
-        <TrackingWeeklyBarChart
-          :trackers="store.trackers"
-          :entries="store.entries"
-          :week-start="visibleWeekStart"
-          :selected-date="selectedDate"
-          class="mt-4"
-        />
-        <div class="weekly-hint mt-4">
-          <v-icon icon="mdi-calendar-week-outline" size="18" />
-          <span><strong>{{ visibleWeekLabel }}</strong> · This chart shows the full visible week, not only the selected day.</span>
         </div>
       </v-card>
 
@@ -402,9 +400,9 @@ async function loadVisibleWeekEntries() {
 </template>
 
 <style scoped>
-.insight-card { background: linear-gradient(135deg, rgb(var(--v-theme-surface)), rgba(var(--v-theme-secondary), .08)); }
-.insight-card__header { position: relative; display: grid; grid-template-columns: 2.75rem minmax(0, 1fr) 2.75rem; align-items: center; gap: 1rem; overflow: hidden; border-radius: .75rem; color: inherit; outline: none; text-decoration: none; }
-.insight-card__header:focus-visible { outline: .125rem solid rgba(var(--v-theme-secondary), .72); outline-offset: .1875rem; }
+.insight-card { background: linear-gradient(135deg, rgb(var(--v-theme-surface)), rgba(var(--v-theme-secondary), .08)); color: inherit; text-decoration: none; }
+.insight-card:focus-visible { outline: .125rem solid rgba(var(--v-theme-secondary), .72); outline-offset: .1875rem; }
+.insight-card__content { display: grid; grid-template-columns: 2.75rem minmax(0, 1fr) 2.75rem; align-items: center; gap: 1rem; }
 .insight-card__icon { display: grid; width: 2.75rem; height: 2.75rem; place-items: center; border-radius: .875rem; background: rgb(var(--v-theme-secondary)); color: rgb(var(--v-theme-on-secondary)); }
 .insight-card__chevron { display: grid; width: 2.75rem; height: 2.75rem; place-items: center; }
 .insight-card p { margin-top: .2rem; color: rgb(var(--v-theme-on-surface) / .58); font-size: .75rem; }

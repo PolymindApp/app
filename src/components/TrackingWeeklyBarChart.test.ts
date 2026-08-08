@@ -106,6 +106,8 @@ describe('TrackingWeeklyBarChart', () => {
     expect(wrapper.find('.chart-legend').text()).toContain('Meditation')
     expect(wrapper.find('.chart-legend').text()).toContain('Mood')
     expect(wrapper.find('.chart-readout').text()).toContain('Monday, Jul 27')
+    expect(wrapper.findAll('.chart-legend, .chart-readout')[0]?.classes()).toContain('chart-legend')
+    expect(wrapper.findAll('.chart-legend, .chart-readout')[1]?.classes()).toContain('chart-readout')
     expect(wrapper.find('.chart-readout').text()).toContain('Meditation:')
     expect(wrapper.find('.chart-readout').text()).toContain('2 times')
     expect(wrapper.findComponent(TrackingRatingValue).props('value')).toBe(7)
