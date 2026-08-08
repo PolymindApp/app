@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { format, isValid, parseISO } from 'date-fns'
+import { format, isToday, isValid, parseISO } from 'date-fns'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import type { NavigationGuardNext } from 'vue-router'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
@@ -23,13 +23,16 @@ import {
   taskTimerElapsedMs,
 } from '@/services/taskTimer'
 import { useTaskStore } from '@/stores/tasks'
-import type { Task, TaskProgress } from '@/types/domain'
+import { useTrackingStore } from '@/stores/tracking'
+import type { Task, TaskProgress, TrackingTracker } from '@/types/domain'
 import type { TaskTimerState } from '@/services/taskTimer'
 
 const route = useRoute()
 const router = useRouter()
 const store = useTaskStore()
+const trackingStore = useTrackingStore()
 const task = ref<Task>()
+const tracker = ref<TrackingTracker>()
 const progress = ref<TaskProgress>()
 const timer = ref<TaskTimerState>()
 const logDate = ref(new Date())
@@ -52,19 +55,29 @@ const elapsedMs = computed(() => timer.value
 const elapsedLabel = computed(() => formatTaskTimer(elapsedMs.value))
 const elapsedHours = computed(() => elapsedMs.value / 3_600_000)
 const running = computed(() => timer.value?.status === 'running')
-const target = computed(() => task.value?.targetValue || 0)
-const projectedValue = computed(() => (progress.value?.value || 0) + elapsedHours.value)
-const projectedPercent = computed(() => progressPercent(
-  projectedValue.value,
-  target.value,
-  task.value?.targetOperator,
-))
+const timerStorageId = computed(() => tracker.value
+  ? `${task.value?.id || ''}:tracker:${tracker.value.id}`
+  : task.value?.id || '')
+const timerTitle = computed(() => tracker.value?.name || task.value?.name || 'Duration')
+const previouslyLoggedHours = computed(() => tracker.value
+  ? trackingStore.entries
+    .filter(entry => entry.tracker === tracker.value?.id && entry.localDate === toDateKey(logDate.value))
+    .reduce((total, entry) => total + entry.value, 0) / 3600
+  : progress.value?.value || 0)
+const target = computed(() => tracker.value ? 0 : task.value?.targetValue || 0)
+const projectedValue = computed(() => previouslyLoggedHours.value + elapsedHours.value)
+const projectedPercent = computed(() => target.value
+  ? progressPercent(projectedValue.value, target.value, task.value?.targetOperator)
+  : 0)
 const dateLabel = computed(() => format(logDate.value, 'EEEE, MMMM d'))
 const logMessage = computed(() =>
-  `${formatTaskTimer(elapsedMs.value)} will be added to ${task.value?.name || 'this task'} for ${format(logDate.value, 'MMMM d')}.`,
+  `${formatTaskTimer(elapsedMs.value)} will be added to ${timerTitle.value} for ${format(logDate.value, 'MMMM d')}.`,
+)
+const discardMessage = computed(() =>
+  `The elapsed time will not be added to ${tracker.value?.name || 'the task'}.`,
 )
 const progressSummary = computed(() => {
-  const current = formatHours(progress.value?.value || 0)
+  const current = formatHours(previouslyLoggedHours.value)
   if (!target.value) return `${current} logged before this timer`
   return `${current} logged · ${formatHours(target.value)} goal`
 })
@@ -86,17 +99,30 @@ onMounted(async () => {
 
     if (!store.tasks.length) await store.load()
     const found = store.tasks.find((item) => item.id === String(route.params.id))
-    if (!found || found.type !== 'duration') {
-      error.value = 'That duration task could not be found.'
+    const requestedTrackerId = typeof route.query.tracker === 'string' ? route.query.tracker : ''
+    if (!found || !['duration', 'tracking'].includes(found.type)) {
+      error.value = 'That duration task or tracker could not be found.'
+      return
+    }
+    if (found.type === 'tracking') {
+      if (!trackingStore.loaded) await trackingStore.load()
+      const attachedTracker = trackingStore.trackers.find(item => item.id === requestedTrackerId)
+      if (!found.trackingTrackers?.includes(requestedTrackerId) || attachedTracker?.kind !== 'duration') {
+        error.value = 'That duration tracker is not attached to this task.'
+        return
+      }
+      tracker.value = attachedTracker
+    } else if (requestedTrackerId) {
+      error.value = 'That duration tracker is not attached to this task.'
       return
     }
 
     task.value = found
     progress.value = store.makeProgress(found, logDate.value)
     const dateKey = toDateKey(logDate.value)
-    timer.value = loadTaskTimer(found.id, dateKey)
-      || createTaskTimer(found.id, dateKey)
-    if (progress.value.value >= target.value && target.value > 0 && !timer.value.completionCuePlayed) {
+    timer.value = loadTaskTimer(timerStorageId.value, dateKey)
+      || createTaskTimer(timerStorageId.value, dateKey)
+    if (previouslyLoggedHours.value >= target.value && target.value > 0 && !timer.value.completionCuePlayed) {
       timer.value = { ...timer.value, completionCuePlayed: true }
       saveTaskTimer(timer.value)
     }
@@ -155,7 +181,7 @@ function checkTaskTimerCompleteCue() {
     !completionCueReady
     || !timer.value
     || !shouldPlayTaskTimerCompleteCue(
-      progress.value?.value || 0,
+      previouslyLoggedHours.value,
       projectedValue.value,
       target.value,
       timer.value.completionCuePlayed,
@@ -231,8 +257,21 @@ async function logTime() {
     timer.value = stopped
     nowMs.value = now.getTime()
     store.selectedDate = logDate.value
-    await store.addEntry(progress.value, seconds / 3600, 'duration', 'Logged with timer')
-    clearTaskTimer(task.value.id, toDateKey(logDate.value))
+    if (tracker.value) {
+      const occurredAt = isToday(logDate.value) ? new Date() : new Date(logDate.value)
+      if (!isToday(logDate.value)) occurredAt.setHours(12, 0, 0, 0)
+      await trackingStore.addEntry({
+        tracker: tracker.value.id,
+        occurredAt: occurredAt.toISOString(),
+        localDate: toDateKey(logDate.value),
+        timezoneOffset: occurredAt.getTimezoneOffset(),
+        value: seconds,
+        note: 'Logged with timer',
+      })
+    } else {
+      await store.addEntry(progress.value, seconds / 3600, 'duration', 'Logged with timer')
+    }
+    clearTaskTimer(timerStorageId.value, toDateKey(logDate.value))
     logDialog.value = false
     allowLeave = true
     await releaseWakeLock()
@@ -246,7 +285,7 @@ async function logTime() {
 }
 
 function discardAndLeave() {
-  if (task.value) clearTaskTimer(task.value.id, toDateKey(logDate.value))
+  if (timerStorageId.value) clearTaskTimer(timerStorageId.value, toDateKey(logDate.value))
   allowLeave = true
   discardDialog.value = false
   void releaseWakeLock()
@@ -272,8 +311,8 @@ function leave() {
       <header class="task-timer-header">
         <v-btn icon="mdi-chevron-down" variant="text" aria-label="Leave timer" @click="leave" />
         <div class="text-center min-width-0">
-          <strong class="text-truncate d-block">{{ task.name }}</strong>
-          <span>{{ dateLabel }}</span>
+          <strong class="text-truncate d-block">{{ timerTitle }}</strong>
+          <span>{{ tracker ? `${task.name} · ${dateLabel}` : dateLabel }}</span>
         </div>
         <v-btn
           icon="mdi-stop-circle-outline"
@@ -288,7 +327,7 @@ function leave() {
       <div class="task-timer-stage">
         <section class="task-timer-main">
           <div class="task-timer-details">
-            <h1>{{ task.name }}</h1>
+            <h1>{{ timerTitle }}</h1>
             <p>{{ dateLabel }}</p>
             <p class="progress-copy">{{ progressSummary }}</p>
           </div>
@@ -394,7 +433,7 @@ function leave() {
     <ConfirmDialog
       v-model="discardDialog"
       title="Discard this timer?"
-      message="The elapsed time will not be added to the task."
+      :message="discardMessage"
       confirm-text="Discard timer"
       icon="mdi-timer-remove-outline"
       @confirm="discardAndLeave"

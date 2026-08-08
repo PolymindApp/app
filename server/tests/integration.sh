@@ -844,6 +844,13 @@ second_tracker_response="$(curl --silent --show-error --fail \
   "$api_url/collections/tracking_trackers/records")"
 second_tracker_id="$(json_field id <<<"$second_tracker_response")"
 
+duration_tracker_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"name":"Focus time","description":"Time spent in focused work","role":"factor","kind":"duration","category":"activity","unit":"minutes","scale_min":0,"scale_max":0,"favorable_direction":"neutral","daily_aggregation":"sum","active":true,"sort_order":2,"color":"#66D9C8","icon":"mdi-timer-outline","reminder_enabled":false,"reminder_time":"20:30","reminder_show_name":false}' \
+  "$api_url/collections/tracking_trackers/records")"
+duration_tracker_id="$(json_field id <<<"$duration_tracker_response")"
+
 tracking_task_payload="$(php -r '
   echo json_encode([
     "name" => "Log wellbeing", "description" => "Complete the daily check-in",
@@ -856,9 +863,9 @@ tracking_task_payload="$(php -r '
     "cycle_length" => 0, "program_repeat" => true, "program_strict" => false,
     "entry_notes_enabled" => false, "entry_note_suggestions_enabled" => false,
     "sort_order" => 9, "color" => "#FF9EAE", "interval_template" => "",
-    "flashcard_review_set" => "", "tracking_trackers" => [$argv[1]],
+    "flashcard_review_set" => "", "tracking_trackers" => [$argv[1], $argv[2]],
   ], JSON_THROW_ON_ERROR);
-' "$tracker_id")"
+' "$tracker_id" "$duration_tracker_id")"
 tracking_task_response="$(curl --silent --show-error --fail \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $alice_token" \
@@ -867,11 +874,11 @@ tracking_task_response="$(curl --silent --show-error --fail \
 tracking_task_id="$(json_field id <<<"$tracking_task_response")"
 php -r '
   $task = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
-  if (($task["type"] ?? "") !== "tracking" || ($task["tracking_trackers"] ?? []) !== [$argv[1]]) {
+  if (($task["type"] ?? "") !== "tracking" || ($task["tracking_trackers"] ?? []) !== [$argv[1], $argv[2]]) {
       fwrite(STDERR, "A tracking task did not retain its selected trackers.\n");
       exit(1);
   }
-' "$tracker_id" <<<"$tracking_task_response"
+' "$tracker_id" "$duration_tracker_id" <<<"$tracking_task_response"
 
 empty_tracking_task_payload="$(php -r '
   $task = json_decode($argv[1], true, 512, JSON_THROW_ON_ERROR);

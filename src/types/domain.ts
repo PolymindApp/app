@@ -482,6 +482,11 @@ export interface TrackingTracker {
   reminderShowName: boolean
 }
 
+export interface TrackingTaskTracker extends Pick<TrackingTracker, 'id' | 'name' | 'kind' | 'icon' | 'color'> {
+  logged: boolean
+  loggedValue?: string
+}
+
 export interface TrackingTrackerDraft extends Omit<TrackingTracker, 'id'> {
   id?: string
 }

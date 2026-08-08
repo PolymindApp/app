@@ -15,6 +15,7 @@ import { formatIntervalDuration, intervalDuration } from '@/services/intervals'
 import { taskCompletionMarkerColor, toDateKey } from '@/services/schedule'
 import { TASK_CARD_ACTION_ITEMS, taskCanLogAmounts, taskIntervalCanStart } from '@/services/taskCardActions'
 import type { TaskCardActionId } from '@/services/taskCardActions'
+import { formatTrackingValue } from '@/services/tracking'
 import {
   TASK_ENTRY_NOTE_MAX_LENGTH,
   sanitizeTaskEntryNote,
@@ -268,13 +269,18 @@ function trackingMeta(progress: TaskProgress) {
   return trackerIds.flatMap((trackerId) => {
     const tracker = trackingStore.trackers.find(item => item.id === trackerId)
     if (!tracker) return []
+    const entries = trackingStore.entries.filter(entry =>
+      entry.tracker === tracker.id && entry.localDate === progress.scheduledDate)
     return [{
       id: tracker.id,
       name: tracker.name,
       icon: tracker.icon,
       color: tracker.color,
-      logged: trackingStore.entries.some(entry =>
-        entry.tracker === tracker.id && entry.localDate === progress.scheduledDate),
+      kind: tracker.kind,
+      logged: entries.length > 0,
+      loggedValue: tracker.kind === 'duration' && entries.length
+        ? formatTrackingValue(tracker, entries.reduce((total, entry) => total + entry.value, 0))
+        : undefined,
     }]
   })
 }
@@ -286,6 +292,16 @@ function openTrackingLogger(progress: TaskProgress, trackerId: string) {
   trackingSheetDate.value = progress.scheduledDate
   trackingSheetContext.value = progress.programStep?.name || progress.task.name
   trackingSheetOpen.value = true
+}
+
+function openTrackingTimeLogger(progress: TaskProgress, trackerId: string) {
+  const tracker = trackingStore.trackers.find(item => item.id === trackerId)
+  if (tracker?.kind !== 'duration' || !progress.task.trackingTrackers?.includes(trackerId)) return
+  void router.push({
+    name: 'task-timer',
+    params: { id: progress.task.id },
+    query: { date: progress.scheduledDate, tracker: trackerId },
+  })
 }
 
 function progressIsBusy(progress: TaskProgress) {
@@ -697,6 +713,7 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
               @start-interval="startIntervalTask"
               @start-review="startFlashcardTask"
               @log-tracking="openTrackingLogger"
+              @log-tracking-time="openTrackingTimeLogger"
               @write-journal="openJournalTask"
               @actions="openTaskActions"
             />
@@ -750,6 +767,7 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
               @start-interval="startIntervalTask"
               @start-review="startFlashcardTask"
               @log-tracking="openTrackingLogger"
+              @log-tracking-time="openTrackingTimeLogger"
               @write-journal="openJournalTask"
               @actions="openTaskActions"
             />

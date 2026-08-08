@@ -3,7 +3,7 @@ import { computed, nextTick, ref, useId, watch } from 'vue'
 import { goalState } from '@/services/schedule'
 import { taskCanLogAmounts } from '@/services/taskCardActions'
 import { TASK_TYPE_PRESENTATION } from '@/services/taskTypes'
-import type { TaskProgress } from '@/types/domain'
+import type { TaskProgress, TrackingTaskTracker } from '@/types/domain'
 
 const TASK_CARD_EXPANSION_STORAGE_PREFIX = 'mom-task-card-expanded'
 
@@ -44,7 +44,7 @@ const props = defineProps<{
   reviewSet?: { name: string; cardCount: number; mode: 'manual' | 'passive' }
   canStartReview?: boolean
   reviewActive?: boolean
-  trackers?: Array<{ id: string; name: string; icon: string; color: string; logged: boolean }>
+  trackers?: TrackingTaskTracker[]
   canLogTracking?: boolean
   canWriteJournal?: boolean
   syncing?: boolean
@@ -59,6 +59,7 @@ const emit = defineEmits<{
   startInterval: [progress: TaskProgress]
   startReview: [progress: TaskProgress]
   logTracking: [progress: TaskProgress, trackerId: string]
+  logTrackingTime: [progress: TaskProgress, trackerId: string]
   writeJournal: [progress: TaskProgress]
   actions: [progress: TaskProgress]
 }>()
@@ -362,32 +363,59 @@ watch(() => props.valuePulse, async (pulse, previousPulse) => {
             class="mt-4"
           />
           <v-list v-if="trackers?.length" class="tracking-task-trackers pa-0 mt-3" bg-color="transparent">
-            <v-list-item
-              v-for="tracker in trackers"
-              :key="tracker.id"
-              class="tracking-task-tracker"
-              :title="tracker.name"
-              :subtitle="tracker.logged ? 'Logged for this date' : 'Not logged for this date'"
-              :disabled="!canLogTracking || busy || progress.locked"
-              rounded="lg"
-              @click="emit('logTracking', progress, tracker.id)"
-            >
-              <template #prepend>
-                <span class="tracking-task-tracker__icon" :style="{ background: tracker.color }">
-                  <v-icon :icon="tracker.icon" size="18" />
-                </span>
-              </template>
-              <template #append>
-                <v-icon
-                  v-if="tracker.logged"
-                  icon="mdi-check-circle"
-                  color="success"
-                  size="18"
-                  class="mr-2"
-                  aria-label="Logged"
-                />
-              </template>
-            </v-list-item>
+            <template v-for="tracker in trackers" :key="tracker.id">
+              <v-list-item
+                class="tracking-task-tracker"
+                :title="tracker.name"
+                :subtitle="tracker.loggedValue
+                  ? `${tracker.loggedValue} logged for this date`
+                  : tracker.logged ? 'Logged for this date' : 'Not logged for this date'"
+                :disabled="!canLogTracking || busy || progress.locked"
+                rounded="lg"
+                @click="tracker.kind !== 'duration' && emit('logTracking', progress, tracker.id)"
+              >
+                <template #prepend>
+                  <span class="tracking-task-tracker__icon" :style="{ background: tracker.color }">
+                    <v-icon :icon="tracker.icon" size="18" />
+                  </span>
+                </template>
+                <template #append>
+                  <v-icon
+                    v-if="tracker.logged"
+                    icon="mdi-check-circle"
+                    color="success"
+                    size="18"
+                    class="mr-2"
+                    aria-label="Logged"
+                  />
+                </template>
+              </v-list-item>
+              <div v-if="tracker.kind === 'duration'" class="task-action-stack tracking-duration-actions">
+                <v-btn
+                  block
+                  size="small"
+                  variant="tonal"
+                  prepend-icon="mdi-plus-minus-variant"
+                  :disabled="!canLogTracking || busy || progress.locked"
+                  @touchstart.stop
+                  @click.stop="emit('logTracking', progress, tracker.id)"
+                >
+                  Log amount
+                </v-btn>
+                <v-btn
+                  block
+                  size="small"
+                  variant="tonal"
+                  color="secondary"
+                  prepend-icon="mdi-timer-outline"
+                  :disabled="!canLogTracking || busy || progress.locked"
+                  @touchstart.stop
+                  @click.stop="emit('logTrackingTime', progress, tracker.id)"
+                >
+                  Log time
+                </v-btn>
+              </div>
+            </template>
           </v-list>
           <div v-if="!canLogTracking && !displayedComplete && progress.status === 'pending'" class="status-banner mt-3 muted">
             <v-icon icon="mdi-calendar-today-outline" size="16" /> Select today or an earlier date to log tracking
@@ -558,6 +586,11 @@ watch(() => props.valuePulse, async (pulse, previousPulse) => {
   place-items: center;
   border-radius: .65rem;
   color: #17200f;
+}
+
+.tracking-duration-actions {
+  margin-top: -.2rem;
+  padding: .2rem .4rem .5rem;
 }
 
 .check-control {

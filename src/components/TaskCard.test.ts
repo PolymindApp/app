@@ -96,8 +96,8 @@ describe('TaskCard amount actions', () => {
         progress: trackingProgress,
         canLogTracking: true,
         trackers: [
-          { id: 'mood', name: 'Mood', icon: 'mdi-emoticon-outline', color: '#D4A5FF', logged: true },
-          { id: 'energy', name: 'Energy', icon: 'mdi-lightning-bolt-outline', color: '#FFB86B', logged: false },
+          { id: 'mood', name: 'Mood', kind: 'rating', icon: 'mdi-emoticon-outline', color: '#D4A5FF', logged: true },
+          { id: 'energy', name: 'Energy', kind: 'rating', icon: 'mdi-lightning-bolt-outline', color: '#FFB86B', logged: false },
         ],
       },
       global: {
@@ -126,6 +126,60 @@ describe('TaskCard amount actions', () => {
     expect(trackerItems).toHaveLength(2)
     await trackerItems[1]!.trigger('click')
     expect(wrapper.emitted('logTracking')).toEqual([[trackingProgress, 'energy']])
+  })
+
+  it('offers amount and timer actions for a duration tracker', async () => {
+    const trackingProgress: TaskProgress = {
+      ...progress,
+      task: {
+        ...progress.task,
+        id: 'mindfulness-time',
+        name: 'Mindfulness time',
+        type: 'tracking',
+        trackingTrackers: ['meditation-duration'],
+      },
+      value: 0,
+      percent: 0,
+    }
+    const wrapper = mount(TaskCard, {
+      props: {
+        progress: trackingProgress,
+        canLogTracking: true,
+        trackers: [{
+          id: 'meditation-duration',
+          name: 'Meditation duration',
+          kind: 'duration',
+          icon: 'mdi-timer-outline',
+          color: '#66D9C8',
+          logged: true,
+          loggedValue: '30m',
+        }],
+      },
+      global: {
+        stubs: {
+          VBtn: VBtnStub,
+          VCard: { template: '<div><slot /></div>' },
+          VList: { template: '<div><slot /></div>' },
+          VListItem: VListItemStub,
+          VExpandTransition: { template: '<div><slot /></div>' },
+          ExpandTransition: { template: '<div><slot /></div>' },
+          VIcon: true,
+          VProgressCircular: { template: '<div><slot /></div>' },
+          VProgressLinear: true,
+        },
+      },
+    })
+    const logAmount = wrapper.findAll('button').find(button => button.text() === 'Log amount')
+    const logTime = wrapper.findAll('button').find(button => button.text() === 'Log time')
+
+    expect(logAmount).toBeDefined()
+    expect(logTime).toBeDefined()
+    expect(wrapper.text()).toContain('30m logged for this date')
+    await logAmount!.trigger('click')
+    await logTime!.trigger('click')
+
+    expect(wrapper.emitted('logTracking')).toEqual([[trackingProgress, 'meditation-duration']])
+    expect(wrapper.emitted('logTrackingTime')).toEqual([[trackingProgress, 'meditation-duration']])
   })
 
   it('offers one Log amount action without quick-add buttons', async () => {
