@@ -15,7 +15,7 @@ const props = defineProps<{
 
 const selectedDayIndex = ref<number>()
 const { chartRoot, chartWidth } = useResponsiveChartWidth()
-const chartHeight = 250
+const chartHeight = 125
 const plotLeft = 16
 const plotRight = 16
 const plotTop = 14

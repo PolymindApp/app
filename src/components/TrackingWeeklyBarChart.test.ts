@@ -66,7 +66,7 @@ describe('TrackingWeeklyBarChart', () => {
     resize()
     await wrapper.vm.$nextTick()
 
-    expect(wrapper.find('svg').attributes('viewBox')).toBe('0 0 320 250')
+    expect(wrapper.find('svg').attributes('viewBox')).toBe('0 0 320 125')
 
     wrapper.unmount()
     vi.unstubAllGlobals()
