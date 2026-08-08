@@ -3,6 +3,11 @@ import type { TaskProgress } from '@/types/domain'
 
 export const TASK_CARD_ACTION_ITEMS = [
   {
+    id: 'edit-task',
+    title: 'Edit',
+    icon: 'mdi-pencil-outline',
+  },
+  {
     id: 'view-log-history',
     title: 'View log history',
     icon: 'mdi-history',

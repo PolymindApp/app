@@ -387,6 +387,7 @@ describe('TaskCard amount actions', () => {
     })
 
     const statusIcon = wrapper.get('div.check-control')
+    expect(wrapper.get('[aria-label="More actions for Medication"]').exists()).toBe(true)
     expect(statusIcon.attributes('aria-hidden')).toBe('true')
     await statusIcon.trigger('click')
     await wrapper.get('.task-card').trigger('click')

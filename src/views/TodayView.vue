@@ -376,6 +376,13 @@ async function openTaskLogHistory() {
 }
 
 function runTaskCardAction(action: TaskCardActionId) {
+  if (action === 'edit-task') {
+    const taskId = taskActionProgress.value?.task.id
+    if (!taskId) return
+    taskSheet.value = false
+    void router.push({ name: 'task-edit', params: { id: taskId } })
+    return
+  }
   if (action === 'view-log-history') void openTaskLogHistory()
 }
 
@@ -657,6 +664,9 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
               density="compact"
               hide-details="auto"
             />
+            <v-btn size="small" variant="text" prepend-icon="mdi-plus" to="/tasks/new">
+              New
+            </v-btn>
           </div>
         </div>
         <TransitionGroup name="task-list" tag="div" class="task-stack">
@@ -694,8 +704,24 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
         </TransitionGroup>
       </section>
 
-      <section v-if="visibleOptional.length">
-        <div class="section-heading"><h2>Extra credit</h2><span class="text-caption muted">Optional</span></div>
+      <section v-if="optional.length">
+        <div class="section-heading task-section-heading">
+          <h2>Extra credit</h2>
+          <span v-if="required.length" class="text-caption muted">Optional</span>
+          <div v-else class="task-section-heading__controls">
+            <span class="text-caption muted">{{ optional.filter(i => i.complete).length }}/{{ optional.length }}</span>
+            <v-checkbox-btn
+              v-model="showCompleted"
+              label="Show completed"
+              color="secondary"
+              density="compact"
+              hide-details="auto"
+            />
+            <v-btn size="small" variant="text" prepend-icon="mdi-plus" to="/tasks/new">
+              New
+            </v-btn>
+          </div>
+        </div>
         <TransitionGroup name="task-list" tag="div" class="task-stack">
           <div
             v-for="item in visibleOptional"
@@ -738,18 +764,6 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
       <p class="text-body-2 muted mt-2 mb-5">Build your first routine and it will show up here.</p>
       <v-btn color="secondary" append-icon="mdi-plus" to="/tasks/new">Create a task</v-btn>
     </v-card>
-
-    <v-btn
-      class="manage-tasks-button mt-8"
-      block
-      size="large"
-      variant="outlined"
-      color="secondary"
-      prepend-icon="mdi-format-list-checks"
-      to="/tasks/manage"
-    >
-      Manage tasks
-    </v-btn>
 
     <v-dialog
       v-model="exactDialog"
@@ -1006,7 +1020,6 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
 }
 .task-list-leave-to { margin-bottom: 0; grid-template-rows: 0fr; opacity: 0; }
 .task-list-move { transition: transform .22s cubic-bezier(.22, 1, .36, 1); }
-.manage-tasks-button { min-height: 52px; }
 .empty-icon { display: grid; width: 64px; height: 64px; place-items: center; border-radius: 20px; background: #c7f464; color: #17200f; }
 .amount-keypad { display: grid; gap: 1rem; }
 .amount-keypad__display { display: flex; min-height: 72px; align-items: center; justify-content: flex-end; padding: .75rem 1rem; border: 1px solid rgb(var(--v-theme-on-surface) / .16); border-radius: 16px; background: rgb(var(--v-theme-surface-variant)); font-size: 2rem; font-weight: 900; line-height: 1; }
