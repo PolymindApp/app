@@ -1911,6 +1911,38 @@ editor_card_owner_and_tags="$(sqlite3 "$test_db" \
   exit 1
 }
 
+editor_import_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $bob_token" \
+  --data '{"rows":[{"front":"Imported shared one","back":"First","note":"","tags":["ignored"]},{"front":"Imported shared two","back":"Second","note":"Note","tags":[]}]}' \
+  "$api_url/flashcard-review-sets/$manual_review_set_id/cards/import")"
+editor_import_ids="$(php -r '
+  $data = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+  echo implode(",", array_column($data["cards"], "id"));
+' <<<"$editor_import_response")"
+IFS=',' read -r editor_import_first_id editor_import_second_id <<<"$editor_import_ids"
+editor_import_summary="$(sqlite3 "$test_db" \
+  "SELECT COUNT(*) || ':' || MIN(owner) || ':' || MIN(json_array_length(tags)) || ':' || MIN(json_extract(tags, '\$[0]')) FROM flashcards WHERE id IN ('$editor_import_first_id', '$editor_import_second_id');")"
+[[ "$editor_import_summary" == "2:$alice_id:1:$flashcard_tag_id" ]] || {
+  echo "A Review set editor import did not use the owner and locked set tags." >&2
+  exit 1
+}
+
+editor_bulk_delete_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $bob_token" \
+  --data "{\"action\":\"delete\",\"card_ids\":[\"$editor_import_first_id\",\"$editor_import_second_id\"]}" \
+  "$api_url/flashcard-review-sets/$manual_review_set_id/cards/bulk")"
+editor_bulk_delete_count="$(php -r '
+  $data = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+  echo count($data["deleted_ids"] ?? []);
+' <<<"$editor_bulk_delete_response")"
+[[ "$editor_bulk_delete_count" == 2 \
+  && "$(sqlite3 "$test_db" "SELECT COUNT(*) FROM flashcards WHERE id IN ('$editor_import_first_id', '$editor_import_second_id');")" == 0 ]] || {
+  echo "A Review set editor could not bulk delete matching cards." >&2
+  exit 1
+}
+
 editor_tag_change_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
   -X PATCH -H "Content-Type: application/json" \
   -H "Authorization: Bearer $bob_token" \

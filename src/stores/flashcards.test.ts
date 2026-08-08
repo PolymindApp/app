@@ -9,7 +9,10 @@ const apiMocks = vi.hoisted(() => ({
   copyReviewSet: vi.fn(),
   getReviewSetCards: vi.fn(),
   importCards: vi.fn(),
+  importReviewSetCards: vi.fn(),
+  bulkUpdateReviewSetCards: vi.fn(),
   setCardLibraryImage: vi.fn(),
+  setReviewSetCardLibraryImage: vi.fn(),
   startReview: vi.fn(),
   updateCardImage: vi.fn(),
 }))
@@ -26,7 +29,10 @@ vi.mock('@/lib/api', () => ({
     copyFlashcardReviewSet: apiMocks.copyReviewSet,
     getFlashcardReviewSetCards: apiMocks.getReviewSetCards,
     importFlashcards: apiMocks.importCards,
+    importFlashcardReviewSetCards: apiMocks.importReviewSetCards,
+    bulkUpdateFlashcardReviewSetCards: apiMocks.bulkUpdateReviewSetCards,
     setFlashcardLibraryImage: apiMocks.setCardLibraryImage,
+    setFlashcardReviewSetCardLibraryImage: apiMocks.setReviewSetCardLibraryImage,
     startFlashcardReviewSession: apiMocks.startReview,
     updateFlashcardImage: apiMocks.updateCardImage,
     collection: (name: string) => {
@@ -50,7 +56,10 @@ describe('flashcard store', () => {
     apiMocks.copyReviewSet.mockReset()
     apiMocks.getReviewSetCards.mockReset()
     apiMocks.importCards.mockReset()
+    apiMocks.importReviewSetCards.mockReset()
+    apiMocks.bulkUpdateReviewSetCards.mockReset()
     apiMocks.setCardLibraryImage.mockReset()
+    apiMocks.setReviewSetCardLibraryImage.mockReset()
     apiMocks.startReview.mockReset()
     apiMocks.updateCardImage.mockReset()
   })
@@ -163,6 +172,41 @@ describe('flashcard store', () => {
     expect(imported).toHaveLength(1)
     expect(store.cards[0]).toEqual(expect.objectContaining({ id: 'card-imported', front: 'chisel' }))
     expect(store.tags.map(tag => tag.name)).toEqual(['Existing', 'Woodworking'])
+  })
+
+  it('imports, updates images, and bulk deletes cards within a Review set cache', async () => {
+    const store = useFlashcardStore()
+    const sharedRecord = {
+      id: 'shared-1', front: 'Shared front', back: 'Shared back', note: '', tags: ['tag-set'],
+      tag_details: [{ id: 'tag-set', name: 'Set tag' }], image_url: '', image_file: '',
+      created_at: '2026-08-08T10:00:00Z', updated_at: '2026-08-08T10:00:00Z',
+      last_reviewed_at: '', passive_views: 0, success_count: 0, error_count: 0,
+    }
+    apiMocks.importReviewSetCards.mockResolvedValue({ cards: [sharedRecord], tags: [] })
+
+    await store.importReviewSetCards('set-1', [
+      { front: 'Shared front', back: 'Shared back', note: '', tags: ['ignored'] },
+    ])
+
+    expect(apiMocks.importReviewSetCards).toHaveBeenCalledWith('set-1', [
+      { front: 'Shared front', back: 'Shared back', note: '', tags: ['ignored'] },
+    ])
+    expect(store.reviewSetCards['set-1']?.[0]).toMatchObject({ id: 'shared-1' })
+
+    apiMocks.setReviewSetCardLibraryImage.mockResolvedValue({
+      ...sharedRecord,
+      image_file: 'd'.repeat(48) + '.jpg',
+      library_image_id: 91,
+      image_metadata: { alt: 'Shared image' },
+    })
+    await store.assignReviewSetLibraryImage('set-1', 'shared-1', 91)
+    expect(apiMocks.setReviewSetCardLibraryImage).toHaveBeenCalledWith('set-1', 'shared-1', 91)
+    expect(store.reviewSetCards['set-1']?.[0]?.libraryImage?.id).toBe(91)
+
+    apiMocks.bulkUpdateReviewSetCards.mockResolvedValue({ cards: [], deleted_ids: ['shared-1'] })
+    await store.bulkUpdateReviewSetCards('set-1', 'delete', ['shared-1', 'shared-1'])
+    expect(apiMocks.bulkUpdateReviewSetCards).toHaveBeenCalledWith('set-1', ['shared-1'])
+    expect(store.reviewSetCards['set-1']).toEqual([])
   })
 
   it('uploads a prepared square image after creating its flashcard', async () => {

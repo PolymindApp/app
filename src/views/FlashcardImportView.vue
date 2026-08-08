@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import AppForm from '@/components/AppForm.vue'
 import FormActionBar from '@/components/FormActionBar.vue'
 import { parseFlashcardCsv } from '@/services/flashcardCsv'
@@ -19,8 +19,13 @@ Your entire response must start with the header front,back,note,tags and end wit
 const CSV_EXAMPLE = `front,back,note,tags
 chisel,formón,Hand tool for carving wood,woodworking|tools
 wood grain,veta de la madera,,woodworking|materials`
+const REVIEW_SET_AI_PROMPT = AI_PROMPT.replace(
+  'Separate multiple tags with | inside the tags field. Every row must include the language-direction tag english-to-spanish; if the requested languages change, replace it with a lowercase source-language-to-target-language tag, such as french-to-german. Other tags are optional.',
+  'Leave the tags field empty on every row because the destination Review set applies its own tags.',
+)
 
 const router = useRouter()
+const route = useRoute()
 const store = useFlashcardStore()
 const form = ref()
 const csv = ref('')
@@ -28,20 +33,36 @@ const importing = ref(false)
 const error = ref('')
 const promptCopied = ref(false)
 const promptCopyError = ref('')
+const reviewSetId = computed(() => typeof route.query.reviewSetId === 'string' ? route.query.reviewSetId : '')
+const reviewSet = computed(() => store.reviewSets.find(item => item.id === reviewSetId.value))
+const isReviewSetImport = computed(() => Boolean(reviewSetId.value))
+const activeAiPrompt = computed(() => isReviewSetImport.value ? REVIEW_SET_AI_PROMPT : AI_PROMPT)
+const canManageReviewSet = computed(() => (
+  !isReviewSetImport.value
+  || Boolean(reviewSet.value && reviewSet.value.accessRole !== 'readonly')
+))
 let promptCopiedTimer: number | undefined
 const parsed = computed(() => parseFlashcardCsv(csv.value))
 const previewRows = computed(() => parsed.value.rows.slice(0, 5))
 const canImport = computed(() => (
   parsed.value.rows.length > 0
   && parsed.value.errors.length === 0
+  && canManageReviewSet.value
   && !importing.value
 ))
 const distinctTagCount = computed(() => new Set(
   parsed.value.rows.flatMap(row => row.tags.map(tag => tag.toLocaleLowerCase())),
 ).size)
 
-onMounted(() => {
-  if (!store.loaded) store.load().catch(() => undefined)
+onMounted(async () => {
+  try {
+    if (!store.loaded) await store.load()
+    if (isReviewSetImport.value && (!reviewSet.value || reviewSet.value.accessRole === 'readonly')) {
+      throw new Error('Editor access is required to import cards into this Review set.')
+    }
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : 'Could not prepare the flashcard import.'
+  }
 })
 
 onBeforeUnmount(() => {
@@ -56,7 +77,7 @@ async function copyAiPrompt() {
   let copied = false
   if (navigator.clipboard?.writeText) {
     try {
-      await navigator.clipboard.writeText(AI_PROMPT)
+      await navigator.clipboard.writeText(activeAiPrompt.value)
       copied = true
     } catch {
       // Some browsers and Android WebViews expose the API but deny access.
@@ -68,7 +89,7 @@ async function copyAiPrompt() {
       ? document.activeElement
       : undefined
     const textarea = document.createElement('textarea')
-    textarea.value = AI_PROMPT
+    textarea.value = activeAiPrompt.value
     textarea.readOnly = true
     textarea.style.position = 'fixed'
     textarea.style.left = '-100vw'
@@ -104,8 +125,13 @@ async function importCards() {
   error.value = ''
   try {
     const rows = parsed.value.rows
-    await store.importCards(rows)
-    await router.replace({ name: 'flashcard-cards' })
+    if (isReviewSetImport.value) {
+      await store.importReviewSetCards(reviewSetId.value, rows)
+      await router.replace({ name: 'flashcard-review-set-cards', params: { id: reviewSetId.value } })
+    } else {
+      await store.importCards(rows)
+      await router.replace({ name: 'flashcard-cards' })
+    }
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Could not import these flashcards.'
   } finally {
@@ -124,7 +150,7 @@ async function importCards() {
     >
       <strong>Ask an AI to prepare the CSV</strong>
       <p class="text-body-2 mt-2">Copy this prompt and adjust the topic, languages, or number of rows:</p>
-      <blockquote class="flashcard-import-prompt mt-3">“{{ AI_PROMPT }}”</blockquote>
+      <blockquote class="flashcard-import-prompt mt-3">“{{ activeAiPrompt }}”</blockquote>
       <div class="flashcard-import-prompt-actions mt-3">
         <v-btn
           size="small"
@@ -147,7 +173,12 @@ async function importCards() {
       <v-card class="surface-card pa-5">
         <h2 class="text-h6 font-weight-black">Paste your CSV table</h2>
         <p class="text-body-2 muted mt-2 mb-4">
-          Front and back are required. Note and tags are optional; separate multiple tags with a vertical bar (|).
+          <template v-if="isReviewSetImport">
+            Front and back are required. Imported cards inherit this Review set’s tags; CSV tags are ignored.
+          </template>
+          <template v-else>
+            Front and back are required. Note and tags are optional; separate multiple tags with a vertical bar (|).
+          </template>
         </p>
         <pre class="flashcard-import-example mb-4">{{ CSV_EXAMPLE }}</pre>
 
@@ -183,7 +214,8 @@ async function importCards() {
           <div class="flashcard-import-summary mt-4">
             <v-icon icon="mdi-check-circle-outline" color="success" />
             <strong>{{ parsed.rows.length }} card{{ parsed.rows.length === 1 ? '' : 's' }} ready</strong>
-            <span class="muted">{{ distinctTagCount }} distinct tag{{ distinctTagCount === 1 ? '' : 's' }}</span>
+            <span v-if="isReviewSetImport" class="muted">Review set tags will be applied</span>
+            <span v-else class="muted">{{ distinctTagCount }} distinct tag{{ distinctTagCount === 1 ? '' : 's' }}</span>
           </div>
 
           <v-table density="compact" class="flashcard-import-preview mt-4">

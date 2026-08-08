@@ -193,6 +193,32 @@ final class Api
                 );
             }
             if (
+                $method === 'POST'
+                && preg_match(
+                    '#^/flashcard-review-sets/([a-zA-Z0-9_-]{1,64})/cards/import/?$#',
+                    $path,
+                    $sharedCardImportMatches,
+                ) === 1
+            ) {
+                $this->importSharedFlashcards(
+                    $sharedCardImportMatches[1],
+                    $this->authenticate(),
+                );
+            }
+            if (
+                $method === 'POST'
+                && preg_match(
+                    '#^/flashcard-review-sets/([a-zA-Z0-9_-]{1,64})/cards/bulk/?$#',
+                    $path,
+                    $sharedCardBulkMatches,
+                ) === 1
+            ) {
+                $this->bulkUpdateSharedFlashcards(
+                    $sharedCardBulkMatches[1],
+                    $this->authenticate(),
+                );
+            }
+            if (
                 ($method === 'POST' || $method === 'DELETE')
                 && preg_match(
                     '#^/flashcard-review-sets/([a-zA-Z0-9_-]{1,64})/cards/([a-zA-Z0-9_-]{1,64})/image/?$#',
@@ -3098,6 +3124,139 @@ final class Api
         $card = $this->ownedRecord('flashcards', $cardId, (string) $reviewSet['owner']);
         $this->syncFlashcardWithActiveReviewQueues($card, (string) $reviewSet['owner'], true);
         $this->respond($this->flashcardResponseForReviewer($card, $account), 201);
+    }
+
+    private function importSharedFlashcards(string $reviewSetId, array $user): never
+    {
+        $account = (string) $user['id'];
+        $reviewSet = $this->accessibleFlashcardReviewSet($reviewSetId, $account);
+        $this->requireFlashcardReviewSetEditor($reviewSet, $account);
+        $body = $this->jsonBody();
+        $this->allowOnlyFields($body, ['rows']);
+        $rows = $body['rows'] ?? null;
+        if (!is_array($rows) || !array_is_list($rows) || $rows === []) {
+            throw new ApiException(422, 'Add at least one flashcard row.', ['rows' => 'required']);
+        }
+        if (count($rows) > self::MAX_FLASHCARD_IMPORT_ROWS) {
+            throw new ApiException(
+                422,
+                'Too many flashcards were included in one import.',
+                ['rows' => 'max:' . self::MAX_FLASHCARD_IMPORT_ROWS],
+            );
+        }
+
+        $validatedRows = [];
+        foreach ($rows as $index => $row) {
+            $rowNumber = $index + 1;
+            if (!is_array($row) || array_is_list($row)) {
+                throw new ApiException(422, "Flashcard row {$rowNumber} is invalid.");
+            }
+            $unknown = array_values(array_diff(array_keys($row), ['front', 'back', 'note', 'tags']));
+            if ($unknown !== []) {
+                throw new ApiException(422, "Flashcard row {$rowNumber} contains unknown fields.", [
+                    'fields' => $unknown,
+                ]);
+            }
+            $rowTags = $row['tags'] ?? [];
+            if (!is_array($rowTags) || !array_is_list($rowTags) || count($rowTags) > 50) {
+                throw new ApiException(422, "Flashcard row {$rowNumber} has invalid tags.");
+            }
+            foreach ($rowTags as $tag) {
+                $this->validateText($tag, 'tag', 50, true);
+            }
+            $validatedRows[] = [
+                'front' => $this->validateText($row['front'] ?? null, 'front', 5000, true),
+                'back' => $this->validateText($row['back'] ?? null, 'back', 5000, true),
+                'note' => $this->validateText($row['note'] ?? '', 'note', 2000),
+            ];
+        }
+
+        $owner = (string) $reviewSet['owner'];
+        $tags = json_encode($this->reviewSetTagIds($reviewSet), JSON_THROW_ON_ERROR);
+        $now = $this->now();
+        $createdCards = [];
+        $statement = $this->database->pdo->prepare(
+            "INSERT INTO flashcards (
+                id, owner, front, back, note, image_url, image_file,
+                library_image_id, image_metadata, tags, created_at, updated_at,
+                last_reviewed_at, passive_views, success_count, error_count
+             ) VALUES (
+                :id, :owner, :front, :back, :note, '', '', 0, '{}',
+                :tags, :created_at, :updated_at, '', 0, 0, 0
+             )",
+        );
+        $pdo = $this->database->pdo;
+        $pdo->beginTransaction();
+        try {
+            foreach ($validatedRows as $row) {
+                $cardId = $this->newId();
+                $statement->execute([
+                    'id' => $cardId,
+                    'owner' => $owner,
+                    'front' => $row['front'],
+                    'back' => $row['back'],
+                    'note' => $row['note'],
+                    'tags' => $tags,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ]);
+                $createdCards[] = $this->ownedRecord('flashcards', $cardId, $owner);
+            }
+            $pdo->commit();
+        } catch (Throwable $exception) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $exception;
+        }
+        foreach ($createdCards as $card) {
+            $this->syncFlashcardWithActiveReviewQueues($card, $owner, true);
+        }
+        $this->respond([
+            'cards' => array_map(
+                fn (array $card): array => $this->flashcardResponseForReviewer($card, $account),
+                $createdCards,
+            ),
+            'tags' => [],
+        ], 201);
+    }
+
+    private function bulkUpdateSharedFlashcards(string $reviewSetId, array $user): never
+    {
+        $account = (string) $user['id'];
+        $reviewSet = $this->accessibleFlashcardReviewSet($reviewSetId, $account);
+        $this->requireFlashcardReviewSetEditor($reviewSet, $account);
+        $body = $this->jsonBody();
+        $this->allowOnlyFields($body, ['action', 'card_ids']);
+        if (($body['action'] ?? null) !== 'delete') {
+            throw new ApiException(422, 'Select a valid Review set card bulk action.', [
+                'action' => 'choice',
+            ]);
+        }
+        $cardIds = $this->validateFlashcardBulkIds(
+            $body['card_ids'] ?? null,
+            'card_ids',
+            false,
+        );
+        foreach ($cardIds as $cardId) {
+            $this->matchingSourceFlashcard($reviewSet, $cardId);
+        }
+
+        $owner = (string) $reviewSet['owner'];
+        $pdo = $this->database->pdo;
+        $pdo->beginTransaction();
+        try {
+            foreach ($cardIds as $cardId) {
+                $this->deleteFlashcard($cardId, $owner);
+            }
+            $pdo->commit();
+        } catch (Throwable $exception) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $exception;
+        }
+        $this->respond(['cards' => [], 'deleted_ids' => $cardIds]);
     }
 
     private function sharedFlashcardRecord(

@@ -21,7 +21,7 @@ const AutocompleteStub = defineComponent({
 
 const ButtonStub = defineComponent({
   inheritAttrs: false,
-  props: { disabled: Boolean },
+  props: { disabled: Boolean, to: Object },
   emits: ['click'],
   template: '<button v-bind="$attrs" :disabled="disabled" @click="$emit(\'click\')"><slot /></button>',
 })
@@ -94,7 +94,10 @@ function mountManager(props: Record<string, unknown> = {}) {
         VDivider: true,
         VIcon: true,
         VList: { template: '<div><slot /></div>' },
-        VListItem: true,
+        VListItem: {
+          props: ['title'],
+          template: '<div class="bulk-item">{{ title }}</div>',
+        },
         VListSubheader: { template: '<div><slot /></div>' },
         VMenu: { template: '<div><slot name="activator" :props="{}" /><slot /></div>' },
         VSelect: true,
@@ -140,10 +143,33 @@ describe('FlashcardCardsManager', () => {
   it('keeps the complete library action layout and selectable table', () => {
     const wrapper = mountManager({ libraryActions: true, selectable: true })
 
-    expect(wrapper.get('.card-filter-actions').classes()).toContain('card-filter-actions--library')
+    expect(wrapper.get('.card-filter-actions').classes()).toContain('card-filter-actions--4')
     expect(wrapper.get('[aria-label="Manage flashcard tags"]').exists()).toBe(true)
     expect(wrapper.get('[aria-label="Import flashcards"]').exists()).toBe(true)
     expect(wrapper.get('[aria-label="Add a new flashcard"]').exists()).toBe(true)
     expect(wrapper.get('.table-stub').attributes('data-selectable')).toBe('true')
+  })
+
+  it('offers scoped import and bulk actions for editable Review sets', () => {
+    const wrapper = mountManager({
+      bulkActions: ['assign_images', 'delete'],
+      canAdd: true,
+      importReviewSetId: 'set-1',
+      selectable: true,
+      showImport: true,
+    })
+
+    expect(wrapper.get('.card-filter-actions').classes()).toContain('card-filter-actions--3')
+    expect(wrapper.get('.table-stub').attributes('data-selectable')).toBe('true')
+    expect(wrapper.findAll('.bulk-item').map(item => item.text())).toEqual([
+      'Assign images',
+      'Delete cards',
+    ])
+    const importButton = wrapper.findAllComponents(ButtonStub)
+      .find(button => button.attributes('aria-label') === 'Import flashcards')
+    expect(importButton?.props('to')).toEqual({
+      name: 'flashcard-import',
+      query: { reviewSetId: 'set-1' },
+    })
   })
 })

@@ -55,9 +55,12 @@ function card(id: string, front: string, back: string): Flashcard {
   }
 }
 
-function mountDialog(cards: Flashcard[]) {
+function mountDialog(
+  cards: Flashcard[],
+  assignImage?: (cardId: string, imageId: number) => Promise<unknown>,
+) {
   return mount(FlashcardBulkImageAssignmentDialog, {
-    props: { modelValue: true, cards },
+    props: { modelValue: true, cards, assignImage },
     global: {
       stubs: {
         ImageLibrarySearchPanel: SearchPanelStub,
@@ -114,5 +117,19 @@ describe('FlashcardBulkImageAssignmentDialog', () => {
     await doneButton!.trigger('click')
     expect(wrapper.emitted('complete')).toEqual([[1, 1]])
     expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([false])
+  })
+
+  it('uses a scoped image assignment handler when provided', async () => {
+    const assignImage = vi.fn().mockResolvedValue(undefined)
+    const wrapper = mountDialog([card('shared-card', 'Shared', 'Card')], assignImage)
+    await nextTick()
+
+    await wrapper.get('.select-proposal').trigger('click')
+    const assignButton = wrapper.findAll('button').find(button => button.text().includes('Assign & next'))
+    await assignButton!.trigger('click')
+    await flushPromises()
+
+    expect(assignImage).toHaveBeenCalledWith('shared-card', 42)
+    expect(assignLibraryImage).not.toHaveBeenCalled()
   })
 })

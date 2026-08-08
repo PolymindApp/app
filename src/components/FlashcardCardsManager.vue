@@ -20,6 +20,15 @@ const props = withDefaults(defineProps<{
   cards: Flashcard[]
   tags: FlashcardTag[]
   libraryActions?: boolean
+  showImport?: boolean
+  importReviewSetId?: string
+  bulkActions?: FlashcardBulkAction[]
+  bulkActionHandler?: (
+    action: FlashcardBulkRecordAction,
+    cardIds: string[],
+    tagIds: string[],
+  ) => Promise<unknown>
+  assignImageHandler?: (cardId: string, imageId: number) => Promise<unknown>
   selectable?: boolean
   interactive?: boolean
   canAdd?: boolean
@@ -30,6 +39,8 @@ const props = withDefaults(defineProps<{
   firstCardLabel?: string
 }>(), {
   libraryActions: false,
+  showImport: false,
+  importReviewSetId: '',
   selectable: false,
   interactive: true,
   canAdd: true,
@@ -60,6 +71,24 @@ const clearTagsDialog = ref(false)
 const deleteCardsDialog = ref(false)
 
 const filteredCards = computed(() => props.cards.filter(card => cardMatchesTags(card, selectedTags.value)))
+const availableBulkMenuItems = computed(() => {
+  const actions = props.libraryActions
+    ? FLASHCARD_BULK_MENU_ITEMS.map(item => item.action)
+    : props.bulkActions || []
+  return FLASHCARD_BULK_MENU_ITEMS.filter(item => actions.includes(item.action))
+})
+const hasBulkActions = computed(() => availableBulkMenuItems.value.length > 0)
+const hasActions = computed(() => props.libraryActions || props.showImport || hasBulkActions.value || props.canAdd)
+const actionCount = computed(() => (
+  Number(props.libraryActions)
+  + Number(props.libraryActions || props.showImport)
+  + Number(hasBulkActions.value)
+  + Number(props.canAdd)
+))
+const importRoute = computed(() => ({
+  name: 'flashcard-import',
+  query: props.importReviewSetId ? { reviewSetId: props.importReviewSetId } : undefined,
+}))
 const selectedCards = computed(() => {
   const selected = new Set(selectedCardIds.value)
   return props.cards.filter(card => selected.has(card.id))
@@ -141,7 +170,7 @@ async function runBulkAction(action: FlashcardBulkRecordAction, tagIds: string[]
   bulkError.value = ''
   bulkSaving.value = true
   try {
-    await store.bulkUpdateCards(action, cardIds, tagIds)
+    await (props.bulkActionHandler || store.bulkUpdateCards)(action, cardIds, tagIds)
     selectedCardIds.value = []
     return true
   } catch (cause) {
@@ -196,9 +225,9 @@ async function deleteSelectedCards() {
         :disabled="!tags.length"
       />
       <div
-        v-if="libraryActions || canAdd"
+        v-if="hasActions"
         class="card-filter-actions"
-        :class="{ 'card-filter-actions--library': libraryActions }"
+        :class="`card-filter-actions--${actionCount}`"
       >
         <template v-if="libraryActions">
           <v-btn
@@ -212,60 +241,62 @@ async function deleteSelectedCards() {
               <span class="card-filter-action__label">Tags</span>
             </span>
           </v-btn>
-          <v-btn
-            class="card-filter-action"
-            variant="tonal"
-            aria-label="Import flashcards"
-            :to="{ name: 'flashcard-import' }"
-          >
-            <span class="card-filter-action__content">
-              <v-icon icon="mdi-file-import-outline" />
-              <span class="card-filter-action__label">Import</span>
-            </span>
-          </v-btn>
-          <v-menu
-            v-model="bulkMenuOpen"
-            location="bottom end"
-            transition="slide-y-transition"
-          >
-            <template #activator="{ props: activatorProps }">
-              <v-btn
-                v-bind="activatorProps"
-                class="card-filter-action"
-                variant="tonal"
-                :disabled="!selectedCardIds.length || bulkSaving"
-                :aria-label="selectedCardIds.length ? `Bulk actions for ${selectedCardIds.length} selected cards` : 'Select cards to use bulk actions'"
-              >
-                <span class="card-filter-action__content">
-                  <v-badge
-                    :model-value="selectedCardIds.length > 0"
-                    :content="selectedCardIds.length"
-                    color="secondary"
-                  >
-                    <v-icon icon="mdi-select-multiple" />
-                  </v-badge>
-                  <span class="card-filter-action__label">Bulk</span>
-                </span>
-              </v-btn>
-            </template>
-
-            <v-list class="bulk-menu-list" density="compact" rounded="lg">
-              <v-list-subheader>
-                {{ selectedCardIds.length }} {{ selectedCardIds.length === 1 ? 'card' : 'cards' }} selected
-              </v-list-subheader>
-              <template v-for="item in FLASHCARD_BULK_MENU_ITEMS" :key="item.action">
-                <v-divider v-if="item.divider" class="my-1" />
-                <v-list-item
-                  :prepend-icon="item.icon"
-                  :title="item.title"
-                  :base-color="item.color"
-                  :disabled="bulkSaving || ('requiresTags' in item && item.requiresTags && !selectedCardsHaveTags)"
-                  @click="chooseBulkAction(item.action)"
-                />
-              </template>
-            </v-list>
-          </v-menu>
         </template>
+        <v-btn
+          v-if="libraryActions || showImport"
+          class="card-filter-action"
+          variant="tonal"
+          aria-label="Import flashcards"
+          :to="importRoute"
+        >
+          <span class="card-filter-action__content">
+            <v-icon icon="mdi-file-import-outline" />
+            <span class="card-filter-action__label">Import</span>
+          </span>
+        </v-btn>
+        <v-menu
+          v-if="hasBulkActions"
+          v-model="bulkMenuOpen"
+          location="bottom end"
+          transition="slide-y-transition"
+        >
+          <template #activator="{ props: activatorProps }">
+            <v-btn
+              v-bind="activatorProps"
+              class="card-filter-action"
+              variant="tonal"
+              :disabled="!selectedCardIds.length || bulkSaving"
+              :aria-label="selectedCardIds.length ? `Bulk actions for ${selectedCardIds.length} selected cards` : 'Select cards to use bulk actions'"
+            >
+              <span class="card-filter-action__content">
+                <v-badge
+                  :model-value="selectedCardIds.length > 0"
+                  :content="selectedCardIds.length"
+                  color="secondary"
+                >
+                  <v-icon icon="mdi-select-multiple" />
+                </v-badge>
+                <span class="card-filter-action__label">Bulk</span>
+              </span>
+            </v-btn>
+          </template>
+
+          <v-list class="bulk-menu-list" density="compact" rounded="lg">
+            <v-list-subheader>
+              {{ selectedCardIds.length }} {{ selectedCardIds.length === 1 ? 'card' : 'cards' }} selected
+            </v-list-subheader>
+            <template v-for="item in availableBulkMenuItems" :key="item.action">
+              <v-divider v-if="item.divider" class="my-1" />
+              <v-list-item
+                :prepend-icon="item.icon"
+                :title="item.title"
+                :base-color="item.color"
+                :disabled="bulkSaving || ('requiresTags' in item && item.requiresTags && !selectedCardsHaveTags)"
+                @click="chooseBulkAction(item.action)"
+              />
+            </template>
+          </v-list>
+        </v-menu>
         <v-btn
           v-if="canAdd"
           class="card-filter-action"
@@ -310,7 +341,7 @@ async function deleteSelectedCards() {
       <v-btn v-else-if="cards.length" variant="tonal" @click="selectedTags = []">Clear filters</v-btn>
     </v-card>
 
-    <template v-if="libraryActions">
+    <template v-if="hasBulkActions">
       <ActionBottomSheet
         v-model="bulkTagSheetOpen"
         :title="bulkTagCopy.title"
@@ -360,6 +391,7 @@ async function deleteSelectedCards() {
       <FlashcardBulkImageAssignmentDialog
         v-model="bulkImageDialogOpen"
         :cards="selectedCards"
+        :assign-image="assignImageHandler"
         @complete="completeBulkImageAssignment"
       />
 
@@ -400,7 +432,9 @@ async function deleteSelectedCards() {
 @media (max-width: 31.25rem) {
   .card-filters { grid-template-columns: minmax(0, 1fr); }
   .card-filter-actions { display: grid; grid-template-columns: minmax(0, 1fr); }
-  .card-filter-actions--library { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .card-filter-actions--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .card-filter-actions--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .card-filter-actions--4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .card-filter-action { width: 100%; }
 }
 </style>

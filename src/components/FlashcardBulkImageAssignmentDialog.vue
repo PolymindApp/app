@@ -7,6 +7,7 @@ import type { Flashcard, ImageLibraryAsset } from '@/types/domain'
 const props = defineProps<{
   modelValue: boolean
   cards: Flashcard[]
+  assignImage?: (cardId: string, imageId: number) => Promise<unknown>
 }>()
 
 const emit = defineEmits<{
@@ -75,7 +76,7 @@ async function assignAndContinue() {
   saving.value = true
   error.value = ''
   try {
-    await store.assignLibraryImage(card.id, image.id)
+    await (props.assignImage || store.assignLibraryImage)(card.id, image.id)
     assignedCount.value += 1
     advance()
   } catch (cause) {

@@ -416,6 +416,56 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     return mapped
   }
 
+  async function importReviewSetCards(reviewSetId: string, rows: FlashcardImportRow[]) {
+    const response = await api.importFlashcardReviewSetCards(reviewSetId, rows)
+    const importedCards = response.cards.map(mapCard)
+    const current = reviewSetCards.value[reviewSetId] || []
+    reviewSetCards.value = {
+      ...reviewSetCards.value,
+      [reviewSetId]: [...importedCards, ...current],
+    }
+    const reviewSet = reviewSets.value.find(item => item.id === reviewSetId)
+    if (reviewSet) reviewSet.matchingCardCount = current.length + importedCards.length
+    if (reviewSet?.owner === api.authStore.record?.id) cards.value.unshift(...importedCards)
+    return importedCards
+  }
+
+  async function bulkUpdateReviewSetCards(
+    reviewSetId: string,
+    action: FlashcardBulkRecordAction,
+    cardIds: string[],
+  ) {
+    if (action !== 'delete') throw new Error('This bulk action is not available for Review set cards.')
+    const uniqueCardIds = [...new Set(cardIds)]
+    if (!uniqueCardIds.length) return []
+    const response = await api.bulkUpdateFlashcardReviewSetCards(reviewSetId, uniqueCardIds)
+    const deleted = new Set(response.deleted_ids)
+    const next = (reviewSetCards.value[reviewSetId] || []).filter(card => !deleted.has(card.id))
+    reviewSetCards.value = { ...reviewSetCards.value, [reviewSetId]: next }
+    cards.value = cards.value.filter(card => !deleted.has(card.id))
+    const reviewSet = reviewSets.value.find(item => item.id === reviewSetId)
+    if (reviewSet) reviewSet.matchingCardCount = next.length
+    useSnackbarStore().showDeletion(deleted.size === 1 ? 'Card' : `${deleted.size} cards`)
+    return []
+  }
+
+  async function assignReviewSetLibraryImage(
+    reviewSetId: string,
+    cardId: string,
+    imageId: number,
+  ) {
+    const record = await api.setFlashcardReviewSetCardLibraryImage(reviewSetId, cardId, imageId)
+    const card = mapCard(record)
+    const current = reviewSetCards.value[reviewSetId] || []
+    reviewSetCards.value = {
+      ...reviewSetCards.value,
+      [reviewSetId]: current.map(item => item.id === card.id ? card : item),
+    }
+    const libraryIndex = cards.value.findIndex(item => item.id === card.id)
+    if (libraryIndex >= 0) cards.value.splice(libraryIndex, 1, card)
+    return card
+  }
+
   async function saveReviewSetCard(
     reviewSetId: string,
     draft: FlashcardDraft,
@@ -630,6 +680,9 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     saveReviewSetPreferences,
     deleteReviewSet,
     loadReviewSetCards,
+    importReviewSetCards,
+    bulkUpdateReviewSetCards,
+    assignReviewSetLibraryImage,
     saveReviewSetCard,
     deleteReviewSetCard,
     loadReviewSetShares,

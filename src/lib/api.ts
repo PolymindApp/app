@@ -536,6 +536,22 @@ class ApiClient {
     )
   }
 
+  importFlashcardReviewSetCards(reviewSetId: string, rows: FlashcardImportRow[]) {
+    return request<FlashcardImportResponse>(
+      `/flashcard-review-sets/${encodeURIComponent(reviewSetId)}/cards/import`,
+      { method: 'POST', body: { rows } },
+      this.authStore,
+    )
+  }
+
+  bulkUpdateFlashcardReviewSetCards(reviewSetId: string, cardIds: string[]) {
+    return request<FlashcardBulkActionResponse>(
+      `/flashcard-review-sets/${encodeURIComponent(reviewSetId)}/cards/bulk`,
+      { method: 'POST', body: { action: 'delete', card_ids: cardIds } },
+      this.authStore,
+    )
+  }
+
   updateFlashcardReviewSetCard(
     reviewSetId: string,
     cardId: string,
