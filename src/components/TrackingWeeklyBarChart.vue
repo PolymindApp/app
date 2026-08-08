@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { addDays, format } from 'date-fns'
 import TrackingRatingValue from '@/components/TrackingRatingValue.vue'
+import { useResponsiveChartWidth } from '@/services/responsiveChart'
 import { aggregateTrackingEntries, formatTrackingValue } from '@/services/tracking'
 import type { TrackingEntry, TrackingTracker } from '@/types/domain'
 
@@ -13,15 +14,15 @@ const props = defineProps<{
 }>()
 
 const selectedDayIndex = ref<number>()
-const chartWidth = 720
+const { chartRoot, chartWidth } = useResponsiveChartWidth()
 const chartHeight = 250
 const plotLeft = 16
 const plotRight = 16
 const plotTop = 14
 const plotBottom = 42
-const plotWidth = chartWidth - plotLeft - plotRight
+const plotWidth = computed(() => Math.max(1, chartWidth.value - plotLeft - plotRight))
 const plotHeight = chartHeight - plotTop - plotBottom
-const groupWidth = plotWidth / 7
+const groupWidth = computed(() => plotWidth.value / 7)
 
 const days = computed(() => Array.from({ length: 7 }, (_, index) => {
   const date = addDays(props.weekStart, index)
@@ -80,7 +81,7 @@ const ariaLabel = computed(() => {
 
 function barWidth() {
   if (!series.value.length) return 0
-  return Math.max(4, Math.min(18, (groupWidth - 16) / series.value.length - 2))
+  return Math.max(4, Math.min(18, (groupWidth.value - 16) / series.value.length - 2))
 }
 
 function barsWidth() {
@@ -88,7 +89,7 @@ function barsWidth() {
 }
 
 function barX(dayIndex: number, seriesIndex: number) {
-  return plotLeft + dayIndex * groupWidth + (groupWidth - barsWidth()) / 2 + seriesIndex * (barWidth() + 2)
+  return plotLeft + dayIndex * groupWidth.value + (groupWidth.value - barsWidth()) / 2 + seriesIndex * (barWidth() + 2)
 }
 
 function normalizedBarHeight(value: number | null, max: number) {
@@ -104,8 +105,8 @@ function barY(value: number | null, max: number) {
 function selectFromPointer(event: PointerEvent) {
   const rect = (event.currentTarget as SVGElement).getBoundingClientRect()
   if (!rect.width) return
-  const x = (event.clientX - rect.left) / rect.width * chartWidth
-  selectedDayIndex.value = Math.max(0, Math.min(6, Math.floor((x - plotLeft) / groupWidth)))
+  const x = (event.clientX - rect.left) / rect.width * chartWidth.value
+  selectedDayIndex.value = Math.max(0, Math.min(6, Math.floor((x - plotLeft) / groupWidth.value)))
 }
 
 function clearPointerSelection(event: PointerEvent) {
@@ -123,96 +124,98 @@ function onKeydown(event: KeyboardEvent) {
 </script>
 
 <template>
-  <div v-if="series.length" class="weekly-chart">
-    <div class="chart-readout" aria-live="polite">
-      <strong v-if="readoutDay">{{ format(readoutDay.date, 'EEEE, MMM d') }}</strong>
-      <span v-for="item in readoutValues" :key="item.tracker.id" class="chart-readout__value">
-        <b>{{ item.tracker.name }}:</b>
-        <span class="chart-readout__display">
-          <TrackingRatingValue
-            v-if="item.tracker.kind === 'rating' && item.value !== null"
-            :value="item.value"
-            :max="item.tracker.scaleMax"
-            :color="item.tracker.color"
-            :label="item.tracker.name"
-          />
-          <template v-else-if="item.value !== null">{{ formatTrackingValue(item.tracker, item.value) }}</template>
-          <template v-else>Not logged</template>
+  <div ref="chartRoot" class="weekly-chart">
+    <template v-if="series.length">
+      <div class="chart-readout" aria-live="polite">
+        <strong v-if="readoutDay">{{ format(readoutDay.date, 'EEEE, MMM d') }}</strong>
+        <span v-for="item in readoutValues" :key="item.tracker.id" class="chart-readout__value">
+          <b>{{ item.tracker.name }}:</b>
+          <span class="chart-readout__display">
+            <TrackingRatingValue
+              v-if="item.tracker.kind === 'rating' && item.value !== null"
+              :value="item.value"
+              :max="item.tracker.scaleMax"
+              :color="item.tracker.color"
+              :label="item.tracker.name"
+            />
+            <template v-else-if="item.value !== null">{{ formatTrackingValue(item.tracker, item.value) }}</template>
+            <template v-else>Not logged</template>
+          </span>
         </span>
-      </span>
-    </div>
+      </div>
 
-    <div
-      class="chart-plot"
-      tabindex="0"
-      role="img"
-      :aria-label="ariaLabel"
-      @keydown="onKeydown"
-    >
-      <svg
-        viewBox="0 0 720 250"
-        aria-hidden="true"
-        @pointerdown="selectFromPointer"
-        @pointermove="selectFromPointer"
-        @pointerleave="clearPointerSelection"
+      <div
+        class="chart-plot"
+        tabindex="0"
+        role="img"
+        :aria-label="ariaLabel"
+        @keydown="onKeydown"
       >
-        <line
-          v-for="step in [0, .25, .5, .75, 1]"
-          :key="step"
-          :x1="plotLeft"
-          :x2="chartWidth - plotRight"
-          :y1="plotTop + plotHeight * step"
-          :y2="plotTop + plotHeight * step"
-          class="grid-line"
-        />
+        <svg
+          :viewBox="`0 0 ${chartWidth} ${chartHeight}`"
+          aria-hidden="true"
+          @pointerdown="selectFromPointer"
+          @pointermove="selectFromPointer"
+          @pointerleave="clearPointerSelection"
+        >
+          <line
+            v-for="step in [0, .25, .5, .75, 1]"
+            :key="step"
+            :x1="plotLeft"
+            :x2="chartWidth - plotRight"
+            :y1="plotTop + plotHeight * step"
+            :y2="plotTop + plotHeight * step"
+            class="grid-line"
+          />
 
-        <rect
-          v-if="selectedDayIndex !== undefined"
-          :x="plotLeft + selectedDayIndex * groupWidth + 3"
-          :y="plotTop"
-          :width="groupWidth - 6"
-          :height="plotHeight"
-          rx="8"
-          class="selected-day"
-        />
-
-        <template v-for="(item, seriesIndex) in series" :key="item.tracker.id">
           <rect
-            v-for="(value, dayIndex) in item.values"
-            v-show="value !== null"
-            :key="`${item.tracker.id}-${days[dayIndex]?.key}`"
-            :x="barX(dayIndex, seriesIndex)"
-            :y="barY(value, item.max)"
-            :width="barWidth()"
-            :height="normalizedBarHeight(value, item.max)"
-            :fill="item.tracker.color"
-            rx="2"
-            class="chart-bar"
-          >
-            <title>{{ days[dayIndex]?.label }} · {{ item.tracker.name }}: {{ value === null ? 'Not logged' : formatTrackingValue(item.tracker, value) }}</title>
-          </rect>
-        </template>
+            v-if="selectedDayIndex !== undefined"
+            :x="plotLeft + selectedDayIndex * groupWidth + 3"
+            :y="plotTop"
+            :width="groupWidth - 6"
+            :height="plotHeight"
+            rx="8"
+            class="selected-day"
+          />
 
-        <text
-          v-for="(day, index) in days"
-          :key="day.key"
-          :x="plotLeft + index * groupWidth + groupWidth / 2"
-          :y="chartHeight - 14"
-          class="day-label"
-        >{{ day.label }}</text>
-      </svg>
+          <template v-for="(item, seriesIndex) in series" :key="item.tracker.id">
+            <rect
+              v-for="(value, dayIndex) in item.values"
+              v-show="value !== null"
+              :key="`${item.tracker.id}-${days[dayIndex]?.key}`"
+              :x="barX(dayIndex, seriesIndex)"
+              :y="barY(value, item.max)"
+              :width="barWidth()"
+              :height="normalizedBarHeight(value, item.max)"
+              :fill="item.tracker.color"
+              rx="2"
+              class="chart-bar"
+            >
+              <title>{{ days[dayIndex]?.label }} · {{ item.tracker.name }}: {{ value === null ? 'Not logged' : formatTrackingValue(item.tracker, value) }}</title>
+            </rect>
+          </template>
+
+          <text
+            v-for="(day, index) in days"
+            :key="day.key"
+            :x="plotLeft + index * groupWidth + groupWidth / 2"
+            :y="chartHeight - 14"
+            class="day-label"
+          >{{ day.label }}</text>
+        </svg>
+      </div>
+
+      <div class="chart-legend" aria-label="Trackers shown">
+        <span v-for="item in series" :key="item.tracker.id">
+          <i :style="{ background: item.tracker.color }" />{{ item.tracker.name }}
+        </span>
+      </div>
+    </template>
+
+    <div v-else class="weekly-chart-empty py-7 text-center" role="status">
+      <v-icon icon="mdi-chart-bar-stacked" size="36" color="secondary" />
+      <p class="mt-3">No entries logged in this week.</p>
     </div>
-
-    <div class="chart-legend" aria-label="Trackers shown">
-      <span v-for="item in series" :key="item.tracker.id">
-        <i :style="{ background: item.tracker.color }" />{{ item.tracker.name }}
-      </span>
-    </div>
-  </div>
-
-  <div v-else class="weekly-chart-empty py-7 text-center" role="status">
-    <v-icon icon="mdi-chart-bar-stacked" size="36" color="secondary" />
-    <p class="mt-3">No entries logged in this week.</p>
   </div>
 </template>
 
@@ -239,7 +242,7 @@ svg { display: block; width: 100%; height: auto; touch-action: pan-y; }
 .grid-line { stroke: rgba(var(--v-theme-on-surface), .09); stroke-width: 1; }
 .selected-day { fill: rgba(var(--v-theme-secondary), .06); }
 .chart-bar { opacity: .92; transition: opacity 180ms ease; }
-.day-label { fill: rgba(var(--v-theme-on-surface), .54); font-family: inherit; font-size: .7rem; font-weight: 800; text-anchor: middle; }
+.day-label { fill: rgba(var(--v-theme-on-surface), .54); font-family: inherit; font-size: .6875rem; font-weight: 800; text-anchor: middle; }
 .weekly-chart-empty { color: rgba(var(--v-theme-on-surface), .58); font-size: .8rem; }
 
 @media (max-width: 30rem) {

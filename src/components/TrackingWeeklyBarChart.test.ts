@@ -47,6 +47,31 @@ function entry(id: string, trackerId: string, date: string, value: number): Trac
 }
 
 describe('TrackingWeeklyBarChart', () => {
+  it('uses the rendered mobile width so chart labels match the insights charts', async () => {
+    let resize = () => undefined
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(callback: () => void) { resize = callback }
+      observe() {}
+      disconnect() {}
+    })
+    const wrapper = mount(TrackingWeeklyBarChart, {
+      props: {
+        weekStart: new Date(2026, 6, 27, 12),
+        selectedDate: new Date(2026, 6, 27, 12),
+        trackers: [tracker({})],
+        entries: [entry('one', 'tracker', '2026-07-27', 1)],
+      },
+    })
+    Object.defineProperty(wrapper.element, 'clientWidth', { configurable: true, value: 320 })
+    resize()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('svg').attributes('viewBox')).toBe('0 0 320 250')
+
+    wrapper.unmount()
+    vi.unstubAllGlobals()
+  })
+
   it('groups each tracker by day and exposes the aggregated values', async () => {
     const wrapper = mount(TrackingWeeklyBarChart, {
       props: {
