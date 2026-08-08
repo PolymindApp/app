@@ -149,7 +149,7 @@ async function revoke() {
         </p>
         <AppForm ref="form" class="mt-5" @submit.prevent="addShare">
           <v-row>
-            <v-col cols="12" sm="7">
+            <v-col cols="12">
               <v-text-field
                 v-model="email"
                 type="email"
@@ -161,7 +161,7 @@ async function revoke() {
                 ]"
               />
             </v-col>
-            <v-col cols="12" sm="5">
+            <v-col cols="12">
               <label class="share-role-label">Role <span class="required-mark">*</span></label>
               <v-btn-toggle
                 v-model="role"
