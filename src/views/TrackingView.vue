@@ -264,7 +264,7 @@ async function loadVisibleWeekEntries() {
 
     <template v-else-if="store.trackers.length">
       <section v-if="factors.length">
-        <div class="section-heading"><h2>Things you did</h2><span class="muted text-caption">{{ factors.length }}</span></div>
+        <div class="section-heading"><h2>Things you did</h2></div>
         <div class="tracker-grid">
           <TrackingTrackerCard
             v-for="tracker in factors"
@@ -279,7 +279,7 @@ async function loadVisibleWeekEntries() {
       </section>
 
       <section v-if="outcomes.length">
-        <div class="section-heading"><h2>How you felt</h2><span class="muted text-caption">{{ outcomes.length }}</span></div>
+        <div class="section-heading"><h2>How you felt</h2></div>
         <div class="tracker-grid">
           <TrackingTrackerCard
             v-for="tracker in outcomes"
@@ -305,7 +305,7 @@ async function loadVisibleWeekEntries() {
       </v-btn>
 
       <section v-if="archivedTrackers.length">
-        <div class="section-heading"><h2>Archived</h2><span class="muted text-caption">{{ archivedTrackers.length }}</span></div>
+        <div class="section-heading"><h2>Archived</h2></div>
         <v-card class="surface-card pa-2">
           <v-list bg-color="transparent">
             <v-list-item
