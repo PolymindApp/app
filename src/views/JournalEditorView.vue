@@ -178,25 +178,25 @@ async function removeEntry() {
     <AppForm v-else ref="form" validate-on="lazy" @submit.prevent="save">
       <v-card class="surface-card pa-5 mb-4">
         <div class="journal-editor-fields">
-          <v-text-field
-            v-model="title"
-            label="Title (optional)"
-            maxlength="160"
-            counter
-            :autofocus="allowAutomaticFocus"
-          />
           <v-textarea
             v-model="body"
             rows="10"
             auto-grow
             maxlength="20000"
             counter
+            :autofocus="allowAutomaticFocus"
             :rules="[value => Boolean(value?.trim()) || 'Reflection is required']"
           >
             <template #label>
               Reflection <span class="required-mark">*</span>
             </template>
           </v-textarea>
+          <v-text-field
+            v-model="title"
+            label="Title (optional)"
+            maxlength="160"
+            counter
+          />
           <DateTimePickerField v-model="occurredLocal" label="When" />
         </div>
       </v-card>
