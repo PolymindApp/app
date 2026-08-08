@@ -304,7 +304,7 @@ watch(() => props.valuePulse, async (pulse, previousPulse) => {
         <v-btn
           v-if="isCheck"
           block
-          class="task-check-toggle mt-4"
+          class="mt-4"
           color="secondary"
           :variant="displayedComplete ? 'tonal' : 'flat'"
           :prepend-icon="displayedComplete ? 'mdi-undo-variant' : 'mdi-check-bold'"
@@ -539,10 +539,6 @@ watch(() => props.valuePulse, async (pulse, previousPulse) => {
 
 .task-menu-button {
   min-width: 2.75rem;
-  min-height: 2.75rem;
-}
-
-.task-check-toggle {
   min-height: 2.75rem;
 }
 
