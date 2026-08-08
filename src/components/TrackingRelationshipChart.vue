@@ -276,8 +276,8 @@ svg { display: block; width: 100%; height: auto; touch-action: pan-y; }
 .axis-title--factor { fill: var(--factor-contrast); }
 .relationship-dot { fill: var(--outcome-contrast); stroke: rgb(var(--v-theme-on-surface) / .88); stroke-width: 2.25; transition: r 160ms ease, stroke-width 160ms ease; }
 .relationship-dot--selected { stroke: rgb(var(--v-theme-on-surface)); stroke-width: 4; }
-.mean-line { stroke: var(--factor-contrast); stroke-width: 5; stroke-linecap: round; filter: drop-shadow(0 0 1px rgb(var(--v-theme-on-surface) / .8)); }
-.trend-line { stroke: var(--factor-contrast); stroke-width: 3.5; stroke-dasharray: 8 6; stroke-linecap: round; filter: drop-shadow(0 0 1px rgb(var(--v-theme-on-surface) / .8)); }
+.mean-line { stroke: var(--factor-contrast); stroke-width: 5; stroke-linecap: round; }
+.trend-line { stroke: var(--factor-contrast); stroke-width: 3.5; stroke-dasharray: 8 6; stroke-linecap: round; }
 .chart-key { display: flex; gap: .5rem 1rem; flex-wrap: wrap; color: rgb(var(--v-theme-on-surface) / .72); font-size: .68rem; }
 .chart-key span { display: inline-flex; align-items: center; gap: .35rem; }
 .chart-key i { width: .55rem; height: .55rem; border: 1px solid rgb(var(--v-theme-on-surface) / .8); border-radius: 50%; background: var(--outcome-contrast); }

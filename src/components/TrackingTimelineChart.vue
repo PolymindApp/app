@@ -176,7 +176,6 @@ function displayValue(value: number | null, unit: string) {
       <text :x="plotLeft" y="24" class="axis-label axis-label--factor">{{ factorName }}{{ factorUnit ? ` · ${factorUnit}` : '' }}</text>
       <text :x="chartWidth - plotRight" y="24" text-anchor="end" class="axis-label axis-label--outcome">{{ outcomeName }}{{ outcomeUnit ? ` · ${outcomeUnit}` : '' }}</text>
 
-      <path :d="seriesPath('factorValue', factorRange)" class="series-line series-line--outline" />
       <path :d="seriesPath('factorValue', factorRange)" class="series-line series-line--factor" />
       <circle
         v-for="(point, index) in points"
@@ -188,7 +187,6 @@ function displayValue(value: number | null, unit: string) {
         class="series-dot series-dot--factor"
       />
 
-      <path :d="seriesPath('outcomeValue', outcomeRange)" class="series-line series-line--outline" />
       <path :d="seriesPath('outcomeValue', outcomeRange)" class="series-line series-line--outcome" />
       <circle
         v-for="(point, index) in points"
@@ -279,7 +277,6 @@ svg { display: block; width: 100%; height: auto; touch-action: pan-y; }
 .axis-line--outcome,
 .axis-tick--outcome { stroke: var(--outcome-contrast); }
 .series-line { fill: none; stroke-width: 3.5; stroke-linecap: round; stroke-linejoin: round; }
-.series-line--outline { stroke: rgba(var(--v-theme-on-surface), .54); stroke-width: 6.5; }
 .series-line--factor { stroke: var(--factor-contrast); }
 .series-line--outcome { stroke: var(--outcome-contrast); }
 .series-dot { stroke: rgba(var(--v-theme-on-surface), .82); stroke-width: 2.5; }

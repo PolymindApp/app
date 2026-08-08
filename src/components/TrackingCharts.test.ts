@@ -70,6 +70,8 @@ describe('TrackingTimelineChart', () => {
 
     const factorPath = wrapper.find('.series-line--factor').attributes('d')
     const outcomePath = wrapper.find('.series-line--outcome').attributes('d')
+    expect(wrapper.findAll('.series-line')).toHaveLength(2)
+    expect(wrapper.find('.series-line--outline').exists()).toBe(false)
     expect(factorPath.match(/M/g)).toHaveLength(2)
     expect(wrapper.findAll('.series-dot--factor').filter((dot) => dot.isVisible())).toHaveLength(2)
     expect(wrapper.findAll('.axis-value--outcome')).toHaveLength(3)
