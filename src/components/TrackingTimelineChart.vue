@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { format, parseISO } from 'date-fns'
-import { TRACKING_CHART_COLORS, useResponsiveChartWidth } from '@/services/responsiveChart'
+import { formatTrackingAxisTick, TRACKING_CHART_COLORS, trackingAxisGutter, useResponsiveChartWidth } from '@/services/responsiveChart'
 import { formatNumber } from '@/services/tracking'
 import type { TrackingInsightPoint } from '@/types/domain'
 
@@ -21,9 +21,6 @@ const selectedIndex = ref<number>()
 const [factorColor, outcomeColor] = TRACKING_CHART_COLORS
 const { chartRoot, chartWidth } = useResponsiveChartWidth()
 const compactLayout = computed(() => chartWidth.value < 420)
-const plotLeft = computed(() => compactLayout.value ? 44 : 58)
-const plotRight = computed(() => compactLayout.value ? 44 : 62)
-const plotWidth = computed(() => Math.max(1, chartWidth.value - plotLeft.value - plotRight.value))
 const plotTop = 42
 const plotHeight = 210
 
@@ -37,6 +34,11 @@ const outcomeRange = computed(() => valueRange(
   props.outcomeScaleMin,
   props.outcomeScaleMax,
 ))
+const factorTicks = computed(() => ticks(factorRange.value))
+const outcomeTicks = computed(() => ticks(outcomeRange.value))
+const plotLeft = computed(() => trackingAxisGutter(factorTicks.value, compactLayout.value ? 44 : 58))
+const plotRight = computed(() => trackingAxisGutter(outcomeTicks.value, compactLayout.value ? 44 : 62))
+const plotWidth = computed(() => Math.max(1, chartWidth.value - plotLeft.value - plotRight.value))
 const selectedPoint = computed(() => selectedIndex.value === undefined
   ? undefined
   : props.points[selectedIndex.value])
@@ -156,11 +158,11 @@ function displayValue(value: number | null, unit: string) {
       @pointermove="selectFromPointer"
       @pointerleave="clearPointerSelection"
     >
-      <g v-for="(tick, index) in ticks(factorRange)" :key="`factor-${index}`">
+      <g v-for="(tick, index) in factorTicks" :key="`factor-${index}`">
         <line :x1="plotLeft" :x2="chartWidth - plotRight" :y1="tickY(index)" :y2="tickY(index)" class="grid-line" />
-        <text :x="plotLeft - 8" :y="tickY(index) + 4" class="axis-value axis-value--factor">{{ formatNumber(tick) }}</text>
+        <text :x="plotLeft - 8" :y="tickY(index) + 4" class="axis-value axis-value--factor">{{ formatTrackingAxisTick(tick) }}</text>
       </g>
-      <g v-for="(tick, index) in ticks(outcomeRange)" :key="`outcome-${index}`">
+      <g v-for="(tick, index) in outcomeTicks" :key="`outcome-${index}`">
         <line
           :x1="chartWidth - plotRight"
           :x2="chartWidth - plotRight + 5"
@@ -168,7 +170,7 @@ function displayValue(value: number | null, unit: string) {
           :y2="tickY(index)"
           class="axis-tick axis-tick--outcome"
         />
-        <text :x="chartWidth - plotRight + 9" :y="tickY(index) + 4" class="axis-value axis-value--outcome">{{ formatNumber(tick) }}</text>
+        <text :x="chartWidth - plotRight + 9" :y="tickY(index) + 4" class="axis-value axis-value--outcome">{{ formatTrackingAxisTick(tick) }}</text>
       </g>
 
       <line :x1="plotLeft" :x2="plotLeft" :y1="plotTop" :y2="plotTop + plotHeight" class="axis-line axis-line--factor" />

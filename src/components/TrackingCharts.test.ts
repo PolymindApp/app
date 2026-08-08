@@ -85,6 +85,39 @@ describe('TrackingTimelineChart', () => {
     expect(wrapper.find('.chart-readout').text()).toContain('Wed, Jul 1')
     expect(wrapper.find('.chart-readout').text()).toContain('Exercise: 20 minutes')
   })
+
+  it('rounds large axis values up and expands both axis gutters', async () => {
+    let resize = () => undefined
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(callback: () => void) { resize = callback }
+      observe() {}
+      disconnect() {}
+    })
+    const wrapper = mount(TrackingTimelineChart, {
+      props: {
+        ...timelineProps,
+        factorScaleMin: 0,
+        factorScaleMax: 2689.2,
+        outcomeScaleMin: 0,
+        outcomeScaleMax: 2689.2,
+        points: [
+          { date: '2026-07-01', factorValue: 1000, outcomeValue: 1200 },
+          { date: '2026-07-02', factorValue: 2689.2, outcomeValue: 2689.2 },
+        ],
+      },
+    })
+    Object.defineProperty(wrapper.element, 'clientWidth', { configurable: true, value: 320 })
+    resize()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.findAll('.axis-value--factor').map(label => label.text())).toEqual(['2,690', '1,345', '0'])
+    expect(wrapper.findAll('.axis-value--outcome').map(label => label.text())).toEqual(['2,690', '1,345', '0'])
+    expect(wrapper.find('.axis-line--factor').attributes('x1')).toBe('51')
+    expect(wrapper.find('.axis-line--outcome').attributes('x1')).toBe('269')
+
+    wrapper.unmount()
+    vi.unstubAllGlobals()
+  })
 })
 
 describe('TrackingRelationshipChart', () => {
@@ -145,6 +178,34 @@ describe('TrackingRelationshipChart', () => {
 
     wrapper.unmount()
     vi.unstubAllGlobals()
+  })
+
+  it('rounds large y-axis values up and leaves room for the complete labels', () => {
+    const insight: TrackingInsightResult = {
+      points: [],
+      matched: [
+        { date: '2026-07-01', factorValue: 10, outcomeValue: 1000 },
+        { date: '2026-07-02', factorValue: 20, outcomeValue: 2689.2 },
+      ],
+      mode: 'quantity',
+      ready: false,
+      earlySignal: false,
+      direction: 'mixed',
+      summary: '',
+      caution: '',
+      trend: { count: 2, slope: 168.92, intercept: -689.2, correlation: 1, hasVariation: true },
+    }
+    const wrapper = mount(TrackingRelationshipChart, {
+      props: {
+        ...timelineProps,
+        insight,
+        outcomeScaleMin: 0,
+        outcomeScaleMax: 2689.2,
+      },
+    })
+
+    expect(wrapper.findAll('.axis-value--outcome').map(label => label.text())).toEqual(['2,690', '1,345', '0'])
+    expect(wrapper.find('.grid-line').attributes('x1')).toBe('67')
   })
 
   it('renders actual factor amounts and a quantitative trend line', () => {

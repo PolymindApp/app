@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { format, parseISO } from 'date-fns'
-import { TRACKING_CHART_COLORS, useResponsiveChartWidth } from '@/services/responsiveChart'
+import { formatTrackingAxisTick, TRACKING_CHART_COLORS, trackingAxisGutter, useResponsiveChartWidth } from '@/services/responsiveChart'
 import { formatNumber } from '@/services/tracking'
 import type { TrackingInsightResult } from '@/services/tracking'
 import type { TrackingRelationshipPoint } from '@/types/domain'
@@ -23,11 +23,9 @@ const [factorColor, outcomeColor] = TRACKING_CHART_COLORS
 const { chartRoot, chartWidth } = useResponsiveChartWidth()
 const chartHeight = 300
 const compactLayout = computed(() => chartWidth.value < 420)
-const plotLeft = computed(() => compactLayout.value ? 52 : 64)
 const plotRight = computed(() => compactLayout.value ? 12 : 24)
 const plotTop = 18
 const plotBottom = 48
-const plotWidth = computed(() => Math.max(1, chartWidth.value - plotLeft.value - plotRight.value))
 const plotHeight = chartHeight - plotTop - plotBottom
 
 const outcomeRange = computed(() => valueRange(
@@ -40,6 +38,9 @@ const factorRange = computed(() => valueRange(
   props.factorScaleMin,
   props.factorScaleMax,
 ))
+const outcomeTicks = computed(() => yTicks())
+const plotLeft = computed(() => trackingAxisGutter(outcomeTicks.value, compactLayout.value ? 52 : 64, 32))
+const plotWidth = computed(() => Math.max(1, chartWidth.value - plotLeft.value - plotRight.value))
 const plottedPoints = computed(() => props.insight.matched.map((point, index) => ({
   point,
   x: props.insight.mode === 'presence'
@@ -171,9 +172,9 @@ function displayValue(value: number, unit: string) {
       @pointermove="selectFromPointer"
       @pointerleave="clearPointerSelection"
     >
-      <g v-for="(tick, index) in yTicks()" :key="`y-${index}`">
+      <g v-for="(tick, index) in outcomeTicks" :key="`y-${index}`">
         <line :x1="plotLeft" :x2="chartWidth - plotRight" :y1="plotTop + index * plotHeight / 2" :y2="plotTop + index * plotHeight / 2" class="grid-line" />
-        <text :x="plotLeft - 8" :y="plotTop + index * plotHeight / 2 + 4" class="axis-value axis-value--outcome">{{ formatNumber(tick) }}</text>
+        <text :x="plotLeft - 8" :y="plotTop + index * plotHeight / 2 + 4" class="axis-value axis-value--outcome">{{ formatTrackingAxisTick(tick) }}</text>
       </g>
 
       <text :x="16" :y="plotTop + plotHeight / 2" class="axis-title axis-title--outcome axis-title--vertical" :transform="`rotate(-90 16 ${plotTop + plotHeight / 2})`">
@@ -209,7 +210,7 @@ function displayValue(value: number, unit: string) {
             :y="chartHeight - 25"
             class="axis-category axis-category--factor"
             :text-anchor="index === 0 ? 'start' : index === 2 ? 'end' : 'middle'"
-          >{{ formatNumber(tick) }}</text>
+          >{{ formatTrackingAxisTick(tick) }}</text>
         </g>
         <text :x="plotLeft + plotWidth / 2" :y="chartHeight - 5" class="axis-title axis-title--factor">
           {{ factorName }}{{ factorUnit ? ` · ${factorUnit}` : '' }}
