@@ -659,7 +659,7 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
             <span class="text-caption muted">{{ required.filter(i => i.complete).length }}/{{ required.length }}</span>
             <v-checkbox-btn
               v-model="showCompleted"
-              label="Show completed"
+              label="Completed"
               color="secondary"
               density="compact"
               hide-details="auto"
@@ -712,7 +712,7 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
             <span class="text-caption muted">{{ optional.filter(i => i.complete).length }}/{{ optional.length }}</span>
             <v-checkbox-btn
               v-model="showCompleted"
-              label="Show completed"
+              label="Completed"
               color="secondary"
               density="compact"
               hide-details="auto"
