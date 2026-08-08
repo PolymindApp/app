@@ -71,8 +71,8 @@ async function signInWithPasskey() {
             <img src="/brand/polymind-wordmark.png" alt="Polymind" />
           </div>
           <h1 class="display-title auth-title mt-3">
-            <span class="auth-title__systems">MANY SYSTEMS</span>
-            <span>ONE MIND<span class="text-secondary">.</span></span>
+            <span class="auth-title__lead">MAKE LIFE</span>
+            <span class="auth-title__programmable">PROGRAMMABLE<span class="text-secondary">.</span></span>
           </h1>
           <p class="auth-copy mt-5">
               Plan tasks and workouts, run intervals, review flashcards with audio, track habits and Health Connect progress, explore insights, and journal reflections, all in one flexible system for real life.
@@ -243,8 +243,13 @@ async function signInWithPasskey() {
   font-size: clamp(3.6rem, 17vw, 7rem);
 }
 
-.auth-title__systems {
-  font-size: .46em;
+.auth-title__lead {
+  font-size: .83em;
+  line-height: 1;
+}
+
+.auth-title__programmable {
+  font-size: .52em;
   line-height: 1;
 }
 
