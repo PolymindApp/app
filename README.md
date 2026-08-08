@@ -128,7 +128,7 @@ The detailed deployment guide is in [server/README.md](server/README.md).
 
 ## Sharing Review sets
 
-Review set owners can share a live set with another existing Polymind account by exact email address. Read-only recipients can review and inspect matching cards. Editors can also add, change, and permanently delete matching cards in the owner’s source library; card tags remain controlled by the owner’s set filter.
+Review set owners can share a live set with any email address. The invitation uses the same response and display whether or not that address is registered, and becomes available automatically after a future recipient registers and signs in. Read-only recipients can review and inspect matching cards. Editors can also add, change, and permanently delete matching cards in the owner’s source library; card tags remain controlled by the owner’s set filter.
 
 Each recipient has private review settings and card progress. Shared sets can be attached to the recipient’s flashcard tasks, program steps, and intervals. A recipient can make an independent copy of every currently matching card without leaving the live share. Revoking or leaving a share automatically detaches those integrations while preserving completed review history and card snapshots.
 

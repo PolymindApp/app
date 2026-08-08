@@ -98,6 +98,7 @@ The reconstructed PHP-era history is:
 | `202607290003` | Android passkey credentials and one-time challenges |
 | `202608070005` | Multilingual image concepts, full-text search, Pexels cache metadata, and flashcard library image attribution |
 | `202608070006` | Live Review set sharing, recipient preferences, reviewer-specific card statistics, and source-owner session attribution |
+| `202608080001` | Privacy-preserving Review set invitations for registered and future email addresses |
 
 Existing PHP databases are safely baselined because these migrations use `IF NOT EXISTS`; application rows are not recreated or deleted. The schema is validated after migration, including required columns.
 
@@ -141,7 +142,7 @@ The flashcard card list also offers **Bulk → Assign images**. It opens a safe-
 
 `GET /flashcard-review-sets` returns the authenticated account’s owned sets and sets shared with it. Each record includes its `access_role`, owner display metadata, resolved tag names, current matching-card count, and that account’s effective review settings.
 
-Owners manage access through `/flashcard-review-sets/{id}/shares` and `/flashcard-review-set-shares/{shareId}`. Shares require an existing account’s exact email and accept `readonly` or `editor`. Read-only recipients may review and list cards. Editors may also use the set-scoped card and image endpoints to mutate the owner’s matching source cards, but cannot change card tags, set identity, tag filters, or sharing. New editor-created cards receive the set’s current tags automatically.
+Owners manage access through `/flashcard-review-sets/{id}/shares` and `/flashcard-review-set-shares/{shareId}`. Shares accept any valid email address and a `readonly` or `editor` role. Create, list, and update responses expose only the invited email and role—not account profile data or registration state. An invitation for an unregistered address is claimed automatically on that account’s first authenticated request after registration. Read-only recipients may review and list cards. Editors may also use the set-scoped card and image endpoints to mutate the owner’s matching source cards, but cannot change card tags, set identity, tag filters, or sharing. New editor-created cards receive the set’s current tags automatically.
 
 Review preferences and card statistics are keyed by account, so one recipient’s timing, speech, sorting, success, and error history do not alter another account’s experience. Sessions retain both the reviewer and source owner. Recipients may attach accessible sets to their tasks, program steps, and interval templates. Removing a share detaches those references transactionally while keeping immutable review events and session snapshots.
 

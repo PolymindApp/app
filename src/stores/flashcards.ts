@@ -104,11 +104,8 @@ function mapReviewSetShare(record: Record<string, any>): FlashcardReviewSetShare
   return {
     id: record.id,
     reviewSet: record.review_set,
-    recipient: record.recipient,
     role: record.role,
-    name: record.name || '',
     email: record.email || '',
-    avatar: apiAssetUrl(record.avatar || ''),
     createdAt: record.created_at,
     updatedAt: record.updated_at,
   }

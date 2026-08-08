@@ -1937,7 +1937,81 @@ final class Api
             throw new ApiException(401, 'The authentication token is no longer valid.');
         }
 
+        $this->claimPendingFlashcardReviewSetShares($user);
         return $user;
+    }
+
+    private function claimPendingFlashcardReviewSetShares(array $user): void
+    {
+        $account = (string) ($user['id'] ?? '');
+        $email = (string) ($user['email'] ?? '');
+        if ($account === '' || $email === '') {
+            return;
+        }
+
+        $pdo = $this->database->pdo;
+        $pending = $pdo->prepare(
+            "SELECT 1 FROM flashcard_review_set_shares
+             WHERE recipient_email = :email COLLATE NOCASE
+               AND recipient LIKE 'pending:%'
+             LIMIT 1",
+        );
+        $pending->execute(['email' => $email]);
+        if ($pending->fetchColumn() === false) {
+            return;
+        }
+
+        $transactionOpen = false;
+        try {
+            $pdo->exec('BEGIN IMMEDIATE');
+            $transactionOpen = true;
+            $statement = $pdo->prepare(
+                "SELECT flashcard_review_sets.*,
+                        flashcard_review_set_shares.id AS share_id,
+                        flashcard_review_set_shares.recipient AS pending_recipient
+                 FROM flashcard_review_set_shares
+                 JOIN flashcard_review_sets
+                   ON flashcard_review_sets.id = flashcard_review_set_shares.review_set
+                 WHERE flashcard_review_set_shares.recipient_email = :email COLLATE NOCASE
+                   AND flashcard_review_set_shares.recipient LIKE 'pending:%'",
+            );
+            $statement->execute(['email' => $email]);
+            $shares = $statement->fetchAll();
+            $claim = $pdo->prepare(
+                'UPDATE flashcard_review_set_shares
+                 SET recipient = :recipient
+                 WHERE id = :id AND recipient = :pending_recipient',
+            );
+            $removePendingPreferences = $pdo->prepare(
+                'DELETE FROM flashcard_review_set_preferences
+                 WHERE review_set = :review_set AND account = :pending_recipient',
+            );
+            foreach ($shares as $share) {
+                $pendingRecipient = (string) $share['pending_recipient'];
+                $settings = $this->effectiveFlashcardReviewSettings($share, $pendingRecipient);
+                $this->saveFlashcardReviewSetPreferences(
+                    (string) $share['id'],
+                    $account,
+                    $settings,
+                );
+                $removePendingPreferences->execute([
+                    'review_set' => $share['id'],
+                    'pending_recipient' => $pendingRecipient,
+                ]);
+                $claim->execute([
+                    'recipient' => $account,
+                    'id' => $share['share_id'],
+                    'pending_recipient' => $pendingRecipient,
+                ]);
+            }
+            $pdo->exec('COMMIT');
+            $transactionOpen = false;
+        } catch (Throwable $exception) {
+            if ($transactionOpen) {
+                $pdo->exec('ROLLBACK');
+            }
+            throw $exception;
+        }
     }
 
     private function createToken(array $user): string
@@ -2691,11 +2765,9 @@ final class Api
         $reviewSet = $this->ownedRecord('flashcard_review_sets', $id, $owner);
         if ($method === 'GET') {
             $statement = $this->database->pdo->prepare(
-                'SELECT flashcard_review_set_shares.*, users.name, users.email, users.avatar
-                 FROM flashcard_review_set_shares
-                 JOIN users ON users.id = flashcard_review_set_shares.recipient
+                'SELECT * FROM flashcard_review_set_shares
                  WHERE flashcard_review_set_shares.review_set = :review_set
-                 ORDER BY users.name, users.email',
+                 ORDER BY flashcard_review_set_shares.recipient_email',
             );
             $statement->execute(['review_set' => $id]);
             $this->respond(array_map(
@@ -2708,7 +2780,7 @@ final class Api
         $body = $this->jsonBody();
         $this->allowOnlyFields($body, ['email', 'role']);
         if (!array_key_exists('email', $body) || !array_key_exists('role', $body)) {
-            throw new ApiException(422, 'An account email and role are required.');
+            throw new ApiException(422, 'An email address and role are required.');
         }
         $email = $this->normalizeEmail($body['email']);
         $role = $this->validateFlashcardShareRole($body['role']);
@@ -2717,26 +2789,30 @@ final class Api
         );
         $statement->execute(['email' => $email]);
         $recipient = $statement->fetch();
-        if (!is_array($recipient) || hash_equals($owner, (string) $recipient['id'])) {
+        if (is_array($recipient) && hash_equals($owner, (string) $recipient['id'])) {
             throw new ApiException(422, 'That account could not be added.');
         }
 
         $now = $this->now();
         $shareId = $this->newId();
+        $recipientId = is_array($recipient)
+            ? (string) $recipient['id']
+            : 'pending:' . bin2hex(random_bytes(16));
         $pdo = $this->database->pdo;
         $pdo->beginTransaction();
         try {
             $statement = $pdo->prepare(
                 'INSERT INTO flashcard_review_set_shares (
-                    id, review_set, recipient, role, created_at, updated_at
+                    id, review_set, recipient, recipient_email, role, created_at, updated_at
                  ) VALUES (
-                    :id, :review_set, :recipient, :role, :created_at, :updated_at
+                    :id, :review_set, :recipient, :recipient_email, :role, :created_at, :updated_at
                  )',
             );
             $statement->execute([
                 'id' => $shareId,
                 'review_set' => $id,
-                'recipient' => $recipient['id'],
+                'recipient' => $recipientId,
+                'recipient_email' => $email,
                 'role' => $role,
                 'created_at' => $now,
                 'updated_at' => $now,
@@ -2744,7 +2820,7 @@ final class Api
             $settings = $this->effectiveFlashcardReviewSettings($reviewSet, $owner);
             $this->saveFlashcardReviewSetPreferences(
                 $id,
-                (string) $recipient['id'],
+                $recipientId,
                 $settings,
             );
             $pdo->commit();
@@ -2753,7 +2829,7 @@ final class Api
                 $pdo->rollBack();
             }
             if ($this->isConstraintViolation($exception)) {
-                throw new ApiException(409, 'This Review set is already shared with that account.');
+                throw new ApiException(409, 'This Review set is already shared with that email address.');
             }
             throw $exception;
         } catch (Throwable $exception) {
@@ -2766,13 +2842,10 @@ final class Api
         $this->respond($this->flashcardReviewSetShareResponse([
             'id' => $shareId,
             'review_set' => $id,
-            'recipient' => $recipient['id'],
+            'recipient_email' => $email,
             'role' => $role,
             'created_at' => $now,
             'updated_at' => $now,
-            'name' => $recipient['name'],
-            'email' => $recipient['email'],
-            'avatar' => $recipient['avatar'],
         ]), 201);
     }
 
@@ -2812,14 +2885,6 @@ final class Api
             $statement->execute(['role' => $role, 'updated_at' => $updatedAt, 'id' => $id]);
             $share['role'] = $role;
             $share['updated_at'] = $updatedAt;
-            $userStatement = $this->database->pdo->prepare(
-                'SELECT name, email, avatar FROM users WHERE id = :id LIMIT 1',
-            );
-            $userStatement->execute(['id' => $share['recipient']]);
-            $recipient = $userStatement->fetch();
-            if (is_array($recipient)) {
-                $share = array_merge($share, $recipient);
-            }
             $this->respond($this->flashcardReviewSetShareResponse($share));
         }
 
@@ -5304,15 +5369,11 @@ final class Api
 
     private function flashcardReviewSetShareResponse(array $share): array
     {
-        $avatar = $this->validAvatarFilename($share['avatar'] ?? null);
         return [
             'id' => (string) $share['id'],
             'review_set' => (string) $share['review_set'],
-            'recipient' => (string) $share['recipient'],
             'role' => (string) $share['role'],
-            'name' => (string) ($share['name'] ?? ''),
-            'email' => (string) ($share['email'] ?? ''),
-            'avatar' => $avatar === null ? '' : '/avatars/' . $avatar,
+            'email' => (string) ($share['recipient_email'] ?? ''),
             'created_at' => (string) $share['created_at'],
             'updated_at' => (string) $share['updated_at'],
         ];

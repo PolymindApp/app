@@ -81,7 +81,7 @@ suffix="$(php -r 'echo bin2hex(random_bytes(5));')"
 password="correct-horse-battery"
 
 migration_count="$(sqlite3 "$test_db" 'SELECT COUNT(*) FROM mom_schema_migrations;')"
-[[ "$migration_count" == 25 ]] || {
+[[ "$migration_count" == 26 ]] || {
   echo "The API did not apply the complete database migration sequence." >&2
   exit 1
 }
@@ -1743,6 +1743,76 @@ cross_user_review_status="$(curl --silent --output /dev/null --write-out '%{http
   exit 1
 }
 
+future_email="future-$suffix@example.test"
+pending_share_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "{\"email\":\"$future_email\",\"role\":\"readonly\"}" \
+  "$api_url/flashcard-review-sets/$manual_review_set_id/shares")"
+pending_share_id="$(json_field id <<<"$pending_share_response")"
+pending_share_shape="$(php -r '
+  $share = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+  $keys = array_keys($share);
+  sort($keys);
+  echo implode(",", $keys) . ":" . ($share["email"] ?? "") . ":" . ($share["role"] ?? "");
+' <<<"$pending_share_response")"
+expected_share_keys="created_at,email,id,review_set,role,updated_at"
+[[ "$pending_share_shape" == "$expected_share_keys:$future_email:readonly" ]] || {
+  echo "A pending Review set invitation exposed account-registration information." >&2
+  exit 1
+}
+
+pending_share_list_response="$(curl --silent --show-error --fail \
+  -H "Authorization: Bearer $alice_token" \
+  "$api_url/flashcard-review-sets/$manual_review_set_id/shares")"
+pending_share_list_shape="$(php -r '
+  $shares = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+  foreach ($shares as $share) {
+      if (($share["email"] ?? "") !== $argv[1]) continue;
+      $keys = array_keys($share);
+      sort($keys);
+      echo implode(",", $keys);
+  }
+' "$future_email" <<<"$pending_share_list_response")"
+[[ "$pending_share_list_shape" == "$expected_share_keys" ]] || {
+  echo "The owner share list exposed whether a pending email is registered." >&2
+  exit 1
+}
+
+register "Future API" "$future_email" >/dev/null
+future_login="$(login "$future_email")"
+future_token="$(json_field token <<<"$future_login")"
+future_id="$(php -r '$data=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); echo $data["record"]["id"];' <<<"$future_login")"
+future_review_sets_response="$(curl --silent --show-error --fail \
+  -H "Authorization: Bearer $future_token" \
+  "$api_url/flashcard-review-sets")"
+future_access_role="$(php -r '
+  $sets = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+  foreach ($sets as $set) {
+      if (($set["id"] ?? "") === $argv[1]) echo $set["access_role"] ?? "";
+  }
+' "$manual_review_set_id" <<<"$future_review_sets_response")"
+claimed_pending_share="$(sqlite3 "$test_db" \
+  "SELECT (SELECT COUNT(*) FROM flashcard_review_set_shares
+             WHERE id = '$pending_share_id' AND recipient = '$future_id') || ':' ||
+          (SELECT COUNT(*) FROM flashcard_review_set_preferences
+             WHERE review_set = '$manual_review_set_id' AND account = '$future_id');")"
+[[ "$future_access_role" == readonly && "$claimed_pending_share" == "1:1" ]] || {
+  echo "A pending Review set invitation was not claimed after registration." >&2
+  exit 1
+}
+
+pending_share_delete_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  -X DELETE -H "Authorization: Bearer $alice_token" \
+  "$api_url/flashcard-review-set-shares/$pending_share_id")"
+future_revoked_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  -H "Authorization: Bearer $future_token" \
+  "$api_url/flashcard-review-sets/$manual_review_set_id/cards")"
+[[ "$pending_share_delete_status" == 204 && "$future_revoked_status" == 404 ]] || {
+  echo "A claimed pending invitation could not be revoked normally." >&2
+  exit 1
+}
+
 share_response="$(curl --silent --show-error --fail \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $alice_token" \
@@ -1753,8 +1823,14 @@ share_summary="$(php -r '
   $share = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
   echo $share["role"] . ":" . $share["email"];
 ' <<<"$share_response")"
-[[ "$share_summary" == "readonly:$bob_email" ]] || {
-  echo "Sharing a Review set did not return the recipient and role." >&2
+registered_share_keys="$(php -r '
+  $share = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+  $keys = array_keys($share);
+  sort($keys);
+  echo implode(",", $keys);
+' <<<"$share_response")"
+[[ "$share_summary" == "readonly:$bob_email" && "$registered_share_keys" == "$expected_share_keys" ]] || {
+  echo "Registered and pending Review set invitations did not return the same private shape." >&2
   exit 1
 }
 
@@ -1811,8 +1887,14 @@ editor_share_response="$(curl --silent --show-error --fail \
   -H "Authorization: Bearer $alice_token" \
   --data '{"role":"editor"}' \
   "$api_url/flashcard-review-set-shares/$share_id")"
-[[ "$(json_field role <<<"$editor_share_response")" == editor ]] || {
-  echo "The Review set share role was not updated." >&2
+editor_share_shape="$(php -r '
+  $share = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+  $keys = array_keys($share);
+  sort($keys);
+  echo implode(",", $keys) . ":" . ($share["role"] ?? "");
+' <<<"$editor_share_response")"
+[[ "$editor_share_shape" == "$expected_share_keys:editor" ]] || {
+  echo "The Review set share role update exposed account-registration information." >&2
   exit 1
 }
 

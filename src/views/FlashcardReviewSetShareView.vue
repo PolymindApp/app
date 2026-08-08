@@ -39,7 +39,7 @@ onMounted(async () => {
 })
 
 function initials(share: FlashcardReviewSetShare) {
-  return (share.name || share.email || 'A')
+  return (share.email || 'A')
     .split(/[\s@._-]+/)
     .filter(Boolean)
     .slice(0, 2)
@@ -58,9 +58,7 @@ async function addShare() {
       email.value.trim(),
       role.value,
     ))
-    shares.value.sort((left, right) => (
-      left.name.localeCompare(right.name) || left.email.localeCompare(right.email)
-    ))
+    shares.value.sort((left, right) => left.email.localeCompare(right.email))
     email.value = ''
     role.value = 'readonly'
     form.value?.resetValidation()
@@ -145,7 +143,7 @@ async function revoke() {
       <v-card class="surface-card pa-5 pa-sm-6">
         <h1 class="text-h6 font-weight-black">Share {{ reviewSet.name }}</h1>
         <p class="text-body-2 muted mt-2">
-          Add an existing Polymind account by its exact email address.
+          Invite an email address now. Access begins automatically after that address is registered.
         </p>
         <AppForm ref="form" class="mt-5" @submit.prevent="addShare">
           <v-row>
@@ -203,15 +201,13 @@ async function revoke() {
             <v-list-item
               v-for="share in shares"
               :key="share.id"
-              :title="share.name || share.email"
-              :subtitle="share.email"
+              :title="share.email"
               rounded="lg"
               @click="openActions(share)"
             >
               <template #prepend>
                 <v-avatar color="surface-variant" size="40">
-                  <v-img v-if="share.avatar" :src="share.avatar" alt="" cover />
-                  <strong v-else class="text-caption">{{ initials(share) }}</strong>
+                  <strong class="text-caption">{{ initials(share) }}</strong>
                 </v-avatar>
               </template>
               <template #append>
@@ -225,7 +221,7 @@ async function revoke() {
         <v-card v-else class="surface-card pa-7 text-center">
           <v-icon icon="mdi-account-multiple-outline" size="40" color="secondary" />
           <h3 class="text-h6 font-weight-black mt-3">Only you have access</h3>
-          <p class="text-body-2 muted mt-2">Add an account above to share this live card set.</p>
+          <p class="text-body-2 muted mt-2">Invite an email address above to share this live card set.</p>
         </v-card>
       </section>
 
@@ -233,8 +229,7 @@ async function revoke() {
 
     <ActionBottomSheet
       v-model="actionSheet"
-      :title="selectedShare?.name || selectedShare?.email || 'Access actions'"
-      :description="selectedShare?.email"
+      :title="selectedShare?.email || 'Access actions'"
       aria-label="Collaborator access actions"
     >
       <v-list-item

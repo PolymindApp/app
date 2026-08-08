@@ -363,11 +363,8 @@ export interface FlashcardReviewSetDraft extends Omit<
 export interface FlashcardReviewSetShare {
   id: string
   reviewSet: string
-  recipient: string
   role: Exclude<FlashcardReviewSetAccessRole, 'owner'>
-  name: string
   email: string
-  avatar: string
   createdAt: string
   updatedAt: string
 }

@@ -5,6 +5,7 @@ test_root="${TMPDIR:-/tmp}"
 test_dir="$(mktemp -d "$test_root/mom-migrations-test.XXXXXX")"
 empty_db="$test_dir/empty.db"
 existing_db="$test_dir/existing.db"
+email_invite_db="$test_dir/email-invite.db"
 cli_db="$test_dir/cli.db"
 http_db="$test_dir/http.db"
 http_response="$test_dir/http-response.json"
@@ -42,7 +43,7 @@ run_migrations() {
 
 sqlite3 "$empty_db" 'VACUUM'
 first_run="$(run_migrations "$empty_db")"
-[[ "$first_run" == "202607290001,202607290002,202607290003,202607300001,202607310001,202607310002,202607310003,202608010001,202608020001,202608020002,202608020003,202608020004,202608050001,202608050002,202608050003,202608060001,202608060002,202608060003,202608060004,202608070001,202608070002,202608070003,202608070004,202608070005,202608070006" ]] || {
+[[ "$first_run" == "202607290001,202607290002,202607290003,202607300001,202607310001,202607310002,202607310003,202608010001,202608020001,202608020002,202608020003,202608020004,202608050001,202608050002,202608050003,202608060001,202608060002,202608060003,202608060004,202608070001,202608070002,202608070003,202608070004,202608070005,202608070006,202608080001" ]] || {
   echo "An empty database did not apply the complete migration sequence." >&2
   exit 1
 }
@@ -88,7 +89,7 @@ for table in "${expected_tables[@]}"; do
 done
 
 migration_count="$(sqlite3 "$empty_db" 'SELECT COUNT(*) FROM mom_schema_migrations;')"
-[[ "$migration_count" == 25 ]] || {
+[[ "$migration_count" == 26 ]] || {
   echo "Migration history does not contain all migrations." >&2
   exit 1
 }
@@ -106,13 +107,34 @@ preserved="$(sqlite3 "$empty_db" \
   echo "A repeated migration run changed existing application data." >&2
   exit 1
 }
+
+sqlite3 "$empty_db" ".backup $email_invite_db"
+sqlite3 "$email_invite_db" \
+  "DELETE FROM mom_schema_migrations WHERE version = '202608080001';
+   INSERT INTO users (id, email, password, token_key, created, updated)
+     VALUES ('invite-user', 'invite@example.test', 'hash', 'token-key', '', '');
+   INSERT INTO flashcard_review_sets (id, owner, name)
+     VALUES ('invite-set', 'invite-owner', 'Invite migration');
+   INSERT INTO flashcard_review_set_shares (id, review_set, recipient)
+     VALUES ('invite-share', 'invite-set', 'invite-user');"
+email_invite_run="$(run_migrations "$email_invite_db")"
+email_invite_backfill="$(sqlite3 "$email_invite_db" \
+  "SELECT (SELECT recipient_email FROM flashcard_review_set_shares
+             WHERE id = 'invite-share') || ':' ||
+          (SELECT COUNT(*) FROM sqlite_schema
+             WHERE type = 'index' AND name = 'idx_flashcard_review_set_shares_email');")"
+[[ "$email_invite_run" == "202608080001" && "$email_invite_backfill" == "invite@example.test:1" ]] || {
+  echo "The email invitation migration did not backfill an existing share." >&2
+  exit 1
+}
+
 sqlite3 "$cli_db" 'VACUUM'
 cli_output="$(
   MOM_DB_PATH="$cli_db" \
   MOM_API_SECRET="mom-migration-test-secret-at-least-32-characters" \
     php server/migrate.php
 )"
-[[ "$cli_output" == *"Applied 25 migrations"* && "$cli_output" == *"202608070006"* ]] || {
+[[ "$cli_output" == *"Applied 26 migrations"* && "$cli_output" == *"202608080001"* ]] || {
   echo "The migration CLI did not initialize and report a new database." >&2
   exit 1
 }
@@ -171,9 +193,9 @@ php -r '
   $response = json_decode(file_get_contents($argv[1]), true, 512, JSON_THROW_ON_ERROR);
   if (
       ($response["status"] ?? null) !== "ok"
-      || count($response["appliedMigrations"] ?? []) !== 25
-      || ($response["currentVersion"] ?? null) !== "202608070006"
-      || ($response["migrationCount"] ?? null) !== 25
+      || count($response["appliedMigrations"] ?? []) !== 26
+      || ($response["currentVersion"] ?? null) !== "202608080001"
+      || ($response["migrationCount"] ?? null) !== 26
   ) {
       fwrite(STDERR, "The HTTP migration response was invalid.\n");
       exit(1);
@@ -207,7 +229,7 @@ php -r '
   $pdo->exec("DROP TABLE IF EXISTS image_concepts_fts");
 ' "$existing_db"
 sqlite3 "$existing_db" \
-  "DELETE FROM mom_schema_migrations WHERE version IN ('202608050001', '202608050002', '202608050003', '202608060001', '202608060002', '202608060003', '202608060004', '202608070001', '202608070002', '202608070003', '202608070004', '202608070005', '202608070006');
+  "DELETE FROM mom_schema_migrations WHERE version IN ('202608050001', '202608050002', '202608050003', '202608060001', '202608060002', '202608060003', '202608060004', '202608070001', '202608070002', '202608070003', '202608070004', '202608070005', '202608070006', '202608080001');
    DROP INDEX IF EXISTS idx_interval_templates_owner_flashcard_review_set;
    DROP INDEX IF EXISTS idx_tasks_owner_flashcard_review_set;
    DROP INDEX IF EXISTS idx_program_steps_owner_flashcard_review_set;
@@ -259,7 +281,7 @@ before_counts="$(sqlite3 "$existing_db" \
 existing_run="$(run_migrations "$existing_db")"
 after_counts="$(sqlite3 "$existing_db" \
   "SELECT (SELECT COUNT(*) FROM tasks) || ':' || (SELECT COUNT(*) FROM entries);")"
-[[ "$existing_run" == "202608050001,202608050002,202608050003,202608060001,202608060002,202608060003,202608060004,202608070001,202608070002,202608070003,202608070004,202608070005,202608070006" ]] || {
+[[ "$existing_run" == "202608050001,202608050002,202608050003,202608060001,202608060002,202608060003,202608060004,202608070001,202608070002,202608070003,202608070004,202608070005,202608070006,202608080001" ]] || {
   echo "An existing PHP database did not apply only the pending feature migrations." >&2
   exit 1
 }
@@ -394,9 +416,11 @@ flashcard_sharing_schema="$(sqlite3 "$existing_db" \
       'flashcard_review_card_stats'
     )) || ':' ||
     (SELECT COUNT(*) FROM pragma_table_info('flashcard_review_sessions')
-      WHERE name = 'source_owner');")"
-[[ "$flashcard_sharing_schema" == "3:1" ]] || {
-  echo "The Review set sharing migration did not install its tables and session source." >&2
+      WHERE name = 'source_owner') || ':' ||
+    (SELECT COUNT(*) FROM pragma_table_info('flashcard_review_set_shares')
+      WHERE name = 'recipient_email');")"
+[[ "$flashcard_sharing_schema" == "3:1:1" ]] || {
+  echo "The Review set sharing migrations did not install their tables, session source, and invitation email." >&2
   exit 1
 }
 

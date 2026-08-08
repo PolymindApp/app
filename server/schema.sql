@@ -202,6 +202,7 @@ CREATE TABLE flashcard_review_set_shares (
     id TEXT PRIMARY KEY NOT NULL,
     review_set TEXT NOT NULL,
     recipient TEXT NOT NULL,
+    recipient_email TEXT NOT NULL DEFAULT '' COLLATE NOCASE,
     role TEXT NOT NULL DEFAULT 'readonly',
     created_at TEXT NOT NULL DEFAULT '',
     updated_at TEXT NOT NULL DEFAULT '',
@@ -213,6 +214,9 @@ CREATE INDEX idx_flashcard_review_set_shares_recipient
     ON flashcard_review_set_shares (recipient, review_set);
 CREATE INDEX idx_flashcard_review_set_shares_set
     ON flashcard_review_set_shares (review_set, recipient);
+CREATE UNIQUE INDEX idx_flashcard_review_set_shares_email
+    ON flashcard_review_set_shares (review_set, recipient_email COLLATE NOCASE)
+    WHERE recipient_email <> '';
 
 CREATE TABLE flashcard_review_set_preferences (
     review_set TEXT NOT NULL,
