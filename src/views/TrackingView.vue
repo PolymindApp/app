@@ -31,9 +31,6 @@ const weeklyChartError = ref('')
 let weeklyLoadRequest = 0
 
 const dateKey = computed(() => format(selectedDate.value, 'yyyy-MM-dd'))
-const visibleWeekLabel = computed(() =>
-  `${format(visibleWeekStart.value, 'MMM d')}–${format(addDays(visibleWeekStart.value, 6), 'MMM d')}`,
-)
 const dayEntries = computed(() => store.entries
   .filter((entry) => entry.localDate === dateKey.value)
   .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt)))
@@ -249,10 +246,6 @@ async function loadVisibleWeekEntries() {
         :week-start="visibleWeekStart"
         :selected-date="selectedDate"
       />
-      <div class="weekly-hint mt-4">
-        <v-icon icon="mdi-calendar-week-outline" size="18" />
-        <span><strong>{{ visibleWeekLabel }}</strong> · This chart shows the full visible week, not only the selected day.</span>
-      </div>
     </v-card>
 
     <div v-if="store.loading && !store.loaded" class="d-flex justify-center py-12">
@@ -406,9 +399,6 @@ async function loadVisibleWeekEntries() {
 .insight-card__icon { display: grid; width: 2.75rem; height: 2.75rem; place-items: center; border-radius: .875rem; background: rgb(var(--v-theme-secondary)); color: rgb(var(--v-theme-on-secondary)); }
 .insight-card__chevron { display: grid; width: 2.75rem; height: 2.75rem; place-items: center; }
 .insight-card p { margin-top: .2rem; color: rgb(var(--v-theme-on-surface) / .58); font-size: .75rem; }
-.weekly-hint { display: flex; align-items: flex-start; gap: .5rem; padding: .75rem; border-radius: .75rem; background: rgba(var(--v-theme-secondary), .08); color: rgba(var(--v-theme-on-surface), .66); font-size: .72rem; line-height: 1.45; }
-.weekly-hint .v-icon { flex: 0 0 auto; color: rgb(var(--v-theme-secondary)); }
-.weekly-hint strong { color: rgb(var(--v-theme-on-surface)); }
 .tracker-grid { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 270px), 1fr)); }
 .preset-grid { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); }
 .preset-card { display: grid; min-height: 150px; grid-template-rows: 1fr auto; align-items: start; gap: 1rem; }
