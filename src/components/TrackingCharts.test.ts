@@ -1,18 +1,34 @@
 import { mount } from '@vue/test-utils'
 import TrackingRelationshipChart from '@/components/TrackingRelationshipChart.vue'
 import TrackingTimelineChart from '@/components/TrackingTimelineChart.vue'
+import { TRACKING_CHART_COLORS } from '@/services/responsiveChart'
 import type { TrackingInsightResult } from '@/services/tracking'
 
 const timelineProps = {
   factorName: 'Exercise',
   factorUnit: 'minutes',
-  factorColor: '#8FB8FF',
   outcomeName: 'Energy',
   outcomeUnit: '/ 10',
-  outcomeColor: '#C7F464',
 }
 
 describe('TrackingTimelineChart', () => {
+  it('uses distinct predetermined colors for factor and outcome series', () => {
+    const wrapper = mount(TrackingTimelineChart, {
+      props: {
+        ...timelineProps,
+        points: [
+          { date: '2026-07-01', factorValue: 20, outcomeValue: 5 },
+          { date: '2026-07-02', factorValue: 30, outcomeValue: 6 },
+        ],
+      },
+    })
+    const style = (wrapper.element as HTMLElement).style
+
+    expect(new Set(TRACKING_CHART_COLORS).size).toBe(TRACKING_CHART_COLORS.length)
+    expect(style.getPropertyValue('--factor-color')).toBe(TRACKING_CHART_COLORS[0])
+    expect(style.getPropertyValue('--outcome-color')).toBe(TRACKING_CHART_COLORS[1])
+  })
+
   it('uses the rendered mobile width so chart labels do not scale down from a desktop canvas', async () => {
     let resize = () => undefined
     vi.stubGlobal('ResizeObserver', class {
@@ -70,6 +86,30 @@ describe('TrackingTimelineChart', () => {
 })
 
 describe('TrackingRelationshipChart', () => {
+  it('uses the same predetermined factor and outcome colors as the timeline', () => {
+    const insight: TrackingInsightResult = {
+      points: [],
+      matched: [
+        { date: '2026-07-01', factorValue: 10, outcomeValue: 4 },
+        { date: '2026-07-02', factorValue: 20, outcomeValue: 6 },
+      ],
+      mode: 'quantity',
+      ready: false,
+      earlySignal: false,
+      direction: 'mixed',
+      summary: '',
+      caution: '',
+      trend: { count: 2, slope: .2, intercept: 2, correlation: 1, hasVariation: true },
+    }
+    const wrapper = mount(TrackingRelationshipChart, {
+      props: { ...timelineProps, insight },
+    })
+    const style = (wrapper.element as HTMLElement).style
+
+    expect(style.getPropertyValue('--factor-color')).toBe(TRACKING_CHART_COLORS[0])
+    expect(style.getPropertyValue('--outcome-color')).toBe(TRACKING_CHART_COLORS[1])
+  })
+
   it('keeps a full-height plot with mobile-width coordinates', async () => {
     let resize = () => undefined
     vi.stubGlobal('ResizeObserver', class {

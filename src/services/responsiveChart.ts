@@ -1,5 +1,7 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 
+export const TRACKING_CHART_COLORS = ['#8FB8FF', '#C7F464'] as const
+
 export function useResponsiveChartWidth(maxWidth = 720) {
   const chartRoot = ref<HTMLElement>()
   const chartWidth = ref(maxWidth)

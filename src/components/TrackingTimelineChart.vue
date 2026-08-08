@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { format, parseISO } from 'date-fns'
-import { useResponsiveChartWidth } from '@/services/responsiveChart'
+import { TRACKING_CHART_COLORS, useResponsiveChartWidth } from '@/services/responsiveChart'
 import { formatNumber } from '@/services/tracking'
 import type { TrackingInsightPoint } from '@/types/domain'
 
@@ -9,10 +9,8 @@ const props = defineProps<{
   points: TrackingInsightPoint[]
   factorName: string
   factorUnit: string
-  factorColor: string
   outcomeName: string
   outcomeUnit: string
-  outcomeColor: string
   factorScaleMin?: number
   factorScaleMax?: number
   outcomeScaleMin?: number
@@ -20,6 +18,7 @@ const props = defineProps<{
 }>()
 
 const selectedIndex = ref<number>()
+const [factorColor, outcomeColor] = TRACKING_CHART_COLORS
 const { chartRoot, chartWidth } = useResponsiveChartWidth()
 const compactLayout = computed(() => chartWidth.value < 420)
 const plotLeft = computed(() => compactLayout.value ? 44 : 58)
