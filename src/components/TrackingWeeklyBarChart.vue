@@ -126,6 +126,24 @@ function onKeydown(event: KeyboardEvent) {
 <template>
   <div ref="chartRoot" class="weekly-chart">
     <template v-if="series.length">
+      <div class="chart-readout" aria-live="polite">
+        <strong v-if="readoutDay">{{ format(readoutDay.date, 'EEEE, MMM d') }}</strong>
+        <span v-for="item in readoutValues" :key="item.tracker.id" class="chart-readout__value">
+          <b>{{ item.tracker.name }}:</b>
+          <span class="chart-readout__display">
+            <TrackingRatingValue
+              v-if="item.tracker.kind === 'rating' && item.value !== null"
+              :value="item.value"
+              :max="item.tracker.scaleMax"
+              :color="item.tracker.color"
+              :label="item.tracker.name"
+            />
+            <template v-else-if="item.value !== null">{{ formatTrackingValue(item.tracker, item.value) }}</template>
+            <template v-else>Not logged</template>
+          </span>
+        </span>
+      </div>
+
       <div
         class="chart-plot"
         tabindex="0"
@@ -192,24 +210,6 @@ function onKeydown(event: KeyboardEvent) {
           <i :style="{ background: item.tracker.color }" />{{ item.tracker.name }}
         </span>
       </div>
-
-      <div class="chart-readout" aria-live="polite">
-        <strong v-if="readoutDay">{{ format(readoutDay.date, 'EEEE, MMM d') }}</strong>
-        <span v-for="item in readoutValues" :key="item.tracker.id" class="chart-readout__value">
-          <b>{{ item.tracker.name }}:</b>
-          <span class="chart-readout__display">
-            <TrackingRatingValue
-              v-if="item.tracker.kind === 'rating' && item.value !== null"
-              :value="item.value"
-              :max="item.tracker.scaleMax"
-              :color="item.tracker.color"
-              :label="item.tracker.name"
-            />
-            <template v-else-if="item.value !== null">{{ formatTrackingValue(item.tracker, item.value) }}</template>
-            <template v-else>Not logged</template>
-          </span>
-        </span>
-      </div>
     </template>
 
     <div v-else class="weekly-chart-empty py-7 text-center" role="status">
@@ -228,10 +228,10 @@ function onKeydown(event: KeyboardEvent) {
   flex-wrap: wrap;
 }
 
-.chart-legend { margin: .5rem 0; color: rgba(var(--v-theme-on-surface), .68); font-size: .72rem; font-weight: 800; }
+.chart-legend { margin-top: .5rem; color: rgba(var(--v-theme-on-surface), .68); font-size: .72rem; font-weight: 800; }
 .chart-legend span { display: inline-flex; align-items: center; gap: .4rem; }
 .chart-legend i { width: .65rem; height: .65rem; flex: 0 0 auto; border-radius: .2rem; }
-.chart-readout { min-height: 2.75rem; color: rgba(var(--v-theme-on-surface), .58); font-size: .7rem; }
+.chart-readout { min-height: 2.75rem; margin-bottom: .65rem; color: rgba(var(--v-theme-on-surface), .58); font-size: .7rem; }
 .chart-readout strong { color: rgb(var(--v-theme-on-surface)); }
 .chart-readout__value { display: inline-flex; align-items: center; gap: .35rem; }
 .chart-readout__value b { font-weight: 800; }
