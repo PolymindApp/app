@@ -1,5 +1,6 @@
 import {
   cardMatchesTags,
+  createFlashcardReviewPreviewSession,
   createIntervalFlashcardReviewSnapshot,
   flashcardAccuracy,
   flashcardSideFromSwipe,
@@ -140,6 +141,26 @@ describe('flashcard review helpers', () => {
 
     expect(snapshot?.cards.map(card => card.id)).toEqual(['new'])
     expect(snapshot?.cards[0]?.note).toBe('Newest card note')
+  })
+
+  it('prepares a paused Review set preview without recording progress', () => {
+    const preview = createFlashcardReviewPreviewSession(
+      { ...reviewSet, maxCards: 1 },
+      cards,
+      Math.random,
+      new Date('2026-08-08T12:00:00Z'),
+    )
+
+    expect(preview).toMatchObject({
+      id: 'review-set-preview-set-1',
+      reviewSet: 'set-1',
+      status: 'paused',
+      startedAt: '2026-08-08T12:00:00.000Z',
+      elapsedSeconds: 0,
+      totalCards: 1,
+      viewedCount: 0,
+    })
+    expect(preview?.queue.map(card => card.id)).toEqual(['new'])
   })
 
   it('loops attached cards indefinitely based on interval elapsed time', () => {

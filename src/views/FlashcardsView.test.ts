@@ -134,16 +134,16 @@ describe('Flashcards Review set cards', () => {
   it.each([
     ['Vocabulary', 'owned-set'],
     ['Shared Spanish', 'shared-set'],
-  ])('starts %s directly when its card is clicked', async (name, id) => {
+  ])('opens a paused %s preview when its card is clicked', async (name, id) => {
     const wrapper = mountView()
 
     await wrapper.get(`[aria-label="Review ${name}"]`).trigger('click')
     await flushPromises()
 
-    expect(mocks.store.startReview).toHaveBeenCalledWith(id)
+    expect(mocks.store.startReview).not.toHaveBeenCalled()
     expect(mocks.router.push).toHaveBeenCalledWith({
-      name: 'flashcard-review-runner',
-      params: { sessionId: 'session-1' },
+      name: 'flashcard-review-set-runner',
+      params: { reviewSetId: id },
     })
   })
 

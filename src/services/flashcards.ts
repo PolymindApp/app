@@ -248,13 +248,76 @@ export function sortFlashcardsForReview(
   })
 }
 
+function flashcardReviewQueue(
+  reviewSet: FlashcardReviewSet,
+  cards: Flashcard[],
+  random: () => number,
+) {
+  return sortFlashcardsForReview(
+    cards.filter(card => cardMatchesTags(card, reviewSet.tags)),
+    reviewSet.sortMode,
+    random,
+  )
+    .slice(0, reviewSet.maxCards)
+    .map(card => ({
+      id: card.id,
+      front: card.front,
+      back: card.back,
+      note: card.note,
+      image: card.image,
+      tags: [...card.tags],
+    }))
+}
+
+export function createFlashcardReviewPreviewSession(
+  reviewSet: FlashcardReviewSet,
+  cards: Flashcard[],
+  random = Math.random,
+  startedAt = new Date(),
+): FlashcardReviewSession | undefined {
+  const queue = flashcardReviewQueue(reviewSet, cards, random)
+  if (!queue.length) return undefined
+
+  const timestamp = startedAt.toISOString()
+  return {
+    id: `review-set-preview-${reviewSet.id}`,
+    reviewSet: reviewSet.id,
+    status: 'paused',
+    name: reviewSet.name,
+    mode: reviewSet.mode,
+    cardSides: reviewSet.cardSides,
+    indefinite: reviewSet.mode === 'passive' && reviewSet.indefinite,
+    maxCards: reviewSet.maxCards,
+    sortMode: reviewSet.sortMode,
+    tags: [...reviewSet.tags],
+    frontSeconds: reviewSet.frontSeconds,
+    backSeconds: reviewSet.backSeconds,
+    backSpeechRepeatCount: reviewSet.mode === 'passive' && reviewSet.speechEnabled
+      ? normalizeFlashcardBackSpeechRepeatCount(reviewSet.backSpeechRepeatCount)
+      : DEFAULT_FLASHCARD_BACK_SPEECH_REPEATS,
+    noteBeforeBack: reviewSet.noteBeforeBack,
+    speechEnabled: reviewSet.speechEnabled,
+    frontLanguage: reviewSet.frontLanguage,
+    backLanguage: reviewSet.backLanguage,
+    queue,
+    startedAt: timestamp,
+    updatedAt: timestamp,
+    elapsedSeconds: 0,
+    totalCards: queue.length,
+    viewedCount: 0,
+    successCount: 0,
+    errorCount: 0,
+    ejectedCount: 0,
+  }
+}
+
 export function createIntervalFlashcardReviewSnapshot(
   reviewSet: FlashcardReviewSet,
   cards: Flashcard[],
   random = Math.random,
 ): IntervalFlashcardReviewSnapshot | undefined {
-  const matching = cards.filter(card => cardMatchesTags(card, reviewSet.tags))
-  if (!matching.length) return undefined
+  const queue = flashcardReviewQueue(reviewSet, cards, random)
+  if (!queue.length) return undefined
   const effectiveSeconds = reviewSet.mode === 'passive'
     ? { front: reviewSet.frontSeconds, back: reviewSet.backSeconds }
     : { front: 5, back: 5 }
@@ -274,16 +337,7 @@ export function createIntervalFlashcardReviewSnapshot(
     speechEnabled: reviewSet.speechEnabled,
     frontLanguage: reviewSet.frontLanguage,
     backLanguage: reviewSet.backLanguage,
-    cards: sortFlashcardsForReview(matching, reviewSet.sortMode, random)
-      .slice(0, reviewSet.maxCards)
-      .map(card => ({
-        id: card.id,
-        front: card.front,
-        back: card.back,
-        note: card.note,
-        image: card.image,
-        tags: [...card.tags],
-      })),
+    cards: queue,
   }
 }
 

@@ -19,6 +19,7 @@ import {
 import { playReviewCompleteCue } from '@/services/intervalCues'
 import { requestScreenWakeLock, type ScreenWakeLock } from '@/services/screenWakeLock'
 import {
+  createFlashcardReviewPreviewSession,
   firstFlashcardReviewSide,
   flashcardBackDurationMs,
   flashcardReviewShowsSide,
@@ -105,7 +106,10 @@ let resumeAfterSessionSettings = false
 let resumeAfterCardEditor = false
 
 const currentSessionId = ref('')
-const session = computed(() => store.sessions.find(item => item.id === currentSessionId.value))
+const previewSession = ref<FlashcardReviewSession>()
+const persistedSession = computed(() => store.sessions.find(item => item.id === currentSessionId.value))
+const session = computed(() => persistedSession.value || previewSession.value)
+const isReviewSetPreview = computed(() => Boolean(previewSession.value))
 const currentCard = computed(() => session.value?.queue[0])
 const currentReviewSet = computed(() => store.reviewSets.find(item => item.id === session.value?.reviewSet))
 const currentSourceCards = computed(() => {
@@ -119,7 +123,9 @@ const canManageCurrentCard = computed(() => !currentReviewSet.value
   || currentReviewSet.value.accessRole !== 'readonly')
 const isFinished = computed(() => session.value?.status === 'completed' || session.value?.status === 'ended')
 const isRunning = computed(() => session.value?.status === 'running')
-const shouldKeepScreenAwake = computed(() => Boolean(session.value && !isFinished.value))
+const shouldKeepScreenAwake = computed(() => Boolean(
+  session.value && !isFinished.value && !isReviewSetPreview.value,
+))
 const elapsedSeconds = computed(() => {
   tickVersion.value
   return Math.max(session.value?.elapsedSeconds || 0, Math.floor(localElapsedMs.value / 1000))
@@ -222,22 +228,20 @@ onMounted(async () => {
       currentSessionId.value = loaded.id
       initializeLocalState(loaded)
     } else if (typeof route.params.reviewSetId === 'string') {
-      const started = await store.startReview(route.params.reviewSetId, {
+      const reviewSet = store.reviewSets.find(item => item.id === route.params.reviewSetId)
+      if (!reviewSet) throw new Error('That Review set could not be found.')
+      const cards = reviewSet.accessRole === 'owner'
+        ? store.cards
+        : await store.loadReviewSetCards(reviewSet.id)
+      const prepared = createFlashcardReviewPreviewSession(reviewSet, cards)
+      if (!prepared) throw new Error('No flashcards match this Review set.')
+      previewSession.value = {
+        ...prepared,
         task: typeof route.query.task === 'string' ? route.query.task : undefined,
         programStep: typeof route.query.step === 'string' ? route.query.step : undefined,
         taskDate: typeof route.query.date === 'string' ? route.query.date : undefined,
-      })
-      currentSessionId.value = started.id
-      initializeLocalState(started)
-      skipLeavePause = true
-      await router.replace({
-        name: 'flashcard-review-runner',
-        params: { sessionId: started.id },
-        query: {
-          ...(route.query.from ? { from: route.query.from } : {}),
-        },
-      })
-      skipLeavePause = false
+      }
+      initializeLocalState(previewSession.value)
     } else {
       throw new Error('This review could not be found.')
     }
@@ -462,6 +466,42 @@ async function pauseReview(markVisibilityPause: boolean) {
   await stopBackgroundFlashcardReview()
   await stopFlashcardSpeech()
   await performAction('pause')
+}
+
+async function startPreviewReview() {
+  const preview = previewSession.value
+  if (!preview?.reviewSet || busy.value) return
+  busy.value = true
+  error.value = ''
+  try {
+    const started = await store.startReview(preview.reviewSet, {
+      task: preview.task,
+      programStep: preview.programStep,
+      taskDate: preview.taskDate,
+    })
+    currentSessionId.value = started.id
+    previewSession.value = undefined
+    initializeLocalState(started)
+    lastSpokenKey = ''
+    skipLeavePause = true
+    try {
+      await router.replace({
+        name: 'flashcard-review-runner',
+        params: { sessionId: started.id },
+        query: {
+          ...(route.query.from ? { from: route.query.from } : {}),
+        },
+      })
+    } finally {
+      skipLeavePause = false
+    }
+    const restoredBackground = await reconcileBackgroundReview()
+    if (!restoredBackground) await syncNativeBackground()
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : 'Could not start this review.'
+  } finally {
+    busy.value = false
+  }
 }
 
 async function resumeReview() {
@@ -903,7 +943,7 @@ async function leaveRunner() {
           variant="text"
           color="error"
           aria-label="End review"
-          :disabled="isFinished || busy"
+          :disabled="isReviewSetPreview || isFinished || busy"
           @click="endDialog = true"
         />
       </header>
@@ -1105,6 +1145,7 @@ async function leaveRunner() {
               variant="tonal"
               prepend-icon="mdi-close-thick"
               :loading="busy"
+              :disabled="session.status !== 'running'"
               @click="performAction('error')"
             >
               Error
@@ -1114,6 +1155,7 @@ async function leaveRunner() {
               color="success"
               prepend-icon="mdi-check-bold"
               :loading="busy"
+              :disabled="session.status !== 'running'"
               @click="performAction('success')"
             >
               Success
@@ -1138,9 +1180,13 @@ async function leaveRunner() {
               color="secondary"
               size="x-large"
               :loading="busy"
-              :aria-label="session.status === 'paused' ? 'Resume review' : 'Pause review'"
+              :aria-label="isReviewSetPreview
+                ? 'Start review'
+                : session.status === 'paused' ? 'Resume review' : 'Pause review'"
               @touchstart.stop
-              @click.stop="session.status === 'paused' ? resumeReview() : pauseReview(false)"
+              @click.stop="isReviewSetPreview
+                ? startPreviewReview()
+                : session.status === 'paused' ? resumeReview() : pauseReview(false)"
             />
           </div>
           <div class="review-navigation__control">
@@ -1158,7 +1204,7 @@ async function leaveRunner() {
         <v-btn
           variant="text"
           prepend-icon="mdi-dots-horizontal"
-          :disabled="busy"
+          :disabled="isReviewSetPreview || busy"
           @click="cardMenuOpen = true"
         >
           Options

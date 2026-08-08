@@ -69,7 +69,7 @@ async function runReviewSetAction(action: FlashcardReviewSetAction) {
   const reviewSet = selectedReviewSet.value
   if (!reviewSet) return
   reviewSetActionsOpen.value = false
-  if (action === 'review') return startReview(reviewSet)
+  if (action === 'review') return openReviewSet(reviewSet)
   if (action === 'edit' || action === 'settings') {
     return router.push({ name: 'flashcard-review-set-edit', params: { id: reviewSet.id } })
   }
@@ -117,7 +117,7 @@ async function leaveSelectedSet() {
   }
 }
 
-async function startReview(reviewSet: FlashcardReviewSet) {
+async function openReviewSet(reviewSet: FlashcardReviewSet) {
   startError.value = ''
   try {
     const active = store.activeSession
@@ -125,10 +125,12 @@ async function startReview(reviewSet: FlashcardReviewSet) {
       await router.push({ name: 'flashcard-review-runner', params: { sessionId: active.id } })
       return
     }
-    const session = await store.startReview(reviewSet.id)
-    await router.push({ name: 'flashcard-review-runner', params: { sessionId: session.id } })
+    await router.push({
+      name: 'flashcard-review-set-runner',
+      params: { reviewSetId: reviewSet.id },
+    })
   } catch (cause) {
-    startError.value = cause instanceof Error ? cause.message : 'Could not start this review.'
+    startError.value = cause instanceof Error ? cause.message : 'Could not open this review.'
   }
 }
 
@@ -169,9 +171,9 @@ async function startReview(reviewSet: FlashcardReviewSet) {
           role="button"
           tabindex="0"
           :aria-label="`Review ${reviewSet.name}`"
-          @click="startReview(reviewSet)"
-          @keydown.enter="startReview(reviewSet)"
-          @keydown.space.prevent="startReview(reviewSet)"
+          @click="openReviewSet(reviewSet)"
+          @keydown.enter="openReviewSet(reviewSet)"
+          @keydown.space.prevent="openReviewSet(reviewSet)"
         >
           <div class="review-set__main">
             <div class="min-width-0">
@@ -266,9 +268,9 @@ async function startReview(reviewSet: FlashcardReviewSet) {
           role="button"
           tabindex="0"
           :aria-label="`Review ${reviewSet.name}`"
-          @click="startReview(reviewSet)"
-          @keydown.enter="startReview(reviewSet)"
-          @keydown.space.prevent="startReview(reviewSet)"
+          @click="openReviewSet(reviewSet)"
+          @keydown.enter="openReviewSet(reviewSet)"
+          @keydown.space.prevent="openReviewSet(reviewSet)"
         >
           <div class="review-set__main">
             <div class="min-width-0">
