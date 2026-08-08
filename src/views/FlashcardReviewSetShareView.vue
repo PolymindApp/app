@@ -163,15 +163,18 @@ async function revoke() {
               />
             </v-col>
             <v-col cols="12" sm="5">
-              <v-select
+              <label class="share-role-label">Role <span class="required-mark">*</span></label>
+              <v-btn-toggle
                 v-model="role"
-                :items="[
-                  { title: 'Read only', value: 'readonly' },
-                  { title: 'Editor', value: 'editor' },
-                ]"
-                label="Role"
-                autocomplete="off"
-              />
+                mandatory
+                color="secondary"
+                variant="tonal"
+                class="share-role-toggle mt-2"
+                aria-label="Sharing role"
+              >
+                <v-btn value="readonly" prepend-icon="mdi-eye-outline">Read only</v-btn>
+                <v-btn value="editor" prepend-icon="mdi-pencil-outline">Editor</v-btn>
+              </v-btn-toggle>
             </v-col>
           </v-row>
           <v-alert v-if="role === 'editor'" type="warning" variant="tonal" density="compact" class="mb-4">
@@ -286,4 +289,8 @@ async function revoke() {
 
 <style scoped>
 .share-loading { display: flex; align-items: center; justify-content: center; gap: .75rem; }
+.share-role-label { color: rgba(var(--v-theme-on-surface), .68); font-size: .75rem; font-weight: 800; }
+.required-mark { color: rgb(var(--v-theme-error)); }
+.share-role-toggle { display: grid; width: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
+.share-role-toggle :deep(.v-btn) { width: 100%; min-width: 0; min-height: 3rem; }
 </style>
