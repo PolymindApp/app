@@ -309,11 +309,11 @@ watch(() => props.valuePulse, async (pulse, previousPulse) => {
           :variant="displayedComplete ? 'tonal' : 'flat'"
           :prepend-icon="displayedComplete ? 'mdi-undo-variant' : 'mdi-check-bold'"
           :disabled="!canToggleCheck"
-          :aria-label="displayedComplete ? `Uncomplete ${title}` : `Complete ${title}`"
+          :aria-label="displayedComplete ? `Undone ${title}` : `Done ${title}`"
           @touchstart.stop
           @click.stop="toggleCheckCompletion"
         >
-          {{ displayedComplete ? 'Uncomplete' : 'Complete' }}
+          {{ displayedComplete ? 'Undone' : 'Done' }}
         </v-btn>
 
         <div v-if="!isCheck" class="task-card-details">

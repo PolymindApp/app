@@ -361,7 +361,7 @@ describe('TaskCard amount actions', () => {
     expect(wrapper.get('.task-card-header-main').attributes('aria-expanded')).toBe('true')
   })
 
-  it('toggles a check-off only from its Complete and Uncomplete button', async () => {
+  it('toggles a check-off only from its Done and Undone button', async () => {
     const checkProgress: TaskProgress = {
       ...progress,
       task: {
@@ -392,8 +392,8 @@ describe('TaskCard amount actions', () => {
     await wrapper.get('.task-card').trigger('click')
     expect(wrapper.emitted('toggle')).toBeUndefined()
 
-    const completeButton = wrapper.get('[aria-label="Complete Medication"]')
-    expect(completeButton.text()).toBe('Complete')
+    const completeButton = wrapper.get('[aria-label="Done Medication"]')
+    expect(completeButton.text()).toBe('Done')
     await completeButton.trigger('click')
     await completeButton.trigger('click')
 
@@ -408,8 +408,8 @@ describe('TaskCard amount actions', () => {
     await wrapper.setProps({ busy: true })
     await wrapper.setProps({ progress: completedProgress })
     await wrapper.setProps({ busy: false })
-    const uncompleteButton = wrapper.get('[aria-label="Uncomplete Medication"]')
-    expect(uncompleteButton.text()).toBe('Uncomplete')
+    const uncompleteButton = wrapper.get('[aria-label="Undone Medication"]')
+    expect(uncompleteButton.text()).toBe('Undone')
     await uncompleteButton.trigger('click')
 
     expect(wrapper.emitted('toggle')).toEqual([
