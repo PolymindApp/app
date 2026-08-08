@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import AppForm from '@/components/AppForm.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
@@ -8,7 +8,6 @@ import { useFlashcardStore } from '@/stores/flashcards'
 import type { FlashcardReviewSetShare } from '@/types/domain'
 
 const route = useRoute()
-const router = useRouter()
 const store = useFlashcardStore()
 const form = ref()
 const email = ref('')
@@ -230,9 +229,6 @@ async function revoke() {
         </v-card>
       </section>
 
-      <v-btn variant="text" prepend-icon="mdi-arrow-left" class="mt-5" @click="router.back()">
-        Back
-      </v-btn>
     </template>
 
     <ActionBottomSheet
