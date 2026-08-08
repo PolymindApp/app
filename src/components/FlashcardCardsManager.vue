@@ -5,6 +5,7 @@ import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import FlashcardBulkImageAssignmentDialog from '@/components/FlashcardBulkImageAssignmentDialog.vue'
 import FlashcardCardsTable from '@/components/FlashcardCardsTable.vue'
 import FlashcardTagCombobox from '@/components/FlashcardTagCombobox.vue'
+import TagSelectionChip from '@/components/TagSelectionChip.vue'
 import { cardMatchesTags, FLASHCARD_BULK_MENU_ITEMS } from '@/services/flashcards'
 import { useFlashcardStore } from '@/stores/flashcards'
 import type {
@@ -223,7 +224,11 @@ async function deleteSelectedCards() {
         no-data-text="No matching tags"
         prepend-inner-icon="mdi-filter-variant"
         :disabled="!tags.length"
-      />
+      >
+        <template #chip="{ props: chipProps, item }">
+          <TagSelectionChip :chip-props="chipProps" :label="item.title" />
+        </template>
+      </v-autocomplete>
       <div
         v-if="hasActions"
         class="card-filter-actions"
@@ -368,7 +373,11 @@ async function deleteSelectedCards() {
             closable-chips
             autocomplete="off"
             :disabled="bulkSaving"
-          />
+          >
+            <template #chip="{ props: chipProps, item }">
+              <TagSelectionChip :chip-props="chipProps" :label="item.title" />
+            </template>
+          </v-select>
           <v-alert v-if="bulkError" type="error" variant="tonal" density="compact" class="mt-3">
             {{ bulkError }}
           </v-alert>

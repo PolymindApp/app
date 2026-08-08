@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import TagSelectionChip from '@/components/TagSelectionChip.vue'
 import { useFlashcardStore } from '@/stores/flashcards'
 import type { FlashcardTag } from '@/types/domain'
 
@@ -82,9 +83,10 @@ async function updateSelection(value: Array<FlashcardTag | string>) {
     @update:model-value="updateSelection"
   >
     <template #chip="{ props: chipProps, item }">
-      <v-chip v-bind="chipProps" size="small" prepend-icon="mdi-tag-outline">
-        {{ typeof item.raw === 'string' ? item.raw : item.raw.name }}
-      </v-chip>
+      <TagSelectionChip
+        :chip-props="chipProps"
+        :label="typeof item.raw === 'string' ? item.raw : item.raw.name"
+      />
     </template>
     <template #item="{ props: itemProps, item }">
       <v-list-item v-bind="itemProps" prepend-icon="mdi-tag-outline" :title="item.raw.name" />
