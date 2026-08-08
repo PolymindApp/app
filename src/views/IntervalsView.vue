@@ -119,7 +119,7 @@ onBeforeUnmount(() => {
                   :aria-label="`${session.name}: ${intervalRunProgressPercent(session)}% accomplished`"
                 />
               </div>
-              <div v-if="session.note" class="recent-run-note pa-1">
+              <div v-if="session.note" class="recent-run-note">
                 <span>{{ session.note }}</span>
               </div>
               <template #append>
