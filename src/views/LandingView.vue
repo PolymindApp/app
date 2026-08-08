@@ -321,7 +321,6 @@ function scrollToFeatures() {
 
   position: relative;
   width: min(28%, 12rem);
-  aspect-ratio: 57 / 128;
   padding: .35rem;
   overflow: hidden;
   border: .0625rem solid rgba(var(--v-theme-on-surface), .14);
@@ -359,12 +358,14 @@ function scrollToFeatures() {
   transform: rotateY(var(--phone-rotation-y)) rotateZ(var(--phone-rotation-z)) translateY(calc(var(--phone-rest-y) - .55rem));
 }
 
-.phone-frame__image {
+.phone-frame > :is(img, video) {
   width: 100%;
-  height: 100%;
+  height: auto;
+  aspect-ratio: 57 / 113;
   display: block;
   border-radius: 1.45rem;
   object-fit: cover;
+  object-position: center 53.333%;
 }
 
 .feature-section {
@@ -545,7 +546,7 @@ function scrollToFeatures() {
     width: 34%;
   }
 
-  .phone-frame__image {
+  .phone-frame > :is(img, video) {
     border-radius: 1.1rem;
   }
 
