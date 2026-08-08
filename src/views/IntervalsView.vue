@@ -52,32 +52,16 @@ onBeforeUnmount(() => {
   <main class="app-page intervals-page" :class="{ 'intervals-page--active': store.activeSession }">
     <v-alert v-if="store.error" type="error" variant="tonal" class="mb-4">{{ store.error }}</v-alert>
 
-    <v-card class="quick-card surface-card pa-5 mb-6">
-      <div class="quick-card__glow" />
-      <div class="quick-card__content">
-        <div class="quick-card__intro">
-          <div class="quick-icon"><v-icon icon="mdi-flash" size="25" /></div>
-          <div class="flex-grow-1 min-width-0">
-            <h2 class="text-h5 font-weight-black">Quick interval</h2>
-            <p class="quick-card__copy mt-2">Build a one-time timer without saving a template.</p>
-          </div>
-        </div>
-
-        <v-btn
-          class="quick-card__action"
-          color="secondary"
-          size="large"
-          append-icon="mdi-arrow-right"
-          to="/intervals/quick"
-        >
-          Set up timer
+    <div class="section-heading mt-0">
+      <h2>Your intervals</h2>
+      <div class="d-flex ga-1">
+        <v-btn size="small" variant="text" prepend-icon="mdi-flash" to="/intervals/quick">
+          Quick
+        </v-btn>
+        <v-btn size="small" variant="text" prepend-icon="mdi-plus" to="/intervals/new">
+          New
         </v-btn>
       </div>
-    </v-card>
-
-    <div class="section-heading">
-      <h2>Your intervals</h2>
-      <v-btn size="small" variant="text" prepend-icon="mdi-plus" to="/intervals/new">New</v-btn>
     </div>
     <transition name="interval-content">
       <div>
@@ -179,13 +163,6 @@ onBeforeUnmount(() => {
 .active-session__details { display: flex; min-width: 0; flex-direction: column; }
 .active-label { font-size: .65rem; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
 .active-session__name { font-size: 1.5rem; }
-.quick-card { position: relative; overflow: hidden; border: 2px solid rgba(var(--v-theme-secondary), .68) !important; background: linear-gradient(145deg, rgb(var(--v-theme-surface)), rgba(var(--v-theme-secondary), .07)); box-shadow: inset 0 0 0 1px rgba(var(--v-theme-secondary), .18), 0 12px 30px rgba(0, 0, 0, .2) !important; }
-.quick-card__glow { position: absolute; top: -70px; right: -55px; width: 180px; height: 180px; border: 32px solid rgb(var(--v-theme-secondary) / .07); border-radius: 50%; pointer-events: none; }
-.quick-card__content { position: relative; display: grid; gap: 1.25rem; }
-.quick-card__intro { display: flex; min-width: 0; align-items: center; gap: 1rem; }
-.quick-card__copy { max-width: 34rem; color: rgb(var(--v-theme-on-surface) / .62); font-size: .82rem; line-height: 1.5; }
-.quick-icon { display: grid; width: 48px; height: 48px; flex: 0 0 auto; place-items: center; border-radius: 16px; background: rgb(var(--v-theme-secondary)); color: rgb(var(--v-theme-on-secondary)); box-shadow: 0 10px 24px rgb(var(--v-theme-secondary) / .12); }
-.quick-card__action { width: 100%; }
 .interval-content-enter-active { transition: opacity 180ms ease, transform 220ms cubic-bezier(.22, 1, .36, 1); }
 .interval-content-enter-from { opacity: 0; transform: translateY(.75rem); }
 .recent-run-group__heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
@@ -197,11 +174,6 @@ onBeforeUnmount(() => {
 .recent-run-note span { min-width: 0; overflow-wrap: anywhere; white-space: pre-line; }
 .recent-run-meta { display: block; margin-top: .25rem; overflow: hidden; color: rgba(var(--v-theme-on-surface), .62); font-size: .875rem; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
 .recent-run-time { display: block; width: 3.5rem; font-variant-numeric: tabular-nums; text-align: end; }
-@media (min-width: 700px) {
-  .quick-card__content { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
-  .quick-card__intro { grid-column: 1; }
-  .quick-card__action { width: auto; min-width: 160px; grid-column: 2; grid-row: 1; }
-}
 @media (max-width: 59.9375rem) {
   .intervals-page--active { padding-bottom: calc(7rem + var(--page-safe-area-bottom)); }
   .active-session {
