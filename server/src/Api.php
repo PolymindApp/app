@@ -24,11 +24,17 @@ final class Api
         'back_speech_repeat_count', 'speech_enabled', 'front_language', 'back_language',
         'sort_mode',
     ];
+    private readonly OpenAIConnection $openAIConnection;
 
     public function __construct(
         private readonly Config $config,
         private readonly Database $database,
     ) {
+        $this->openAIConnection = new OpenAIConnection(
+            $database->pdo,
+            $config->secret,
+            $config->openAiApiBaseUrl,
+        );
     }
 
     public function run(): never
@@ -106,6 +112,12 @@ final class Api
             }
             if (($method === 'GET' || $method === 'PATCH') && $path === '/auth/settings') {
                 $this->userSettings($method);
+            }
+            if (
+                in_array($method, ['GET', 'POST', 'DELETE'], true)
+                && $path === '/auth/openai'
+            ) {
+                $this->openAIConnection($method);
             }
             if ($method === 'POST' && $path === '/auth/passkeys/register/options') {
                 $this->passkeyRegistrationOptions();
@@ -1295,6 +1307,25 @@ final class Api
             'id' => $user['id'],
         ]);
         $this->respond(['settings' => $settings, 'updated' => $updated]);
+    }
+
+    private function openAIConnection(string $method): never
+    {
+        $user = $this->authenticate();
+        if ($method === 'GET') {
+            $this->respond($this->openAIConnection->status((string) $user['id']));
+        }
+        if ($method === 'DELETE') {
+            $this->respond($this->openAIConnection->disconnect((string) $user['id']));
+        }
+
+        $this->rateLimit('openai-connect:' . $user['id'], 10, 900);
+        $body = $this->jsonBody();
+        $this->respond($this->openAIConnection->connect(
+            (string) $user['id'],
+            $body['apiKey'] ?? null,
+            $this->now(),
+        ));
     }
 
     private function validateMainMenuOrder(mixed $value): array

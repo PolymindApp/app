@@ -32,6 +32,7 @@ Configuration may be supplied through the root `.env`, process environment varia
 | `MOM_TOKEN_TTL` | Token lifetime in seconds, 5 minutes–30 days | 604800 |
 | `MOM_MAX_BODY_BYTES` | Maximum JSON request size | 2500000 |
 | `MOM_PEXELS_API_KEY` | Server-side Pexels API key used by batch and on-demand cache fills | Disabled |
+| `MOM_OPENAI_API_BASE_URL` | OpenAI API base URL used for key verification | `https://api.openai.com/v1` |
 | `MOM_PASSKEY_RP_ID` | Android passkey relying-party domain | Disabled |
 | `MOM_PASSKEY_ANDROID_PACKAGE` | Trusted Android application ID | Disabled |
 | `MOM_PASSKEY_ANDROID_KEY_HASHES` | Comma-separated base64url SHA-256 signing-certificate hashes | Disabled |
@@ -99,8 +100,9 @@ The reconstructed PHP-era history is:
 | `202608070005` | Multilingual image concepts, full-text search, Pexels cache metadata, and flashcard library image attribution |
 | `202608070006` | Live Review set sharing, recipient preferences, reviewer-specific card statistics, and source-owner session attribution |
 | `202608080001` | Privacy-preserving Review set invitations for registered and future email addresses |
+| `202608080002` | Encrypted per-user OpenAI API connections |
 
-Existing PHP databases are safely baselined because these migrations use `IF NOT EXISTS`; application rows are not recreated or deleted. The schema is validated after migration, including required columns.
+Existing PHP databases are advanced without recreating or deleting application rows. The schema is validated after migration, including required columns.
 
 Migration files in `server/migrations` are immutable after deployment. Any later schema or data change must be a new file named with the next 12-digit version and a descriptive suffix. Editing or removing an applied migration causes startup to fail instead of silently accepting schema drift.
 
@@ -147,6 +149,14 @@ Owners manage access through `/flashcard-review-sets/{id}/shares` and `/flashcar
 Review preferences and card statistics are keyed by account, so one recipient’s timing, speech, sorting, success, and error history do not alter another account’s experience. Sessions retain both the reviewer and source owner. Recipients may attach accessible sets to their tasks, program steps, and interval templates. Removing a share detaches those references transactionally while keeping immutable review events and session snapshots.
 
 `POST /flashcard-review-sets/{id}/copies` creates a recipient-owned set and copies every card currently matching the shared filter. Copied cards, tags, settings, and non-library image files are independent; the original live share remains in place.
+
+## OpenAI API connections
+
+Authenticated users manage their connection through `GET`, `POST`, and `DELETE /auth/openai`. `POST` accepts an `apiKey`, verifies it against the OpenAI models endpoint, and stores it only after verification succeeds. The API returns connection state, the last four key characters, and the update time; it never returns the credential.
+
+Credentials are encrypted with AES-256-GCM and authenticated against the owning user ID. The encryption key is derived from `MOM_API_SECRET`, so that secret must remain stable for the lifetime of stored connections. Rotating it intentionally invalidates existing bearer tokens and makes existing OpenAI credentials unreadable; disconnect or clear those rows before a planned rotation, then ask users to reconnect.
+
+This connection is for the OpenAI API. It is not ChatGPT OAuth, does not expose ChatGPT conversations, and does not apply a ChatGPT subscription to API usage.
 
 ## Apache/shared hosting
 
@@ -202,6 +212,7 @@ Use the PHP-FPM socket configured by the host.
 - Android passkey challenges are random, expire after five minutes, and are consumed once.
 - Passkey registration and login require the configured Android package and signing-certificate origin, RP-ID hash, user-presence/user-verification flags, and a valid authenticator signature.
 - Disconnecting biometric sign-in deletes every registered credential for the authenticated account and invalidates its pending registration challenges.
+- User-provided OpenAI API keys are verified before storage, encrypted at rest with AES-256-GCM, bound to the owning user ID, and exposed to clients only as a four-character hint.
 
 ## Android passkey deployment
 

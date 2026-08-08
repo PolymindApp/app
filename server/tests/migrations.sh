@@ -43,7 +43,7 @@ run_migrations() {
 
 sqlite3 "$empty_db" 'VACUUM'
 first_run="$(run_migrations "$empty_db")"
-[[ "$first_run" == "202607290001,202607290002,202607290003,202607300001,202607310001,202607310002,202607310003,202608010001,202608020001,202608020002,202608020003,202608020004,202608050001,202608050002,202608050003,202608060001,202608060002,202608060003,202608060004,202608070001,202608070002,202608070003,202608070004,202608070005,202608070006,202608080001" ]] || {
+[[ "$first_run" == "202607290001,202607290002,202607290003,202607300001,202607310001,202607310002,202607310003,202608010001,202608020001,202608020002,202608020003,202608020004,202608050001,202608050002,202608050003,202608060001,202608060002,202608060003,202608060004,202608070001,202608070002,202608070003,202608070004,202608070005,202608070006,202608080001,202608080002" ]] || {
   echo "An empty database did not apply the complete migration sequence." >&2
   exit 1
 }
@@ -77,6 +77,7 @@ expected_tables=(
   mom_rate_limits
   mom_passkey_challenges
   mom_passkeys
+  mom_openai_connections
   mom_schema_migrations
 )
 for table in "${expected_tables[@]}"; do
@@ -89,7 +90,7 @@ for table in "${expected_tables[@]}"; do
 done
 
 migration_count="$(sqlite3 "$empty_db" 'SELECT COUNT(*) FROM mom_schema_migrations;')"
-[[ "$migration_count" == 26 ]] || {
+[[ "$migration_count" == 27 ]] || {
   echo "Migration history does not contain all migrations." >&2
   exit 1
 }
@@ -134,7 +135,7 @@ cli_output="$(
   MOM_API_SECRET="mom-migration-test-secret-at-least-32-characters" \
     php server/migrate.php
 )"
-[[ "$cli_output" == *"Applied 26 migrations"* && "$cli_output" == *"202608080001"* ]] || {
+[[ "$cli_output" == *"Applied 27 migrations"* && "$cli_output" == *"202608080002"* ]] || {
   echo "The migration CLI did not initialize and report a new database." >&2
   exit 1
 }
@@ -193,9 +194,9 @@ php -r '
   $response = json_decode(file_get_contents($argv[1]), true, 512, JSON_THROW_ON_ERROR);
   if (
       ($response["status"] ?? null) !== "ok"
-      || count($response["appliedMigrations"] ?? []) !== 26
-      || ($response["currentVersion"] ?? null) !== "202608080001"
-      || ($response["migrationCount"] ?? null) !== 26
+      || count($response["appliedMigrations"] ?? []) !== 27
+      || ($response["currentVersion"] ?? null) !== "202608080002"
+      || ($response["migrationCount"] ?? null) !== 27
   ) {
       fwrite(STDERR, "The HTTP migration response was invalid.\n");
       exit(1);
@@ -229,7 +230,7 @@ php -r '
   $pdo->exec("DROP TABLE IF EXISTS image_concepts_fts");
 ' "$existing_db"
 sqlite3 "$existing_db" \
-  "DELETE FROM mom_schema_migrations WHERE version IN ('202608050001', '202608050002', '202608050003', '202608060001', '202608060002', '202608060003', '202608060004', '202608070001', '202608070002', '202608070003', '202608070004', '202608070005', '202608070006', '202608080001');
+  "DELETE FROM mom_schema_migrations WHERE version IN ('202608050001', '202608050002', '202608050003', '202608060001', '202608060002', '202608060003', '202608060004', '202608070001', '202608070002', '202608070003', '202608070004', '202608070005', '202608070006', '202608080001', '202608080002');
    DROP INDEX IF EXISTS idx_interval_templates_owner_flashcard_review_set;
    DROP INDEX IF EXISTS idx_tasks_owner_flashcard_review_set;
    DROP INDEX IF EXISTS idx_program_steps_owner_flashcard_review_set;
@@ -245,7 +246,8 @@ sqlite3 "$existing_db" \
    DROP TABLE IF EXISTS flashcard_review_sessions;
    DROP TABLE IF EXISTS flashcard_review_sets;
    DROP TABLE IF EXISTS flashcards;
-   DROP TABLE IF EXISTS flashcard_tags;"
+   DROP TABLE IF EXISTS flashcard_tags;
+   DROP TABLE IF EXISTS mom_openai_connections;"
 existing_task_flashcard_column="$(sqlite3 "$existing_db" \
   "SELECT COUNT(*) FROM pragma_table_info('tasks') WHERE name = 'flashcard_review_set';")"
 if [[ "$existing_task_flashcard_column" == 1 ]]; then
@@ -281,7 +283,7 @@ before_counts="$(sqlite3 "$existing_db" \
 existing_run="$(run_migrations "$existing_db")"
 after_counts="$(sqlite3 "$existing_db" \
   "SELECT (SELECT COUNT(*) FROM tasks) || ':' || (SELECT COUNT(*) FROM entries);")"
-[[ "$existing_run" == "202608050001,202608050002,202608050003,202608060001,202608060002,202608060003,202608060004,202608070001,202608070002,202608070003,202608070004,202608070005,202608070006,202608080001" ]] || {
+[[ "$existing_run" == "202608050001,202608050002,202608050003,202608060001,202608060002,202608060003,202608060004,202608070001,202608070002,202608070003,202608070004,202608070005,202608070006,202608080001,202608080002" ]] || {
   echo "An existing PHP database did not apply only the pending feature migrations." >&2
   exit 1
 }

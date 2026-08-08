@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
+import AppForm from '@/components/AppForm.vue'
+import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import type { LongPressDragResult } from '@/directives/longPressDrag'
 import { api } from '@/lib/api'
 import {
@@ -21,7 +23,7 @@ import {
   type MainNavItem,
   type MainNavItemId,
 } from '@/services/navigation'
-import type { StepSource } from '@/types/domain'
+import type { OpenAIConnectionStatus, StepSource } from '@/types/domain'
 
 const stepSource = ref<StepSource>(DEFAULT_STEP_SOURCE)
 const menuItems = ref<MainNavItem[]>(orderedMainNavItems(
@@ -32,6 +34,15 @@ const hiddenMenuItems = ref<MainNavItemId[]>(normalizeHiddenMainMenuItems(
 ))
 const loading = ref(true)
 const connecting = ref(false)
+const openAIConnecting = ref(false)
+const openAIDisconnecting = ref(false)
+const openAIConnectionDialog = ref(false)
+const disconnectOpenAIDialog = ref(false)
+const openAIForm = ref()
+const openAIApiKey = ref('')
+const openAIKeyVisible = ref(false)
+const openAIStatus = ref<OpenAIConnectionStatus>({ connected: false })
+const openAIError = ref('')
 const menuSaving = ref(false)
 const error = ref('')
 const notice = ref(false)
@@ -72,6 +83,14 @@ const connectionIcon = computed(() => healthStatus.value.authorized
   : 'mdi-heart-pulse',
 )
 const visibleMenuItemCount = computed(() => menuItems.value.length - hiddenMenuItems.value.length)
+const openAIConnectionCopy = computed(() => openAIStatus.value.connected
+  ? `API key ending in ${openAIStatus.value.keyHint || '••••'} is ready for OpenAI commands.`
+  : 'Connect an API key to let Polymind use OpenAI models. ChatGPT chats and subscriptions stay separate.',
+)
+const canConnectOpenAI = computed(() => (
+  !openAIConnecting.value
+  && /^sk-[A-Za-z0-9._-]{17,}$/.test(openAIApiKey.value.trim())
+))
 
 onMounted(async () => {
   try {
@@ -90,7 +109,7 @@ onMounted(async () => {
     error.value = cause instanceof Error ? cause.message : 'Your settings could not be loaded.'
   }
 
-  await refreshHealthStatus()
+  await Promise.all([refreshHealthStatus(), refreshOpenAIStatus()])
   loading.value = false
 })
 
@@ -116,6 +135,64 @@ async function connectHealthConnect() {
     error.value = cause instanceof Error ? cause.message : 'Health Connect could not be connected.'
   } finally {
     connecting.value = false
+  }
+}
+
+async function refreshOpenAIStatus() {
+  try {
+    openAIStatus.value = await api.getOpenAIConnection()
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : 'OpenAI status could not be checked.'
+  }
+}
+
+async function showOpenAIConnectionDialog() {
+  openAIError.value = ''
+  openAIApiKey.value = ''
+  openAIKeyVisible.value = false
+  openAIConnectionDialog.value = true
+  await nextTick()
+  openAIForm.value?.resetValidation()
+}
+
+function closeOpenAIConnectionDialog() {
+  if (openAIConnecting.value) return
+  openAIConnectionDialog.value = false
+  openAIApiKey.value = ''
+  openAIKeyVisible.value = false
+}
+
+async function connectOpenAI() {
+  const validation = await openAIForm.value?.validate()
+  if (!validation?.valid || !canConnectOpenAI.value) return
+  openAIConnecting.value = true
+  openAIError.value = ''
+  try {
+    openAIStatus.value = await api.connectOpenAI(openAIApiKey.value.trim())
+    openAIConnectionDialog.value = false
+    openAIApiKey.value = ''
+    openAIKeyVisible.value = false
+    noticeMessage.value = 'OpenAI API connected.'
+    notice.value = true
+  } catch (cause) {
+    openAIError.value = cause instanceof Error ? cause.message : 'OpenAI could not be connected.'
+  } finally {
+    openAIConnecting.value = false
+  }
+}
+
+async function disconnectOpenAI() {
+  openAIDisconnecting.value = true
+  error.value = ''
+  try {
+    openAIStatus.value = await api.disconnectOpenAI()
+    disconnectOpenAIDialog.value = false
+    noticeMessage.value = 'OpenAI API disconnected.'
+    notice.value = true
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : 'OpenAI could not be disconnected.'
+  } finally {
+    openAIDisconnecting.value = false
   }
 }
 
@@ -321,6 +398,133 @@ async function setMainMenuItemVisibility(id: MainNavItemId, visible: boolean) {
       </template>
     </v-card>
 
+    <v-card class="surface-card pa-5 pa-sm-6">
+      <div class="settings-section-heading">
+        <div>
+          <h2>OpenAI</h2>
+          <p>Use OpenAI models for commands and assisted workflows in Polymind.</p>
+        </div>
+        <v-icon icon="mdi-creation-outline" />
+      </div>
+
+      <v-progress-linear
+        v-if="loading"
+        color="secondary"
+        indeterminate
+        rounded
+        class="mt-5"
+      />
+
+      <template v-else>
+        <v-alert
+          :type="openAIStatus.connected ? 'success' : 'info'"
+          variant="tonal"
+          :icon="openAIStatus.connected ? 'mdi-check-circle-outline' : 'mdi-robot-outline'"
+          class="mt-5"
+        >
+          <strong>{{ openAIStatus.connected ? 'OpenAI connected' : 'API key required' }}</strong>
+          <p class="mt-1">{{ openAIConnectionCopy }}</p>
+        </v-alert>
+
+        <div class="settings-actions mt-4">
+          <v-btn
+            v-if="openAIStatus.connected"
+            color="error"
+            variant="outlined"
+            prepend-icon="mdi-link-variant-off"
+            @click="disconnectOpenAIDialog = true"
+          >
+            Disconnect OpenAI
+          </v-btn>
+          <v-btn
+            v-else
+            color="secondary"
+            prepend-icon="mdi-link-variant"
+            @click="showOpenAIConnectionDialog"
+          >
+            Connect OpenAI
+          </v-btn>
+        </div>
+      </template>
+    </v-card>
+
+    <v-dialog
+      :model-value="openAIConnectionDialog"
+      max-width="32rem"
+      persistent
+      @update:model-value="!$event && closeOpenAIConnectionDialog()"
+    >
+      <v-card class="pa-5 pa-sm-6">
+        <div class="settings-dialog-heading">
+          <span class="settings-dialog-heading__icon">
+            <v-icon icon="mdi-creation-outline" size="24" />
+          </span>
+          <div>
+            <h2 class="text-h6 font-weight-black">Connect OpenAI</h2>
+            <p>Use an OpenAI Platform API key. This does not connect your ChatGPT chats or subscription.</p>
+          </div>
+        </div>
+
+        <v-alert v-if="openAIError" type="error" variant="tonal" density="compact" class="mt-5">
+          {{ openAIError }}
+        </v-alert>
+
+        <AppForm ref="openAIForm" class="mt-5" @submit.prevent="connectOpenAI">
+          <v-text-field
+            v-model="openAIApiKey"
+            :type="openAIKeyVisible ? 'text' : 'password'"
+            prepend-inner-icon="mdi-key-outline"
+            :append-inner-icon="openAIKeyVisible ? 'mdi-eye-off-outline' : 'mdi-eye-outline'"
+            autocomplete="off"
+            :disabled="openAIConnecting"
+            :rules="[
+              value => Boolean(value?.trim()) || 'API key is required',
+              value => /^sk-[A-Za-z0-9._-]{17,}$/.test(value?.trim() || '') || 'Enter a valid OpenAI API key',
+            ]"
+            @click:append-inner="openAIKeyVisible = !openAIKeyVisible"
+          >
+            <template #label>API key <span class="required-mark">*</span></template>
+          </v-text-field>
+
+          <v-btn
+            href="https://platform.openai.com/api-keys"
+            target="_blank"
+            rel="noopener noreferrer"
+            variant="text"
+            append-icon="mdi-open-in-new"
+            class="mt-2"
+          >
+            Create an API key
+          </v-btn>
+        </AppForm>
+
+        <v-card-actions class="settings-dialog-actions pa-0 mt-6 ga-2">
+          <v-spacer />
+          <v-btn variant="text" :disabled="openAIConnecting" @click="closeOpenAIConnectionDialog">
+            Cancel
+          </v-btn>
+          <v-btn
+            color="secondary"
+            :loading="openAIConnecting"
+            :disabled="!canConnectOpenAI"
+            @click="connectOpenAI"
+          >
+            Connect
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <ConfirmDialog
+      v-model="disconnectOpenAIDialog"
+      title="Disconnect OpenAI?"
+      message="Polymind will permanently remove the stored API key. OpenAI commands will stop working until another key is connected."
+      confirm-text="Disconnect"
+      icon="mdi-link-variant-off"
+      :loading="openAIDisconnecting"
+      @confirm="disconnectOpenAI"
+    />
+
     <v-snackbar v-model="notice" color="success" location="bottom" :timeout="4000">
       {{ noticeMessage }}
     </v-snackbar>
@@ -446,8 +650,49 @@ async function setMainMenuItemVisibility(id: MainNavItemId, visible: boolean) {
   justify-content: flex-end;
 }
 
+.settings-dialog-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.settings-dialog-heading p {
+  margin-top: .2rem;
+  color: rgb(var(--v-theme-on-surface) / .56);
+  font-size: .78rem;
+  line-height: 1.45;
+}
+
+.settings-dialog-heading__icon {
+  display: grid;
+  width: 3rem;
+  height: 3rem;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 1rem;
+  background: rgb(var(--v-theme-secondary) / .12);
+  color: rgb(var(--v-theme-secondary));
+}
+
+.required-mark {
+  color: rgb(var(--v-theme-error));
+}
+
 @media (max-width: 440px) {
   .settings-actions .v-btn {
+    width: 100%;
+  }
+
+  .settings-dialog-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .settings-dialog-actions .v-spacer {
+    display: none;
+  }
+
+  .settings-dialog-actions .v-btn {
     width: 100%;
   }
 }

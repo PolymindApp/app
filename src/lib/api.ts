@@ -5,6 +5,7 @@ import type {
   FlashcardReviewAction,
   FlashcardReviewSetAccessRole,
   FlashcardReviewSettings,
+  OpenAIConnectionStatus,
 } from '@/types/domain'
 
 type RecordModel = Record<string, any> & { id: string }
@@ -400,6 +401,30 @@ class ApiClient {
     )
     this.saveUserSettings(response)
     return response.settings
+  }
+
+  getOpenAIConnection() {
+    return request<OpenAIConnectionStatus>(
+      '/auth/openai',
+      {},
+      this.authStore,
+    )
+  }
+
+  connectOpenAI(apiKey: string) {
+    return request<OpenAIConnectionStatus>(
+      '/auth/openai',
+      { method: 'POST', body: { apiKey } },
+      this.authStore,
+    )
+  }
+
+  disconnectOpenAI() {
+    return request<OpenAIConnectionStatus>(
+      '/auth/openai',
+      { method: 'DELETE' },
+      this.authStore,
+    )
   }
 
   completeIntervalSession(

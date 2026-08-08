@@ -21,6 +21,15 @@ CREATE TABLE users (
 CREATE UNIQUE INDEX idx_users_email ON users (email COLLATE NOCASE);
 CREATE UNIQUE INDEX idx_users_token_key ON users (token_key);
 
+CREATE TABLE mom_openai_connections (
+    user_id TEXT PRIMARY KEY NOT NULL,
+    encrypted_api_key TEXT NOT NULL,
+    key_hint VARCHAR(8) NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+);
+
 CREATE TABLE tags (
     id TEXT PRIMARY KEY NOT NULL DEFAULT ('r' || lower(hex(randomblob(7)))),
     owner TEXT NOT NULL,

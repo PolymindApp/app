@@ -183,6 +183,43 @@ describe('Polymind API client adapter', () => {
       .toEqual({ quickInterval })
   })
 
+  it('gets, connects, and disconnects the authenticated OpenAI API credential', async () => {
+    const token = futureToken()
+    localStorage.setItem('mom-api-auth', JSON.stringify({
+      token,
+      record: { id: 'user-1', email: 'person@example.com' },
+    }))
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ connected: false }))
+      .mockResolvedValueOnce(jsonResponse({
+        connected: true,
+        keyHint: 'abcd',
+        updated: '2026-08-08T12:00:00.000Z',
+      }))
+      .mockResolvedValueOnce(jsonResponse({ connected: false, removed: 1 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { api } = await import('./api')
+    await expect(api.getOpenAIConnection()).resolves.toEqual({ connected: false })
+    await expect(api.connectOpenAI('sk-test-valid-1234567890-abcd')).resolves.toEqual({
+      connected: true,
+      keyHint: 'abcd',
+      updated: '2026-08-08T12:00:00.000Z',
+    })
+    await expect(api.disconnectOpenAI()).resolves.toEqual({ connected: false, removed: 1 })
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/auth/openai', expect.objectContaining({
+      headers: expect.any(Headers),
+    }))
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/auth/openai', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ apiKey: 'sk-test-valid-1234567890-abcd' }),
+    }))
+    expect(fetchMock).toHaveBeenNthCalledWith(3, '/api/auth/openai', expect.objectContaining({
+      method: 'DELETE',
+    }))
+  })
+
   it('paginates getFullList calls and sends the bearer token', async () => {
     const token = futureToken()
     localStorage.setItem('mom-api-auth', JSON.stringify({

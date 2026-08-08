@@ -17,6 +17,7 @@ final class Config
         public readonly string $passkeyAndroidPackage,
         public readonly array $passkeyAndroidKeyHashes,
         public readonly string $pexelsApiKey,
+        public readonly string $openAiApiBaseUrl,
         public readonly bool $debug,
     ) {
     }
@@ -74,6 +75,10 @@ final class Config
             $productionDotenv = self::readDotenv($projectRoot . '/.env.prod');
             $pexelsApiKey = trim((string) ($productionDotenv['MOM_PEXELS_API_KEY'] ?? ''));
         }
+        $openAiApiBaseUrl = rtrim(trim((string) $value(
+            'MOM_OPENAI_API_BASE_URL',
+            'https://api.openai.com/v1',
+        )), '/');
         $debug = strtolower(trim((string) $value('DEBUG', ''))) === 'dev';
 
         if ($secret === '' || strlen($secret) < 32) {
@@ -126,6 +131,25 @@ final class Config
                 );
             }
         }
+        $openAiApiParts = parse_url($openAiApiBaseUrl);
+        $openAiApiHost = is_array($openAiApiParts)
+            ? strtolower((string) ($openAiApiParts['host'] ?? ''))
+            : '';
+        $openAiApiScheme = is_array($openAiApiParts)
+            ? strtolower((string) ($openAiApiParts['scheme'] ?? ''))
+            : '';
+        if (
+            !is_array($openAiApiParts)
+            || $openAiApiHost === ''
+            || !in_array($openAiApiScheme, ['http', 'https'], true)
+            || ($openAiApiScheme !== 'https' && !in_array($openAiApiHost, ['127.0.0.1', 'localhost'], true))
+            || isset($openAiApiParts['user'])
+            || isset($openAiApiParts['pass'])
+            || isset($openAiApiParts['query'])
+            || isset($openAiApiParts['fragment'])
+        ) {
+            throw new ApiException(500, 'MOM_OPENAI_API_BASE_URL must be a valid HTTPS URL.');
+        }
 
         return new self(
             $databasePath,
@@ -138,6 +162,7 @@ final class Config
             $passkeyAndroidPackage,
             $passkeyAndroidKeyHashes,
             $pexelsApiKey,
+            $openAiApiBaseUrl,
             $debug,
         );
     }

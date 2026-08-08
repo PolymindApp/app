@@ -10,6 +10,7 @@ return [
     'MOM_TOKEN_TTL' => 604800,
     'MOM_MAX_BODY_BYTES' => 2500000,
     'MOM_PEXELS_API_KEY' => 'CHANGE_ME',
+    'MOM_OPENAI_API_BASE_URL' => 'https://api.openai.com/v1',
     'MOM_PASSKEY_RP_ID' => 'mom.example.com',
     'MOM_PASSKEY_ANDROID_PACKAGE' => 'dev.example.mom',
     'MOM_PASSKEY_ANDROID_KEY_HASHES' => 'BASE64URL_SHA256_OF_ANDROID_SIGNING_CERTIFICATE',

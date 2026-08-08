@@ -142,6 +142,9 @@ POST   /auth/passkeys/register/options
 POST   /auth/passkeys/register/verify
 POST   /auth/passkeys/login/options
 POST   /auth/passkeys/login/verify
+GET    /auth/openai
+POST   /auth/openai
+DELETE /auth/openai
 GET    /image-library/search?query={word}
 POST   /flashcards/{id}/library-image
 GET    /flashcard-review-sets
@@ -171,6 +174,8 @@ Only the application’s known collections, fields, sorts, and filters are accep
 Passwords are stored as bcrypt hashes. Signed tokens are bound to a per-user `token_key`, and `mom_rate_limits` provides login and registration throttling.
 
 Passkeys are exposed only by the native Android client. A signed-in user creates one from the account menu, then can use “Sign in with passkey” without entering an email. The PHP API stores only the credential public key, requires Android user verification, and issues the same bearer session used by password login.
+
+Settings can connect an OpenAI Platform API key for OpenAI-powered commands. The server verifies the key before saving it, encrypts it with AES-256-GCM using a key derived from `MOM_API_SECRET`, and returns only its final four characters to the client. Disconnecting permanently removes the stored credential. This API connection does not grant access to the user’s ChatGPT conversations or use a ChatGPT subscription; OpenAI API access and billing are separate.
 
 The web build publishes `/.well-known/assetlinks.json`, which binds `mom.coulombe.dev` to the Android package and the configured release/debug signing certificates. It must remain reachable over HTTPS with status `200`, no redirect, and an `application/json` content type. If the signing key changes, update both that file’s SHA-256 fingerprint and `MOM_PASSKEY_ANDROID_KEY_HASHES` in `.env.prod` before installing the newly signed app.
 
