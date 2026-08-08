@@ -6,8 +6,8 @@ import {
 
 describe('running session document title', () => {
   it('prepends an ASCII running-dot frame and wraps the sequence', () => {
-    expect(formatRunningSessionTitle('Polymind — Many systems. One mind.', 0))
-      .toBe('[.  ] Polymind — Many systems. One mind.')
+    expect(formatRunningSessionTitle('Polymind — Make life programmable.', 0))
+      .toBe('[.  ] Polymind — Make life programmable.')
     expect(formatRunningSessionTitle('Polymind', RUNNING_SESSION_TITLE_FRAMES.length))
       .toBe('[.  ] Polymind')
   })

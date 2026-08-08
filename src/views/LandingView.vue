@@ -170,7 +170,7 @@ function scrollToFeatures() {
 
       <footer class="landing-footer px-6 px-lg-10">
         <img src="/brand/polymind-wordmark.png" alt="Polymind" />
-        <span>Many systems. One mind.</span>
+        <span>Make life programmable.</span>
       </footer>
     </v-main>
   </v-app>

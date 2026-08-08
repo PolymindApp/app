@@ -42,7 +42,7 @@ const reducedMotion = ref(
   && window.matchMedia('(prefers-reduced-motion: reduce)').matches,
 )
 const documentTitle = typeof document === 'undefined'
-  ? 'Polymind — Many systems. One mind.'
+  ? 'Polymind — Make life programmable.'
   : document.title
 let documentTitleFrame = 0
 let documentTitleTimer: number | undefined
@@ -213,7 +213,7 @@ function releaseLeavingPage(element: Element) {
         <div class="brand-mark mb-3">
           <img src="/brand/polymind-wordmark.png" alt="Polymind" />
         </div>
-        <p class="text-caption text-medium-emphasis mt-2">Many systems. One mind.</p>
+        <p class="text-caption text-medium-emphasis mt-2">Make life programmable.</p>
       </div>
 
       <v-list nav class="px-3 mt-6">

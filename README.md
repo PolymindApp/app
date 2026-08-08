@@ -1,4 +1,4 @@
-# Polymind — Many systems. One mind.
+# Polymind — Make life programmable.
 
 A mobile-first personal management app for tasks, plans, habits, workouts, and programmable intervals. The client uses Vue 3, Vuetify, and TypeScript. A PHP API provides password/passkey authentication and secure SQLite access.
 
