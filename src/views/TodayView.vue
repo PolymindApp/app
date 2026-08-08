@@ -1058,7 +1058,7 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
 .score-number { font-family: Impact, "Arial Narrow", sans-serif; font-size: 3.2rem; line-height: .9; letter-spacing: -.03em; }
 .score-percent { color: #c7f464; font-size: 1.2rem; font-weight: 900; }
 .task-section-heading { flex-wrap: wrap; gap: .75rem; }
-.task-section-heading__controls { display: flex; min-width: 0; margin-left: auto; align-items: center; justify-content: flex-end; gap: .7rem; }
+.task-section-heading__controls { display: flex; min-width: 0; margin-left: auto; align-items: center; justify-content: flex-end; }
 .task-stack { display: grid; gap: 0; }
 .task-masonry-item {
   display: grid;
