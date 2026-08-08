@@ -30,6 +30,7 @@ const ownedReviewSets = computed(() => store.reviewSets.filter(set => set.access
 const sharedReviewSets = computed(() => store.reviewSets.filter(set => set.accessRole !== 'owner'))
 const selectedActions = computed(() => selectedReviewSet.value
   ? FLASHCARD_REVIEW_SET_ACTIONS[selectedReviewSet.value.accessRole]
+      .filter(item => item.action !== 'review')
   : [])
 
 const recentReviewsForWeek = computed(() => store.sessions.filter(session =>
@@ -167,10 +168,10 @@ async function startReview(reviewSet: FlashcardReviewSet) {
           class="review-set surface-card pa-4"
           role="button"
           tabindex="0"
-          :aria-label="`Open ${reviewSet.name} review or edit actions`"
-          @click="openReviewSetActions(reviewSet)"
-          @keydown.enter="openReviewSetActions(reviewSet)"
-          @keydown.space.prevent="openReviewSetActions(reviewSet)"
+          :aria-label="`Review ${reviewSet.name}`"
+          @click="startReview(reviewSet)"
+          @keydown.enter="startReview(reviewSet)"
+          @keydown.space.prevent="startReview(reviewSet)"
         >
           <div class="review-set__main">
             <div class="min-width-0">
@@ -213,7 +214,22 @@ async function startReview(reviewSet: FlashcardReviewSet) {
                 </span>
               </div>
             </div>
-            <v-icon icon="mdi-chevron-right" color="medium-emphasis" />
+            <div
+              class="review-set__actions"
+              @pointerdown.stop
+              @pointerup.stop
+              @touchstart.stop
+              @click.stop
+              @keydown.stop
+            >
+              <v-btn
+                class="review-set__menu-button"
+                icon="mdi-dots-vertical"
+                variant="text"
+                :aria-label="`More actions for ${reviewSet.name}`"
+                @click="openReviewSetActions(reviewSet)"
+              />
+            </div>
           </div>
         </v-card>
       </div>
@@ -249,10 +265,10 @@ async function startReview(reviewSet: FlashcardReviewSet) {
           class="review-set surface-card pa-4"
           role="button"
           tabindex="0"
-          :aria-label="`Open ${reviewSet.name} shared Review set actions`"
-          @click="openReviewSetActions(reviewSet)"
-          @keydown.enter="openReviewSetActions(reviewSet)"
-          @keydown.space.prevent="openReviewSetActions(reviewSet)"
+          :aria-label="`Review ${reviewSet.name}`"
+          @click="startReview(reviewSet)"
+          @keydown.enter="startReview(reviewSet)"
+          @keydown.space.prevent="startReview(reviewSet)"
         >
           <div class="review-set__main">
             <div class="min-width-0">
@@ -285,7 +301,22 @@ async function startReview(reviewSet: FlashcardReviewSet) {
                 </span>
               </div>
             </div>
-            <v-icon icon="mdi-chevron-right" color="medium-emphasis" />
+            <div
+              class="review-set__actions"
+              @pointerdown.stop
+              @pointerup.stop
+              @touchstart.stop
+              @click.stop
+              @keydown.stop
+            >
+              <v-btn
+                class="review-set__menu-button"
+                icon="mdi-dots-vertical"
+                variant="text"
+                :aria-label="`More actions for ${reviewSet.name}`"
+                @click="openReviewSetActions(reviewSet)"
+              />
+            </div>
           </div>
         </v-card>
       </div>
@@ -390,7 +421,7 @@ async function startReview(reviewSet: FlashcardReviewSet) {
       v-model="reviewSetActionsOpen"
       :title="selectedReviewSet?.name || 'Review set actions'"
       hide-title
-      :aria-label="selectedReviewSet ? `${selectedReviewSet.name} review or edit actions` : 'Review set actions'"
+      :aria-label="selectedReviewSet ? `${selectedReviewSet.name} management actions` : 'Review set actions'"
     >
       <template v-if="selectedReviewSet">
         <v-list-item
@@ -400,7 +431,7 @@ async function startReview(reviewSet: FlashcardReviewSet) {
           :title="item.title"
           :base-color="item.color"
           rounded="lg"
-          :disabled="working || (item.action === 'review' && reviewSetCardCount(selectedReviewSet) === 0)"
+          :disabled="working"
           @click="runReviewSetAction(item.action)"
         />
       </template>
@@ -434,7 +465,9 @@ async function startReview(reviewSet: FlashcardReviewSet) {
 .review-set-list { display: grid; gap: .75rem; }
 .review-set { overflow: hidden; cursor: pointer; }
 .review-set:focus-visible { outline: .125rem solid rgba(var(--v-theme-secondary), .72); outline-offset: .1875rem; }
-.review-set__main { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr) 1.5rem; align-items: center; gap: .85rem; }
+.review-set__main { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr) 2.75rem; align-items: center; gap: .85rem; }
+.review-set__actions { display: flex; flex: 0 0 auto; align-items: center; justify-content: center; }
+.review-set__menu-button { width: 2.75rem; height: 2.75rem; }
 .review-set__meta { display: flex; flex-wrap: wrap; gap: .35rem .75rem; color: rgba(var(--v-theme-on-surface), .6); font-size: .7rem; font-weight: 800; line-height: 1.35; }
 .review-set__meta-item { display: inline-flex; min-width: 0; align-items: center; gap: .25rem; }
 .review-set__meta-item :deep(.v-icon) { flex: 0 0 auto; opacity: .8; }
