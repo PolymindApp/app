@@ -11,6 +11,7 @@ defineProps<{
 }>()
 
 const emit = defineEmits<{
+  log: [tracker: TrackingTracker]
   actions: [tracker: TrackingTracker]
   entry: [entry: TrackingEntry]
 }>()
@@ -20,25 +21,32 @@ const vRipple = Ripple
 <template>
   <v-card class="tracker-card surface-card">
     <div class="tracker-card__accent" :style="{ background: tracker.color }" />
-    <div
-      v-ripple
-      class="tracker-card__header"
-      role="button"
-      tabindex="0"
-      :aria-label="`Open ${tracker.name} actions`"
-      @click="emit('actions', tracker)"
-      @keydown.enter="emit('actions', tracker)"
-      @keydown.space.prevent="emit('actions', tracker)"
-    >
-      <div class="tracker-card__icon" :style="{ color: tracker.color }">
-        <v-icon :icon="tracker.icon" />
-      </div>
-      <div class="min-width-0 flex-grow-1">
-        <strong class="d-block text-truncate">{{ tracker.name }}</strong>
-        <p class="tracker-card__description">
-          {{ tracker.description || 'No description added.' }}
-        </p>
-      </div>
+    <div class="tracker-card__header">
+      <button
+        v-ripple
+        type="button"
+        class="tracker-card__log"
+        :aria-label="`Log ${tracker.name}`"
+        @click="emit('log', tracker)"
+      >
+        <span class="tracker-card__icon" :style="{ color: tracker.color }">
+          <v-icon :icon="tracker.icon" />
+        </span>
+        <span class="min-width-0 flex-grow-1">
+          <strong class="d-block text-truncate">{{ tracker.name }}</strong>
+          <span class="tracker-card__description">
+            {{ tracker.description || 'No description added.' }}
+          </span>
+        </span>
+      </button>
+      <v-btn
+        icon="mdi-dots-vertical"
+        variant="text"
+        class="tracker-card__menu"
+        :aria-label="`Open ${tracker.name} actions`"
+        @touchstart.stop
+        @click.stop="emit('actions', tracker)"
+      />
     </div>
 
     <div v-if="entries.length" class="tracker-entry-list" :aria-label="`${tracker.name} logs`">
@@ -90,16 +98,40 @@ const vRipple = Ripple
   overflow: hidden;
   min-height: 4.375rem;
   align-items: center;
-  gap: .85rem;
-  padding: 1rem 1rem 1rem 1.2rem;
   border-radius: .75rem;
+}
+
+.tracker-card__log {
+  display: flex;
+  overflow: hidden;
+  min-width: 0;
+  min-height: 4.375rem;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: .85rem;
+  padding: 1rem .35rem 1rem 1.2rem;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
   cursor: pointer;
 }
 
-.tracker-card__header:focus-visible,
+.tracker-card__log:focus-visible,
+.tracker-card__menu:focus-visible,
 .tracker-entry:focus-visible {
   outline: .125rem solid rgba(var(--v-theme-secondary), .72);
   outline-offset: -.1875rem;
+}
+
+.tracker-card__menu {
+  width: 2.75rem;
+  min-width: 2.75rem;
+  height: 2.75rem;
+  margin-right: .5rem;
+  flex: 0 0 auto;
+  color: rgba(var(--v-theme-on-surface), .72);
 }
 
 .tracker-card__icon {
@@ -117,6 +149,7 @@ const vRipple = Ripple
 }
 
 .tracker-card__description {
+  display: block;
   margin-top: .2rem;
   color: rgba(var(--v-theme-on-surface), .58);
   font-size: .72rem;

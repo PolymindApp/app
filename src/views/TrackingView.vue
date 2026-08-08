@@ -73,14 +73,6 @@ function openTrackerActions(tracker: TrackingTracker) {
   trackerActionsOpen.value = true
 }
 
-async function logActionTracker() {
-  const tracker = actionTracker.value
-  if (!tracker) return
-  trackerActionsOpen.value = false
-  await nextTick()
-  startLog(tracker)
-}
-
 function editActionTracker() {
   const tracker = actionTracker.value
   if (!tracker) return
@@ -279,6 +271,7 @@ async function loadVisibleWeekEntries() {
             :key="tracker.id"
             :tracker="tracker"
             :entries="entriesForTracker(tracker.id)"
+            @log="startLog"
             @actions="openTrackerActions"
             @entry="startLog(tracker, $event)"
           />
@@ -293,6 +286,7 @@ async function loadVisibleWeekEntries() {
             :key="tracker.id"
             :tracker="tracker"
             :entries="entriesForTracker(tracker.id)"
+            @log="startLog"
             @actions="openTrackerActions"
             @entry="startLog(tracker, $event)"
           />
@@ -351,15 +345,9 @@ async function loadVisibleWeekEntries() {
       v-model="trackerActionsOpen"
       :title="actionTracker?.name || 'Tracker actions'"
       hide-title
-      :aria-label="actionTracker ? `${actionTracker.name} log, journal, or edit actions` : 'Tracker actions'"
+      :aria-label="actionTracker ? `${actionTracker.name} journal or edit actions` : 'Tracker actions'"
     >
       <template v-if="actionTracker">
-        <v-list-item
-          prepend-icon="mdi-plus-circle-outline"
-          title="Log"
-          rounded="lg"
-          @click="logActionTracker"
-        />
         <v-list-item
           prepend-icon="mdi-pencil-outline"
           title="Edit"

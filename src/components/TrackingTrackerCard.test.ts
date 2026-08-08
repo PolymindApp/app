@@ -35,11 +35,12 @@ const entry: TrackingEntry = {
 }
 
 describe('TrackingTrackerCard', () => {
-  it('opens tracker actions from the header and the log context from a child row', async () => {
+  it('logs from the tracker header and opens actions from the menu without triggering parent controls', async () => {
     const wrapper = mount(TrackingTrackerCard, {
       props: { tracker, entries: [entry] },
       global: {
         stubs: {
+          VBtn: { template: '<button><slot /></button>' },
           VCard: { template: '<div><slot /></div>' },
           VIcon: true,
           TrackingRatingValue: true,
@@ -47,13 +48,21 @@ describe('TrackingTrackerCard', () => {
       },
     })
 
-    await wrapper.get('.tracker-card__header').trigger('click')
-    expect(wrapper.emitted('actions')).toEqual([[tracker]])
+    await wrapper.get('.tracker-card__log').trigger('click')
+    expect(wrapper.emitted('log')).toEqual([[tracker]])
 
     const cardClick = vi.fn()
     const cardTouchStart = vi.fn()
     wrapper.get('.tracker-card').element.addEventListener('click', cardClick)
     wrapper.get('.tracker-card').element.addEventListener('touchstart', cardTouchStart)
+
+    await wrapper.get('.tracker-card__menu').trigger('touchstart')
+    await wrapper.get('.tracker-card__menu').trigger('click')
+
+    expect(wrapper.emitted('actions')).toEqual([[tracker]])
+    expect(wrapper.emitted('log')).toHaveLength(1)
+    expect(cardTouchStart).not.toHaveBeenCalled()
+    expect(cardClick).not.toHaveBeenCalled()
 
     await wrapper.get('.tracker-entry').trigger('touchstart')
     await wrapper.get('.tracker-entry').trigger('click')
@@ -62,6 +71,7 @@ describe('TrackingTrackerCard', () => {
       .toBe(wrapper.get('.tracker-entry').element)
     expect(wrapper.emitted('entry')).toEqual([[entry]])
     expect(wrapper.emitted('actions')).toHaveLength(1)
+    expect(wrapper.emitted('log')).toHaveLength(1)
     expect(cardTouchStart).not.toHaveBeenCalled()
     expect(cardClick).not.toHaveBeenCalled()
   })
@@ -79,6 +89,7 @@ describe('TrackingTrackerCard', () => {
       },
       global: {
         stubs: {
+          VBtn: { template: '<button><slot /></button>' },
           VCard: { template: '<div><slot /></div>' },
           VIcon: true,
           TrackingRatingValue: true,
