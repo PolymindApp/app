@@ -235,14 +235,14 @@ async function revoke() {
     >
       <v-list-item
         prepend-icon="mdi-eye-outline"
-        title="Read only"
+        title="Make read only"
         rounded="lg"
         :disabled="saving || selectedShare?.role === 'readonly'"
         @click="requestRole('readonly')"
       />
       <v-list-item
         prepend-icon="mdi-pencil-outline"
-        title="Editor"
+        title="Make editor"
         rounded="lg"
         :disabled="saving || selectedShare?.role === 'editor'"
         @click="requestRole('editor')"
