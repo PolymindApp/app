@@ -654,7 +654,7 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
     <template v-if="selectedProgress.length">
       <section v-if="required.length">
         <div class="section-heading task-section-heading">
-          <h2>Required tasks</h2>
+          <h2>Tasks</h2>
           <div class="task-section-heading__controls">
             <span class="text-caption muted">{{ required.filter(i => i.complete).length }}/{{ required.length }}</span>
             <v-checkbox-btn
