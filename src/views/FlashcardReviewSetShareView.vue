@@ -179,6 +179,7 @@ async function revoke() {
           </v-alert>
           <v-btn
             block
+            size="large"
             color="secondary"
             prepend-icon="mdi-account-plus-outline"
             class="mt-4"
