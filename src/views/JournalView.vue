@@ -1,14 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { addDays, format, isValid, parseISO, startOfWeek } from 'date-fns'
+import { endOfMonth, format, isValid, parseISO, startOfMonth } from 'date-fns'
 import { useRoute, useRouter } from 'vue-router'
 import { Ripple } from 'vuetify/directives'
-import WeekDateNavigator from '@/components/WeekDateNavigator.vue'
+import WeekNavigator from '@/components/WeekNavigator.vue'
 import {
   filterJournalEntries,
-  groupJournalEntriesByContext,
+  groupJournalEntries,
   journalEntryHeading,
-  type JournalContextGroup,
 } from '@/services/journal'
 import { useJournalStore } from '@/stores/journal'
 import { useTaskStore } from '@/stores/tasks'
@@ -21,32 +20,22 @@ const journalStore = useJournalStore()
 const taskStore = useTaskStore()
 const trackingStore = useTrackingStore()
 const selectedDate = ref(initialDate())
-const visibleWeekStart = ref(startOfWeek(selectedDate.value, { weekStartsOn: 1 }))
 const dateDirection = ref<'forward' | 'back'>('forward')
 const vRipple = Ripple
 
 const taskId = computed(() => typeof route.query.task === 'string' ? route.query.task : '')
 const trackerId = computed(() => typeof route.query.tracker === 'string' ? route.query.tracker : '')
-const selectedDateKey = computed(() => format(selectedDate.value, 'yyyy-MM-dd'))
-const filteredWeekEntries = computed(() => filterJournalEntries(
+const selectedMonthKey = computed(() => format(selectedDate.value, 'yyyy-MM'))
+const filteredMonthEntries = computed(() => filterJournalEntries(
   journalStore.entries,
   'all',
   taskId.value,
   trackerId.value,
 ))
-const dateMarkers = computed(() => [...new Set(filteredWeekEntries.value.map((entry) => entry.localDate))]
-  .map((date) => ({ date, color: 'error', label: 'Has journal entries' })))
-const selectedEntries = computed(() => filteredWeekEntries.value.filter((entry) => entry.localDate === selectedDateKey.value))
-const groups = computed(() => groupJournalEntriesByContext(selectedEntries.value))
+const groups = computed(() => groupJournalEntries(filteredMonthEntries.value))
 const showEmptyState = computed(() => journalStore.loaded && !journalStore.loading && groups.value.length === 0)
 const filteredTask = computed(() => taskStore.tasks.find((task) => task.id === taskId.value))
 const filteredTracker = computed(() => trackingStore.trackers.find((tracker) => tracker.id === trackerId.value))
-const groupTitles: Record<JournalContextGroup, string> = {
-  tasks: 'Task reflections',
-  tracking: 'Tracking reflections',
-  connected: 'Task & tracking reflections',
-  general: 'General reflections',
-}
 
 function initialDate() {
   const queryDate = typeof route.query.date === 'string' ? parseISO(route.query.date) : undefined
@@ -90,23 +79,26 @@ function newEntryQuery() {
   }
 }
 
+function monthRange(date: Date) {
+  return {
+    start: format(startOfMonth(date), 'yyyy-MM-dd'),
+    end: format(endOfMonth(date), 'yyyy-MM-dd'),
+  }
+}
+
 function clearSourceFilter(source: 'task' | 'tracker') {
   const query = { ...route.query }
   delete query[source]
   void router.replace({ name: 'journal', query })
 }
 
-watch(visibleWeekStart, async (weekStart) => {
-  await journalStore.loadRange(
-    format(weekStart, 'yyyy-MM-dd'),
-    format(addDays(weekStart, 6), 'yyyy-MM-dd'),
-  ).catch(() => undefined)
+watch(selectedDate, async (date, previousDate) => {
+  if (previousDate && date.getTime() !== previousDate.getTime()) {
+    dateDirection.value = date > previousDate ? 'forward' : 'back'
+  }
+  const range = monthRange(date)
+  await journalStore.loadRange(range.start, range.end).catch(() => undefined)
 }, { immediate: true })
-
-watch(selectedDate, (date, previousDate) => {
-  if (date.getTime() === previousDate.getTime()) return
-  dateDirection.value = date > previousDate ? 'forward' : 'back'
-})
 
 watch(() => route.query.date, (date) => {
   if (typeof date !== 'string') return
@@ -124,16 +116,15 @@ onMounted(async () => {
 
 <template>
   <main class="app-page journal-page">
-    <WeekDateNavigator
+    <WeekNavigator
       v-model="selectedDate"
-      v-model:week-start="visibleWeekStart"
-      :markers="dateMarkers"
+      type="month"
       class="mb-5"
     />
 
     <div class="journal-date-stage">
       <transition :name="`page-level-${dateDirection}`">
-        <div :key="selectedDateKey" class="journal-date-content">
+        <div :key="selectedMonthKey" class="journal-date-content">
           <div v-if="taskId || trackerId" class="d-flex flex-wrap ga-2">
             <v-chip
               v-if="taskId"
@@ -163,7 +154,7 @@ onMounted(async () => {
               <v-btn
                 size="small"
                 variant="text"
-                @click="journalStore.loadRange(format(visibleWeekStart, 'yyyy-MM-dd'), format(addDays(visibleWeekStart, 6), 'yyyy-MM-dd'))"
+                @click="journalStore.loadRange(monthRange(selectedDate).start, monthRange(selectedDate).end)"
               >
                 Retry
               </v-btn>
@@ -176,9 +167,9 @@ onMounted(async () => {
           </div>
 
           <div v-else-if="groups.length" class="journal-groups mt-5">
-            <section v-for="group in groups" :key="group.context">
+            <section v-for="group in groups" :key="group.date">
               <div class="section-heading">
-                <h2>{{ groupTitles[group.context] }}</h2>
+                <h2>{{ format(parseISO(group.date), 'EEEE, MMMM d') }}</h2>
                 <span class="muted text-caption">{{ group.entries.length }}</span>
               </div>
               <div class="journal-entry-list">
@@ -233,10 +224,10 @@ onMounted(async () => {
 
           <v-card v-else-if="showEmptyState" class="surface-card pa-8 mt-5 text-center">
             <v-icon icon="mdi-notebook-outline" size="42" color="secondary" class="mb-3" />
-            <h2 class="text-h6 font-weight-black">No reflections for this day</h2>
+            <h2 class="text-h6 font-weight-black">No reflections for this month</h2>
             <p class="text-body-2 muted mt-2 mb-5">
               {{ taskId || trackerId
-                ? 'Choose another day or clear the filter.'
+                ? 'Choose another month or clear the filter.'
                 : 'Capture what happened, what you noticed, or what you want to remember.' }}
             </p>
             <v-btn color="secondary" :to="{ name: 'journal-new', query: newEntryQuery() }">

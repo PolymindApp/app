@@ -1,35 +1,79 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { addWeeks, endOfWeek, format, isSameWeek, startOfWeek } from 'date-fns'
+import {
+  addDays,
+  addMonths,
+  addWeeks,
+  addYears,
+  endOfWeek,
+  format,
+  isSameDay,
+  isSameMonth,
+  isSameWeek,
+  isSameYear,
+  startOfDay,
+  startOfMonth,
+  startOfWeek,
+  startOfYear,
+} from 'date-fns'
 
-const weekStart = defineModel<Date>({ required: true })
+type NavigationType = 'day' | 'week' | 'month' | 'year'
+
+const props = withDefaults(defineProps<{
+  type?: NavigationType
+}>(), {
+  type: 'week',
+})
+const selectedDate = defineModel<Date>({ required: true })
 const emit = defineEmits<{
   navigate: [direction: 'previous' | 'next']
 }>()
 
-const normalizedWeekStart = computed(() =>
-  startOfWeek(weekStart.value, { weekStartsOn: 1 }),
-)
-const weekLabel = computed(() => {
-  const start = normalizedWeekStart.value
+const normalizedDate = computed(() => normalizeDate(selectedDate.value))
+const periodLabel = computed(() => {
+  const start = normalizedDate.value
+  if (props.type === 'day') return format(start, 'EEEE, MMMM d, yyyy')
+  if (props.type === 'month') return format(start, 'MMMM yyyy')
+  if (props.type === 'year') return format(start, 'yyyy')
+
   const end = endOfWeek(start, { weekStartsOn: 1 })
   return start.getMonth() === end.getMonth()
     ? `${format(start, 'MMM d')} – ${format(end, 'd')}`
     : `${format(start, 'MMM d')} – ${format(end, 'MMM d')}`
 })
-const isCurrentWeek = computed(() =>
-  isSameWeek(normalizedWeekStart.value, new Date(), { weekStartsOn: 1 }),
-)
+const isCurrentPeriod = computed(() => isSamePeriod(normalizedDate.value, new Date()))
+const periodName = computed(() => props.type)
 
-function moveWeek(amount: -1 | 1) {
-  emit('navigate', amount < 0 ? 'previous' : 'next')
-  weekStart.value = addWeeks(normalizedWeekStart.value, amount)
+function normalizeDate(date: Date) {
+  if (props.type === 'day') return startOfDay(date)
+  if (props.type === 'month') return startOfMonth(date)
+  if (props.type === 'year') return startOfYear(date)
+  return startOfWeek(date, { weekStartsOn: 1 })
 }
 
-function goToCurrentWeek() {
+function addPeriod(date: Date, amount: -1 | 1) {
+  if (props.type === 'day') return addDays(date, amount)
+  if (props.type === 'month') return addMonths(date, amount)
+  if (props.type === 'year') return addYears(date, amount)
+  return addWeeks(date, amount)
+}
+
+function isSamePeriod(left: Date, right: Date) {
+  if (props.type === 'day') return isSameDay(left, right)
+  if (props.type === 'month') return isSameMonth(left, right)
+  if (props.type === 'year') return isSameYear(left, right)
+  return isSameWeek(left, right, { weekStartsOn: 1 })
+}
+
+function movePeriod(amount: -1 | 1) {
+  emit('navigate', amount < 0 ? 'previous' : 'next')
+  selectedDate.value = addPeriod(normalizedDate.value, amount)
+}
+
+function goToCurrentPeriod() {
   const today = new Date()
-  emit('navigate', normalizedWeekStart.value > today ? 'previous' : 'next')
-  weekStart.value = startOfWeek(today, { weekStartsOn: 1 })
+  emit('navigate', normalizedDate.value > today ? 'previous' : 'next')
+  selectedDate.value = normalizeDate(today)
 }
 </script>
 
@@ -39,23 +83,23 @@ function goToCurrentWeek() {
       icon="mdi-chevron-left"
       variant="text"
       size="small"
-      aria-label="Previous week"
-      @click="moveWeek(-1)"
+      :aria-label="`Previous ${periodName}`"
+      @click="movePeriod(-1)"
     />
     <button
       class="week-navigator__label"
-      :disabled="isCurrentWeek"
-      @click="goToCurrentWeek"
+      :disabled="isCurrentPeriod"
+      @click="goToCurrentPeriod"
     >
-      <strong>{{ weekLabel }}</strong>
-      <span>{{ isCurrentWeek ? 'Current week' : 'Back to current week' }}</span>
+      <strong>{{ periodLabel }}</strong>
+      <span>{{ isCurrentPeriod ? `Current ${periodName}` : `Back to current ${periodName}` }}</span>
     </button>
     <v-btn
       icon="mdi-chevron-right"
       variant="text"
       size="small"
-      aria-label="Next week"
-      @click="moveWeek(1)"
+      :aria-label="`Next ${periodName}`"
+      @click="movePeriod(1)"
     />
   </div>
 </template>

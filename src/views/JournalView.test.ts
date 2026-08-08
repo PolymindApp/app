@@ -26,16 +26,16 @@ vi.mock('@/stores/journal', () => ({ useJournalStore: () => mocks.journalStore }
 vi.mock('@/stores/tasks', () => ({ useTaskStore: () => mocks.taskStore }))
 vi.mock('@/stores/tracking', () => ({ useTrackingStore: () => mocks.trackingStore }))
 
-const WeekDateNavigatorStub = defineComponent({
+const WeekNavigatorStub = defineComponent({
   props: {
     modelValue: { type: Date, required: true },
-    weekStart: Date,
+    type: String,
   },
-  emits: ['update:modelValue', 'update:weekStart'],
+  emits: ['update:modelValue'],
   template: `
     <div>
-      <button class="previous-date" @click="$emit('update:modelValue', new Date(2026, 7, 4, 12))">Previous</button>
-      <button class="next-date" @click="$emit('update:modelValue', new Date(2026, 7, 6, 12))">Next</button>
+      <button class="previous-date" @click="$emit('update:modelValue', new Date(2026, 6, 1, 12))">Previous</button>
+      <button class="next-date" @click="$emit('update:modelValue', new Date(2026, 8, 1, 12))">Next</button>
     </div>
   `,
 })
@@ -56,7 +56,7 @@ function entry(id: string, date: string, body: string) {
   }
 }
 
-describe('JournalView date navigation', () => {
+describe('JournalView month navigation', () => {
   beforeEach(() => {
     mocks.journalStore.entries = [
       entry('previous', '2026-08-04', 'Previous reflection'),
@@ -69,11 +69,11 @@ describe('JournalView date navigation', () => {
     mocks.trackingStore.load.mockReset().mockResolvedValue(undefined)
   })
 
-  it('reuses forward and back route transitions for the content below the date navigator', async () => {
+  it('loads a full month and lists all reflections newest first', async () => {
     const wrapper = mount(JournalView, {
       global: {
         stubs: {
-          WeekDateNavigator: WeekDateNavigatorStub,
+          WeekNavigator: WeekNavigatorStub,
           VAlert: { template: '<div><slot /><slot name="append" /></div>' },
           VBtn: { template: '<button><slot /></button>' },
           VCard: { template: '<article><slot /></article>' },
@@ -85,22 +85,29 @@ describe('JournalView date navigation', () => {
     })
     const selectedContent = wrapper.get('.journal-date-content').element
 
+    expect(wrapper.getComponent(WeekNavigatorStub).props('type')).toBe('month')
+    expect(mocks.journalStore.loadRange).toHaveBeenCalledWith('2026-08-01', '2026-08-31')
     expect(wrapper.get('transition-stub').attributes('name')).toBe('page-level-forward')
+    expect(wrapper.findAll('.journal-entry').map(item => item.text())).toEqual([
+      expect.stringContaining('Next reflection'),
+      expect.stringContaining('Selected reflection'),
+      expect.stringContaining('Previous reflection'),
+    ])
     expect(wrapper.text()).toContain('Selected reflection')
 
     await wrapper.get('.next-date').trigger('click')
     await nextTick()
 
     const nextContent = wrapper.get('.journal-date-content').element
+    expect(mocks.journalStore.loadRange).toHaveBeenLastCalledWith('2026-09-01', '2026-09-30')
     expect(wrapper.get('transition-stub').attributes('name')).toBe('page-level-forward')
-    expect(wrapper.text()).toContain('Next reflection')
     expect(nextContent).not.toBe(selectedContent)
 
     await wrapper.get('.previous-date').trigger('click')
     await nextTick()
 
+    expect(mocks.journalStore.loadRange).toHaveBeenLastCalledWith('2026-07-01', '2026-07-31')
     expect(wrapper.get('transition-stub').attributes('name')).toBe('page-level-back')
-    expect(wrapper.text()).toContain('Previous reflection')
     expect(wrapper.get('.journal-date-content').element).not.toBe(nextContent)
   })
 
@@ -117,7 +124,7 @@ describe('JournalView date navigation', () => {
     const wrapper = mount(JournalView, {
       global: {
         stubs: {
-          WeekDateNavigator: WeekDateNavigatorStub,
+          WeekNavigator: WeekNavigatorStub,
           VAlert: { template: '<div><slot /><slot name="append" /></div>' },
           VBtn: { template: '<button><slot /></button>' },
           VCard: { template: '<article><slot /></article>' },
