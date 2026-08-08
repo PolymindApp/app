@@ -98,6 +98,7 @@ describe('JournalView month navigation', () => {
       expect.stringContaining('Selected reflection'),
       expect.stringContaining('Previous reflection'),
     ])
+    expect(wrapper.find('.section-heading .text-caption').exists()).toBe(false)
     expect(wrapper.text()).toContain('Selected reflection')
 
     await wrapper.get('.next-date').trigger('click')

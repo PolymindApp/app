@@ -181,7 +181,6 @@ onMounted(async () => {
             <section v-for="group in groups" :key="group.date">
               <div class="section-heading">
                 <h2>{{ format(parseISO(group.date), 'EEEE, MMMM d') }}</h2>
-                <span class="muted text-caption">{{ group.entries.length }}</span>
               </div>
               <div class="journal-entry-list">
                 <v-card
