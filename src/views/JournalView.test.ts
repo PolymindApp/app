@@ -86,6 +86,10 @@ describe('JournalView month navigation', () => {
     const selectedContent = wrapper.get('.journal-date-content').element
 
     expect(wrapper.getComponent(WeekNavigatorStub).props('type')).toBe('month')
+    expect(wrapper.findAll('.new-reflection-action')).toHaveLength(1)
+    expect(wrapper.get('.new-reflection-action').text()).toContain('New reflection')
+    expect(wrapper.get('.new-reflection-action').element.compareDocumentPosition(selectedContent))
+      .toBe(Node.DOCUMENT_POSITION_FOLLOWING)
     expect(mocks.journalStore.loadRange).toHaveBeenCalledWith('2026-08-01', '2026-08-31')
     expect(wrapper.get('transition-stub').attributes('name')).toBe('page-level-forward')
     expect(wrapper.findAll('.journal-entry').map(item => item.text())).toEqual([

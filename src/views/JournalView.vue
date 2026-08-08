@@ -119,8 +119,19 @@ onMounted(async () => {
     <WeekNavigator
       v-model="selectedDate"
       type="month"
-      class="mb-5"
+      class="mb-3"
     />
+
+    <v-btn
+      block
+      size="large"
+      class="new-reflection-action mb-5"
+      color="secondary"
+      prepend-icon="mdi-notebook-plus-outline"
+      :to="{ name: 'journal-new', query: newEntryQuery() }"
+    >
+      New reflection
+    </v-btn>
 
     <div class="journal-date-stage">
       <transition :name="`page-level-${dateDirection}`">
@@ -225,27 +236,12 @@ onMounted(async () => {
           <v-card v-else-if="showEmptyState" class="surface-card pa-8 mt-5 text-center">
             <v-icon icon="mdi-notebook-outline" size="42" color="secondary" class="mb-3" />
             <h2 class="text-h6 font-weight-black">No reflections for this month</h2>
-            <p class="text-body-2 muted mt-2 mb-5">
+            <p class="text-body-2 muted mt-2">
               {{ taskId || trackerId
                 ? 'Choose another month or clear the filter.'
                 : 'Capture what happened, what you noticed, or what you want to remember.' }}
             </p>
-            <v-btn color="secondary" :to="{ name: 'journal-new', query: newEntryQuery() }">
-              Write a reflection
-            </v-btn>
           </v-card>
-
-          <v-btn
-            v-if="!journalStore.loading && groups.length"
-            block
-            size="large"
-            class="mt-5"
-            color="secondary"
-            prepend-icon="mdi-notebook-plus-outline"
-            :to="{ name: 'journal-new', query: newEntryQuery() }"
-          >
-            New reflection
-          </v-btn>
         </div>
       </transition>
     </div>
