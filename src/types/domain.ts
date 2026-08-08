@@ -1,11 +1,15 @@
 export type TaskType = 'check' | 'duration' | 'daily_total' | 'step_counter' | 'program' | 'interval' | 'flashcards' | 'tracking' | 'journal'
 export type StepSource = 'health_connect'
 
-export interface OpenAIConnectionStatus {
+export interface ChatGPTConnectionStatus {
+  available: boolean
   connected: boolean
-  keyHint?: string
-  updated?: string
-  removed?: number
+  pending?: boolean
+  email?: string
+  planType?: string
+  verificationUrl?: string
+  userCode?: string
+  loginError?: string
 }
 
 export type RecurrenceType = 'daily' | 'weekdays' | 'interval_weeks'

@@ -17,7 +17,8 @@ final class Config
         public readonly string $passkeyAndroidPackage,
         public readonly array $passkeyAndroidKeyHashes,
         public readonly string $pexelsApiKey,
-        public readonly string $openAiApiBaseUrl,
+        public readonly string $codexBridgeUrl,
+        public readonly string $codexBridgeToken,
         public readonly bool $debug,
     ) {
     }
@@ -75,10 +76,8 @@ final class Config
             $productionDotenv = self::readDotenv($projectRoot . '/.env.prod');
             $pexelsApiKey = trim((string) ($productionDotenv['MOM_PEXELS_API_KEY'] ?? ''));
         }
-        $openAiApiBaseUrl = rtrim(trim((string) $value(
-            'MOM_OPENAI_API_BASE_URL',
-            'https://api.openai.com/v1',
-        )), '/');
+        $codexBridgeUrl = rtrim(trim((string) $value('MOM_CODEX_BRIDGE_URL', '')), '/');
+        $codexBridgeToken = trim((string) $value('MOM_CODEX_BRIDGE_TOKEN', ''));
         $debug = strtolower(trim((string) $value('DEBUG', ''))) === 'dev';
 
         if ($secret === '' || strlen($secret) < 32) {
@@ -131,24 +130,48 @@ final class Config
                 );
             }
         }
-        $openAiApiParts = parse_url($openAiApiBaseUrl);
-        $openAiApiHost = is_array($openAiApiParts)
-            ? strtolower((string) ($openAiApiParts['host'] ?? ''))
+        $codexBridgeParts = $codexBridgeUrl !== '' ? parse_url($codexBridgeUrl) : [];
+        $codexBridgeHost = is_array($codexBridgeParts)
+            ? strtolower((string) ($codexBridgeParts['host'] ?? ''))
             : '';
-        $openAiApiScheme = is_array($openAiApiParts)
-            ? strtolower((string) ($openAiApiParts['scheme'] ?? ''))
+        $codexBridgeScheme = is_array($codexBridgeParts)
+            ? strtolower((string) ($codexBridgeParts['scheme'] ?? ''))
             : '';
         if (
-            !is_array($openAiApiParts)
-            || $openAiApiHost === ''
-            || !in_array($openAiApiScheme, ['http', 'https'], true)
-            || ($openAiApiScheme !== 'https' && !in_array($openAiApiHost, ['127.0.0.1', 'localhost'], true))
-            || isset($openAiApiParts['user'])
-            || isset($openAiApiParts['pass'])
-            || isset($openAiApiParts['query'])
-            || isset($openAiApiParts['fragment'])
+            ($codexBridgeUrl === '') !== ($codexBridgeToken === '')
+            || (
+                $codexBridgeUrl !== ''
+                && (
+                    !is_array($codexBridgeParts)
+                    || $codexBridgeHost === ''
+                    || !in_array($codexBridgeScheme, ['http', 'https'], true)
+                    || (
+                        $codexBridgeScheme !== 'https'
+                        && !in_array($codexBridgeHost, ['127.0.0.1', 'localhost'], true)
+                    )
+                    || isset($codexBridgeParts['user'])
+                    || isset($codexBridgeParts['pass'])
+                    || isset($codexBridgeParts['query'])
+                    || isset($codexBridgeParts['fragment'])
+                )
+            )
         ) {
-            throw new ApiException(500, 'MOM_OPENAI_API_BASE_URL must be a valid HTTPS URL.');
+            throw new ApiException(
+                500,
+                'MOM_CODEX_BRIDGE_URL and MOM_CODEX_BRIDGE_TOKEN must be configured together using HTTPS.',
+            );
+        }
+        if (
+            $codexBridgeToken !== ''
+            && (
+                strlen($codexBridgeToken) < 32
+                || preg_match('/^[\x21-\x7E]+$/D', $codexBridgeToken) !== 1
+            )
+        ) {
+            throw new ApiException(
+                500,
+                'MOM_CODEX_BRIDGE_TOKEN must contain at least 32 printable characters.',
+            );
         }
 
         return new self(
@@ -162,7 +185,8 @@ final class Config
             $passkeyAndroidPackage,
             $passkeyAndroidKeyHashes,
             $pexelsApiKey,
-            $openAiApiBaseUrl,
+            $codexBridgeUrl,
+            $codexBridgeToken,
             $debug,
         );
     }

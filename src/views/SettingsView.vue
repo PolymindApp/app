@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from 'vue'
-import AppForm from '@/components/AppForm.vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import type { LongPressDragResult } from '@/directives/longPressDrag'
 import { api } from '@/lib/api'
@@ -23,7 +22,7 @@ import {
   type MainNavItem,
   type MainNavItemId,
 } from '@/services/navigation'
-import type { OpenAIConnectionStatus, StepSource } from '@/types/domain'
+import type { ChatGPTConnectionStatus, StepSource } from '@/types/domain'
 
 const stepSource = ref<StepSource>(DEFAULT_STEP_SOURCE)
 const menuItems = ref<MainNavItem[]>(orderedMainNavItems(
@@ -34,15 +33,12 @@ const hiddenMenuItems = ref<MainNavItemId[]>(normalizeHiddenMainMenuItems(
 ))
 const loading = ref(true)
 const connecting = ref(false)
-const openAIConnecting = ref(false)
-const openAIDisconnecting = ref(false)
-const openAIConnectionDialog = ref(false)
-const disconnectOpenAIDialog = ref(false)
-const openAIForm = ref()
-const openAIApiKey = ref('')
-const openAIKeyVisible = ref(false)
-const openAIStatus = ref<OpenAIConnectionStatus>({ connected: false })
-const openAIError = ref('')
+const chatGPTConnecting = ref(false)
+const chatGPTDisconnecting = ref(false)
+const chatGPTConnectionDialog = ref(false)
+const disconnectChatGPTDialog = ref(false)
+const chatGPTStatus = ref<ChatGPTConnectionStatus>({ available: false, connected: false })
+const chatGPTError = ref('')
 const menuSaving = ref(false)
 const error = ref('')
 const notice = ref(false)
@@ -55,6 +51,7 @@ const isAndroidApp = isNativeHealthConnectSupported()
 const stepSources = [
   { title: 'Health Connect', value: 'health_connect' },
 ]
+let chatGPTPollTimer: ReturnType<typeof setTimeout> | undefined
 
 const connectionTitle = computed(() => {
   if (!isAndroidApp) return 'Android app required'
@@ -83,14 +80,37 @@ const connectionIcon = computed(() => healthStatus.value.authorized
   : 'mdi-heart-pulse',
 )
 const visibleMenuItemCount = computed(() => menuItems.value.length - hiddenMenuItems.value.length)
-const openAIConnectionCopy = computed(() => openAIStatus.value.connected
-  ? `API key ending in ${openAIStatus.value.keyHint || '••••'} is ready for OpenAI commands.`
-  : 'Connect an API key to let Polymind use OpenAI models. ChatGPT chats and subscriptions stay separate.',
-)
-const canConnectOpenAI = computed(() => (
-  !openAIConnecting.value
-  && /^sk-[A-Za-z0-9._-]{17,}$/.test(openAIApiKey.value.trim())
-))
+const chatGPTConnectionTitle = computed(() => {
+  if (!chatGPTStatus.value.available) return 'Connection unavailable'
+  if (chatGPTStatus.value.connected) return 'ChatGPT connected'
+  if (chatGPTStatus.value.pending) return 'Finish signing in'
+  return 'ChatGPT sign-in required'
+})
+const chatGPTConnectionCopy = computed(() => {
+  if (!chatGPTStatus.value.available) {
+    return 'The hosted Codex bridge must be configured before ChatGPT accounts can connect.'
+  }
+  if (chatGPTStatus.value.connected) {
+    const account = chatGPTStatus.value.email || 'Your ChatGPT account'
+    const plan = chatGPTStatus.value.planType
+      ? ` · ${chatGPTStatus.value.planType.toUpperCase()} plan`
+      : ''
+    return `${account}${plan} is ready for supported Codex commands.`
+  }
+  if (chatGPTStatus.value.pending) {
+    return 'Open the secure OpenAI sign-in page and enter the one-time code to finish connecting.'
+  }
+  return 'Connect your ChatGPT account through OpenAI’s secure device sign-in.'
+})
+const chatGPTConnectionColor = computed(() => {
+  if (!chatGPTStatus.value.available) return 'warning'
+  return chatGPTStatus.value.connected ? 'success' : 'info'
+})
+const chatGPTConnectionIcon = computed(() => {
+  if (!chatGPTStatus.value.available) return 'mdi-server-off'
+  if (chatGPTStatus.value.connected) return 'mdi-check-circle-outline'
+  return 'mdi-robot-outline'
+})
 
 onMounted(async () => {
   try {
@@ -109,9 +129,11 @@ onMounted(async () => {
     error.value = cause instanceof Error ? cause.message : 'Your settings could not be loaded.'
   }
 
-  await Promise.all([refreshHealthStatus(), refreshOpenAIStatus()])
+  await Promise.all([refreshHealthStatus(), refreshChatGPTStatus()])
   loading.value = false
 })
+
+onBeforeUnmount(stopChatGPTPolling)
 
 async function refreshHealthStatus() {
   try {
@@ -138,61 +160,96 @@ async function connectHealthConnect() {
   }
 }
 
-async function refreshOpenAIStatus() {
+async function refreshChatGPTStatus() {
   try {
-    openAIStatus.value = await api.getOpenAIConnection()
+    chatGPTStatus.value = await api.getChatGPTConnection()
+    chatGPTError.value = chatGPTStatus.value.loginError || ''
   } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : 'OpenAI status could not be checked.'
+    error.value = cause instanceof Error ? cause.message : 'ChatGPT status could not be checked.'
   }
 }
 
-async function showOpenAIConnectionDialog() {
-  openAIError.value = ''
-  openAIApiKey.value = ''
-  openAIKeyVisible.value = false
-  openAIConnectionDialog.value = true
-  await nextTick()
-  openAIForm.value?.resetValidation()
+function stopChatGPTPolling() {
+  if (chatGPTPollTimer !== undefined) {
+    clearTimeout(chatGPTPollTimer)
+    chatGPTPollTimer = undefined
+  }
 }
 
-function closeOpenAIConnectionDialog() {
-  if (openAIConnecting.value) return
-  openAIConnectionDialog.value = false
-  openAIApiKey.value = ''
-  openAIKeyVisible.value = false
+function scheduleChatGPTPoll() {
+  stopChatGPTPolling()
+  if (!chatGPTConnectionDialog.value || !chatGPTStatus.value.pending) return
+  chatGPTPollTimer = setTimeout(pollChatGPTConnection, 2000)
 }
 
-async function connectOpenAI() {
-  const validation = await openAIForm.value?.validate()
-  if (!validation?.valid || !canConnectOpenAI.value) return
-  openAIConnecting.value = true
-  openAIError.value = ''
+async function pollChatGPTConnection() {
   try {
-    openAIStatus.value = await api.connectOpenAI(openAIApiKey.value.trim())
-    openAIConnectionDialog.value = false
-    openAIApiKey.value = ''
-    openAIKeyVisible.value = false
-    noticeMessage.value = 'OpenAI API connected.'
-    notice.value = true
+    chatGPTStatus.value = await api.getChatGPTConnection()
+    if (chatGPTStatus.value.connected) {
+      chatGPTConnectionDialog.value = false
+      chatGPTError.value = ''
+      noticeMessage.value = 'ChatGPT connected.'
+      notice.value = true
+      stopChatGPTPolling()
+      return
+    }
+    chatGPTError.value = chatGPTStatus.value.loginError || ''
   } catch (cause) {
-    openAIError.value = cause instanceof Error ? cause.message : 'OpenAI could not be connected.'
+    chatGPTError.value = cause instanceof Error ? cause.message : 'ChatGPT status could not be checked.'
+  }
+  scheduleChatGPTPoll()
+}
+
+async function startChatGPTConnection() {
+  if (!chatGPTStatus.value.available || chatGPTConnecting.value) return
+  chatGPTConnecting.value = true
+  chatGPTError.value = ''
+  try {
+    chatGPTStatus.value = chatGPTStatus.value.pending
+      ? chatGPTStatus.value
+      : await api.startChatGPTConnection()
+    if (chatGPTStatus.value.connected) {
+      noticeMessage.value = 'ChatGPT connected.'
+      notice.value = true
+      return
+    }
+    chatGPTConnectionDialog.value = true
+    scheduleChatGPTPoll()
+  } catch (cause) {
+    chatGPTError.value = cause instanceof Error ? cause.message : 'ChatGPT sign-in could not start.'
   } finally {
-    openAIConnecting.value = false
+    chatGPTConnecting.value = false
   }
 }
 
-async function disconnectOpenAI() {
-  openAIDisconnecting.value = true
+async function cancelChatGPTConnection() {
+  if (chatGPTConnecting.value) return
+  chatGPTConnecting.value = true
+  chatGPTError.value = ''
+  stopChatGPTPolling()
+  try {
+    chatGPTStatus.value = await api.disconnectChatGPT()
+    chatGPTConnectionDialog.value = false
+  } catch (cause) {
+    chatGPTError.value = cause instanceof Error ? cause.message : 'ChatGPT sign-in could not be cancelled.'
+    scheduleChatGPTPoll()
+  } finally {
+    chatGPTConnecting.value = false
+  }
+}
+
+async function disconnectChatGPT() {
+  chatGPTDisconnecting.value = true
   error.value = ''
   try {
-    openAIStatus.value = await api.disconnectOpenAI()
-    disconnectOpenAIDialog.value = false
-    noticeMessage.value = 'OpenAI API disconnected.'
+    chatGPTStatus.value = await api.disconnectChatGPT()
+    disconnectChatGPTDialog.value = false
+    noticeMessage.value = 'ChatGPT disconnected.'
     notice.value = true
   } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : 'OpenAI could not be disconnected.'
+    error.value = cause instanceof Error ? cause.message : 'ChatGPT could not be disconnected.'
   } finally {
-    openAIDisconnecting.value = false
+    chatGPTDisconnecting.value = false
   }
 }
 
@@ -401,8 +458,8 @@ async function setMainMenuItemVisibility(id: MainNavItemId, visible: boolean) {
     <v-card class="surface-card pa-5 pa-sm-6">
       <div class="settings-section-heading">
         <div>
-          <h2>OpenAI</h2>
-          <p>Use OpenAI models for commands and assisted workflows in Polymind.</p>
+          <h2>ChatGPT</h2>
+          <p>Connect your ChatGPT account for Codex-powered commands in Polymind.</p>
         </div>
         <v-icon icon="mdi-creation-outline" />
       </div>
@@ -417,42 +474,43 @@ async function setMainMenuItemVisibility(id: MainNavItemId, visible: boolean) {
 
       <template v-else>
         <v-alert
-          :type="openAIStatus.connected ? 'success' : 'info'"
+          :type="chatGPTConnectionColor"
           variant="tonal"
-          :icon="openAIStatus.connected ? 'mdi-check-circle-outline' : 'mdi-robot-outline'"
+          :icon="chatGPTConnectionIcon"
           class="mt-5"
         >
-          <strong>{{ openAIStatus.connected ? 'OpenAI connected' : 'API key required' }}</strong>
-          <p class="mt-1">{{ openAIConnectionCopy }}</p>
+          <strong>{{ chatGPTConnectionTitle }}</strong>
+          <p class="mt-1">{{ chatGPTConnectionCopy }}</p>
         </v-alert>
 
         <div class="settings-actions mt-4">
           <v-btn
-            v-if="openAIStatus.connected"
+            v-if="chatGPTStatus.connected"
             color="error"
             variant="outlined"
             prepend-icon="mdi-link-variant-off"
-            @click="disconnectOpenAIDialog = true"
+            @click="disconnectChatGPTDialog = true"
           >
-            Disconnect OpenAI
+            Disconnect ChatGPT
           </v-btn>
           <v-btn
             v-else
             color="secondary"
             prepend-icon="mdi-link-variant"
-            @click="showOpenAIConnectionDialog"
+            :loading="chatGPTConnecting"
+            :disabled="!chatGPTStatus.available"
+            @click="startChatGPTConnection"
           >
-            Connect OpenAI
+            {{ chatGPTStatus.pending ? 'Resume sign-in' : 'Connect ChatGPT' }}
           </v-btn>
         </div>
       </template>
     </v-card>
 
     <v-dialog
-      :model-value="openAIConnectionDialog"
+      :model-value="chatGPTConnectionDialog"
       max-width="32rem"
       persistent
-      @update:model-value="!$event && closeOpenAIConnectionDialog()"
     >
       <v-card class="pa-5 pa-sm-6">
         <div class="settings-dialog-heading">
@@ -460,69 +518,58 @@ async function setMainMenuItemVisibility(id: MainNavItemId, visible: boolean) {
             <v-icon icon="mdi-creation-outline" size="24" />
           </span>
           <div>
-            <h2 class="text-h6 font-weight-black">Connect OpenAI</h2>
-            <p>Use an OpenAI Platform API key. This does not connect your ChatGPT chats or subscription.</p>
+            <h2 class="text-h6 font-weight-black">Connect ChatGPT</h2>
+            <p>Your password stays with OpenAI. Codex App Server stores and refreshes the connected session.</p>
           </div>
         </div>
 
-        <v-alert v-if="openAIError" type="error" variant="tonal" density="compact" class="mt-5">
-          {{ openAIError }}
+        <v-alert v-if="chatGPTError" type="error" variant="tonal" density="compact" class="mt-5">
+          {{ chatGPTError }}
         </v-alert>
 
-        <AppForm ref="openAIForm" class="mt-5" @submit.prevent="connectOpenAI">
-          <v-text-field
-            v-model="openAIApiKey"
-            :type="openAIKeyVisible ? 'text' : 'password'"
-            prepend-inner-icon="mdi-key-outline"
-            :append-inner-icon="openAIKeyVisible ? 'mdi-eye-off-outline' : 'mdi-eye-outline'"
-            autocomplete="off"
-            :disabled="openAIConnecting"
-            :rules="[
-              value => Boolean(value?.trim()) || 'API key is required',
-              value => /^sk-[A-Za-z0-9._-]{17,}$/.test(value?.trim() || '') || 'Enter a valid OpenAI API key',
-            ]"
-            @click:append-inner="openAIKeyVisible = !openAIKeyVisible"
-          >
-            <template #label>API key <span class="required-mark">*</span></template>
-          </v-text-field>
-
-          <v-btn
-            href="https://platform.openai.com/api-keys"
-            target="_blank"
-            rel="noopener noreferrer"
-            variant="text"
-            append-icon="mdi-open-in-new"
-            class="mt-2"
-          >
-            Create an API key
-          </v-btn>
-        </AppForm>
+        <div v-if="chatGPTStatus.userCode" class="chatgpt-device-code mt-5">
+          <span>One-time code</span>
+          <strong>{{ chatGPTStatus.userCode }}</strong>
+          <small>Enter this code on the OpenAI page. It expires automatically.</small>
+        </div>
+        <v-progress-linear
+          v-else
+          color="secondary"
+          indeterminate
+          rounded
+          class="mt-5"
+        />
 
         <v-card-actions class="settings-dialog-actions pa-0 mt-6 ga-2">
-          <v-spacer />
-          <v-btn variant="text" :disabled="openAIConnecting" @click="closeOpenAIConnectionDialog">
+          <v-btn
+            variant="text"
+            :disabled="chatGPTConnecting"
+            @click="cancelChatGPTConnection"
+          >
             Cancel
           </v-btn>
           <v-btn
+            v-if="chatGPTStatus.verificationUrl"
+            :href="chatGPTStatus.verificationUrl"
+            target="_blank"
+            rel="noopener noreferrer"
             color="secondary"
-            :loading="openAIConnecting"
-            :disabled="!canConnectOpenAI"
-            @click="connectOpenAI"
+            append-icon="mdi-open-in-new"
           >
-            Connect
+            Continue with ChatGPT
           </v-btn>
         </v-card-actions>
       </v-card>
     </v-dialog>
 
     <ConfirmDialog
-      v-model="disconnectOpenAIDialog"
-      title="Disconnect OpenAI?"
-      message="Polymind will permanently remove the stored API key. OpenAI commands will stop working until another key is connected."
+      v-model="disconnectChatGPTDialog"
+      title="Disconnect ChatGPT?"
+      message="Polymind will revoke its stored ChatGPT session. Codex commands will stop working until you sign in again."
       confirm-text="Disconnect"
       icon="mdi-link-variant-off"
-      :loading="openAIDisconnecting"
-      @confirm="disconnectOpenAI"
+      :loading="chatGPTDisconnecting"
+      @confirm="disconnectChatGPT"
     />
 
     <v-snackbar v-model="notice" color="success" location="bottom" :timeout="4000">
@@ -674,8 +721,37 @@ async function setMainMenuItemVisibility(id: MainNavItemId, visible: boolean) {
   color: rgb(var(--v-theme-secondary));
 }
 
-.required-mark {
-  color: rgb(var(--v-theme-error));
+.chatgpt-device-code {
+  display: grid;
+  gap: .45rem;
+  padding: 1.25rem;
+  border: .0625rem solid rgb(var(--v-theme-secondary) / .24);
+  border-radius: 1rem;
+  background: rgb(var(--v-theme-secondary) / .08);
+  text-align: center;
+}
+
+.chatgpt-device-code span,
+.chatgpt-device-code small {
+  color: rgb(var(--v-theme-on-surface) / .58);
+}
+
+.chatgpt-device-code span {
+  font-size: .72rem;
+  font-weight: 900;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.chatgpt-device-code strong {
+  color: rgb(var(--v-theme-secondary));
+  font-size: 1.65rem;
+  letter-spacing: .08em;
+}
+
+.chatgpt-device-code small {
+  font-size: .72rem;
+  line-height: 1.4;
 }
 
 @media (max-width: 440px) {

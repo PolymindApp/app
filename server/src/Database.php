@@ -124,9 +124,6 @@ final class Database
                 'signature_counter', 'transports', 'backup_eligible', 'backed_up',
                 'created', 'last_used',
             ],
-            'mom_openai_connections' => [
-                'user_id', 'encrypted_api_key', 'key_hint', 'created_at', 'updated_at',
-            ],
             'mom_schema_migrations' => ['version', 'name', 'checksum', 'applied_at'],
         ];
         $tableNames = array_keys($required);

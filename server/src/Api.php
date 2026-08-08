@@ -25,16 +25,16 @@ final class Api
         'speech_enabled', 'front_language', 'back_language',
         'sort_mode',
     ];
-    private readonly OpenAIConnection $openAIConnection;
+    private readonly CodexBridgeClient $codexBridge;
 
     public function __construct(
         private readonly Config $config,
         private readonly Database $database,
     ) {
-        $this->openAIConnection = new OpenAIConnection(
-            $database->pdo,
+        $this->codexBridge = new CodexBridgeClient(
+            $config->codexBridgeUrl,
+            $config->codexBridgeToken,
             $config->secret,
-            $config->openAiApiBaseUrl,
         );
     }
 
@@ -116,9 +116,9 @@ final class Api
             }
             if (
                 in_array($method, ['GET', 'POST', 'DELETE'], true)
-                && $path === '/auth/openai'
+                && $path === '/auth/chatgpt'
             ) {
-                $this->openAIConnection($method);
+                $this->chatGPTConnection($method);
             }
             if ($method === 'POST' && $path === '/auth/passkeys/register/options') {
                 $this->passkeyRegistrationOptions();
@@ -1310,23 +1310,18 @@ final class Api
         $this->respond(['settings' => $settings, 'updated' => $updated]);
     }
 
-    private function openAIConnection(string $method): never
+    private function chatGPTConnection(string $method): never
     {
         $user = $this->authenticate();
         if ($method === 'GET') {
-            $this->respond($this->openAIConnection->status((string) $user['id']));
+            $this->respond($this->codexBridge->status((string) $user['id']));
         }
         if ($method === 'DELETE') {
-            $this->respond($this->openAIConnection->disconnect((string) $user['id']));
+            $this->respond($this->codexBridge->disconnect((string) $user['id']));
         }
 
-        $this->rateLimit('openai-connect:' . $user['id'], 10, 900);
-        $body = $this->jsonBody();
-        $this->respond($this->openAIConnection->connect(
-            (string) $user['id'],
-            $body['apiKey'] ?? null,
-            $this->now(),
-        ));
+        $this->rateLimit('chatgpt-connect:' . $user['id'], 10, 900);
+        $this->respond($this->codexBridge->startLogin((string) $user['id']));
     }
 
     private function validateMainMenuOrder(mixed $value): array

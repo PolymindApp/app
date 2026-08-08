@@ -183,39 +183,42 @@ describe('Polymind API client adapter', () => {
       .toEqual({ quickInterval })
   })
 
-  it('gets, connects, and disconnects the authenticated OpenAI API credential', async () => {
+  it('gets, starts, and disconnects the authenticated ChatGPT connection', async () => {
     const token = futureToken()
     localStorage.setItem('mom-api-auth', JSON.stringify({
       token,
       record: { id: 'user-1', email: 'person@example.com' },
     }))
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce(jsonResponse({ connected: false }))
+      .mockResolvedValueOnce(jsonResponse({ available: true, connected: false }))
       .mockResolvedValueOnce(jsonResponse({
-        connected: true,
-        keyHint: 'abcd',
-        updated: '2026-08-08T12:00:00.000Z',
+        available: true,
+        connected: false,
+        pending: true,
+        verificationUrl: 'https://auth.openai.com/codex/device',
+        userCode: 'ABCD-1234',
       }))
-      .mockResolvedValueOnce(jsonResponse({ connected: false, removed: 1 }))
+      .mockResolvedValueOnce(jsonResponse({ available: true, connected: false }))
     vi.stubGlobal('fetch', fetchMock)
 
     const { api } = await import('./api')
-    await expect(api.getOpenAIConnection()).resolves.toEqual({ connected: false })
-    await expect(api.connectOpenAI('sk-test-valid-1234567890-abcd')).resolves.toEqual({
-      connected: true,
-      keyHint: 'abcd',
-      updated: '2026-08-08T12:00:00.000Z',
+    await expect(api.getChatGPTConnection()).resolves.toEqual({ available: true, connected: false })
+    await expect(api.startChatGPTConnection()).resolves.toEqual({
+      available: true,
+      connected: false,
+      pending: true,
+      verificationUrl: 'https://auth.openai.com/codex/device',
+      userCode: 'ABCD-1234',
     })
-    await expect(api.disconnectOpenAI()).resolves.toEqual({ connected: false, removed: 1 })
+    await expect(api.disconnectChatGPT()).resolves.toEqual({ available: true, connected: false })
 
-    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/auth/openai', expect.objectContaining({
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/auth/chatgpt', expect.objectContaining({
       headers: expect.any(Headers),
     }))
-    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/auth/openai', expect.objectContaining({
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/auth/chatgpt', expect.objectContaining({
       method: 'POST',
-      body: JSON.stringify({ apiKey: 'sk-test-valid-1234567890-abcd' }),
     }))
-    expect(fetchMock).toHaveBeenNthCalledWith(3, '/api/auth/openai', expect.objectContaining({
+    expect(fetchMock).toHaveBeenNthCalledWith(3, '/api/auth/chatgpt', expect.objectContaining({
       method: 'DELETE',
     }))
   })

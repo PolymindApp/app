@@ -4,17 +4,19 @@ set -euo pipefail
 source_db="${MOM_TEST_SOURCE_DB:-private/data.db}"
 test_port="${MOM_TEST_PORT:-$((18100 + RANDOM % 800))}"
 pexels_port="$((test_port + 1000))"
-openai_port="$((test_port + 2000))"
+codex_bridge_port="$((test_port + 2000))"
 test_secret="mom-api-integration-secret-at-least-32-characters"
+codex_bridge_token="mom-codex-bridge-test-token-at-least-32-characters"
 test_root="${TMPDIR:-/tmp}"
 test_dir="$(mktemp -d "$test_root/mom-api-test.XXXXXX")"
 test_db="$test_dir/data.db"
 test_log="$test_dir/server.log"
 pexels_log="$test_dir/pexels.log"
-openai_log="$test_dir/openai.log"
+codex_bridge_log="$test_dir/codex-bridge.log"
+codex_bridge_state="$test_dir/codex-bridge-state.json"
 server_pid=""
 pexels_pid=""
-openai_pid=""
+codex_bridge_pid=""
 
 cleanup() {
   if [[ -n "$server_pid" ]]; then
@@ -25,9 +27,9 @@ cleanup() {
     kill "$pexels_pid" >/dev/null 2>&1 || true
     wait "$pexels_pid" >/dev/null 2>&1 || true
   fi
-  if [[ -n "$openai_pid" ]]; then
-    kill "$openai_pid" >/dev/null 2>&1 || true
-    wait "$openai_pid" >/dev/null 2>&1 || true
+  if [[ -n "$codex_bridge_pid" ]]; then
+    kill "$codex_bridge_pid" >/dev/null 2>&1 || true
+    wait "$codex_bridge_pid" >/dev/null 2>&1 || true
   fi
   case "$test_dir" in
     "$test_root"/mom-api-test.*) rm -rf -- "$test_dir" ;;
@@ -50,8 +52,10 @@ done
 sqlite3 "$source_db" ".backup $test_db"
 php -S "127.0.0.1:$pexels_port" server/tests/fixtures/pexels-router.php >"$pexels_log" 2>&1 &
 pexels_pid=$!
-php -S "127.0.0.1:$openai_port" server/tests/fixtures/openai-router.php >"$openai_log" 2>&1 &
-openai_pid=$!
+MOM_TEST_CODEX_BRIDGE_TOKEN="$codex_bridge_token" \
+MOM_TEST_CODEX_BRIDGE_STATE="$codex_bridge_state" \
+  php -S "127.0.0.1:$codex_bridge_port" server/tests/fixtures/codex-bridge-router.php >"$codex_bridge_log" 2>&1 &
+codex_bridge_pid=$!
 
 for _attempt in {1..50}; do
   curl --silent --fail \
@@ -66,12 +70,9 @@ for _attempt in {1..50}; do
 done
 
 for _attempt in {1..50}; do
-  curl --silent --fail \
-    -H "Authorization: Bearer sk-test-valid-1234567890-abcd" \
-    "http://127.0.0.1:$openai_port/v1/models" \
-    >/dev/null && break
-  kill -0 "$openai_pid" >/dev/null 2>&1 || {
-    sed -n '1,200p' "$openai_log" >&2
+  curl --silent --fail "http://127.0.0.1:$codex_bridge_port/health" >/dev/null && break
+  kill -0 "$codex_bridge_pid" >/dev/null 2>&1 || {
+    sed -n '1,200p' "$codex_bridge_log" >&2
     exit 1
   }
   sleep .1
@@ -82,7 +83,8 @@ MOM_API_SECRET="$test_secret" \
 MOM_ALLOWED_ORIGINS="http://localhost:5173" \
 MOM_PEXELS_API_KEY="test-pexels-key" \
 MOM_PEXELS_API_BASE_URL="http://127.0.0.1:$pexels_port/v1/search" \
-MOM_OPENAI_API_BASE_URL="http://127.0.0.1:$openai_port/v1" \
+MOM_CODEX_BRIDGE_URL="http://127.0.0.1:$codex_bridge_port" \
+MOM_CODEX_BRIDGE_TOKEN="$codex_bridge_token" \
 MOM_PASSKEY_RP_ID="mom.example.test" \
 MOM_PASSKEY_ANDROID_PACKAGE="dev.coulombe.mom" \
 MOM_PASSKEY_ANDROID_KEY_HASHES="q9nLBq6siknwb9S8EaFfsZ-C1d5y_mHhbfaYSRnGE0k" \
@@ -103,7 +105,7 @@ suffix="$(php -r 'echo bin2hex(random_bytes(5));')"
 password="correct-horse-battery"
 
 migration_count="$(sqlite3 "$test_db" 'SELECT COUNT(*) FROM mom_schema_migrations;')"
-[[ "$migration_count" == 28 ]] || {
+[[ "$migration_count" == 29 ]] || {
   echo "The API did not apply the complete database migration sequence." >&2
   exit 1
 }
@@ -354,68 +356,67 @@ invalid_hidden_menu_status="$(curl --silent --output /dev/null --write-out '%{ht
   exit 1
 }
 
-openai_status_response="$(curl --silent --show-error --fail \
+chatgpt_status_response="$(curl --silent --show-error --fail \
   -H "Authorization: Bearer $alice_token" \
-  "$api_url/auth/openai")"
-openai_connected="$(json_field connected <<<"$openai_status_response")"
-[[ -z "$openai_connected" ]] || {
-  echo "A new account was incorrectly reported as connected to OpenAI." >&2
+  "$api_url/auth/chatgpt")"
+chatgpt_available="$(json_field available <<<"$chatgpt_status_response")"
+chatgpt_connected="$(json_field connected <<<"$chatgpt_status_response")"
+[[ "$chatgpt_available" == 1 && -z "$chatgpt_connected" ]] || {
+  echo "A new account received an invalid ChatGPT connection status." >&2
   exit 1
 }
 
-invalid_openai_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
-  -X POST -H "Content-Type: application/json" \
+chatgpt_login_response="$(curl --silent --show-error --fail \
+  -X POST \
   -H "Authorization: Bearer $alice_token" \
-  --data '{"apiKey":"sk-test-invalid-1234567890"}' \
-  "$api_url/auth/openai")"
-[[ "$invalid_openai_status" == 422 ]] || {
-  echo "An API key rejected by OpenAI was accepted." >&2
+  "$api_url/auth/chatgpt")"
+chatgpt_pending="$(json_field pending <<<"$chatgpt_login_response")"
+chatgpt_code="$(json_field userCode <<<"$chatgpt_login_response")"
+chatgpt_verification_url="$(json_field verificationUrl <<<"$chatgpt_login_response")"
+[[ "$chatgpt_pending" == 1 && "$chatgpt_code" == "MOM-TEST" && "$chatgpt_verification_url" == "https://auth.openai.com/codex/device" ]] || {
+  echo "ChatGPT device sign-in did not return the bridge login details." >&2
   exit 1
 }
 
-openai_connection_response="$(curl --silent --show-error --fail \
-  -X POST -H "Content-Type: application/json" \
+chatgpt_connection_response="$(curl --silent --show-error --fail \
   -H "Authorization: Bearer $alice_token" \
-  --data '{"apiKey":"sk-test-valid-1234567890-abcd"}' \
-  "$api_url/auth/openai")"
-openai_connected="$(json_field connected <<<"$openai_connection_response")"
-openai_key_hint="$(json_field keyHint <<<"$openai_connection_response")"
-[[ "$openai_connected" == 1 && "$openai_key_hint" == "abcd" ]] || {
-  echo "A valid OpenAI API key was not connected." >&2
-  exit 1
-}
-stored_openai_connection="$(sqlite3 "$test_db" \
-  "SELECT encrypted_api_key || ':' || key_hint
-   FROM mom_openai_connections WHERE user_id = '$alice_id';")"
-[[ "$stored_openai_connection" != *"sk-test-valid"* && "$stored_openai_connection" == *":abcd" ]] || {
-  echo "The OpenAI API key was not stored encrypted with a safe hint." >&2
-  exit 1
-}
-decrypted_openai_key="$(php -r '
-  require "server/src/ApiException.php";
-  require "server/src/OpenAIConnection.php";
-  $pdo = new PDO("sqlite:" . $argv[1]);
-  $connection = new Mom\Api\OpenAIConnection(
-    $pdo,
-    "mom-api-integration-secret-at-least-32-characters",
-    "http://127.0.0.1"
-  );
-  echo $connection->apiKeyForUser($argv[2]);
-' "$test_db" "$alice_id")"
-[[ "$decrypted_openai_key" == "sk-test-valid-1234567890-abcd" ]] || {
-  echo "The stored OpenAI API key could not be decrypted for its owner." >&2
+  "$api_url/auth/chatgpt")"
+chatgpt_connected="$(json_field connected <<<"$chatgpt_connection_response")"
+chatgpt_email="$(json_field email <<<"$chatgpt_connection_response")"
+chatgpt_plan="$(json_field planType <<<"$chatgpt_connection_response")"
+[[ "$chatgpt_connected" == 1 && "$chatgpt_email" == "alice@example.test" && "$chatgpt_plan" == "plus" ]] || {
+  echo "A completed ChatGPT sign-in was not reported as connected." >&2
   exit 1
 }
 
-openai_disconnect_response="$(curl --silent --show-error --fail \
+codex_bridge_subject="$(php -r '
+  $state = json_decode(file_get_contents($argv[1]), true, 512, JSON_THROW_ON_ERROR);
+  echo array_key_first($state);
+' "$codex_bridge_state")"
+expected_codex_bridge_subject="$(php -r 'echo hash_hmac("sha256", $argv[1], $argv[2]);' "$alice_id" "$test_secret")"
+[[ "$codex_bridge_subject" == "$expected_codex_bridge_subject" && "$codex_bridge_subject" != "$alice_id" ]] || {
+  echo "The Codex bridge did not receive the privacy-preserving account subject." >&2
+  exit 1
+}
+
+legacy_openai_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  -H "Authorization: Bearer $alice_token" \
+  "$api_url/auth/openai")"
+[[ "$legacy_openai_status" == 404 ]] || {
+  echo "The legacy API-key connection endpoint is still available." >&2
+  exit 1
+}
+
+chatgpt_disconnect_response="$(curl --silent --show-error --fail \
   -X DELETE -H "Authorization: Bearer $alice_token" \
-  "$api_url/auth/openai")"
-openai_connected="$(json_field connected <<<"$openai_disconnect_response")"
-openai_removed="$(json_field removed <<<"$openai_disconnect_response")"
-remaining_openai_connections="$(sqlite3 "$test_db" \
-  "SELECT COUNT(*) FROM mom_openai_connections WHERE user_id = '$alice_id';")"
-[[ -z "$openai_connected" && "$openai_removed" == 1 && "$remaining_openai_connections" == 0 ]] || {
-  echo "Disconnecting OpenAI did not remove the stored credential." >&2
+  "$api_url/auth/chatgpt")"
+chatgpt_connected="$(json_field connected <<<"$chatgpt_disconnect_response")"
+remaining_bridge_connections="$(php -r '
+  $state = json_decode(file_get_contents($argv[1]), true, 512, JSON_THROW_ON_ERROR);
+  echo count($state);
+' "$codex_bridge_state")"
+[[ -z "$chatgpt_connected" && "$remaining_bridge_connections" == 0 ]] || {
+  echo "Disconnecting ChatGPT did not revoke the hosted Codex session." >&2
   exit 1
 }
 

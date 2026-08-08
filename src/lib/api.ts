@@ -5,7 +5,7 @@ import type {
   FlashcardReviewAction,
   FlashcardReviewSetAccessRole,
   FlashcardReviewSettings,
-  OpenAIConnectionStatus,
+  ChatGPTConnectionStatus,
 } from '@/types/domain'
 
 type RecordModel = Record<string, any> & { id: string }
@@ -404,25 +404,25 @@ class ApiClient {
     return response.settings
   }
 
-  getOpenAIConnection() {
-    return request<OpenAIConnectionStatus>(
-      '/auth/openai',
+  getChatGPTConnection() {
+    return request<ChatGPTConnectionStatus>(
+      '/auth/chatgpt',
       {},
       this.authStore,
     )
   }
 
-  connectOpenAI(apiKey: string) {
-    return request<OpenAIConnectionStatus>(
-      '/auth/openai',
-      { method: 'POST', body: { apiKey } },
+  startChatGPTConnection() {
+    return request<ChatGPTConnectionStatus>(
+      '/auth/chatgpt',
+      { method: 'POST' },
       this.authStore,
     )
   }
 
-  disconnectOpenAI() {
-    return request<OpenAIConnectionStatus>(
-      '/auth/openai',
+  disconnectChatGPT() {
+    return request<ChatGPTConnectionStatus>(
+      '/auth/chatgpt',
       { method: 'DELETE' },
       this.authStore,
     )
