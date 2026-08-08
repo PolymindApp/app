@@ -86,7 +86,7 @@ const isDailyTotal = computed(() => !step.value && task.value.type === 'daily_to
 const isStepCounter = computed(() => !step.value && task.value.type === 'step_counter')
 const canLogAmount = computed(() => taskCanLogAmounts(props.progress))
 const canLogTime = computed(() => !step.value && task.value.type === 'duration')
-const canToggleFromCard = computed(() =>
+const canToggleCheck = computed(() =>
   isCheck.value && !togglePending.value && !props.busy && !props.progress.locked,
 )
 const target = computed(() => isTracking.value
@@ -193,8 +193,8 @@ function formatValue(value: number) {
   return `${Number(value.toFixed(2))}${unit.value ? ` ${unit.value}` : ''}`
 }
 
-function toggleFromCard() {
-  if (!canToggleFromCard.value) return
+function toggleCheckCompletion() {
+  if (!canToggleCheck.value) return
   const complete = !displayedComplete.value
   optimisticComplete.value = complete
   togglePending.value = true
@@ -244,10 +244,8 @@ watch(() => props.valuePulse, async (pulse, previousPulse) => {
 <template>
   <v-card
     class="task-card surface-card pa-4"
-    :class="{ 'task-card--done': displayedComplete, 'task-card--clickable': canToggleFromCard, 'task-card--sealed': progress.sealed }"
+    :class="{ 'task-card--done': displayedComplete, 'task-card--sealed': progress.sealed }"
     :style="{ '--task-color': taskColor }"
-    :ripple="canToggleFromCard"
-    v-on="canToggleFromCard ? { click: toggleFromCard } : {}"
   >
     <div class="d-flex align-start ga-3">
       <div
@@ -262,24 +260,7 @@ watch(() => props.valuePulse, async (pulse, previousPulse) => {
         @keydown.enter.prevent="toggleExpandedFromHeader"
         @keydown.space.prevent="toggleExpandedFromHeader"
       >
-        <button
-          v-if="isCheck"
-          class="check-control"
-          :class="{
-            'check-control--status': displayedComplete,
-            'check-control--type': showingTaskTypeIcon,
-            'check-control--done': displayedComplete,
-          }"
-          :style="{ '--task-color': taskColor }"
-          :aria-label="displayedComplete ? `Mark ${title} incomplete` : `Complete ${title}`"
-          :disabled="togglePending || busy || progress.locked"
-          @touchstart.stop
-          @click.stop="toggleFromCard"
-        >
-          <v-icon :icon="stateIcon" :color="stateIconColor" size="20" />
-        </button>
         <div
-          v-else
           class="check-control check-control--status"
           :class="{
             'check-control--type': showingTaskTypeIcon,
@@ -320,6 +301,21 @@ watch(() => props.valuePulse, async (pulse, previousPulse) => {
         :id="!isCheck ? detailsId : undefined"
         class="task-card-body"
       >
+        <v-btn
+          v-if="isCheck"
+          block
+          class="task-check-toggle mt-4"
+          color="secondary"
+          :variant="displayedComplete ? 'tonal' : 'flat'"
+          :prepend-icon="displayedComplete ? 'mdi-undo-variant' : 'mdi-check-bold'"
+          :disabled="!canToggleCheck"
+          :aria-label="displayedComplete ? `Uncomplete ${title}` : `Complete ${title}`"
+          @touchstart.stop
+          @click.stop="toggleCheckCompletion"
+        >
+          {{ displayedComplete ? 'Uncomplete' : 'Complete' }}
+        </v-btn>
+
         <div v-if="!isCheck" class="task-card-details">
         <template v-if="isInterval">
             <v-btn
@@ -528,10 +524,6 @@ watch(() => props.valuePulse, async (pulse, previousPulse) => {
   cursor: default;
 }
 
-.task-card--clickable {
-  cursor: pointer;
-}
-
 .task-card-header-main {
   border-radius: .75rem;
 }
@@ -547,6 +539,10 @@ watch(() => props.valuePulse, async (pulse, previousPulse) => {
 
 .task-menu-button {
   min-width: 2.75rem;
+  min-height: 2.75rem;
+}
+
+.task-check-toggle {
   min-height: 2.75rem;
 }
 

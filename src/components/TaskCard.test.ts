@@ -294,7 +294,7 @@ describe('TaskCard amount actions', () => {
       },
     })
 
-    const control = wrapper.get('button.check-control')
+    const control = wrapper.get('div.check-control')
     expect(control.classes()).toContain('check-control--status')
     expect(control.classes()).toContain('check-control--done')
     expect(control.classes()).not.toContain('check-control--type')
@@ -361,7 +361,7 @@ describe('TaskCard amount actions', () => {
     expect(wrapper.get('.task-card-header-main').attributes('aria-expanded')).toBe('true')
   })
 
-  it('accepts one check-off action and persists its explicit intended state', async () => {
+  it('toggles a check-off only from its Complete and Uncomplete button', async () => {
     const checkProgress: TaskProgress = {
       ...progress,
       task: {
@@ -386,8 +386,16 @@ describe('TaskCard amount actions', () => {
       },
     })
 
-    await wrapper.get('[aria-label="Complete Medication"]').trigger('click')
-    await wrapper.get('[aria-label="Mark Medication incomplete"]').trigger('click')
+    const statusIcon = wrapper.get('div.check-control')
+    expect(statusIcon.attributes('aria-hidden')).toBe('true')
+    await statusIcon.trigger('click')
+    await wrapper.get('.task-card').trigger('click')
+    expect(wrapper.emitted('toggle')).toBeUndefined()
+
+    const completeButton = wrapper.get('[aria-label="Complete Medication"]')
+    expect(completeButton.text()).toBe('Complete')
+    await completeButton.trigger('click')
+    await completeButton.trigger('click')
 
     expect(wrapper.emitted('toggle')).toEqual([[checkProgress, true]])
 
@@ -400,7 +408,9 @@ describe('TaskCard amount actions', () => {
     await wrapper.setProps({ busy: true })
     await wrapper.setProps({ progress: completedProgress })
     await wrapper.setProps({ busy: false })
-    await wrapper.get('[aria-label="Mark Medication incomplete"]').trigger('click')
+    const uncompleteButton = wrapper.get('[aria-label="Uncomplete Medication"]')
+    expect(uncompleteButton.text()).toBe('Uncomplete')
+    await uncompleteButton.trigger('click')
 
     expect(wrapper.emitted('toggle')).toEqual([
       [checkProgress, true],
