@@ -182,6 +182,7 @@ describe('FlashcardReviewRunnerView Review set preview', () => {
     expect(mocks.store.startReview).not.toHaveBeenCalled()
     expect(wrapper.get('[aria-label="Start review"]').attributes('disabled')).toBeUndefined()
     expect(wrapper.get('[aria-label="End review"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('[aria-label="Eject current card"]').exists()).toBe(false)
 
     await wrapper.get('[aria-label="Start review"]').trigger('click')
     await flushPromises()
@@ -197,6 +198,7 @@ describe('FlashcardReviewRunnerView Review set preview', () => {
       query: {},
     })
     expect(wrapper.find('[aria-label="Pause review"]').exists()).toBe(true)
+    expect(wrapper.find('[aria-label="Eject current card"]').exists()).toBe(true)
 
     wrapper.unmount()
   })

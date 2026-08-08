@@ -853,6 +853,11 @@ function requestCurrentCardDeletion() {
   deleteCardDialog.value = Boolean(deleteCardId.value)
 }
 
+function requestCurrentCardEjection() {
+  cardMenuOpen.value = false
+  ejectCardDialog.value = Boolean(currentCard.value)
+}
+
 async function deleteCurrentCard() {
   const cardId = deleteCardId.value
   if (!cardId || !session.value || deletingCard.value) return
@@ -885,7 +890,7 @@ function handleSessionMenuAction(action: FlashcardContextAction) {
   } else if (action === 'remove') {
     requestCurrentCardDeletion()
   } else if (action === 'eject') {
-    ejectCardDialog.value = Boolean(currentCard.value)
+    requestCurrentCardEjection()
   }
 }
 
@@ -1201,14 +1206,29 @@ async function leaveRunner() {
           </div>
         </footer>
 
-        <v-btn
-          variant="text"
-          prepend-icon="mdi-dots-horizontal"
-          :disabled="isReviewSetPreview || busy"
-          @click="cardMenuOpen = true"
-        >
-          Options
-        </v-btn>
+        <div class="d-flex justify-center ga-2">
+          <v-btn
+            v-if="!isReviewSetPreview"
+            size="large"
+            variant="text"
+            color="warning"
+            prepend-icon="mdi-eject-outline"
+            aria-label="Eject current card"
+            :disabled="busy || !currentCard"
+            @click="requestCurrentCardEjection"
+          >
+            Eject card
+          </v-btn>
+          <v-btn
+            size="large"
+            variant="text"
+            prepend-icon="mdi-dots-horizontal"
+            :disabled="isReviewSetPreview || busy"
+            @click="cardMenuOpen = true"
+          >
+            Options
+          </v-btn>
+        </div>
       </section>
     </template>
 
