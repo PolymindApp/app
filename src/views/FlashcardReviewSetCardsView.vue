@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import FlashcardCardsTable from '@/components/FlashcardCardsTable.vue'
+import FlashcardCardsManager from '@/components/FlashcardCardsManager.vue'
 import { useFlashcardStore } from '@/stores/flashcards'
 import type { Flashcard } from '@/types/domain'
 
@@ -10,6 +10,7 @@ const router = useRouter()
 const store = useFlashcardStore()
 const loading = ref(true)
 const error = ref('')
+const filteredCardCount = ref(0)
 const reviewSetId = computed(() => String(route.params.id || ''))
 const reviewSet = computed(() => store.reviewSets.find(item => item.id === reviewSetId.value))
 const cards = computed(() => store.reviewSetCards[reviewSetId.value] || [])
@@ -39,6 +40,14 @@ function openCard(card: Flashcard) {
   void router.push({
     name: 'flashcard-review-set-card-edit',
     params: { reviewSetId: reviewSetId.value, id: card.id },
+  })
+}
+
+function openNewCard() {
+  if (!canEdit.value) return
+  void router.push({
+    name: 'flashcard-review-set-card-new',
+    params: { reviewSetId: reviewSetId.value },
   })
 }
 </script>
@@ -74,44 +83,24 @@ function openCard(card: Flashcard) {
 
       <div class="section-heading mt-0">
         <h2>Cards</h2>
-        <span class="text-caption muted">{{ cards.length }}</span>
+        <span class="text-caption muted">
+          {{ filteredCardCount === cards.length ? cards.length : `${filteredCardCount} of ${cards.length}` }}
+        </span>
       </div>
 
-      <v-btn
-        v-if="canEdit"
-        block
-        color="secondary"
-        prepend-icon="mdi-plus"
-        class="mb-4"
-        :to="{ name: 'flashcard-review-set-card-new', params: { reviewSetId } }"
-      >
-        Add card
-      </v-btn>
-
-      <FlashcardCardsTable
-        v-if="cards.length"
-        :model-value="[]"
+      <FlashcardCardsManager
         :cards="cards"
         :tags="tags"
-        :selectable="false"
         :interactive="canEdit"
+        :can-add="canEdit"
+        add-aria-label="Add a card to this Review set"
+        empty-title="No matching cards"
+        :empty-description="canEdit ? 'Add a card to this live Review set.' : 'The owner has not added a matching card yet.'"
+        first-card-label="Add the first card"
+        @update:filtered-count="filteredCardCount = $event"
+        @add-card="openNewCard"
         @open-card="openCard"
       />
-
-      <v-card v-else class="surface-card pa-8 text-center">
-        <v-icon icon="mdi-cards-outline" size="44" color="secondary" />
-        <h3 class="text-h6 font-weight-black mt-3">No matching cards</h3>
-        <p class="text-body-2 muted mt-2 mb-5">
-          {{ canEdit ? 'Add a card to this live Review set.' : 'The owner has not added a matching card yet.' }}
-        </p>
-        <v-btn
-          v-if="canEdit"
-          color="secondary"
-          :to="{ name: 'flashcard-review-set-card-new', params: { reviewSetId } }"
-        >
-          Add the first card
-        </v-btn>
-      </v-card>
     </template>
   </main>
 </template>
