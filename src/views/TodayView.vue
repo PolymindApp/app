@@ -22,6 +22,8 @@ import {
   taskEntryNoteForAmount,
   taskEntryNoteOptions,
 } from '@/services/taskEntryNotes'
+import { TASK_FILTER_ITEMS } from '@/services/taskFilters'
+import type { TaskFilterId } from '@/services/taskFilters'
 import { useIntervalStore } from '@/stores/intervals'
 import { useFlashcardStore } from '@/stores/flashcards'
 import { useJournalStore } from '@/stores/journal'
@@ -76,6 +78,7 @@ const trackingSheetDate = ref(toDateKey(new Date()))
 const trackingSheetContext = ref('')
 const valuePulseVersions = ref<Record<string, number>>({})
 const showCompleted = ref(false)
+const taskFiltersOpen = ref(false)
 const recentlyCompletedKeys = ref(new Set<string>())
 const completedVisibilityTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const exactAmount = computed(() => {
@@ -190,6 +193,14 @@ function taskIsVisible(progress: TaskProgress) {
   return showCompleted.value
     || !progress.complete
     || recentlyCompletedKeys.value.has(visibilityKey(progress))
+}
+
+function taskFilterEnabled(filter: TaskFilterId) {
+  return filter === 'completed' && showCompleted.value
+}
+
+function toggleTaskFilter(filter: TaskFilterId) {
+  if (filter === 'completed') showCompleted.value = !showCompleted.value
 }
 
 function clearCompletedTaskVisibility(key: string) {
@@ -673,13 +684,16 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
           <h2>Tasks</h2>
           <div class="task-section-heading__controls">
             <span class="text-caption muted">{{ required.filter(i => i.complete).length }}/{{ required.length }}</span>
-            <v-checkbox-btn
-              v-model="showCompleted"
-              label="Completed"
-              color="secondary"
-              density="compact"
-              hide-details="auto"
-            />
+            <v-btn
+              size="small"
+              :variant="showCompleted ? 'tonal' : 'text'"
+              :color="showCompleted ? 'secondary' : undefined"
+              prepend-icon="mdi-filter-variant"
+              :aria-pressed="showCompleted"
+              @click="taskFiltersOpen = true"
+            >
+              Filter
+            </v-btn>
             <v-btn size="small" variant="text" prepend-icon="mdi-plus" to="/tasks/new">
               New
             </v-btn>
@@ -727,13 +741,16 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
           <span v-if="required.length" class="text-caption muted">Optional</span>
           <div v-else class="task-section-heading__controls">
             <span class="text-caption muted">{{ optional.filter(i => i.complete).length }}/{{ optional.length }}</span>
-            <v-checkbox-btn
-              v-model="showCompleted"
-              label="Completed"
-              color="secondary"
-              density="compact"
-              hide-details="auto"
-            />
+            <v-btn
+              size="small"
+              :variant="showCompleted ? 'tonal' : 'text'"
+              :color="showCompleted ? 'secondary' : undefined"
+              prepend-icon="mdi-filter-variant"
+              :aria-pressed="showCompleted"
+              @click="taskFiltersOpen = true"
+            >
+              Filter
+            </v-btn>
             <v-btn size="small" variant="text" prepend-icon="mdi-plus" to="/tasks/new">
               New
             </v-btn>
@@ -887,6 +904,31 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
     />
 
     <ActionBottomSheet
+      v-model="taskFiltersOpen"
+      title="Task filters"
+      hide-title
+      aria-label="Task filters"
+    >
+      <v-list-item
+        v-for="filter in TASK_FILTER_ITEMS"
+        :key="filter.id"
+        :title="filter.title"
+        rounded="lg"
+        @click="toggleTaskFilter(filter.id)"
+      >
+        <template #append>
+          <v-checkbox-btn
+            :model-value="taskFilterEnabled(filter.id)"
+            color="secondary"
+            hide-details="auto"
+            :aria-label="filter.ariaLabel"
+            @click.stop="toggleTaskFilter(filter.id)"
+          />
+        </template>
+      </v-list-item>
+    </ActionBottomSheet>
+
+    <ActionBottomSheet
       v-model="taskSheet"
       :title="taskSheetMode === 'history' ? 'Log history' : taskActionTitle"
       :description="taskSheetDescription"
@@ -1019,7 +1061,6 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
 .score-percent { color: #c7f464; font-size: 1.2rem; font-weight: 900; }
 .task-section-heading { flex-wrap: wrap; gap: .75rem; }
 .task-section-heading__controls { display: flex; min-width: 0; margin-left: auto; align-items: center; justify-content: flex-end; gap: .7rem; }
-.task-section-heading__controls :deep(.v-label) { font-size: .72rem; font-weight: 750; white-space: nowrap; }
 .task-stack { display: grid; gap: 0; }
 .task-masonry-item {
   display: grid;
