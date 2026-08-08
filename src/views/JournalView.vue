@@ -125,7 +125,7 @@ onMounted(async () => {
     <v-btn
       block
       size="large"
-      class="new-reflection-action"
+      class="new-reflection-action mt-3"
       color="secondary"
       prepend-icon="mdi-notebook-plus-outline"
       :to="{ name: 'journal-new', query: newEntryQuery() }"

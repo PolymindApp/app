@@ -87,6 +87,7 @@ describe('JournalView month navigation', () => {
 
     expect(wrapper.getComponent(WeekNavigatorStub).props('type')).toBe('month')
     expect(wrapper.findAll('.new-reflection-action')).toHaveLength(1)
+    expect(wrapper.get('.new-reflection-action').classes()).toContain('mt-3')
     expect(wrapper.get('.new-reflection-action').text()).toContain('New reflection')
     expect(wrapper.get('.new-reflection-action').element.compareDocumentPosition(selectedContent))
       .toBe(Node.DOCUMENT_POSITION_FOLLOWING)
