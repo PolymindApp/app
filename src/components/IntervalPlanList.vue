@@ -12,7 +12,6 @@ const store = useIntervalStore()
 const router = useRouter()
 const pendingDelete = ref<IntervalTemplate>()
 const selectedTemplate = ref<IntervalTemplate>()
-const primaryActionsDrawer = ref(false)
 const overflowActionsDrawer = ref(false)
 const deleting = ref(false)
 const reordering = ref(false)
@@ -68,25 +67,16 @@ async function reorderByDrag(result: LongPressDragResult) {
 }
 
 function startTemplate(template: IntervalTemplate) {
-  primaryActionsDrawer.value = false
   overflowActionsDrawer.value = false
   return router.push(`/intervals/run/template/${template.id}`)
 }
 
 function editTemplate(template: IntervalTemplate) {
-  primaryActionsDrawer.value = false
   overflowActionsDrawer.value = false
   return router.push(`/intervals/${template.id}/edit`)
 }
 
-function openPrimaryActions(template: IntervalTemplate) {
-  overflowActionsDrawer.value = false
-  selectedTemplate.value = template
-  primaryActionsDrawer.value = true
-}
-
 function openOverflowActions(template: IntervalTemplate) {
-  primaryActionsDrawer.value = false
   selectedTemplate.value = template
   overflowActionsDrawer.value = true
 }
@@ -121,10 +111,10 @@ function requestDelete(template: IntervalTemplate) {
       class="surface-card pa-4 interval-plan-card"
       role="button"
       tabindex="0"
-      :aria-label="`Open ${template.name} actions`"
-      @click="openPrimaryActions(template)"
-      @keydown.enter="openPrimaryActions(template)"
-      @keydown.space.prevent="openPrimaryActions(template)"
+      :aria-label="`Play ${template.name}`"
+      @click="startTemplate(template)"
+      @keydown.enter="startTemplate(template)"
+      @keydown.space.prevent="startTemplate(template)"
     >
       <div class="d-flex align-start ga-3">
         <div class="interval-template-icon" :style="{ background: template.color }">
@@ -165,24 +155,13 @@ function requestDelete(template: IntervalTemplate) {
   </v-card>
 
   <ActionBottomSheet
-    v-model="primaryActionsDrawer"
-    :title="selectedTemplate?.name || 'Interval actions'"
-    hide-title
-    :aria-label="selectedTemplate ? `${selectedTemplate.name} play or edit actions` : 'Interval actions'"
-  >
-    <template v-if="selectedTemplate">
-      <v-list-item prepend-icon="mdi-play" title="Play" rounded="lg" @click="startTemplate(selectedTemplate)" />
-      <v-list-item prepend-icon="mdi-pencil-outline" title="Edit" rounded="lg" @click="editTemplate(selectedTemplate)" />
-    </template>
-  </ActionBottomSheet>
-
-  <ActionBottomSheet
     v-model="overflowActionsDrawer"
     :title="selectedTemplate?.name || 'Interval actions'"
     hide-title
     :aria-label="selectedTemplate ? `${selectedTemplate.name} more actions` : 'Interval actions'"
   >
     <template v-if="selectedTemplate">
+      <v-list-item prepend-icon="mdi-pencil-outline" title="Edit" rounded="lg" @click="editTemplate(selectedTemplate)" />
       <v-list-item prepend-icon="mdi-content-copy" title="Duplicate" rounded="lg" @click="duplicateTemplate(selectedTemplate)" />
       <v-list-item
         prepend-icon="mdi-arrow-up"
