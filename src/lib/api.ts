@@ -107,6 +107,7 @@ function flashcardReviewSettingsBody(settings: FlashcardReviewSettings) {
     front_seconds: settings.frontSeconds,
     back_seconds: settings.backSeconds,
     back_speech_repeat_count: settings.backSpeechRepeatCount,
+    note_before_back: settings.noteBeforeBack,
     speech_enabled: settings.speechEnabled,
     front_language: settings.frontLanguage,
     back_language: settings.backLanguage,

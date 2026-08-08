@@ -232,6 +232,7 @@ describe('interval task attribution', () => {
       frontSeconds: 4,
       backSeconds: 6,
       backSpeechRepeatCount: 1,
+      noteBeforeBack: true,
       speechEnabled: false,
       frontLanguage: '',
       backLanguage: '',

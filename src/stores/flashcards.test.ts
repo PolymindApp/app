@@ -102,6 +102,7 @@ describe('flashcard store', () => {
       frontSeconds: 5,
       backSeconds: 5,
       backSpeechRepeatCount: 1,
+      noteBeforeBack: false,
       speechEnabled: false,
       frontLanguage: '',
       backLanguage: '',
@@ -126,6 +127,7 @@ describe('flashcard store', () => {
         max_cards_snapshot: 20,
         tags_snapshot: [], front_seconds_snapshot: 5, back_seconds_snapshot: 5,
         back_speech_repeat_count_snapshot: 1,
+        note_before_back_snapshot: true,
         speech_enabled_snapshot: false, front_language_snapshot: '', back_language_snapshot: '',
         queue_state: [], started_at: '2026-08-05T10:00:00Z',
         ended_at: '2026-08-05T10:00:07Z', updated_at: '2026-08-05T10:00:07Z',
@@ -143,6 +145,7 @@ describe('flashcard store', () => {
     const completed = await store.act('session-1', 'success', 7)
 
     expect(completed.status).toBe('completed')
+    expect(completed.noteBeforeBack).toBe(true)
     expect(store.cards[0].successCount).toBe(1)
     expect(store.cards[0].lastReviewedAt).toBeTruthy()
     expect(useTaskStore().occurrences).toEqual([
@@ -321,7 +324,8 @@ describe('flashcard store', () => {
       id: 'session-bulk', reviewSet: 'set-1', status: 'paused', name: 'Review',
       mode: 'manual', cardSides: 'both', indefinite: false, maxCards: 20,
       sortMode: 'difficult', tags: [], frontSeconds: 5, backSeconds: 5,
-      backSpeechRepeatCount: 1, speechEnabled: false, frontLanguage: '', backLanguage: '',
+      backSpeechRepeatCount: 1, noteBeforeBack: false,
+      speechEnabled: false, frontLanguage: '', backLanguage: '',
       queue: [{ id: 'card-bulk', front: 'Hammer', back: 'Marteau', note: '', image: '', tags: [] }],
       startedAt: '2026-08-07T10:00:00Z', updatedAt: '2026-08-07T10:00:00Z',
       elapsedSeconds: 0, totalCards: 1, viewedCount: 0, successCount: 0,
@@ -415,6 +419,7 @@ describe('flashcard store', () => {
       frontSeconds: 5,
       backSeconds: 5,
       backSpeechRepeatCount: 1,
+      noteBeforeBack: false,
       speechEnabled: false,
       frontLanguage: '',
       backLanguage: '',
@@ -466,6 +471,7 @@ describe('flashcard store', () => {
       tag_details: [{ id: 'tag-copy', name: 'Shared vocabulary copy' }],
       mode: 'manual', card_sides: 'front', indefinite: false, max_cards: 7,
       front_seconds: 9, back_seconds: 11, back_speech_repeat_count: 2,
+      note_before_back: true,
       speech_enabled: false, front_language: '', back_language: '',
       sort_mode: 'least_recent', sort_order: 2,
       created_at: '2026-08-07T10:00:00Z', updated_at: '2026-08-07T10:00:00Z',
@@ -483,6 +489,7 @@ describe('flashcard store', () => {
     expect(apiMocks.getReviewSetCards).toHaveBeenCalledWith('set-copy')
     expect(copied).toMatchObject({
       id: 'set-copy', accessRole: 'owner', matchingCardCount: 1, maxCards: 7,
+      noteBeforeBack: true,
     })
     expect(store.reviewSetCards['set-copy']?.[0]?.id).toBe('card-copy')
     expect(store.cards[0]?.id).toBe('card-copy')

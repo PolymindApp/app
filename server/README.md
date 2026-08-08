@@ -101,6 +101,7 @@ The reconstructed PHP-era history is:
 | `202608070006` | Live Review set sharing, recipient preferences, reviewer-specific card statistics, and source-owner session attribution |
 | `202608080001` | Privacy-preserving Review set invitations for registered and future email addresses |
 | `202608080002` | Encrypted per-user OpenAI API connections |
+| `202608080003` | Review set note-before-answer display preference |
 
 Existing PHP databases are advanced without recreating or deleting application rows. The schema is validated after migration, including required columns.
 

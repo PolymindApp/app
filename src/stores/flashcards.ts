@@ -90,6 +90,7 @@ function mapReviewSet(record: Record<string, any>): FlashcardReviewSet {
     backSpeechRepeatCount: Number(
       record.back_speech_repeat_count || DEFAULT_FLASHCARD_BACK_SPEECH_REPEATS,
     ),
+    noteBeforeBack: Boolean(record.note_before_back),
     speechEnabled: Boolean(record.speech_enabled),
     frontLanguage: record.front_language || '',
     backLanguage: record.back_language || '',
@@ -128,6 +129,7 @@ function mapSession(record: Record<string, any>): FlashcardReviewSession {
     backSpeechRepeatCount: Number(
       record.back_speech_repeat_count_snapshot || DEFAULT_FLASHCARD_BACK_SPEECH_REPEATS,
     ),
+    noteBeforeBack: Boolean(record.note_before_back_snapshot),
     speechEnabled: Boolean(record.speech_enabled_snapshot),
     frontLanguage: record.front_language_snapshot || '',
     backLanguage: record.back_language_snapshot || '',
@@ -383,6 +385,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       front_seconds: draft.frontSeconds,
       back_seconds: draft.backSeconds,
       back_speech_repeat_count: draft.backSpeechRepeatCount,
+      note_before_back: draft.noteBeforeBack,
       speech_enabled: draft.speechEnabled,
       front_language: draft.frontLanguage,
       back_language: draft.backLanguage,

@@ -5,6 +5,7 @@ import AppForm from '@/components/AppForm.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import FlashcardCardDialog from '@/components/FlashcardCardDialog.vue'
 import FlashcardContextActions from '@/components/FlashcardContextActions.vue'
+import FlashcardResponseText from '@/components/FlashcardResponseText.vue'
 import FlashcardReviewSettingsFields from '@/components/FlashcardReviewSettingsFields.vue'
 import {
   backgroundFlashcardReviewState,
@@ -71,6 +72,7 @@ const sessionSettingsDraft = reactive<FlashcardReviewSettings>({
   frontSeconds: 5,
   backSeconds: 5,
   backSpeechRepeatCount: 1,
+  noteBeforeBack: false,
   speechEnabled: false,
   frontLanguage: '',
   backLanguage: '',
@@ -703,6 +705,7 @@ function copySessionSettings(value: FlashcardReviewSession) {
     frontSeconds: value.frontSeconds,
     backSeconds: value.backSeconds,
     backSpeechRepeatCount: value.backSpeechRepeatCount,
+    noteBeforeBack: value.noteBeforeBack,
     speechEnabled: value.speechEnabled,
     frontLanguage: value.frontLanguage,
     backLanguage: value.backLanguage,
@@ -1013,19 +1016,11 @@ async function leaveRunner() {
                 <span v-if="session.cardSides === 'both'" class="review-card__front-reference">
                   {{ currentCard.front }}
                 </span>
-                <strong
-                  class="text-secondary"
-                  :style="{ fontSize: flashcardTextFontSize(currentCard.back) }"
-                >
-                  {{ currentCard.back }}
-                </strong>
-                <span
-                  v-if="currentCard.note"
-                  class="review-card__note"
-                  :style="{ fontSize: flashcardTextFontSize(currentCard.note, 'note') }"
-                >
-                  {{ currentCard.note }}
-                </span>
+                <FlashcardResponseText
+                  :back="currentCard.back"
+                  :note="currentCard.note"
+                  :note-before-back="session.noteBeforeBack"
+                />
               </span>
               <span v-if="session.speechEnabled" class="review-card__hint">
                 <v-icon icon="mdi-volume-high" size="18" /> Tap to replay
@@ -1058,23 +1053,20 @@ async function leaveRunner() {
               height="256"
             />
             <span class="review-card__answer">
+              <FlashcardResponseText
+                v-if="passiveSide === 'back'"
+                :back="currentCard.back"
+                :note="currentCard.note"
+                :note-before-back="session.noteBeforeBack"
+              />
               <strong
-                :class="{ 'text-secondary': passiveSide === 'back' }"
+                v-else
                 :style="{
-                  fontSize: flashcardTextFontSize(
-                    passiveSide === 'front' ? currentCard.front : currentCard.back,
-                  ),
+                  fontSize: flashcardTextFontSize(currentCard.front),
                 }"
               >
-                {{ passiveSide === 'front' ? currentCard.front : currentCard.back }}
+                {{ currentCard.front }}
               </strong>
-              <span
-                v-if="passiveSide === 'back' && currentCard.note"
-                class="review-card__note"
-                :style="{ fontSize: flashcardTextFontSize(currentCard.note, 'note') }"
-              >
-                {{ currentCard.note }}
-              </span>
               <span
                 v-if="passiveSide === 'back' && session.cardSides === 'both'"
                 class="review-card__front-reference"
@@ -1303,7 +1295,6 @@ async function leaveRunner() {
 .review-card__answer { display: flex; align-items: center; flex-direction: column; gap: .45rem; }
 .review-card__image { width: min(100%, 16rem); height: auto; max-height: 16rem; flex: 0 1 auto; border-radius: 1rem; object-fit: contain; }
 .review-card__front-reference { max-width: 30rem; overflow-wrap: anywhere; color: rgba(var(--v-theme-on-surface), .48); font-size: clamp(.72rem, 2.2vw, .88rem); line-height: 1.4; white-space: pre-wrap; }
-.review-card__note { max-width: 32rem; color: rgba(var(--v-theme-on-surface), .6); font-size: .82rem; font-weight: 650; line-height: 1.5; white-space: pre-wrap; }
 .review-card__back { border-color: rgba(var(--v-theme-secondary), .34); transform: rotateY(180deg); }
 .review-card__hint { display: flex; align-items: center; gap: .4rem; color: rgba(var(--v-theme-on-surface), .48); font-size: .72rem; font-weight: 800; }
 .passive-card { position: relative; display: flex; width: 100%; min-height: min(38dvh, 22rem); padding: 2rem; border: .0625rem solid rgba(var(--v-theme-secondary), .28); border-radius: 1.5rem; align-items: center; flex: 1 1 auto; flex-direction: column; gap: 1.5rem; overflow: hidden; background: rgb(var(--v-theme-surface)); color: inherit; font: inherit; text-align: center; box-shadow: 0 1rem 2.5rem rgba(0, 0, 0, .26); }

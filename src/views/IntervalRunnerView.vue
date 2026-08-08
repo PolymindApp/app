@@ -6,6 +6,7 @@ import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import FlashcardCardDialog from '@/components/FlashcardCardDialog.vue'
 import FlashcardContextActions from '@/components/FlashcardContextActions.vue'
+import FlashcardResponseText from '@/components/FlashcardResponseText.vue'
 import FlashcardReviewSettingsFields from '@/components/FlashcardReviewSettingsFields.vue'
 import AppForm from '@/components/AppForm.vue'
 import IntervalTypeIcon from '@/components/IntervalTypeIcon.vue'
@@ -108,6 +109,7 @@ const flashcardSettingsDraft = reactive<FlashcardReviewSettings>({
   frontSeconds: 5,
   backSeconds: 5,
   backSpeechRepeatCount: 1,
+  noteBeforeBack: false,
   speechEnabled: false,
   frontLanguage: '',
   backLanguage: '',
@@ -981,6 +983,7 @@ async function openFlashcardSettings() {
     frontSeconds: review.frontSeconds,
     backSeconds: review.backSeconds,
     backSpeechRepeatCount: review.backSpeechRepeatCount,
+    noteBeforeBack: review.noteBeforeBack,
     speechEnabled: review.speechEnabled,
     frontLanguage: review.frontLanguage,
     backLanguage: review.backLanguage,
@@ -1257,28 +1260,24 @@ async function runAgain(repetitions?: number) {
                     height="256"
                   />
                   <strong
-                    :class="{ 'text-secondary': flashcardPhase.side === 'back' }"
+                    v-if="flashcardPhase.side === 'front'"
                     :style="{
                       fontSize: flashcardTextFontSize(
-                        flashcardPhase.side === 'front'
-                          ? flashcardPhase.card.front
-                          : flashcardPhase.card.back,
+                        flashcardPhase.card.front,
                         'face',
                         'compact',
                       ),
                     }"
                   >
-                    {{ flashcardPhase.side === 'front' ? flashcardPhase.card.front : flashcardPhase.card.back }}
+                    {{ flashcardPhase.card.front }}
                   </strong>
-                  <span
-                    v-if="flashcardPhase.side === 'back' && flashcardPhase.card.note"
-                    class="interval-review-card__note"
-                    :style="{
-                      fontSize: flashcardTextFontSize(flashcardPhase.card.note, 'note', 'compact'),
-                    }"
-                  >
-                    {{ flashcardPhase.card.note }}
-                  </span>
+                  <FlashcardResponseText
+                    v-else
+                    :back="flashcardPhase.card.back"
+                    :note="flashcardPhase.card.note"
+                    :note-before-back="session.flashcardReview.noteBeforeBack"
+                    density="compact"
+                  />
                 </div>
                 <v-progress-linear
                   :model-value="flashcardPhase.progress"
@@ -1658,7 +1657,6 @@ async function runAgain(repetitions?: number) {
 .interval-review-card__content small { color: rgba(var(--v-theme-on-surface), .58); font-size: .62rem; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
 .interval-review-card__image { width: min(100%, 12rem); height: auto; max-height: 12rem; border-radius: .75rem; object-fit: contain; }
 .interval-review-card__content strong { overflow-wrap: anywhere; font-size: clamp(1.05rem, 4.5vw, 1.5rem); line-height: 1.3; white-space: pre-wrap; }
-.interval-review-card__note { color: rgba(var(--v-theme-on-surface), .58); font-size: .74rem; font-weight: 650; line-height: 1.45; white-space: pre-wrap; }
 .interval-review-card :deep(.v-progress-linear) { border-radius: 0; }
 .runner-progress {
   display: flex;

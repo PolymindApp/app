@@ -148,6 +148,25 @@ function updateSpeechEnabled(enabled: boolean | null) {
       </p>
 
       <v-expand-transition>
+        <div v-if="settings.cardSides !== 'front'" class="response-order-setting mt-5">
+          <v-divider class="mb-3" />
+          <div class="setting-row">
+            <div>
+              <strong>Show note before answer</strong>
+              <p>Place the card note above the back text when the response appears</p>
+            </div>
+            <v-switch
+              v-model="settings.noteBeforeBack"
+              color="secondary"
+              hide-details="auto"
+              inset
+              aria-label="Show flashcard note before answer"
+            />
+          </div>
+        </div>
+      </v-expand-transition>
+
+      <v-expand-transition>
         <div v-if="settings.mode === 'passive'" class="passive-settings mt-5">
           <v-number-input
             v-if="settings.cardSides !== 'back'"

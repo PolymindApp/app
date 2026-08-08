@@ -17,6 +17,7 @@ function session(overrides: Partial<FlashcardReviewSession> = {}): FlashcardRevi
     frontSeconds: 5,
     backSeconds: 5,
     backSpeechRepeatCount: 1,
+    noteBeforeBack: false,
     speechEnabled: false,
     frontLanguage: '',
     backLanguage: '',

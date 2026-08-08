@@ -167,6 +167,7 @@ export interface IntervalFlashcardReviewSnapshot {
   frontSeconds: number
   backSeconds: number
   backSpeechRepeatCount: number
+  noteBeforeBack: boolean
   speechEnabled: boolean
   frontLanguage: string
   backLanguage: string
@@ -331,6 +332,7 @@ export interface FlashcardReviewSettings {
   frontSeconds: number
   backSeconds: number
   backSpeechRepeatCount: number
+  noteBeforeBack: boolean
   speechEnabled: boolean
   frontLanguage: string
   backLanguage: string

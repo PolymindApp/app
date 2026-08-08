@@ -78,6 +78,7 @@ export function flashcardReviewSettingsSignature(settings: FlashcardReviewSettin
     frontSeconds: settings.frontSeconds,
     backSeconds: settings.backSeconds,
     backSpeechRepeatCount: settings.backSpeechRepeatCount,
+    noteBeforeBack: settings.noteBeforeBack,
     speechEnabled: settings.speechEnabled,
     frontLanguage: settings.frontLanguage,
     backLanguage: settings.backLanguage,
@@ -269,6 +270,7 @@ export function createIntervalFlashcardReviewSnapshot(
     backSpeechRepeatCount: reviewSet.mode === 'passive' && reviewSet.speechEnabled
       ? normalizeFlashcardBackSpeechRepeatCount(reviewSet.backSpeechRepeatCount)
       : DEFAULT_FLASHCARD_BACK_SPEECH_REPEATS,
+    noteBeforeBack: reviewSet.noteBeforeBack,
     speechEnabled: reviewSet.speechEnabled,
     frontLanguage: reviewSet.frontLanguage,
     backLanguage: reviewSet.backLanguage,

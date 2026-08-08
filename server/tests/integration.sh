@@ -103,7 +103,7 @@ suffix="$(php -r 'echo bin2hex(random_bytes(5));')"
 password="correct-horse-battery"
 
 migration_count="$(sqlite3 "$test_db" 'SELECT COUNT(*) FROM mom_schema_migrations;')"
-[[ "$migration_count" == 27 ]] || {
+[[ "$migration_count" == 28 ]] || {
   echo "The API did not apply the complete database migration sequence." >&2
   exit 1
 }
@@ -1525,6 +1525,7 @@ passive_review_set_payload="$(php -r '
     "indefinite" => true,
     "front_seconds" => 3, "back_seconds" => 4,
     "back_speech_repeat_count" => 3,
+    "note_before_back" => true,
     "speech_enabled" => true, "front_language" => "en-US", "back_language" => "fr-CA",
     "sort_mode" => "recently_added", "sort_order" => 1,
   ], JSON_THROW_ON_ERROR);
@@ -1543,25 +1544,26 @@ passive_session_response="$(curl --silent --show-error --fail \
 passive_session_id="$(json_field id <<<"$passive_session_response")"
 passive_session_speech="$(php -r '
   $data=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
-  echo ((int) $data["speech_enabled_snapshot"]) . ":" . $data["front_language_snapshot"] . ":" . $data["back_language_snapshot"] . ":" . ((int) $data["indefinite_snapshot"]) . ":" . $data["back_speech_repeat_count_snapshot"] . ":" . $data["card_sides_snapshot"] . ":" . $data["max_cards_snapshot"];
+  echo ((int) $data["speech_enabled_snapshot"]) . ":" . $data["front_language_snapshot"] . ":" . $data["back_language_snapshot"] . ":" . ((int) $data["indefinite_snapshot"]) . ":" . $data["back_speech_repeat_count_snapshot"] . ":" . ((int) $data["note_before_back_snapshot"]) . ":" . $data["card_sides_snapshot"] . ":" . $data["max_cards_snapshot"];
 ' <<<"$passive_session_response")"
-[[ "$passive_session_speech" == "1:en-US:fr-CA:1:3:back:20" ]] || {
+[[ "$passive_session_speech" == "1:en-US:fr-CA:1:3:1:back:20" ]] || {
   echo "A Review set did not snapshot its speech synthesis and looping settings." >&2
   exit 1
 }
 passive_session_settings_response="$(curl --silent --show-error --fail \
   -X PATCH -H "Content-Type: application/json" \
   -H "Authorization: Bearer $alice_token" \
-  --data '{"mode":"passive","card_sides":"front","indefinite":true,"max_cards":1,"front_seconds":4,"back_seconds":6,"back_speech_repeat_count":2,"speech_enabled":true,"front_language":"en-US","back_language":"fr-CA","sort_mode":"difficult"}' \
+  --data '{"mode":"passive","card_sides":"front","indefinite":true,"max_cards":1,"front_seconds":4,"back_seconds":6,"back_speech_repeat_count":2,"note_before_back":false,"speech_enabled":true,"front_language":"en-US","back_language":"fr-CA","sort_mode":"difficult"}' \
   "$api_url/flashcard-review-sessions/$passive_session_id/settings")"
 passive_session_settings_summary="$(php -r '
   $data=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
   echo $data["mode_snapshot"] . ":" . $data["card_sides_snapshot"] . ":"
     . ((int) $data["indefinite_snapshot"]) . ":" . $data["max_cards_snapshot"] . ":"
     . $data["front_seconds_snapshot"] . ":" . $data["back_seconds_snapshot"] . ":"
-    . $data["back_speech_repeat_count_snapshot"] . ":" . $data["sort_snapshot"];
+    . $data["back_speech_repeat_count_snapshot"] . ":"
+    . ((int) $data["note_before_back_snapshot"]) . ":" . $data["sort_snapshot"];
 ' <<<"$passive_session_settings_response")"
-[[ "$passive_session_settings_summary" == "passive:front:1:1:4:6:2:difficult" ]] || {
+[[ "$passive_session_settings_summary" == "passive:front:1:1:4:6:2:0:difficult" ]] || {
   echo "An active Review set session did not apply its adjusted settings." >&2
   exit 1
 }
@@ -1627,9 +1629,10 @@ interval_flashcard_snapshot="$(php -r '
   echo $snapshot["reviewSet"] . ":" . $snapshot["frontSeconds"] . ":"
     . $snapshot["backSeconds"] . ":" . ((int) $snapshot["speechEnabled"])
     . ":" . $snapshot["backSpeechRepeatCount"] . ":" . $snapshot["cardSides"]
+    . ":" . ((int) $snapshot["noteBeforeBack"])
     . ":" . count($snapshot["cards"]) . ":" . $snapshot["cards"][0]["image"];
 ' <<<"$interval_flashcard_session_response")"
-[[ "$interval_flashcard_snapshot" == "$passive_review_set_id:3:4:1:3:back:1:/flashcard-images/$flashcard_image_file" ]] || {
+[[ "$interval_flashcard_snapshot" == "$passive_review_set_id:3:4:1:3:back:1:1:/flashcard-images/$flashcard_image_file" ]] || {
   echo "An interval did not snapshot its attached Passive Review set." >&2
   exit 1
 }
@@ -1994,18 +1997,19 @@ readonly_card_create_status="$(curl --silent --output /dev/null --write-out '%{h
 bob_preference_response="$(curl --silent --show-error --fail \
   -X PATCH -H "Content-Type: application/json" \
   -H "Authorization: Bearer $bob_token" \
-  --data '{"mode":"manual","card_sides":"front","indefinite":false,"max_cards":7,"front_seconds":9,"back_seconds":11,"back_speech_repeat_count":2,"speech_enabled":false,"front_language":"","back_language":"","sort_mode":"least_recent"}' \
+  --data '{"mode":"manual","card_sides":"front","indefinite":false,"max_cards":7,"front_seconds":9,"back_seconds":11,"back_speech_repeat_count":2,"note_before_back":true,"speech_enabled":false,"front_language":"","back_language":"","sort_mode":"least_recent"}' \
   "$api_url/flashcard-review-sets/$manual_review_set_id/preferences")"
 bob_preference_summary="$(php -r '
   $set = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
-  echo $set["card_sides"] . ":" . $set["max_cards"] . ":" . $set["sort_mode"];
+  echo $set["card_sides"] . ":" . $set["max_cards"] . ":"
+    . ((int) $set["note_before_back"]) . ":" . $set["sort_mode"];
 ' <<<"$bob_preference_response")"
 alice_limit="$(sqlite3 "$test_db" \
   "SELECT max_cards FROM flashcard_review_set_preferences WHERE review_set = '$manual_review_set_id' AND account = '$alice_id';")"
 bob_id="$(sqlite3 "$test_db" "SELECT id FROM users WHERE email = '$bob_email';")"
 bob_limit="$(sqlite3 "$test_db" \
   "SELECT max_cards FROM flashcard_review_set_preferences WHERE review_set = '$manual_review_set_id' AND account = '$bob_id';")"
-[[ "$bob_preference_summary" == "front:7:least_recent" && "$alice_limit" != "$bob_limit" && "$bob_limit" == 7 ]] || {
+[[ "$bob_preference_summary" == "front:7:1:least_recent" && "$alice_limit" != "$bob_limit" && "$bob_limit" == 7 ]] || {
   echo "Recipient Review set preferences were not stored independently." >&2
   exit 1
 }

@@ -51,6 +51,7 @@ const reviewSet: FlashcardReviewSet = {
   frontSeconds: 3,
   backSeconds: 4,
   backSpeechRepeatCount: 3,
+  noteBeforeBack: true,
   speechEnabled: true,
   frontLanguage: 'en-US',
   backLanguage: 'fr-CA',
@@ -119,12 +120,14 @@ describe('flashcard review helpers', () => {
       frontSeconds: 3,
       backSeconds: 4,
       backSpeechRepeatCount: 3,
+      noteBeforeBack: true,
       speechEnabled: true,
     })
     expect(manual).toMatchObject({
       frontSeconds: 5,
       backSeconds: 5,
       backSpeechRepeatCount: 1,
+      noteBeforeBack: true,
       speechEnabled: true,
     })
   })

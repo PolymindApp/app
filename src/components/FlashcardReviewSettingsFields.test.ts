@@ -20,6 +20,17 @@ const NumberInputStub = defineComponent({
   template: '<input class="custom-max-cards" :value="modelValue" />',
 })
 
+const SwitchStub = defineComponent({
+  props: { modelValue: Boolean, ariaLabel: String },
+  emits: ['update:modelValue'],
+  template: `
+    <button
+      :aria-label="ariaLabel"
+      @click="$emit('update:modelValue', !modelValue)"
+    />
+  `,
+})
+
 function settings(): FlashcardReviewSettings {
   return reactive({
     mode: 'manual',
@@ -29,6 +40,7 @@ function settings(): FlashcardReviewSettings {
     frontSeconds: 5,
     backSeconds: 5,
     backSpeechRepeatCount: 1,
+    noteBeforeBack: false,
     speechEnabled: false,
     frontLanguage: '',
     backLanguage: '',
@@ -58,7 +70,7 @@ describe('FlashcardReviewSettingsFields max cards', () => {
           VIcon: true,
           VListItem: true,
           VSelect: true,
-          VSwitch: true,
+          VSwitch: SwitchStub,
         },
       },
     })
@@ -67,5 +79,35 @@ describe('FlashcardReviewSettingsFields max cards', () => {
     await wrapper.get('.max-cards-slider').trigger('click')
     expect(draft.maxCards).toBe(50)
     expect(wrapper.find('.custom-max-cards').exists()).toBe(true)
+  })
+
+  it('offers a note-before-answer response order', async () => {
+    const draft = settings()
+    const wrapper = mount(FlashcardReviewSettingsFields, {
+      props: {
+        modelValue: draft,
+        speechSupport: { available: false, languages: [] },
+      },
+      global: {
+        stubs: {
+          LabeledSlider: true,
+          VCard: { template: '<section><slot /></section>' },
+          ExpandTransition: { template: '<div><slot /></div>' },
+          VExpandTransition: { template: '<div><slot /></div>' },
+          VNumberInput: true,
+          VBtnToggle: { template: '<div><slot /></div>' },
+          VBtn: true,
+          VDivider: true,
+          VIcon: true,
+          VListItem: true,
+          VSelect: true,
+          VSwitch: SwitchStub,
+        },
+      },
+    })
+
+    await wrapper.get('[aria-label="Show flashcard note before answer"]').trigger('click')
+
+    expect(draft.noteBeforeBack).toBe(true)
   })
 })
