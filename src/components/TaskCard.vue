@@ -287,7 +287,7 @@ watch(() => props.valuePulse, async (pulse, previousPulse) => {
       <div class="task-card-header-actions d-flex align-center ga-1 flex-shrink-0">
         <v-btn
           class="task-menu-button"
-          icon="mdi-dots-vertical"
+          icon="mdi-dots-horizontal"
           variant="text"
           size="small"
           :aria-label="`More actions for ${title}`"

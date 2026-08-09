@@ -1222,10 +1222,12 @@ async function leaveRunner() {
           <v-btn
             size="large"
             variant="text"
-            prepend-icon="mdi-dots-horizontal"
             :disabled="isReviewSetPreview || busy"
             @click="cardMenuOpen = true"
           >
+            <template #prepend>
+              <v-icon icon="mdi-dots-horizontal" size="1.125rem" />
+            </template>
             Options
           </v-btn>
         </div>

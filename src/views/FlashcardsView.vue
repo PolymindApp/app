@@ -222,8 +222,9 @@ async function openReviewSet(reviewSet: FlashcardReviewSet) {
             >
               <v-btn
                 class="review-set__menu-button"
-                icon="mdi-dots-vertical"
+                icon="mdi-dots-horizontal"
                 variant="text"
+                size="small"
                 :aria-label="`More actions for ${reviewSet.name}`"
                 @click="openReviewSetActions(reviewSet)"
               />
@@ -309,8 +310,9 @@ async function openReviewSet(reviewSet: FlashcardReviewSet) {
             >
               <v-btn
                 class="review-set__menu-button"
-                icon="mdi-dots-vertical"
+                icon="mdi-dots-horizontal"
                 variant="text"
+                size="small"
                 :aria-label="`More actions for ${reviewSet.name}`"
                 @click="openReviewSetActions(reviewSet)"
               />

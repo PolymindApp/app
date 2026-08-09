@@ -40,8 +40,9 @@ const vRipple = Ripple
         </span>
       </button>
       <v-btn
-        icon="mdi-dots-vertical"
+        icon="mdi-dots-horizontal"
         variant="text"
+        size="small"
         class="tracker-card__menu"
         :aria-label="`Open ${tracker.name} actions`"
         @touchstart.stop
