@@ -9,8 +9,8 @@ export const FLASHCARD_REVIEW_SET_ACTIONS: Record<
 > = {
   owner: [
     { action: 'review', title: 'Review', icon: 'mdi-play' },
-    { action: 'cards', title: 'Manage cards', icon: 'mdi-card-multiple-outline' },
     { action: 'edit', title: 'Edit', icon: 'mdi-pencil-outline' },
+    { action: 'cards', title: 'Manage cards', icon: 'mdi-card-multiple-outline' },
     { action: 'share', title: 'Share', icon: 'mdi-account-multiple-plus-outline' },
   ],
   readonly: [

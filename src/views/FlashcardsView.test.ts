@@ -154,8 +154,8 @@ describe('Flashcards Review set cards', () => {
 
     expect(mocks.store.startReview).not.toHaveBeenCalled()
     expect(wrapper.findAll('.review-set-action-sheet button').map(item => item.text())).toEqual([
-      'Manage cards',
       'Edit',
+      'Manage cards',
       'Share',
     ])
   })
