@@ -4,16 +4,32 @@ import FlashcardCardsManager from '@/components/FlashcardCardsManager.vue'
 import type { Flashcard } from '@/types/domain'
 
 const bulkUpdateCards = vi.hoisted(() => vi.fn())
+const displayState = vi.hoisted(() => ({ mobile: true }))
+
+vi.mock('vuetify', async () => {
+  const { computed } = await import('vue')
+  return {
+    useDisplay: () => ({ smAndDown: computed(() => displayState.mobile) }),
+  }
+})
 
 vi.mock('@/stores/flashcards', () => ({
   useFlashcardStore: () => ({ bulkUpdateCards }),
 }))
 
 const AutocompleteStub = defineComponent({
-  props: { modelValue: Array, items: Array },
-  emits: ['update:modelValue'],
+  props: { modelValue: Array, items: Array, menu: Boolean },
+  emits: ['mousedown:control', 'update:menu', 'update:modelValue'],
+  methods: {
+    handleMousedown(event: MouseEvent) {
+      this.$emit('update:menu', true)
+      this.$emit('mousedown:control', event)
+      if (!event.defaultPrevented) (event.currentTarget as HTMLInputElement).focus()
+    },
+  },
   template: `
     <div class="autocomplete-stub">
+      <input class="filter-input" @mousedown="handleMousedown">
       <button class="filter-tag" @click="$emit('update:modelValue', ['tag-1'])">Filter</button>
     </div>
   `,
@@ -69,8 +85,9 @@ function card(id: string, front: string, tags: string[]): Flashcard {
   }
 }
 
-function mountManager(props: Record<string, unknown> = {}) {
+function mountManager(props: Record<string, unknown> = {}, attachTo?: Element) {
   return mount(FlashcardCardsManager, {
+    attachTo,
     props: {
       cards: [
         card('card-1', 'Tagged card', ['tag-1']),
@@ -107,6 +124,10 @@ function mountManager(props: Record<string, unknown> = {}) {
 }
 
 describe('FlashcardCardsManager', () => {
+  beforeEach(() => {
+    displayState.mobile = true
+  })
+
   it('filters cards and reports the visible count without rendering a section heading', async () => {
     const wrapper = mountManager()
 
@@ -148,6 +169,36 @@ describe('FlashcardCardsManager', () => {
     expect(wrapper.get('[aria-label="Import flashcards"]').exists()).toBe(true)
     expect(wrapper.get('[aria-label="Add a new flashcard"]').exists()).toBe(true)
     expect(wrapper.get('.table-stub').attributes('data-selectable')).toBe('true')
+  })
+
+  it('opens the mobile tag menu before allowing its input to focus', async () => {
+    const wrapper = mountManager({}, document.body)
+    const input = wrapper.get<HTMLInputElement>('.filter-input')
+
+    await input.trigger('mousedown')
+    expect(wrapper.getComponent(AutocompleteStub).props('menu')).toBe(true)
+    expect(document.activeElement).not.toBe(input.element)
+
+    await input.trigger('mousedown')
+    expect(document.activeElement).toBe(input.element)
+
+    input.element.blur()
+    wrapper.getComponent(AutocompleteStub).vm.$emit('update:menu', false)
+    await nextTick()
+    await input.trigger('mousedown')
+    expect(document.activeElement).not.toBe(input.element)
+    wrapper.unmount()
+  })
+
+  it('keeps single-click tag filter focus on desktop', async () => {
+    displayState.mobile = false
+    const wrapper = mountManager({}, document.body)
+    const input = wrapper.get<HTMLInputElement>('.filter-input')
+
+    await input.trigger('mousedown')
+
+    expect(document.activeElement).toBe(input.element)
+    wrapper.unmount()
   })
 
   it('offers scoped import and bulk actions for editable Review sets', () => {

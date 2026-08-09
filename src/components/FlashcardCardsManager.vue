@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { useDisplay } from 'vuetify'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import FlashcardBulkImageAssignmentDialog from '@/components/FlashcardBulkImageAssignmentDialog.vue'
@@ -59,7 +60,10 @@ const emit = defineEmits<{
 }>()
 
 const store = useFlashcardStore()
+const { smAndDown } = useDisplay()
 const selectedTags = ref<string[]>([])
+const tagFilterMenuOpen = ref(false)
+const tagFilterFocusArmed = ref(false)
 const selectedCardIds = ref<string[]>([])
 const bulkError = ref('')
 const bulkSaving = ref(false)
@@ -129,6 +133,10 @@ watch(selectedTags, () => {
   selectedCardIds.value = []
 }, { deep: true })
 
+watch(tagFilterMenuOpen, (open) => {
+  if (!open) tagFilterFocusArmed.value = false
+})
+
 watch(selectedCardIds, () => {
   bulkError.value = ''
 }, { deep: true })
@@ -144,6 +152,17 @@ function openBulkTagAction(action: FlashcardBulkTagAction) {
   bulkTagIds.value = []
   bulkError.value = ''
   bulkTagSheetOpen.value = true
+}
+
+function handleTagFilterMousedown(event: MouseEvent) {
+  if (
+    !smAndDown.value
+    || tagFilterFocusArmed.value
+    || !(event.target instanceof HTMLInputElement)
+  ) return
+
+  event.preventDefault()
+  tagFilterFocusArmed.value = true
 }
 
 function chooseBulkAction(action: FlashcardBulkAction) {
@@ -208,6 +227,7 @@ async function deleteSelectedCards() {
     <div class="card-filters mb-3">
       <v-autocomplete
         v-model="selectedTags"
+        v-model:menu="tagFilterMenuOpen"
         :items="tags"
         item-title="name"
         item-value="id"
@@ -224,6 +244,7 @@ async function deleteSelectedCards() {
         no-data-text="No matching tags"
         prepend-inner-icon="mdi-filter-variant"
         :disabled="!tags.length"
+        @mousedown:control="handleTagFilterMousedown"
       >
         <template #chip="{ props: chipProps, item }">
           <TagSelectionChip :chip-props="chipProps" :label="item.title" />
