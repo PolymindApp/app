@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Capacitor } from '@capacitor/core'
 import { App } from '@capacitor/app'
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onBeforeUpdate, onMounted, onUpdated, ref, watch } from 'vue'
 import { addDays, format, isAfter, parseISO, startOfDay, startOfWeek } from 'date-fns'
 import { storeToRefs } from 'pinia'
 import { useDisplay } from 'vuetify'
@@ -76,11 +76,18 @@ const trackingSheetOpen = ref(false)
 const trackingSheetTracker = ref<TrackingTracker>()
 const trackingSheetDate = ref(toDateKey(new Date()))
 const trackingSheetContext = ref('')
+const taskPage = ref<HTMLElement>()
 const valuePulseVersions = ref<Record<string, number>>({})
 const showCompleted = ref(false)
 const taskFiltersOpen = ref(false)
 const recentlyCompletedKeys = ref(new Set<string>())
 const completedVisibilityTimers = new Map<string, ReturnType<typeof setTimeout>>()
+const taskCardPositions = new Map<HTMLElement, {
+  top: number
+  left: number
+  width: number
+}>()
+let captureTaskCardPositions = false
 const exactAmount = computed(() => {
   if (!exactAmountInput.value || exactAmountInput.value === '.') return null
   const value = Number(exactAmountInput.value)
@@ -152,6 +159,27 @@ onBeforeUnmount(() => {
   completedVisibilityTimers.clear()
 })
 
+onBeforeUpdate(() => {
+  if (!captureTaskCardPositions) return
+  captureTaskCardPositions = false
+  taskCardPositions.clear()
+  taskPage.value?.querySelectorAll<HTMLElement>('.task-masonry-item').forEach((element) => {
+    const parent = element.parentElement
+    if (!parent) return
+    const bounds = element.getBoundingClientRect()
+    const parentBounds = parent.getBoundingClientRect()
+    taskCardPositions.set(element, {
+      top: bounds.top - parentBounds.top,
+      left: bounds.left - parentBounds.left,
+      width: bounds.width,
+    })
+  })
+})
+
+onUpdated(() => {
+  taskCardPositions.clear()
+})
+
 watch(selectedDate, date => {
   void store.refreshStepCount(date)
 })
@@ -200,7 +228,31 @@ function taskFilterEnabled(filter: TaskFilterId) {
 }
 
 function toggleTaskFilter(filter: TaskFilterId) {
-  if (filter === 'completed') showCompleted.value = !showCompleted.value
+  if (filter !== 'completed') return
+  captureTaskCardPositions = showCompleted.value
+  showCompleted.value = !showCompleted.value
+}
+
+function pinLeavingTaskCard(element: Element) {
+  if (!(element instanceof HTMLElement)) return
+  const position = taskCardPositions.get(element)
+  if (!position) return
+  element.style.position = 'absolute'
+  element.style.top = `${position.top}px`
+  element.style.left = `${position.left}px`
+  element.style.width = `${position.width}px`
+  element.style.zIndex = '1'
+  element.style.pointerEvents = 'none'
+}
+
+function releaseLeavingTaskCard(element: Element) {
+  if (!(element instanceof HTMLElement)) return
+  element.style.removeProperty('position')
+  element.style.removeProperty('top')
+  element.style.removeProperty('left')
+  element.style.removeProperty('width')
+  element.style.removeProperty('z-index')
+  element.style.removeProperty('pointer-events')
 }
 
 function clearCompletedTaskVisibility(key: string) {
@@ -626,7 +678,7 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
 </script>
 
 <template>
-  <main class="app-page today-page">
+  <main ref="taskPage" class="app-page today-page">
     <WeekDateNavigator
       v-model="selectedDate"
       v-model:week-start="visibleWeekStart"
@@ -698,7 +750,14 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
             </v-btn>
           </div>
         </div>
-        <TransitionGroup name="task-list" tag="div" class="task-stack">
+        <TransitionGroup
+          name="task-list"
+          tag="div"
+          class="task-stack"
+          @before-leave="pinLeavingTaskCard"
+          @after-leave="releaseLeavingTaskCard"
+          @leave-cancelled="releaseLeavingTaskCard"
+        >
           <div
             v-for="item in visibleRequired"
             :key="visibilityKey(item)"
@@ -754,7 +813,14 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
             </v-btn>
           </div>
         </div>
-        <TransitionGroup name="task-list" tag="div" class="task-stack">
+        <TransitionGroup
+          name="task-list"
+          tag="div"
+          class="task-stack"
+          @before-leave="pinLeavingTaskCard"
+          @after-leave="releaseLeavingTaskCard"
+          @leave-cancelled="releaseLeavingTaskCard"
+        >
           <div
             v-for="item in visibleOptional"
             :key="visibilityKey(item)"
@@ -1059,7 +1125,7 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
 .score-percent { color: #c7f464; font-size: 1.2rem; font-weight: 900; }
 .task-section-heading { flex-wrap: wrap; gap: .75rem; }
 .task-section-heading__controls { display: flex; min-width: 0; margin-left: auto; align-items: center; justify-content: flex-end; }
-.task-stack { display: grid; gap: 0; }
+.task-stack { position: relative; display: grid; gap: 0; }
 .task-masonry-item {
   display: grid;
   min-width: 0;
