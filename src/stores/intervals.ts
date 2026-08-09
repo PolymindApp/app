@@ -254,6 +254,7 @@ export const useIntervalStore = defineStore('intervals', () => {
     task?: string
     programStep?: string
     taskDate?: string
+    flashcardReview?: IntervalFlashcardReviewSnapshot
   }) {
     if (activeSession.value) return activeSession.value
     const activeRecords = await api.collection('interval_sessions').getList(1, 1, {
@@ -282,6 +283,7 @@ export const useIntervalStore = defineStore('intervals', () => {
       planned_seconds: intervalDuration(input.definition),
       elapsed_seconds: 0,
       runtime_state: runtime,
+      ...(input.flashcardReview ? { flashcard_snapshot: input.flashcardReview } : {}),
     })
     const session = mapSession(record)
     sessions.value.unshift(session)

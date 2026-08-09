@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
-import type { IntervalTemplate } from '@/types/domain'
+import type { IntervalFlashcardReviewSnapshot, IntervalTemplate } from '@/types/domain'
 
 const apiMocks = vi.hoisted(() => ({
   createIntervalSession: vi.fn(),
@@ -119,6 +119,51 @@ describe('interval task attribution', () => {
       task_date: '2026-08-05',
     }))
     expect(session.taskDate).toBe('2026-08-05')
+  })
+
+  it('keeps an attached Review set snapshot when starting a local interval session', async () => {
+    const flashcardReview: IntervalFlashcardReviewSnapshot = {
+      reviewSet: 'set-1',
+      name: 'Spanish',
+      tags: ['tag-1'],
+      sortMode: 'difficult',
+      cardSides: 'both',
+      frontSeconds: 5,
+      backSeconds: 5,
+      backSpeechRepeatCount: 1,
+      noteBeforeBack: false,
+      speechEnabled: false,
+      frontLanguage: '',
+      backLanguage: '',
+      cards: [{
+        id: 'card-1',
+        front: 'Casa',
+        back: 'House',
+        note: '',
+        image: '/api/flashcard-images/card-1.jpg',
+        tags: ['tag-1'],
+      }],
+    }
+    apiMocks.createIntervalSession.mockImplementation(async payload => ({
+      id: 'session-1',
+      ...payload,
+      updated: payload.started_at,
+    }))
+
+    const session = await useIntervalStore().startSession({
+      name: 'Attached interval',
+      source: 'template',
+      definition: { version: 1, children: [] },
+      cues: { soundEnabled: true, vibrationEnabled: true },
+      template: 'template-1',
+      flashcardReview,
+    })
+
+    expect(apiMocks.createIntervalSession).toHaveBeenCalledWith(expect.objectContaining({
+      flashcard_snapshot: flashcardReview,
+    }))
+    expect(session.flashcardReview).toEqual(flashcardReview)
+    expect(session.flashcardReview?.cards[0]?.image).toBe('/api/flashcard-images/card-1.jpg')
   })
 
   it('merges the occurrence returned by atomic session completion', async () => {

@@ -88,7 +88,12 @@ const AUTH_STORAGE_KEY = 'mom-api-auth'
 const baseUrl = (import.meta.env.VITE_API_URL || '/api').replace(/\/+$/, '')
 
 export function apiAssetUrl(value: string) {
-  if (!value || /^(?:https?:|blob:|data:)/i.test(value)) return value
+  if (
+    !value
+    || /^(?:https?:|blob:|data:)/i.test(value)
+    || value === baseUrl
+    || value.startsWith(`${baseUrl}/`)
+  ) return value
   return value.startsWith('/') ? `${baseUrl}${value}` : value
 }
 
@@ -162,6 +167,13 @@ function localCreateDefaults(resource: string, body: Record<string, unknown>) {
   }
   if (resource === 'entries') return { created_at: now, ...body }
   return body
+}
+
+function remoteCreateBody(resource: string, body: Record<string, unknown>) {
+  if (resource !== 'interval_sessions' || !('flashcard_snapshot' in body)) return body
+  const remoteBody = { ...body }
+  delete remoteBody.flashcard_snapshot
+  return remoteBody
 }
 
 async function mirrorOwnedReviewSetProjection(
@@ -371,7 +383,7 @@ class CollectionClient<T extends RecordModel = RecordModel> {
     }
     return request<T>(
       `/collections/${encodeURIComponent(this.name)}/records`,
-      { method: 'POST', body },
+      { method: 'POST', body: remoteCreateBody(this.name, body) },
       this.authStore,
     )
   }

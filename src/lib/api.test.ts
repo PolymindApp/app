@@ -25,6 +25,13 @@ describe('Polymind API client adapter', () => {
     vi.restoreAllMocks()
   })
 
+  it('does not prefix an already resolved API asset URL again', async () => {
+    const { apiAssetUrl } = await import('./api')
+
+    expect(apiAssetUrl('/api/flashcard-images/card-1.jpg'))
+      .toBe('/api/flashcard-images/card-1.jpg')
+  })
+
   it('authenticates and persists the bearer token', async () => {
     const token = futureToken()
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
@@ -253,6 +260,25 @@ describe('Polymind API client adapter', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2)
     const [, firstOptions] = fetchMock.mock.calls[0]
     expect((firstOptions.headers as Headers).get('Authorization')).toBe(`Bearer ${token}`)
+  })
+
+  it('leaves interval flashcard snapshot generation to the server for remote creates', async () => {
+    const token = futureToken()
+    localStorage.setItem('mom-api-auth', JSON.stringify({
+      token,
+      record: { id: 'user-1', email: 'person@example.com' },
+    }))
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ id: 'session-1' }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { api } = await import('./api')
+    await api.collection('interval_sessions').create({
+      template: 'template-1',
+      flashcard_snapshot: { cards: [{ id: 'card-1' }] },
+    })
+
+    const [, options] = fetchMock.mock.calls[0]
+    expect(JSON.parse(options.body as string)).toEqual({ template: 'template-1' })
   })
 
   it('expires the remote token but preserves the cached offline account after an unauthorized response', async () => {

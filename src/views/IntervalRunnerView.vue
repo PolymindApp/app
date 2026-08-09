@@ -670,6 +670,7 @@ async function startTemplate(taskId?: string, programStepId?: string, repetition
       task: taskId,
       programStep: programStepId,
       taskDate: taskId ? item.taskDate : undefined,
+      flashcardReview: item.flashcardReview,
     })
     if (started.task !== taskId || started.programStep !== programStepId) {
       repetitionDialog.value = false
@@ -1114,6 +1115,7 @@ async function runAgain(repetitions?: number) {
       definition,
       cues: item.cues,
       template: item.template,
+      flashcardReview: item.flashcardReview,
     })
     repetitionDialog.value = false
     repetitionDefinition.value = undefined
