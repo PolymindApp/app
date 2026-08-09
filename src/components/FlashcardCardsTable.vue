@@ -230,7 +230,7 @@ function cardTagNames(card: Flashcard) {
 .card-library-table td.card-library-table__select { padding-right: .25rem !important; padding-left: .25rem !important; text-align: center; }
 .card-library-table th.card-library-table__image-heading,
 .card-library-table td.card-library-table__image-cell { padding-right: .5rem !important; padding-left: .5rem !important; }
-.card-library-table tbody .card-library-table__select { cursor: pointer; }
+.card-library-table tbody .card-library-table__select { position: relative; z-index: 2; cursor: pointer; }
 .card-library-table__select :deep(.v-selection-control) { position: relative; z-index: 2; justify-content: center; }
 .card-library-table td { height: 4rem !important; padding: .5rem .75rem !important; vertical-align: middle; }
 .card-library-table tbody tr { position: relative; overflow: hidden; transition: background-color 160ms ease; }
