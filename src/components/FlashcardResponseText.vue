@@ -13,34 +13,51 @@ const props = withDefaults(defineProps<{
   density: 'full',
 })
 
-const parts = computed<Array<{ kind: 'back' | 'note'; value: string }>>(() => {
+type ResponsePart = {
+  kind: 'back' | 'note'
+  presentation: 'primary' | 'supporting'
+  value: string
+}
+
+const parts = computed<ResponsePart[]>(() => {
   const back = { kind: 'back' as const, value: props.back }
-  if (!props.note) return [back]
+  if (!props.note) return [{ ...back, presentation: 'primary' }]
   const note = { kind: 'note' as const, value: props.note }
-  return props.noteBeforeBack ? [note, back] : [back, note]
+  return props.noteBeforeBack
+    ? [
+        { ...note, presentation: 'primary' },
+        { ...back, presentation: 'supporting' },
+      ]
+    : [
+        { ...back, presentation: 'primary' },
+        { ...note, presentation: 'supporting' },
+      ]
 })
 </script>
 
 <template>
   <span :class="['flashcard-response-text', `flashcard-response-text--${density}`]">
-    <template v-for="part in parts" :key="part.kind">
-      <strong
-        v-if="part.kind === 'back'"
-        class="flashcard-response-text__back text-secondary"
-        data-response-part="back"
-        :style="{ fontSize: flashcardTextFontSize(part.value, 'face', density) }"
-      >
-        {{ part.value }}
-      </strong>
-      <span
-        v-else
-        class="flashcard-response-text__note"
-        data-response-part="note"
-        :style="{ fontSize: flashcardTextFontSize(part.value, 'note', density) }"
-      >
-        {{ part.value }}
-      </span>
-    </template>
+    <component
+      :is="part.presentation === 'primary' ? 'strong' : 'span'"
+      v-for="part in parts"
+      :key="part.kind"
+      :class="[
+        'flashcard-response-text__part',
+        `flashcard-response-text__${part.presentation}`,
+        { 'text-secondary': part.presentation === 'primary' },
+      ]"
+      :data-response-part="part.kind"
+      :data-response-presentation="part.presentation"
+      :style="{
+        fontSize: flashcardTextFontSize(
+          part.value,
+          part.presentation === 'primary' ? 'face' : 'note',
+          density,
+        ),
+      }"
+    >
+      {{ part.value }}
+    </component>
   </span>
 </template>
 
@@ -53,32 +70,34 @@ const parts = computed<Array<{ kind: 'back' | 'note'; value: string }>>(() => {
   gap: .45rem;
 }
 
-.flashcard-response-text__back {
-  max-width: 34rem;
+.flashcard-response-text__part {
   overflow-wrap: anywhere;
-  font-weight: 850;
-  line-height: 1.35;
   white-space: pre-wrap;
 }
 
-.flashcard-response-text__note {
+.flashcard-response-text__primary {
+  max-width: 34rem;
+  font-weight: 850;
+  line-height: 1.35;
+}
+
+.flashcard-response-text__supporting {
   max-width: 32rem;
   color: rgba(var(--v-theme-on-surface), .6);
   font-weight: 650;
   line-height: 1.5;
-  white-space: pre-wrap;
 }
 
 .flashcard-response-text--compact {
   gap: .65rem;
 }
 
-.flashcard-response-text--compact .flashcard-response-text__back {
+.flashcard-response-text--compact .flashcard-response-text__primary {
   font-weight: 700;
   line-height: 1.3;
 }
 
-.flashcard-response-text--compact .flashcard-response-text__note {
+.flashcard-response-text--compact .flashcard-response-text__supporting {
   color: rgba(var(--v-theme-on-surface), .58);
   line-height: 1.45;
 }
