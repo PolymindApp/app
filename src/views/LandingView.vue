@@ -506,22 +506,25 @@ function scrollToFeatures() {
 @media (max-width: 47.998rem) {
   .landing-header {
     min-height: 5.5rem;
-    align-items: flex-start;
-    flex-direction: column;
+    align-items: center;
+    flex-direction: row;
+    gap: .5rem;
     padding-block: 1.25rem;
   }
 
   .landing-brand img {
-    width: 7.25rem;
+    width: 6.25rem;
   }
 
   .landing-header__actions {
-    width: 100%;
+    width: auto;
+    margin-left: auto;
   }
 
   .landing-header__actions :deep(.v-btn) {
     min-width: 0;
-    flex: 1 1 0;
+    flex: 0 0 auto;
+    padding-inline: .75rem;
   }
 
   .landing-header__web-action {
