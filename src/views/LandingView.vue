@@ -539,7 +539,7 @@ function scrollToFeatures() {
   }
 
   .phone-gallery {
-    min-height: 25rem;
+    min-height: auto;
   }
 
   .phone-frame {
