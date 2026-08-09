@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { format, parseISO } from 'date-fns'
-import { formatTrackingAxisTick, TRACKING_CHART_COLORS, trackingAxisGutter, useResponsiveChartWidth } from '@/services/responsiveChart'
+import { formatTrackingAxisTick, TRACKING_CHART_COLORS, trackingAxisGutter, useScrollableTrackingChartWidth } from '@/services/responsiveChart'
 import { formatNumber } from '@/services/tracking'
 import type { TrackingInsightResult } from '@/services/tracking'
 import type { TrackingRelationshipPoint } from '@/types/domain'
@@ -20,9 +20,9 @@ const props = defineProps<{
 
 const selectedIndex = ref<number>()
 const [factorColor, outcomeColor] = TRACKING_CHART_COLORS
-const { chartRoot, chartWidth } = useResponsiveChartWidth()
+const { chartRoot, chartViewportWidth, chartWidth, horizontallyScrollable } = useScrollableTrackingChartWidth(() => props.insight.points.length)
 const chartHeight = 300
-const compactLayout = computed(() => chartWidth.value < 420)
+const compactLayout = computed(() => chartViewportWidth.value < 420)
 const plotRight = computed(() => compactLayout.value ? 12 : 24)
 const plotTop = 18
 const plotBottom = 48
@@ -52,8 +52,8 @@ const selectedPoint = computed(() => selectedIndex.value === undefined
   ? undefined
   : props.insight.matched[selectedIndex.value])
 const ariaLabel = computed(() => props.insight.mode === 'presence'
-  ? `${props.outcomeName} values grouped by whether ${props.factorName} was present or absent. Use left and right arrow keys to inspect paired days.`
-  : `${props.outcomeName} plotted against ${props.factorName} for ${props.insight.matched.length} paired days. Use left and right arrow keys to inspect points.`)
+  ? `${props.outcomeName} values grouped by whether ${props.factorName} was present or absent. ${horizontallyScrollable.value ? 'Scroll horizontally on the chart to move through the selected range. ' : ''}Use left and right arrow keys to inspect paired days.`
+  : `${props.outcomeName} plotted against ${props.factorName} for ${props.insight.matched.length} paired days. ${horizontallyScrollable.value ? 'Scroll horizontally on the chart to move through the selected range. ' : ''}Use left and right arrow keys to inspect points.`)
 
 function presenceX(point: TrackingRelationshipPoint, index: number) {
   const center = point.factorValue > 0 ? plotLeft.value + plotWidth.value * .72 : plotLeft.value + plotWidth.value * .28
@@ -165,13 +165,15 @@ function displayValue(value: number, unit: string) {
       <span v-else>Tap, hover, or use arrow keys to inspect a paired day.</span>
     </div>
 
-    <svg
-      :viewBox="`0 0 ${chartWidth} ${chartHeight}`"
-      aria-hidden="true"
-      @pointerdown="selectFromPointer"
-      @pointermove="selectFromPointer"
-      @pointerleave="clearPointerSelection"
-    >
+    <div :class="['chart-scroll', { 'chart-scroll--active': horizontallyScrollable }]">
+      <svg
+        :viewBox="`0 0 ${chartWidth} ${chartHeight}`"
+        :style="horizontallyScrollable ? { width: `${chartWidth}px` } : undefined"
+        aria-hidden="true"
+        @pointerdown="selectFromPointer"
+        @pointermove="selectFromPointer"
+        @pointerleave="clearPointerSelection"
+      >
       <g v-for="(tick, index) in outcomeTicks" :key="`y-${index}`">
         <line :x1="plotLeft" :x2="chartWidth - plotRight" :y1="plotTop + index * plotHeight / 2" :y2="plotTop + index * plotHeight / 2" class="grid-line" />
         <text :x="plotLeft - 8" :y="plotTop + index * plotHeight / 2 + 4" class="axis-value axis-value--outcome">{{ formatTrackingAxisTick(tick) }}</text>
@@ -225,7 +227,8 @@ function displayValue(value: number, unit: string) {
         :r="selectedIndex === index ? 7 : 5"
         :class="['relationship-dot', { 'relationship-dot--selected': selectedIndex === index }]"
       />
-    </svg>
+      </svg>
+    </div>
 
     <div class="chart-key">
       <span><i />Each dot is one date with both values</span>
@@ -264,7 +267,10 @@ function displayValue(value: number, unit: string) {
 }
 
 .chart-readout strong { color: rgb(var(--v-theme-on-surface)); }
-svg { display: block; width: 100%; height: auto; touch-action: pan-y; }
+.chart-scroll { width: 100%; max-width: 100%; }
+.chart-scroll--active { overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; }
+.chart-scroll--active svg { max-width: none; }
+svg { display: block; width: 100%; height: auto; touch-action: pan-x pan-y; }
 .grid-line { stroke: rgb(var(--v-theme-on-surface) / .18); stroke-width: 1; }
 .axis-value,
 .axis-category,

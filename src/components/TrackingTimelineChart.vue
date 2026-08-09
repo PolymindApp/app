@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { format, parseISO } from 'date-fns'
-import { formatTrackingAxisTick, TRACKING_CHART_COLORS, trackingAxisGutter, useResponsiveChartWidth } from '@/services/responsiveChart'
+import { formatTrackingAxisTick, TRACKING_CHART_COLORS, trackingAxisGutter, useScrollableTrackingChartWidth } from '@/services/responsiveChart'
 import { formatNumber } from '@/services/tracking'
 import type { TrackingInsightPoint } from '@/types/domain'
 
@@ -19,8 +19,8 @@ const props = defineProps<{
 
 const selectedIndex = ref<number>()
 const [factorColor, outcomeColor] = TRACKING_CHART_COLORS
-const { chartRoot, chartWidth } = useResponsiveChartWidth()
-const compactLayout = computed(() => chartWidth.value < 420)
+const { chartRoot, chartViewportWidth, chartWidth, horizontallyScrollable } = useScrollableTrackingChartWidth(() => props.points.length)
+const compactLayout = computed(() => chartViewportWidth.value < 420)
 const plotTop = 42
 const plotHeight = 210
 
@@ -44,6 +44,9 @@ const selectedPoint = computed(() => selectedIndex.value === undefined
   : props.points[selectedIndex.value])
 const xLabels = computed(() => {
   if (!props.points.length) return []
+  if (horizontallyScrollable.value) {
+    return props.points.map((point, index) => ({ index, label: format(parseISO(point.date), 'MMM d') }))
+  }
   const indices = [...new Set([0, Math.floor((props.points.length - 1) / 2), props.points.length - 1])]
   return indices.map((index) => ({ index, label: format(parseISO(props.points[index]!.date), 'MMM d') }))
 })
@@ -51,7 +54,7 @@ const ariaLabel = computed(() => {
   const first = props.points[0]
   const last = props.points.at(-1)
   return first && last
-    ? `${props.factorName} and ${props.outcomeName} over time from ${format(parseISO(first.date), 'MMMM d')} to ${format(parseISO(last.date), 'MMMM d, yyyy')}. Use left and right arrow keys to inspect dates.`
+    ? `${props.factorName} and ${props.outcomeName} over time from ${format(parseISO(first.date), 'MMMM d')} to ${format(parseISO(last.date), 'MMMM d, yyyy')}. ${horizontallyScrollable.value ? 'Scroll horizontally on the chart to move through the date range. ' : ''}Use left and right arrow keys to inspect dates.`
     : `${props.factorName} and ${props.outcomeName} over time.`
 })
 
@@ -151,13 +154,15 @@ function displayValue(value: number | null, unit: string) {
       <span v-else>Tap, hover, or use arrow keys to inspect a date.</span>
     </div>
 
-    <svg
-      :viewBox="`0 0 ${chartWidth} 294`"
-      aria-hidden="true"
-      @pointerdown="selectFromPointer"
-      @pointermove="selectFromPointer"
-      @pointerleave="clearPointerSelection"
-    >
+    <div :class="['chart-scroll', { 'chart-scroll--active': horizontallyScrollable }]">
+      <svg
+        :viewBox="`0 0 ${chartWidth} 294`"
+        :style="horizontallyScrollable ? { width: `${chartWidth}px` } : undefined"
+        aria-hidden="true"
+        @pointerdown="selectFromPointer"
+        @pointermove="selectFromPointer"
+        @pointerleave="clearPointerSelection"
+      >
       <g v-for="(tick, index) in factorTicks" :key="`factor-${index}`">
         <line :x1="plotLeft" :x2="chartWidth - plotRight" :y1="tickY(index)" :y2="tickY(index)" class="grid-line" />
         <text :x="plotLeft - 8" :y="tickY(index) + 4" class="axis-value axis-value--factor">{{ formatTrackingAxisTick(tick) }}</text>
@@ -226,7 +231,8 @@ function displayValue(value: number | null, unit: string) {
         class="axis-date"
         :text-anchor="label.index === 0 ? 'start' : label.index === points.length - 1 ? 'end' : 'middle'"
       >{{ label.label }}</text>
-    </svg>
+      </svg>
+    </div>
   </div>
 </template>
 
@@ -261,7 +267,10 @@ function displayValue(value: number | null, unit: string) {
 .chart-readout { min-height: 2.75rem; margin-top: .65rem; color: rgba(var(--v-theme-on-surface), .76); font-size: .7rem; }
 .chart-readout strong { color: rgb(var(--v-theme-on-surface)); }
 
-svg { display: block; width: 100%; height: auto; touch-action: pan-y; }
+.chart-scroll { width: 100%; max-width: 100%; }
+.chart-scroll--active { overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; }
+.chart-scroll--active svg { max-width: none; }
+svg { display: block; width: 100%; height: auto; touch-action: pan-x pan-y; }
 .grid-line { stroke: rgba(var(--v-theme-on-surface), .2); stroke-width: 1; }
 .axis-value,
 .axis-date,

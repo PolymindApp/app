@@ -11,6 +11,14 @@ const timelineProps = {
   outcomeUnit: '/ 10',
 }
 
+function timelinePoints(count: number) {
+  return Array.from({ length: count }, (_, index) => ({
+    date: `2026-07-${String(index + 1).padStart(2, '0')}`,
+    factorValue: index + 1,
+    outcomeValue: index + 2,
+  }))
+}
+
 describe('TrackingTimelineChart', () => {
   it('uses distinct predetermined colors for factor and outcome series', () => {
     const wrapper = mount(TrackingTimelineChart, {
@@ -51,6 +59,61 @@ describe('TrackingTimelineChart', () => {
 
     expect(wrapper.find('svg').attributes('viewBox')).toBe('0 0 320 294')
     expect(wrapper.find('.axis-line--outcome').attributes('x1')).toBe('276')
+
+    wrapper.unmount()
+    vi.unstubAllGlobals()
+  })
+
+  it('shows seven days per mobile viewport and scrolls longer ranges horizontally', async () => {
+    let resize = () => undefined
+    vi.stubGlobal('matchMedia', vi.fn(() => ({
+      matches: true,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })))
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(callback: () => void) { resize = callback }
+      observe() {}
+      disconnect() {}
+    })
+    const wrapper = mount(TrackingTimelineChart, {
+      props: { ...timelineProps, points: timelinePoints(14) },
+    })
+    Object.defineProperty(wrapper.element, 'clientWidth', { configurable: true, value: 320 })
+    resize()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('.chart-scroll--active').exists()).toBe(true)
+    expect(wrapper.find('svg').attributes('viewBox')).toBe('0 0 640 294')
+    expect(wrapper.find('svg').attributes('style')).toContain('width: 640px')
+    expect(wrapper.findAll('.axis-date')).toHaveLength(14)
+
+    wrapper.unmount()
+    vi.unstubAllGlobals()
+  })
+
+  it('keeps longer ranges fitted to the chart on desktop', async () => {
+    let resize = () => undefined
+    vi.stubGlobal('matchMedia', vi.fn(() => ({
+      matches: false,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })))
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(callback: () => void) { resize = callback }
+      observe() {}
+      disconnect() {}
+    })
+    const wrapper = mount(TrackingTimelineChart, {
+      props: { ...timelineProps, points: timelinePoints(14) },
+    })
+    Object.defineProperty(wrapper.element, 'clientWidth', { configurable: true, value: 640 })
+    resize()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('.chart-scroll--active').exists()).toBe(false)
+    expect(wrapper.find('svg').attributes('viewBox')).toBe('0 0 640 294')
+    expect(wrapper.find('svg').attributes('style')).toBeUndefined()
 
     wrapper.unmount()
     vi.unstubAllGlobals()
@@ -175,6 +238,47 @@ describe('TrackingRelationshipChart', () => {
 
     expect(wrapper.find('svg').attributes('viewBox')).toBe('0 0 320 300')
     expect(wrapper.find('.grid-line').attributes('x2')).toBe('308')
+
+    wrapper.unmount()
+    vi.unstubAllGlobals()
+  })
+
+  it('uses the selected date count for a seven-day mobile scroll viewport', async () => {
+    let resize = () => undefined
+    vi.stubGlobal('matchMedia', vi.fn(() => ({
+      matches: true,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })))
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(callback: () => void) { resize = callback }
+      observe() {}
+      disconnect() {}
+    })
+    const insight: TrackingInsightResult = {
+      points: timelinePoints(14),
+      matched: [
+        { date: '2026-07-01', factorValue: 10, outcomeValue: 4 },
+        { date: '2026-07-14', factorValue: 20, outcomeValue: 6 },
+      ],
+      mode: 'quantity',
+      ready: false,
+      earlySignal: false,
+      direction: 'mixed',
+      summary: '',
+      caution: '',
+      trend: { count: 2, slope: .2, intercept: 2, correlation: 1, hasVariation: true },
+    }
+    const wrapper = mount(TrackingRelationshipChart, {
+      props: { ...timelineProps, insight },
+    })
+    Object.defineProperty(wrapper.element, 'clientWidth', { configurable: true, value: 320 })
+    resize()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('.chart-scroll--active').exists()).toBe(true)
+    expect(wrapper.find('svg').attributes('viewBox')).toBe('0 0 640 300')
+    expect(wrapper.find('svg').attributes('style')).toContain('width: 640px')
 
     wrapper.unmount()
     vi.unstubAllGlobals()
