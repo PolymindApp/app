@@ -229,7 +229,7 @@ final class Schema
                     'started_at',
                     'runtime_state',
                 ],
-                'sort' => ['started_at', 'ended_at', 'status'],
+                'sort' => ['started_at', 'ended_at', 'task_date', 'status'],
                 'filter' => [
                     'template', 'task', 'program_step', 'task_date', 'source', 'status', 'started_at',
                 ],

@@ -701,6 +701,17 @@ curl --silent --show-error --fail \
   --data "$completion_payload" \
   "$api_url/interval-sessions/$attributed_session_id/complete" >/dev/null
 
+interval_insight_response="$(curl --silent --show-error --fail \
+  -G -H "Authorization: Bearer $alice_token" \
+  --data-urlencode "filter=template = \"$interval_template_id\" && status = \"completed\" && task_date >= \"2026-07-26\" && task_date <= \"2026-08-01\"" \
+  --data-urlencode 'sort=task_date' \
+  "$api_url/collections/interval_sessions/records")"
+interval_insight_count="$(json_field totalItems <<<"$interval_insight_response")"
+[[ "$interval_insight_count" == 1 ]] || {
+  echo "Interval sessions could not be loaded by task date for tracking insights." >&2
+  exit 1
+}
+
 interval_note_response="$(curl --silent --show-error --fail \
   -X PATCH -H "Content-Type: application/json" \
   -H "Authorization: Bearer $alice_token" \
