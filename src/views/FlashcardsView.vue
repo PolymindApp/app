@@ -426,16 +426,17 @@ async function openReviewSet(reviewSet: FlashcardReviewSet) {
       :aria-label="selectedReviewSet ? `${selectedReviewSet.name} management actions` : 'Review set actions'"
     >
       <template v-if="selectedReviewSet">
-        <v-list-item
-          v-for="item in selectedActions"
-          :key="item.action"
-          :prepend-icon="item.icon"
-          :title="item.title"
-          :base-color="item.color"
-          rounded="lg"
-          :disabled="working"
-          @click="runReviewSetAction(item.action)"
-        />
+        <template v-for="item in selectedActions" :key="item.action">
+          <v-divider v-if="item.divider" class="my-1" />
+          <v-list-item
+            :prepend-icon="item.icon"
+            :title="item.title"
+            :base-color="item.color"
+            rounded="lg"
+            :disabled="working"
+            @click="runReviewSetAction(item.action)"
+          />
+        </template>
       </template>
     </ActionBottomSheet>
 

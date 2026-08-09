@@ -106,7 +106,7 @@ function mountView() {
         VBtn: ButtonStub,
         VCard: CardStub,
         VChip: true,
-        VDivider: true,
+        VDivider: { template: '<hr class="review-set-action-divider" />' },
         VIcon: true,
         VList: true,
         VListItem: ListItemStub,
@@ -153,10 +153,14 @@ describe('Flashcards Review set cards', () => {
     await wrapper.get('button[aria-label="More actions for Vocabulary"]').trigger('click')
 
     expect(mocks.store.startReview).not.toHaveBeenCalled()
-    expect(wrapper.findAll('.review-set-action-sheet button').map(item => item.text())).toEqual([
+    const sheet = wrapper.get('.review-set-action-sheet')
+    expect(Array.from(sheet.element.children).map((item) =>
+      item.classList.contains('review-set-action-divider') ? 'divider' : item.textContent,
+    )).toEqual([
       'Edit',
-      'Manage cards',
       'Share',
+      'divider',
+      'Manage cards',
     ])
   })
 })

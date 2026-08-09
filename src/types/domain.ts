@@ -398,6 +398,7 @@ export interface FlashcardReviewSetActionItem {
   title: string
   icon: string
   color?: string
+  divider?: boolean
 }
 
 export interface FlashcardReviewQueueCard {
