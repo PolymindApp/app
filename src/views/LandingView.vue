@@ -85,7 +85,7 @@ function scrollToFeatures() {
         <section class="hero-section px-6 px-lg-10">
           <div class="hero-glow" aria-hidden="true" />
           <v-row class="hero-grid" align="center">
-            <v-col cols="12" lg="5" class="hero-copy">
+            <v-col cols="12" lg="5" order="2" order-lg="1" class="hero-copy">
               <h1>Program your life. <span class="text-secondary">Precisely.</span></h1>
               <p class="mt-6">
                 Polymind turns what matters to you into a system you can fine-tune, from daily actions and multi-step routines to precise timers, learning, tracking, and reflection.
@@ -106,7 +106,7 @@ function scrollToFeatures() {
               </div>
             </v-col>
 
-            <v-col cols="12" lg="7">
+            <v-col cols="12" lg="7" order="1" order-lg="2">
               <div class="phone-gallery" aria-label="Polymind mobile app screenshots">
                 <div
                   v-for="(screenshot, index) in screenshots"
