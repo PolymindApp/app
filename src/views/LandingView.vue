@@ -538,7 +538,7 @@ function scrollToFeatures() {
   .hero-section,
   .feature-section,
   .closing-section {
-    padding-block: 1rem;
+    padding-block: 2rem;
   }
 
   .hero-copy h1 {
@@ -547,6 +547,8 @@ function scrollToFeatures() {
 
   .phone-gallery {
     min-height: auto;
+    padding-bottom: 2rem;
+    padding-top: 1rem;
   }
 
   .phone-frame {
@@ -560,6 +562,10 @@ function scrollToFeatures() {
 
   .phone-frame > :is(img, video) {
     border-radius: 1.1rem;
+  }
+
+  .landing-footer {
+      min-height: 5rem;
   }
 
 }
