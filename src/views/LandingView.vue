@@ -75,7 +75,7 @@ function scrollToFeatures() {
           >
             Get the app
           </v-btn>
-          <v-btn color="secondary" size="large" to="/auth" append-icon="mdi-arrow-right">
+          <v-btn class="landing-header__web-action" color="secondary" size="large" to="/auth" append-icon="mdi-arrow-right">
             Open web app
           </v-btn>
         </div>
@@ -522,6 +522,10 @@ function scrollToFeatures() {
   .landing-header__actions :deep(.v-btn) {
     min-width: 0;
     flex: 1 1 0;
+  }
+
+  .landing-header__web-action {
+    display: none;
   }
 
   .hero-section {
