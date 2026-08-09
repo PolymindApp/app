@@ -72,7 +72,7 @@ final class Database
                 'quick_amounts', 'cycle_length', 'program_repeat', 'program_strict',
                 'entry_notes_enabled', 'entry_note_suggestions_enabled', 'sort_order',
                 'color', 'interval_template', 'flashcard_review_set',
-                'tracking_trackers',
+                'tracking_trackers', 'reminder_enabled', 'reminder_times',
             ],
             'program_steps' => [
                 'id', 'owner', 'task', 'name', 'description', 'sort_order',
@@ -103,7 +103,6 @@ final class Database
                 'id', 'owner', 'name', 'description', 'role', 'kind', 'category',
                 'unit', 'scale_min', 'scale_max', 'favorable_direction',
                 'daily_aggregation', 'active', 'sort_order', 'color', 'icon',
-                'reminder_enabled', 'reminder_time', 'reminder_show_name',
             ],
             'tracking_entries' => [
                 'id', 'owner', 'tracker', 'occurred_at', 'local_date',

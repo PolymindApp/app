@@ -57,6 +57,8 @@ const task: Task = {
   goalPeriod: 'occurrence',
   entryNotesEnabled: true,
   entryNoteSuggestionsEnabled: true,
+  reminderEnabled: false,
+  reminderTimes: [],
   sortOrder: 0,
 }
 const completedOccurrence: Occurrence = {

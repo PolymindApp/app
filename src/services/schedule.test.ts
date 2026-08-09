@@ -16,6 +16,8 @@ const task = (overrides: Partial<Task> = {}): Task => ({
   intervalWeeks: 1,
   entryNotesEnabled: true,
   entryNoteSuggestionsEnabled: true,
+  reminderEnabled: false,
+  reminderTimes: [],
   sortOrder: 0,
   ...overrides,
 })

@@ -5065,6 +5065,18 @@ final class Api
                     throw new ApiException(422, 'A selected tag is invalid.');
                 }
             }
+            $reminderTimes = $record['reminder_times'] ?? [];
+            foreach ($reminderTimes as $time) {
+                if (!is_string($time) || preg_match('/^(?:[01]\d|2[0-3]):[0-5]\d$/', $time) !== 1) {
+                    throw new ApiException(422, 'Reminder times must use HH:MM.');
+                }
+            }
+            if (count($reminderTimes) !== count(array_unique($reminderTimes))) {
+                throw new ApiException(422, 'Each task reminder must use a different time.');
+            }
+            if (($record['reminder_enabled'] ?? false) && $reminderTimes === []) {
+                throw new ApiException(422, 'Add at least one time for an enabled task reminder.');
+            }
             $intervalTemplate = (string) ($record['interval_template'] ?? '');
             $flashcardReviewSet = (string) ($record['flashcard_review_set'] ?? '');
             $trackingTrackers = $record['tracking_trackers'] ?? [];

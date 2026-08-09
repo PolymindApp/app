@@ -76,4 +76,20 @@ describe('TimerWheelPicker focus gate', () => {
 
     wrapper.unmount()
   })
+
+  it('uses the same wheel for hour and minute clock values', async () => {
+    const wrapper = mount(TimerWheelPicker, {
+      props: { modelValue: '09:45', mode: 'time' },
+      global: { stubs: { VNumberInput: VNumberInputStub } },
+    })
+
+    const columns = wrapper.findAll('.timer-wheel__column')
+    expect(wrapper.get('.timer-wheel').attributes('aria-label')).toBe('Time wheel')
+    expect(columns[0]?.attributes('aria-label')).toBe('Hours')
+    expect(columns[1]?.attributes('aria-label')).toBe('Minutes')
+    expect(columns[0]?.findAll('.timer-wheel__option')).toHaveLength(24)
+
+    await columns[0]?.findAll('.timer-wheel__option')[10]?.trigger('click')
+    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual(['10:45'])
+  })
 })

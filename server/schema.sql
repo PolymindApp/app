@@ -285,7 +285,9 @@ CREATE TABLE tasks (
     color TEXT NOT NULL DEFAULT '',
     interval_template TEXT NOT NULL DEFAULT '',
     flashcard_review_set TEXT NOT NULL DEFAULT '',
-    tracking_trackers JSON NOT NULL DEFAULT '[]'
+    tracking_trackers JSON NOT NULL DEFAULT '[]',
+    reminder_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    reminder_times JSON NOT NULL DEFAULT '[]'
 );
 
 CREATE INDEX idx_tasks_owner_active ON tasks (owner, active);
@@ -489,10 +491,7 @@ CREATE TABLE tracking_trackers (
     active BOOLEAN NOT NULL DEFAULT TRUE,
     sort_order NUMERIC NOT NULL DEFAULT 0,
     color TEXT NOT NULL DEFAULT '#C7F464',
-    icon TEXT NOT NULL DEFAULT 'mdi-checkbox-marked-circle-outline',
-    reminder_enabled BOOLEAN NOT NULL DEFAULT FALSE,
-    reminder_time TEXT NOT NULL DEFAULT '20:00',
-    reminder_show_name BOOLEAN NOT NULL DEFAULT FALSE
+    icon TEXT NOT NULL DEFAULT 'mdi-checkbox-marked-circle-outline'
 );
 
 CREATE INDEX idx_tracking_trackers_owner_active_order

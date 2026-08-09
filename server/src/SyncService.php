@@ -867,6 +867,20 @@ final class SyncService
 
     private function validateRelations(string $resource, array $values, string $account): void
     {
+        if ($resource === 'tasks') {
+            $reminderTimes = $values['reminder_times'] ?? [];
+            foreach ($reminderTimes as $time) {
+                if (!is_string($time) || preg_match('/^(?:[01]\d|2[0-3]):[0-5]\d$/', $time) !== 1) {
+                    throw new ApiException(422, 'Reminder times must use HH:MM.');
+                }
+            }
+            if (count($reminderTimes) !== count(array_unique($reminderTimes))) {
+                throw new ApiException(422, 'Each task reminder must use a different time.');
+            }
+            if (($values['reminder_enabled'] ?? false) && $reminderTimes === []) {
+                throw new ApiException(422, 'Add at least one time for an enabled task reminder.');
+            }
+        }
         $relations = match ($resource) {
             'program_steps' => ['task' => 'tasks'],
             'occurrences', 'entries' => ['task' => 'tasks', 'program_step' => 'program_steps'],

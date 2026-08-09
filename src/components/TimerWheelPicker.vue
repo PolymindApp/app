@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from 'vue'
 import {
   changeSelectionFeedback,
   endSelectionFeedback,
@@ -7,14 +7,16 @@ import {
 } from '@/services/haptics'
 
 const props = withDefaults(defineProps<{
-  modelValue: number
+  modelValue: number | string
   maxMinutes?: number
   active?: boolean
+  mode?: 'duration' | 'time'
 }>(), {
   maxMinutes: 59,
   active: true,
+  mode: 'duration',
 })
-const emit = defineEmits<{ 'update:modelValue': [value: number] }>()
+const emit = defineEmits<{ 'update:modelValue': [value: number | string] }>()
 
 const pickerId = useId()
 const itemHeight = 52
@@ -29,6 +31,8 @@ const secondPosition = ref(0)
 const scrollFrames: Partial<Record<'minutes' | 'seconds', number>> = {}
 let selectionActive = false
 let selectionEndTimer: number | undefined
+const timeMode = computed(() => props.mode === 'time')
+const primaryMaximum = computed(() => timeMode.value ? 23 : props.maxMinutes)
 
 function activateWheel() {
   if (wheelFocused.value) return
@@ -87,15 +91,28 @@ function tickSelection() {
   scheduleSelectionEnd()
 }
 
-function normalizedParts(value: number) {
+function normalizedParts(value: number | string) {
+  if (timeMode.value) {
+    const match = typeof value === 'string' ? /^(\d{2}):(\d{2})$/.exec(value) : undefined
+    return {
+      minutes: Math.min(23, Math.max(0, Number(match?.[1]) || 0)),
+      seconds: Math.min(59, Math.max(0, Number(match?.[2]) || 0)),
+    }
+  }
   const total = Math.max(0, Math.round(Number(value) || 0))
   return {
-    minutes: Math.min(props.maxMinutes, Math.floor(total / 60)),
+    minutes: Math.min(primaryMaximum.value, Math.floor(total / 60)),
     seconds: total % 60,
   }
 }
 
-function setLocalValue(value: number) {
+function emitValue() {
+  emit('update:modelValue', timeMode.value
+    ? `${String(minutes.value).padStart(2, '0')}:${String(seconds.value).padStart(2, '0')}`
+    : minutes.value * 60 + seconds.value)
+}
+
+function setLocalValue(value: number | string) {
   const parts = normalizedParts(value)
   minutes.value = parts.minutes
   seconds.value = parts.seconds
@@ -123,12 +140,12 @@ function updateValue(part: 'minutes' | 'seconds', value: number, behavior: Scrol
     seconds.value = value
     scrollToValue(secondScroller.value, value, behavior)
   }
-  emit('update:modelValue', minutes.value * 60 + seconds.value)
+  emitValue()
   if (changed) tickSelection()
 }
 
 function updateInput(part: 'minutes' | 'seconds', value: string | number | null) {
-  const maximum = part === 'minutes' ? props.maxMinutes : 59
+  const maximum = part === 'minutes' ? primaryMaximum.value : 59
   const normalized = Math.min(maximum, Math.max(0, Math.round(Number(value) || 0)))
   updateValue(part, normalized, 'auto')
 }
@@ -136,7 +153,7 @@ function updateInput(part: 'minutes' | 'seconds', value: string | number | null)
 function activateCenteredValue(part: 'minutes' | 'seconds') {
   const element = part === 'minutes' ? minuteScroller.value : secondScroller.value
   if (!element) return
-  const maximum = part === 'minutes' ? props.maxMinutes : 59
+  const maximum = part === 'minutes' ? primaryMaximum.value : 59
   const value = Math.min(maximum, Math.max(0, Math.round(element.scrollTop / itemHeight)))
   if (part === 'minutes') {
     if (minutes.value === value) return
@@ -145,7 +162,7 @@ function activateCenteredValue(part: 'minutes' | 'seconds') {
     if (seconds.value === value) return
     seconds.value = value
   }
-  emit('update:modelValue', minutes.value * 60 + seconds.value)
+  emitValue()
   tickSelection()
 }
 
@@ -210,9 +227,9 @@ onBeforeUnmount(() => {
     <div class="timer-wheel__inputs">
       <v-number-input
         :model-value="minutes"
-        label="Minutes"
+        :label="timeMode ? 'Hours' : 'Minutes'"
         :min="0"
-        :max="maxMinutes"
+        :max="primaryMaximum"
         :step="1"
         variant="outlined"
         density="comfortable"
@@ -222,7 +239,7 @@ onBeforeUnmount(() => {
       />
       <v-number-input
         :model-value="seconds"
-        label="Seconds"
+        :label="timeMode ? 'Minutes' : 'Seconds'"
         :min="0"
         :max="59"
         :step="1"
@@ -239,7 +256,7 @@ onBeforeUnmount(() => {
       class="timer-wheel"
       :class="{ 'timer-wheel--focused': wheelFocused }"
       role="group"
-      aria-label="Duration wheel"
+      :aria-label="timeMode ? 'Time wheel' : 'Duration wheel'"
       tabindex="0"
       @focusin="activateWheel"
       @focusout="handleWheelFocusOut"
@@ -248,7 +265,7 @@ onBeforeUnmount(() => {
       <div
         v-if="!wheelFocused"
         class="timer-wheel__focus-guard"
-        aria-label="Focus duration wheel to adjust"
+        :aria-label="timeMode ? 'Focus time wheel to adjust' : 'Focus duration wheel to adjust'"
         @click="focusWheel"
       >
         <span>Tap to adjust</span>
@@ -258,13 +275,13 @@ onBeforeUnmount(() => {
         ref="minuteScroller"
         class="timer-wheel__column"
         role="listbox"
-        aria-label="Minutes"
+        :aria-label="timeMode ? 'Hours' : 'Minutes'"
         :aria-activedescendant="`${pickerId}-minutes-${minutes}`"
         @scroll.passive="handleScroll('minutes')"
       >
         <div class="timer-wheel__spacer" aria-hidden="true" />
         <button
-          v-for="value in maxMinutes + 1"
+          v-for="value in primaryMaximum + 1"
           :id="`${pickerId}-minutes-${value - 1}`"
           :key="value - 1"
           type="button"
@@ -276,7 +293,7 @@ onBeforeUnmount(() => {
           @click="updateValue('minutes', value - 1)"
         >
           <span>{{ String(value - 1).padStart(2, '0') }}</span>
-          <small aria-hidden="true">m</small>
+          <small aria-hidden="true">{{ timeMode ? 'h' : 'm' }}</small>
         </button>
         <div class="timer-wheel__spacer" aria-hidden="true" />
       </div>
@@ -287,7 +304,7 @@ onBeforeUnmount(() => {
         ref="secondScroller"
         class="timer-wheel__column"
         role="listbox"
-        aria-label="Seconds"
+        :aria-label="timeMode ? 'Minutes' : 'Seconds'"
         :aria-activedescendant="`${pickerId}-seconds-${seconds}`"
         @scroll.passive="handleScroll('seconds')"
       >
@@ -305,7 +322,7 @@ onBeforeUnmount(() => {
           @click="updateValue('seconds', value - 1)"
         >
           <span>{{ String(value - 1).padStart(2, '0') }}</span>
-          <small aria-hidden="true">s</small>
+          <small aria-hidden="true">{{ timeMode ? 'm' : 's' }}</small>
         </button>
         <div class="timer-wheel__spacer" aria-hidden="true" />
       </div>

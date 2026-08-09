@@ -15,8 +15,7 @@ const tracker: TrackingTracker = {
   id: 'mood', name: 'Mood', description: '', role: 'outcome', kind: 'rating',
   category: 'mood', unit: '/ 10', scaleMin: 1, scaleMax: 10,
   favorableDirection: 'higher', dailyAggregation: 'average', active: true,
-  sortOrder: 0, color: '#fff', icon: '', reminderEnabled: false,
-  reminderTime: '20:00', reminderShowName: false,
+  sortOrder: 0, color: '#fff', icon: '',
 }
 
 const entry = (date: string, value: number, suffix = value): TrackingEntry => ({
@@ -153,6 +152,5 @@ describe('tracking analysis', () => {
     const draft = trackerDraftFromPreset(preset, 4)
     expect(draft.kind).toBe('yes_no')
     expect(draft.sortOrder).toBe(4)
-    expect(draft.reminderEnabled).toBe(false)
   })
 })

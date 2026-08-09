@@ -19,9 +19,6 @@ const tracker: TrackingTracker = {
   sortOrder: 0,
   color: '#C7F464',
   icon: 'mdi-meditation',
-  reminderEnabled: false,
-  reminderTime: '20:00',
-  reminderShowName: false,
 }
 
 const entry: TrackingEntry = {

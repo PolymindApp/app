@@ -8,15 +8,17 @@ import ColorSwatchPicker from '@/components/ColorSwatchPicker.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import DatePickerField from '@/components/DatePickerField.vue'
 import FormActionBar from '@/components/FormActionBar.vue'
+import TaskReminderSettings from '@/components/TaskReminderSettings.vue'
 import type { LongPressDragResult } from '@/directives/longPressDrag'
 import { reviewSetCardCount } from '@/services/flashcards'
 import { formatIntervalDuration, intervalDuration, intervalStepCount } from '@/services/intervals'
+import { requestTaskReminderPermission, taskRemindersAvailable } from '@/services/taskReminders'
 import { TASK_TYPE_OPTIONS } from '@/services/taskTypes'
 import { useFlashcardStore } from '@/stores/flashcards'
 import { useIntervalStore } from '@/stores/intervals'
 import { useTaskStore } from '@/stores/tasks'
 import { useTrackingStore } from '@/stores/tracking'
-import type { ProgramStepDraft, TaskDraft } from '@/types/domain'
+import type { ProgramStepDraft, TaskDraft, TaskType } from '@/types/domain'
 
 const allowAutomaticFocus = Capacitor.getPlatform() !== 'android'
 const route = useRoute()
@@ -31,6 +33,7 @@ const deleting = ref(false)
 const deleteDialog = ref(false)
 const openStep = ref<number>()
 const error = ref('')
+const reminderAvailable = taskRemindersAvailable()
 const stepDragIds = new WeakMap<ProgramStepDraft, string>()
 let nextStepDragId = 0
 const typeLocked = computed(() => Boolean(route.params.id))
@@ -75,6 +78,8 @@ const draft = reactive<TaskDraft>({
   intervalTemplate: undefined,
   flashcardReviewSet: undefined,
   trackingTrackers: [],
+  reminderEnabled: false,
+  reminderTimes: ['20:00'],
   steps: [],
 })
 
@@ -269,6 +274,14 @@ async function save() {
     error.value = 'Select at least one tracker for this task.'
     return
   }
+  if (draft.reminderEnabled && !draft.reminderTimes.length) {
+    error.value = 'Add at least one notification time.'
+    return
+  }
+  if (new Set(draft.reminderTimes).size !== draft.reminderTimes.length) {
+    error.value = 'Choose a different time for each notification.'
+    return
+  }
   const incompleteIntervalStep = draft.type === 'program'
     ? draft.steps.findIndex(step => step.completionType === 'interval' && !step.intervalTemplate)
     : -1
@@ -288,6 +301,9 @@ async function save() {
   saving.value = true
   error.value = ''
   try {
+    if (draft.reminderEnabled && reminderAvailable && !await requestTaskReminderPermission()) {
+      throw new Error('Notification permission is required to enable daily reminders.')
+    }
     await store.saveTask(draft)
     await router.replace('/tasks')
   } catch (cause) {
@@ -485,6 +501,12 @@ async function removeTask() {
           </div>
         </div>
       </v-card>
+
+      <TaskReminderSettings
+        v-model:enabled="draft.reminderEnabled"
+        v-model:times="draft.reminderTimes"
+        :available="reminderAvailable"
+      />
 
       <v-card v-if="draft.type !== 'program'" class="surface-card field-stack pa-5 mb-4">
         <v-select

@@ -73,6 +73,8 @@ describe('TaskTimerView duration trackers', () => {
       intervalWeeks: 1,
       entryNotesEnabled: false,
       entryNoteSuggestionsEnabled: false,
+      reminderEnabled: false,
+      reminderTimes: [],
       sortOrder: 0,
       trackingTrackers: ['focus-time'],
     }]
@@ -92,9 +94,6 @@ describe('TaskTimerView duration trackers', () => {
       sortOrder: 0,
       color: '#66D9C8',
       icon: 'mdi-timer-outline',
-      reminderEnabled: false,
-      reminderTime: '20:00',
-      reminderShowName: false,
     }]
     mocks.trackingStore.entries = [{
       id: 'prior-log',

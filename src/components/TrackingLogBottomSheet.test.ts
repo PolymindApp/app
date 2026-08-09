@@ -35,9 +35,6 @@ const tracker: TrackingTracker = {
   sortOrder: 0,
   color: '#D4A5FF',
   icon: 'mdi-emoticon-outline',
-  reminderEnabled: false,
-  reminderTime: '20:00',
-  reminderShowName: false,
 }
 
 const VBtnStub = defineComponent({

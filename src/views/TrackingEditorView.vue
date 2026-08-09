@@ -6,11 +6,6 @@ import ColorSwatchPicker from '@/components/ColorSwatchPicker.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import FormActionBar from '@/components/FormActionBar.vue'
 import { defaultAggregation, TRACKING_PRESETS, trackerDraftFromPreset } from '@/services/tracking'
-import {
-  reconcileTrackingReminders,
-  requestTrackingReminderPermission,
-  trackingRemindersAvailable,
-} from '@/services/trackingReminders'
 import { useTrackingStore } from '@/stores/tracking'
 import type { TrackerKind, TrackingTrackerDraft } from '@/types/domain'
 
@@ -22,7 +17,6 @@ const saving = ref(false)
 const deleting = ref(false)
 const deleteDialog = ref(false)
 const error = ref('')
-const reminderAvailable = trackingRemindersAvailable()
 
 const kindOptions: Array<{ value: TrackerKind; title: string; subtitle: string; icon: string }> = [
   { value: 'yes_no', title: 'Yes / no', subtitle: 'One explicit answer per log', icon: 'mdi-check-circle-outline' },
@@ -58,9 +52,6 @@ const draft = reactive<TrackingTrackerDraft>({
   sortOrder: 0,
   color: '#C7F464',
   icon: 'mdi-checkbox-marked-circle-outline',
-  reminderEnabled: false,
-  reminderTime: '20:00',
-  reminderShowName: false,
 })
 
 const isEditing = computed(() => Boolean(route.params.id))
@@ -122,11 +113,7 @@ async function save() {
   saving.value = true
   error.value = ''
   try {
-    if (draft.reminderEnabled && !await requestTrackingReminderPermission()) {
-      throw new Error('Notification permission is required to enable this reminder.')
-    }
     await store.saveTracker(draft)
-    await reconcileTrackingReminders(store.trackers)
     await router.replace('/tracking')
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Could not save this tracker.'
@@ -140,7 +127,6 @@ async function remove() {
   deleting.value = true
   try {
     await store.deleteTracker(draft.id)
-    await reconcileTrackingReminders(store.trackers)
     await router.replace('/tracking')
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Could not delete this tracker.'
@@ -226,18 +212,8 @@ async function remove() {
         <p class="field-help">Missing data stays missing. Use an explicit “No” or “None” log when that is what happened.</p>
       </v-card>
 
-      <v-card class="tracker-form-section surface-card pa-5 mb-4">
-        <div class="setting-row">
-          <div><h2 class="section-title">Daily reminder</h2><p class="field-help mt-1">One inexact local reminder each day.</p></div>
-          <v-switch v-model="draft.reminderEnabled" color="secondary" hide-details :disabled="!reminderAvailable" />
-        </div>
-        <v-alert v-if="!reminderAvailable" type="info" variant="tonal" density="compact">Reminders are available in the Android app.</v-alert>
-        <template v-if="draft.reminderEnabled">
-          <v-text-field v-model="draft.reminderTime" type="time" label="Reminder time" variant="outlined" />
-          <v-switch v-model="draft.reminderShowName" color="secondary" label="Show tracker name on the lock screen" hide-details />
-          <p class="field-help">Off by default for privacy. The generic reminder does not reveal what you track.</p>
-        </template>
-        <v-switch v-if="isEditing" v-model="draft.active" color="secondary" label="Active tracker" hide-details />
+      <v-card v-if="isEditing" class="tracker-form-section surface-card pa-5 mb-4">
+        <v-switch v-model="draft.active" color="secondary" label="Active tracker" hide-details="auto" />
       </v-card>
 
     </AppForm>
@@ -268,6 +244,5 @@ async function remove() {
 .kind-option div { display: flex; flex-direction: column; }
 .kind-option span { color: rgb(var(--v-theme-on-surface) / .52); font-size: .7rem; }
 .scale-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; }
-.setting-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
 .tracking-editor { padding-bottom: 6rem; }
 </style>

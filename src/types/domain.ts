@@ -56,6 +56,8 @@ export interface Task {
   intervalTemplate?: string
   flashcardReviewSet?: string
   trackingTrackers?: string[]
+  reminderEnabled: boolean
+  reminderTimes: string[]
 }
 
 export interface ProgramStep {
@@ -484,9 +486,6 @@ export interface TrackingTracker {
   sortOrder: number
   color: string
   icon: string
-  reminderEnabled: boolean
-  reminderTime: string
-  reminderShowName: boolean
 }
 
 export interface TrackingTaskTracker extends Pick<TrackingTracker, 'id' | 'name' | 'kind' | 'icon' | 'color'> {

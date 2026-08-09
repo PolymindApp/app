@@ -6,6 +6,7 @@ import { readHealthConnectSteps } from '@/services/healthConnect'
 import { dailyTotalCompletionPercent, isTaskScheduled, meetsTarget, programCycleDay, progressPercent, stepsForDate, toDateKey } from '@/services/schedule'
 import { taskNeedsReview } from '@/services/taskCardActions'
 import { sanitizeTaskEntryNote } from '@/services/taskEntryNotes'
+import { reconcileTaskReminders } from '@/services/taskReminders'
 import { useSnackbarStore } from '@/stores/snackbar'
 import { useJournalStore } from '@/stores/journal'
 import { useTrackingStore } from '@/stores/tracking'
@@ -46,6 +47,8 @@ function mapTask(record: Record<string, any>): Task {
     intervalTemplate: record.interval_template || undefined,
     flashcardReviewSet: record.flashcard_review_set || undefined,
     trackingTrackers: asStringArray(record.tracking_trackers),
+    reminderEnabled: record.reminder_enabled === true,
+    reminderTimes: asStringArray(record.reminder_times),
   }
 }
 
@@ -282,6 +285,7 @@ export const useTaskStore = defineStore('tasks', () => {
       entries.value = entryRecords.map(mapEntry)
       initialProgressSince = since
       loadedProgressRanges.clear()
+      await reconcileTaskReminders(tasks.value).catch(() => undefined)
     } catch (cause) {
       error.value = cause instanceof Error ? cause.message : 'Could not load your plan.'
       throw cause
@@ -510,6 +514,8 @@ export const useTaskStore = defineStore('tasks', () => {
       interval_template: draft.type === 'interval' ? draft.intervalTemplate || '' : '',
       flashcard_review_set: draft.type === 'flashcards' ? draft.flashcardReviewSet || '' : '',
       tracking_trackers: draft.type === 'tracking' ? [...new Set(draft.trackingTrackers ?? [])] : [],
+      reminder_enabled: draft.reminderEnabled,
+      reminder_times: [...new Set(draft.reminderTimes)],
     }
     const record = draft.id
       ? await api.collection('tasks').update(draft.id, payload)
@@ -557,6 +563,7 @@ export const useTaskStore = defineStore('tasks', () => {
   async function toggleTaskActive(task: Task) {
     const record = await api.collection('tasks').update(task.id, { active: !task.active })
     Object.assign(task, mapTask(record))
+    await reconcileTaskReminders(tasks.value).catch(() => undefined)
   }
 
   function upsertOccurrenceRecord(record: Record<string, any>) {
@@ -627,6 +634,7 @@ export const useTaskStore = defineStore('tasks', () => {
     steps.value = steps.value.filter((step) => step.task !== taskId)
     occurrences.value = occurrences.value.filter((occurrence) => occurrence.task !== taskId)
     entries.value = entries.value.filter((entry) => entry.task !== taskId)
+    await reconcileTaskReminders(tasks.value).catch(() => undefined)
     useSnackbarStore().showDeletion('Routine')
   }
 

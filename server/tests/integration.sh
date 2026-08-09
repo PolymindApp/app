@@ -105,7 +105,7 @@ suffix="$(php -r 'echo bin2hex(random_bytes(5));')"
 password="correct-horse-battery"
 
 migration_count="$(sqlite3 "$test_db" 'SELECT COUNT(*) FROM mom_schema_migrations;')"
-[[ "$migration_count" == 30 ]] || {
+[[ "$migration_count" == 31 ]] || {
   echo "The API did not apply the complete database migration sequence." >&2
   exit 1
 }
@@ -934,21 +934,21 @@ injection_status="$(curl --silent --output /dev/null --write-out '%{http_code}' 
 tracker_response="$(curl --silent --show-error --fail \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $alice_token" \
-  --data '{"name":"Mood","description":"Daily mood","role":"outcome","kind":"rating","category":"mood","unit":"/ 10","scale_min":1,"scale_max":10,"favorable_direction":"higher","daily_aggregation":"average","active":true,"sort_order":0,"color":"#D4A5FF","icon":"mdi-emoticon-outline","reminder_enabled":true,"reminder_time":"20:30","reminder_show_name":false}' \
+  --data '{"name":"Mood","description":"Daily mood","role":"outcome","kind":"rating","category":"mood","unit":"/ 10","scale_min":1,"scale_max":10,"favorable_direction":"higher","daily_aggregation":"average","active":true,"sort_order":0,"color":"#D4A5FF","icon":"mdi-emoticon-outline"}' \
   "$api_url/collections/tracking_trackers/records")"
 tracker_id="$(json_field id <<<"$tracker_response")"
 
 second_tracker_response="$(curl --silent --show-error --fail \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $alice_token" \
-  --data '{"name":"Energy","description":"Daily energy","role":"outcome","kind":"rating","category":"mood","unit":"/ 10","scale_min":1,"scale_max":10,"favorable_direction":"higher","daily_aggregation":"average","active":true,"sort_order":1,"color":"#C7F464","icon":"mdi-lightning-bolt-outline","reminder_enabled":false,"reminder_time":"20:30","reminder_show_name":false}' \
+  --data '{"name":"Energy","description":"Daily energy","role":"outcome","kind":"rating","category":"mood","unit":"/ 10","scale_min":1,"scale_max":10,"favorable_direction":"higher","daily_aggregation":"average","active":true,"sort_order":1,"color":"#C7F464","icon":"mdi-lightning-bolt-outline"}' \
   "$api_url/collections/tracking_trackers/records")"
 second_tracker_id="$(json_field id <<<"$second_tracker_response")"
 
 duration_tracker_response="$(curl --silent --show-error --fail \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $alice_token" \
-  --data '{"name":"Focus time","description":"Time spent in focused work","role":"factor","kind":"duration","category":"activity","unit":"minutes","scale_min":0,"scale_max":0,"favorable_direction":"neutral","daily_aggregation":"sum","active":true,"sort_order":2,"color":"#66D9C8","icon":"mdi-timer-outline","reminder_enabled":false,"reminder_time":"20:30","reminder_show_name":false}' \
+  --data '{"name":"Focus time","description":"Time spent in focused work","role":"factor","kind":"duration","category":"activity","unit":"minutes","scale_min":0,"scale_max":0,"favorable_direction":"neutral","daily_aggregation":"sum","active":true,"sort_order":2,"color":"#66D9C8","icon":"mdi-timer-outline"}' \
   "$api_url/collections/tracking_trackers/records")"
 duration_tracker_id="$(json_field id <<<"$duration_tracker_response")"
 
@@ -965,6 +965,7 @@ tracking_task_payload="$(php -r '
     "entry_notes_enabled" => false, "entry_note_suggestions_enabled" => false,
     "sort_order" => 9, "color" => "#FF9EAE", "interval_template" => "",
     "flashcard_review_set" => "", "tracking_trackers" => [$argv[1], $argv[2]],
+    "reminder_enabled" => true, "reminder_times" => ["09:15", "20:30"],
   ], JSON_THROW_ON_ERROR);
 ' "$tracker_id" "$duration_tracker_id")"
 tracking_task_response="$(curl --silent --show-error --fail \
@@ -975,8 +976,11 @@ tracking_task_response="$(curl --silent --show-error --fail \
 tracking_task_id="$(json_field id <<<"$tracking_task_response")"
 php -r '
   $task = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
-  if (($task["type"] ?? "") !== "tracking" || ($task["tracking_trackers"] ?? []) !== [$argv[1], $argv[2]]) {
-      fwrite(STDERR, "A tracking task did not retain its selected trackers.\n");
+  if (($task["type"] ?? "") !== "tracking"
+      || ($task["tracking_trackers"] ?? []) !== [$argv[1], $argv[2]]
+      || !($task["reminder_enabled"] ?? false)
+      || ($task["reminder_times"] ?? []) !== ["09:15", "20:30"]) {
+      fwrite(STDERR, "A tracking task did not retain its trackers and reminders.\n");
       exit(1);
   }
 ' "$tracker_id" "$duration_tracker_id" <<<"$tracking_task_response"
@@ -1096,10 +1100,20 @@ locked_tracker_status="$(curl --silent --output /dev/null --write-out '%{http_co
 invalid_reminder_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
   -X PATCH -H "Content-Type: application/json" \
   -H "Authorization: Bearer $alice_token" \
-  --data '{"reminder_time":"25:00"}' \
-  "$api_url/collections/tracking_trackers/records/$tracker_id")"
+  --data '{"reminder_enabled":true,"reminder_times":["25:00"]}' \
+  "$api_url/collections/tasks/records/$tracking_task_id")"
 [[ "$invalid_reminder_status" == 422 ]] || {
-  echo "An invalid tracker reminder time was accepted." >&2
+  echo "An invalid task reminder time was accepted." >&2
+  exit 1
+}
+
+duplicate_reminder_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  -X PATCH -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"reminder_enabled":true,"reminder_times":["20:30","20:30"]}' \
+  "$api_url/collections/tasks/records/$tracking_task_id")"
+[[ "$duplicate_reminder_status" == 422 ]] || {
+  echo "Duplicate task reminder times were accepted." >&2
   exit 1
 }
 

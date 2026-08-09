@@ -115,9 +115,6 @@ export function trackerDraftFromPreset(
     sortOrder,
     color: preset.color,
     icon: preset.icon,
-    reminderEnabled: false,
-    reminderTime: '20:00',
-    reminderShowName: false,
   }
 }
 

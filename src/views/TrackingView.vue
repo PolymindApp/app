@@ -8,7 +8,6 @@ import TrackingTrackerCard from '@/components/TrackingTrackerCard.vue'
 import TrackingWeeklyBarChart from '@/components/TrackingWeeklyBarChart.vue'
 import WeekDateNavigator from '@/components/WeekDateNavigator.vue'
 import { TRACKING_PRESETS, trackerDraftFromPreset } from '@/services/tracking'
-import { reconcileTrackingReminders } from '@/services/trackingReminders'
 import { useTrackingStore } from '@/stores/tracking'
 import { useTaskStore } from '@/stores/tasks'
 import type { TrackingEntry, TrackingTracker } from '@/types/domain'
@@ -185,7 +184,6 @@ onMounted(async () => {
     taskStore.tasks.length ? Promise.resolve() : taskStore.load().catch(() => undefined),
   ])
   if (store.loaded) await loadVisibleWeekEntries()
-  await reconcileTrackingReminders(store.trackers).catch(() => undefined)
   openRequestedTracker()
 })
 

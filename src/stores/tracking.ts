@@ -28,9 +28,6 @@ export function mapTrackingTracker(record: Record<string, any>): TrackingTracker
     sortOrder: Number(record.sort_order || 0),
     color: record.color || '#C7F464',
     icon: record.icon || 'mdi-checkbox-marked-circle-outline',
-    reminderEnabled: record.reminder_enabled === true,
-    reminderTime: record.reminder_time || '20:00',
-    reminderShowName: record.reminder_show_name === true,
   }
 }
 
@@ -119,9 +116,6 @@ export const useTrackingStore = defineStore('tracking', () => {
       sort_order: draft.sortOrder,
       color: draft.color,
       icon: draft.icon,
-      reminder_enabled: draft.reminderEnabled,
-      reminder_time: draft.reminderTime,
-      reminder_show_name: draft.reminderShowName,
     }
     const record = draft.id
       ? await api.collection('tracking_trackers').update(draft.id, payload)

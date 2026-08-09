@@ -11,7 +11,7 @@ import { installAndroidFocusAutoScroll } from './services/androidFocusAutoScroll
 import { preloadIntervalCueAudio } from './services/intervalCues'
 import { installFlashcardNotificationRouting } from './services/flashcardNotificationRouting'
 import { installIntervalNotificationRouting } from './services/intervalNotificationRouting'
-import { installTrackingNotificationRouting } from './services/trackingReminders'
+import { installTaskNotificationRouting } from './services/taskReminders'
 import { startOfflineSync } from './services/offlineSync'
 import {
   readAndroidRoute,
@@ -55,7 +55,7 @@ if (nativePlatform === 'android') {
   void router.isReady().then(() => {
     void installIntervalNotificationRouting(router)
     void installFlashcardNotificationRouting(router)
-    void installTrackingNotificationRouting(router)
+    void installTaskNotificationRouting(router)
     rememberAndroidRoute(router.currentRoute.value)
     router.afterEach((to) => rememberAndroidRoute(to))
 

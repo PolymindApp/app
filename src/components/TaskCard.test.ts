@@ -34,6 +34,8 @@ const progress: TaskProgress = {
     goalPeriod: 'occurrence',
     entryNotesEnabled: false,
     entryNoteSuggestionsEnabled: false,
+    reminderEnabled: false,
+    reminderTimes: [],
     sortOrder: 0,
   },
   scheduledDate: '2026-08-01',

@@ -17,7 +17,7 @@ const features = [
   },
   {
     title: 'Measure your progress',
-    description: 'Define the signals that matter, choose scales and targets, add reminders, and compare factors with outcomes.',
+    description: 'Define the signals that matter, choose scales and targets, and compare factors with outcomes.',
     icon: 'mdi-chart-timeline-variant',
   },
   {
