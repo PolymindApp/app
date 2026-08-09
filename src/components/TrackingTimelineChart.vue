@@ -19,7 +19,10 @@ const props = defineProps<{
 
 const selectedIndex = ref<number>()
 const [factorColor, outcomeColor] = TRACKING_CHART_COLORS
-const { chartRoot, chartViewportWidth, chartWidth, horizontallyScrollable } = useScrollableTrackingChartWidth(() => props.points.length)
+const { chartRoot, chartScroll, chartViewportWidth, chartWidth, horizontallyScrollable } = useScrollableTrackingChartWidth(
+  () => props.points.length,
+  () => props.points,
+)
 const compactLayout = computed(() => chartViewportWidth.value < 420)
 const plotTop = 42
 const plotHeight = 210
@@ -154,7 +157,7 @@ function displayValue(value: number | null, unit: string) {
       <span v-else>Tap, hover, or use arrow keys to inspect a date.</span>
     </div>
 
-    <div :class="['chart-scroll', { 'chart-scroll--active': horizontallyScrollable }]">
+    <div ref="chartScroll" :class="['chart-scroll', { 'chart-scroll--active': horizontallyScrollable }]">
       <svg
         :viewBox="`0 0 ${chartWidth} 294`"
         :style="horizontallyScrollable ? { width: `${chartWidth}px` } : undefined"

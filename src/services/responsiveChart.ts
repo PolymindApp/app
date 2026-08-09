@@ -1,4 +1,4 @@
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 export const TRACKING_CHART_COLORS = ['#8FB8FF', '#C7F464'] as const
 export const MOBILE_TRACKING_CHART_DAYS = 7
@@ -42,8 +42,13 @@ export function useResponsiveChartWidth(maxWidth = 720) {
   return { chartRoot, chartWidth }
 }
 
-export function useScrollableTrackingChartWidth(dayCount: () => number, maxWidth = 720) {
+export function useScrollableTrackingChartWidth(
+  dayCount: () => number,
+  dataKey: () => unknown,
+  maxWidth = 720,
+) {
   const chartRoot = ref<HTMLElement>()
+  const chartScroll = ref<HTMLElement>()
   const chartViewportWidth = ref(maxWidth)
   const mobileViewport = ref(false)
   let resizeObserver: ResizeObserver | undefined
@@ -84,5 +89,13 @@ export function useScrollableTrackingChartWidth(dayCount: () => number, maxWidth
     : Math.min(maxWidth, chartViewportWidth.value),
   )
 
-  return { chartRoot, chartViewportWidth, chartWidth, horizontallyScrollable }
+  watch([horizontallyScrollable, dataKey], ([canScroll]) => {
+    if (!canScroll || !chartScroll.value) return
+    chartScroll.value.scrollLeft = Math.max(
+      0,
+      chartScroll.value.scrollWidth - chartScroll.value.clientWidth,
+    )
+  }, { flush: 'post', immediate: true })
+
+  return { chartRoot, chartScroll, chartViewportWidth, chartWidth, horizontallyScrollable }
 }
