@@ -421,6 +421,8 @@ describe('TaskCard amount actions', () => {
     expect(wrapper.emitted('actions')).toEqual([[progress]])
     expect(wrapper.emitted('toggle')).toBeUndefined()
     expect(wrapper.get('.task-card-header-main').attributes('aria-expanded')).toBe('true')
+    expect(wrapper.get('.task-card-header-main').attributes()).toHaveProperty('data-task-drag-handle')
+    expect(wrapper.get('.task-menu-button').attributes()).not.toHaveProperty('data-task-drag-handle')
   })
 
   it('toggles a check-off only from its Done and Undone button', async () => {

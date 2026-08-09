@@ -10,6 +10,7 @@ import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import TaskCard from '@/components/TaskCard.vue'
 import TrackingLogBottomSheet from '@/components/TrackingLogBottomSheet.vue'
 import WeekDateNavigator from '@/components/WeekDateNavigator.vue'
+import type { LongPressDragResult } from '@/directives/longPressDrag'
 import { reviewSetCardCount } from '@/services/flashcards'
 import { isNativeHealthConnectSupported } from '@/services/healthConnect'
 import { formatIntervalDuration, intervalDuration } from '@/services/intervals'
@@ -25,6 +26,7 @@ import {
 } from '@/services/taskEntryNotes'
 import { TASK_FILTER_ITEMS } from '@/services/taskFilters'
 import type { TaskFilterId } from '@/services/taskFilters'
+import { taskIdsFromProgressDrag, taskProgressDragKey } from '@/services/taskReordering'
 import { useIntervalStore } from '@/stores/intervals'
 import { useFlashcardStore } from '@/stores/flashcards'
 import { useJournalStore } from '@/stores/journal'
@@ -81,6 +83,7 @@ const taskPage = ref<HTMLElement>()
 const valuePulseVersions = ref<Record<string, number>>({})
 const showCompleted = ref(false)
 const taskFiltersOpen = ref(false)
+const reorderingTasks = ref(false)
 const recentlyCompletedKeys = ref(new Set<string>())
 const completedVisibilityTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const taskCardPositions = new Map<HTMLElement, {
@@ -211,7 +214,24 @@ async function run(action: () => Promise<void>) {
 }
 
 function progressKey(progress: TaskProgress) {
-  return `${progress.task.id}:${progress.programStep?.id || ''}`
+  return taskProgressDragKey(progress)
+}
+
+function draggableTaskCount(progressItems: TaskProgress[]) {
+  return new Set(progressItems.map(item => item.task.id)).size
+}
+
+async function reorderTaskCards(result: LongPressDragResult, progressItems: TaskProgress[]) {
+  const orderedTaskIds = taskIdsFromProgressDrag(result, progressItems)
+  if (orderedTaskIds.length < 2) return
+  reorderingTasks.value = true
+  try {
+    await store.reorderTasks(orderedTaskIds)
+  } catch {
+    // The store restores the previous order and exposes the save error.
+  } finally {
+    reorderingTasks.value = false
+  }
 }
 
 function visibilityKey(progress: TaskProgress) {
@@ -762,7 +782,15 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
           <div
             v-for="item in visibleRequired"
             :key="visibilityKey(item)"
+            v-long-press-drag="{
+              id: progressKey(item),
+              group: 'required-task-cards',
+              handle: '[data-task-drag-handle]',
+              disabled: draggableTaskCount(visibleRequired) < 2 || busy || reorderingTasks,
+              onDrop: result => reorderTaskCards(result, visibleRequired),
+            }"
             class="task-masonry-item"
+            :class="{ 'task-masonry-item--draggable': draggableTaskCount(visibleRequired) > 1 }"
           >
             <TaskCard
               :progress="item"
@@ -825,7 +853,15 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
           <div
             v-for="item in visibleOptional"
             :key="visibilityKey(item)"
+            v-long-press-drag="{
+              id: progressKey(item),
+              group: 'optional-task-cards',
+              handle: '[data-task-drag-handle]',
+              disabled: draggableTaskCount(visibleOptional) < 2 || busy || reorderingTasks,
+              onDrop: result => reorderTaskCards(result, visibleOptional),
+            }"
             class="task-masonry-item"
+            :class="{ 'task-masonry-item--draggable': draggableTaskCount(visibleOptional) > 1 }"
           >
             <TaskCard
               :progress="item"
@@ -1136,6 +1172,7 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
 }
 .task-masonry-item:last-child { margin-bottom: 0; }
 .task-masonry-item > * { min-height: 0; }
+.task-masonry-item--draggable :deep([data-task-drag-handle]) { cursor: grab; }
 .task-list-enter-active,
 .task-list-leave-active {
   overflow: hidden;

@@ -252,6 +252,7 @@ watch(() => props.valuePulse, async (pulse, previousPulse) => {
     <div class="d-flex align-start ga-3">
       <div
         class="task-card-header-main d-flex align-start ga-3 flex-grow-1 min-width-0"
+        data-task-drag-handle
         :class="{ 'task-card-header-main--expandable': !isCheck }"
         :role="!isCheck ? 'button' : undefined"
         :tabindex="!isCheck ? 0 : undefined"
