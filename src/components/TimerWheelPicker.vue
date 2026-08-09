@@ -29,6 +29,7 @@ const seconds = ref(0)
 const minutePosition = ref(0)
 const secondPosition = ref(0)
 const scrollFrames: Partial<Record<'minutes' | 'seconds', number>> = {}
+const scrollSettleTimers: Partial<Record<'minutes' | 'seconds', number>> = {}
 let selectionActive = false
 let selectionEndTimer: number | undefined
 const timeMode = computed(() => props.mode === 'time')
@@ -166,8 +167,29 @@ function activateCenteredValue(part: 'minutes' | 'seconds') {
   tickSelection()
 }
 
+function settleScroller(part: 'minutes' | 'seconds') {
+  if (scrollSettleTimers[part]) window.clearTimeout(scrollSettleTimers[part])
+  scrollSettleTimers[part] = undefined
+  if (!wheelFocused.value) return
+
+  const element = part === 'minutes' ? minuteScroller.value : secondScroller.value
+  if (!element) return
+  const maximum = part === 'minutes' ? primaryMaximum.value : 59
+  const value = Math.min(maximum, Math.max(0, Math.round(element.scrollTop / itemHeight)))
+  activateCenteredValue(part)
+  if (part === 'minutes') minutePosition.value = value
+  else secondPosition.value = value
+  scrollToValue(element, value, 'smooth')
+}
+
+function scheduleScrollSettle(part: 'minutes' | 'seconds') {
+  if (scrollSettleTimers[part]) window.clearTimeout(scrollSettleTimers[part])
+  scrollSettleTimers[part] = window.setTimeout(() => settleScroller(part), 120)
+}
+
 function handleScroll(part: 'minutes' | 'seconds') {
   if (!wheelFocused.value) return
+  scheduleScrollSettle(part)
   if (scrollFrames[part]) cancelAnimationFrame(scrollFrames[part])
   scrollFrames[part] = requestAnimationFrame(() => {
     const element = part === 'minutes' ? minuteScroller.value : secondScroller.value
@@ -218,6 +240,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   document.removeEventListener('pointerdown', handleOutsidePointerDown, true)
   Object.values(scrollFrames).forEach((frame) => frame && cancelAnimationFrame(frame))
+  Object.values(scrollSettleTimers).forEach((timer) => timer && window.clearTimeout(timer))
   finishSelection()
 })
 </script>
@@ -278,6 +301,7 @@ onBeforeUnmount(() => {
         :aria-label="timeMode ? 'Hours' : 'Minutes'"
         :aria-activedescendant="`${pickerId}-minutes-${minutes}`"
         @scroll.passive="handleScroll('minutes')"
+        @scrollend.passive="settleScroller('minutes')"
       >
         <div class="timer-wheel__spacer" aria-hidden="true" />
         <button
@@ -307,6 +331,7 @@ onBeforeUnmount(() => {
         :aria-label="timeMode ? 'Minutes' : 'Seconds'"
         :aria-activedescendant="`${pickerId}-seconds-${seconds}`"
         @scroll.passive="handleScroll('seconds')"
+        @scrollend.passive="settleScroller('seconds')"
       >
         <div class="timer-wheel__spacer" aria-hidden="true" />
         <button
