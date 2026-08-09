@@ -132,6 +132,7 @@ let runnerMounted = false
 let lastCountCue = ''
 let timerEffectTimeout: number | undefined
 let lastSpokenFlashcardKey = ''
+let resumeAfterFlashcardContext = false
 let resumeAfterFlashcardModal = false
 let flashcardSaveWork: Promise<void> = Promise.resolve()
 const cueHandoff = createIntervalCueHandoff(document.visibilityState)
@@ -269,6 +270,10 @@ watch([
 ], () => {
   void speakCurrentFlashcardSide()
 }, { flush: 'post' })
+
+watch(flashcardContextSheet, (open, wasOpen) => {
+  if (wasOpen && !open) void finishFlashcardContext()
+})
 
 onMounted(async () => {
   runnerMounted = true
@@ -831,20 +836,41 @@ async function ensureIntervalFlashcardSource() {
 async function openFlashcardContext() {
   const item = session.value
   if (!item || isTemplatePreview.value || syncing.value || openingFlashcardContext.value) return
+  resumeAfterFlashcardContext = item.status === 'running'
   openingFlashcardContext.value = true
   try {
-    if (item.status === 'running') await pause()
-    if (session.value?.id === item.id && !finished.value) flashcardContextSheet.value = true
+    if (resumeAfterFlashcardContext) await pause()
+    if (session.value?.id === item.id && !finished.value) {
+      flashcardContextSheet.value = true
+    } else {
+      resumeAfterFlashcardContext = false
+    }
   } catch (cause) {
+    resumeAfterFlashcardContext = false
     error.value = cause instanceof Error ? cause.message : 'Could not pause this interval.'
   } finally {
     openingFlashcardContext.value = false
   }
 }
 
+async function finishFlashcardContext() {
+  const shouldResume = resumeAfterFlashcardContext
+  resumeAfterFlashcardContext = false
+  if (!shouldResume || session.value?.status !== 'paused') return
+  try {
+    await resume()
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : 'Could not resume this interval.'
+  }
+}
+
 async function pauseForFlashcardModal() {
-  resumeAfterFlashcardModal = session.value?.status === 'running'
-  if (resumeAfterFlashcardModal) await pause()
+  const shouldPause = session.value?.status === 'running'
+  resumeAfterFlashcardModal = resumeAfterFlashcardModal
+    || resumeAfterFlashcardContext
+    || shouldPause
+  resumeAfterFlashcardContext = false
+  if (shouldPause) await pause()
 }
 
 async function finishFlashcardModal() {
@@ -921,9 +947,15 @@ async function requestFlashcardRemoval() {
   }
 }
 
-function requestFlashcardEjection() {
+async function requestFlashcardEjection() {
   if (!flashcardPhase.value) return
+  await pauseForFlashcardModal()
   flashcardEjectDialog.value = true
+}
+
+async function closeFlashcardEjection(open: boolean) {
+  flashcardEjectDialog.value = open
+  if (!open) await finishFlashcardModal()
 }
 
 async function ejectIntervalFlashcard() {
@@ -936,7 +968,7 @@ async function ejectIntervalFlashcard() {
       ...review,
       cards: review.cards.filter(card => card.id !== cardId),
     })
-    flashcardEjectDialog.value = false
+    await closeFlashcardEjection(false)
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Could not eject this flashcard.'
   } finally {
@@ -1033,7 +1065,7 @@ async function saveFlashcardSettings() {
 
 function handleFlashcardContextAction(action: FlashcardContextAction) {
   if (action === 'add' || action === 'edit') void openFlashcardEditor(action)
-  else if (action === 'eject') requestFlashcardEjection()
+  else if (action === 'eject') void requestFlashcardEjection()
   else if (action === 'remove') void requestFlashcardRemoval()
   else if (action === 'settings') void openFlashcardSettings()
 }
@@ -1423,13 +1455,14 @@ async function runAgain(repetitions?: number) {
     </v-dialog>
 
     <ConfirmDialog
-      v-model="flashcardEjectDialog"
+      :model-value="flashcardEjectDialog"
       title="Eject this flashcard?"
       message="The card will leave this interval only. It will remain available in the Review set and future sessions."
       confirm-text="Eject card"
       confirm-color="warning"
       icon="mdi-eject-outline"
       :loading="flashcardEjecting"
+      @update:model-value="closeFlashcardEjection"
       @confirm="ejectIntervalFlashcard"
     />
 
