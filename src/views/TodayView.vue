@@ -1065,9 +1065,11 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
   min-width: 0;
   margin-bottom: .7rem;
   grid-template-rows: 1fr;
+  transition: margin-bottom .22s cubic-bezier(.22, 1, .36, 1);
 }
 .task-masonry-item:last-child { margin-bottom: 0; }
 .task-masonry-item > * { min-height: 0; }
+.task-list-enter-active,
 .task-list-leave-active {
   overflow: hidden;
   transition:
@@ -1075,8 +1077,13 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
     margin-bottom .22s cubic-bezier(.22, 1, .36, 1),
     opacity .18s ease;
 }
+.task-list-enter-from,
 .task-list-leave-to { margin-bottom: 0; grid-template-rows: 0fr; opacity: 0; }
-.task-list-move { transition: transform .22s cubic-bezier(.22, 1, .36, 1); }
+.task-list-move {
+  transition:
+    transform .22s cubic-bezier(.22, 1, .36, 1),
+    margin-bottom .22s cubic-bezier(.22, 1, .36, 1);
+}
 .empty-icon { display: grid; width: 64px; height: 64px; place-items: center; border-radius: 20px; background: #c7f464; color: #17200f; }
 .amount-keypad { display: grid; gap: 1rem; }
 .amount-keypad__display { display: flex; min-height: 72px; align-items: center; justify-content: flex-end; padding: .75rem 1rem; border: 1px solid rgb(var(--v-theme-on-surface) / .16); border-radius: 16px; background: rgb(var(--v-theme-surface-variant)); font-size: 2rem; font-weight: 900; line-height: 1; }
@@ -1101,7 +1108,10 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
 .review-actions .v-btn { width: 100%; }
 
 @media (prefers-reduced-motion: reduce) {
-  .task-list-leave-active { transition-duration: 0s; }
+  .task-masonry-item,
+  .task-list-enter-active,
+  .task-list-leave-active,
+  .task-list-move { transition-duration: 0s; }
 }
 
 @media (min-width: 700px) {
