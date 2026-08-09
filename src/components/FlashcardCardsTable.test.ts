@@ -130,6 +130,16 @@ describe('FlashcardCardsTable', () => {
     expect(wrapper.get('[aria-label="No image"]').exists()).toBe(true)
   })
 
+  it('toggles selection from the selection cell without opening the card', async () => {
+    const cards = [card(1)]
+    const wrapper = mountTable(cards)
+
+    await wrapper.get('tbody .card-library-table__select').trigger('click')
+
+    expect(wrapper.emitted('update:modelValue')).toEqual([[['card-1']]])
+    expect(wrapper.emitted('open-card')).toBeUndefined()
+  })
+
   it('loads cards incrementally on Android without rendering pagination', async () => {
     platform.value = 'android'
     const wrapper = mountTable(Array.from({ length: 25 }, (_, index) => card(index + 1)))
