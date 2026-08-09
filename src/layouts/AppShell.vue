@@ -353,8 +353,8 @@ function releaseLeavingPage(element: Element) {
               <v-icon :icon="syncIcon" />
               <v-badge
                 v-if="syncStore.status.pendingCount || syncStore.status.issueCount"
-                :content="syncStore.status.issueCount || syncStore.status.pendingCount"
                 color="warning"
+                dot
                 floating
               />
             </v-btn>
