@@ -3,7 +3,7 @@ import { FLASHCARD_REVIEW_SET_ACTIONS } from '@/services/flashcardReviewSetActio
 describe('Review set role actions', () => {
   it('keeps owner-only and recipient-only actions separated by access role', () => {
     expect(FLASHCARD_REVIEW_SET_ACTIONS.owner.map(item => item.action)).toEqual([
-      'review', 'edit', 'share', 'cards',
+      'review', 'cards', 'edit', 'share',
     ])
     expect(FLASHCARD_REVIEW_SET_ACTIONS.readonly.map(item => item.action)).toEqual([
       'review', 'settings', 'cards', 'copy', 'leave',
