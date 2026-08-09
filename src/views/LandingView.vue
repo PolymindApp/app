@@ -526,7 +526,12 @@ function scrollToFeatures() {
 
   .hero-section {
     min-height: auto;
-    padding-block: 4rem 5rem;
+  }
+
+  .hero-section,
+  .feature-section,
+  .closing-section {
+    padding-block: 1rem;
   }
 
   .hero-copy h1 {
@@ -550,12 +555,5 @@ function scrollToFeatures() {
     border-radius: 1.1rem;
   }
 
-  .feature-section {
-    padding-block: 5rem;
-  }
-
-  .closing-section {
-    padding-bottom: 5rem;
-  }
 }
 </style>
