@@ -87,6 +87,10 @@ function aliasKey(accountId: string, resource: string, localId: string) {
   return `${accountId}\u001f${resource}\u001f${localId}`
 }
 
+function cloneSyncRecord<T extends Record<string, any>>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T
+}
+
 function notifyDataChanged(accountId: string, resource: string) {
   if (typeof window === 'undefined') return
   window.dispatchEvent(new CustomEvent(SYNC_DATA_CHANGED_EVENT, {
@@ -204,8 +208,9 @@ export async function putLocalCreate(
   data: Record<string, any>,
   options: { transactionId?: string; dependsOn?: string[] } = {},
 ) {
-  const id = typeof data.id === 'string' && data.id ? data.id : createLocalRecordId()
-  const record = { ...data, id, owner: data.owner || accountId }
+  const plainData = cloneSyncRecord(data)
+  const id = typeof plainData.id === 'string' && plainData.id ? plainData.id : createLocalRecordId()
+  const record = { ...plainData, id, owner: plainData.owner || accountId }
   const fieldClock = createFieldClock()
   const clocks = Object.fromEntries(Object.keys(record).map(field => [field, fieldClock]))
   const operation = makeOperation(accountId, resource, id, 'create', record, clocks, options)
@@ -236,6 +241,7 @@ export async function putLocalPatch(
   patch: Record<string, any>,
   options: { transactionId?: string; dependsOn?: string[] } = {},
 ) {
+  const plainPatch = cloneSyncRecord(patch)
   const resolvedId = await resolveLocalAlias(accountId, resource, id)
   const key = resourceKey(accountId, resource, resolvedId)
   let result: Record<string, any> | undefined
@@ -243,15 +249,15 @@ export async function putLocalPatch(
     const current = await localDatabase.resources.get(key)
     if (!current?.data || current.deleted) throw new Error('Local record not found.')
     const fieldClock = createFieldClock()
-    const clocks = Object.fromEntries(Object.keys(patch).map(field => [field, fieldClock]))
-    result = { ...current.data, ...patch, id: resolvedId }
+    const clocks = Object.fromEntries(Object.keys(plainPatch).map(field => [field, fieldClock]))
+    result = { ...current.data, ...plainPatch, id: resolvedId }
     await localDatabase.resources.put({
       ...current,
       data: result,
       fieldClocks: { ...current.fieldClocks, ...clocks },
       locallyModified: true,
     })
-    const operation = makeOperation(accountId, resource, resolvedId, 'patch', patch, clocks, options)
+    const operation = makeOperation(accountId, resource, resolvedId, 'patch', plainPatch, clocks, options)
     await localDatabase.outbox.add(operation)
   })
   notifyDataChanged(accountId, resource)
@@ -290,8 +296,9 @@ export async function putLocalCommand(
   command: string,
   payload: Record<string, unknown>,
 ) {
+  const plainPayload = cloneSyncRecord(payload)
   const clock = createFieldClock()
-  const operation = makeOperation(accountId, command, undefined, 'command', payload, { '*': clock }, {})
+  const operation = makeOperation(accountId, command, undefined, 'command', plainPayload, { '*': clock }, {})
   await localDatabase.outbox.add(operation)
   notifyOutboxChanged(accountId)
   return operation
@@ -303,12 +310,13 @@ export async function putLocalProjectionPatch(
   id: string,
   patch: Record<string, any>,
 ) {
+  const plainPatch = cloneSyncRecord(patch)
   const key = resourceKey(accountId, resource, id)
   let result: Record<string, any> | undefined
   await localDatabase.transaction('rw', localDatabase.resources, async () => {
     const current = await localDatabase.resources.get(key)
     if (!current?.data || current.deleted) throw new Error('Local record not found.')
-    result = { ...current.data, ...patch }
+    result = { ...current.data, ...plainPatch }
     await localDatabase.resources.put({ ...current, data: result })
   })
   notifyDataChanged(accountId, resource)
@@ -321,8 +329,9 @@ export async function putLocalProjectionCreate(
   data: Record<string, any>,
   storageId?: string,
 ) {
-  const id = typeof data.id === 'string' && data.id ? data.id : createLocalRecordId()
-  const record = { ...data, id }
+  const plainData = cloneSyncRecord(data)
+  const id = typeof plainData.id === 'string' && plainData.id ? plainData.id : createLocalRecordId()
+  const record = { ...plainData, id }
   const localId = storageId || id
   await localDatabase.resources.put({
     key: resourceKey(accountId, resource, localId),
@@ -355,9 +364,10 @@ export async function putLocalSharedCardCreate(
   reviewSetId: string,
   data: Record<string, any>,
 ) {
-  const cardId = typeof data.id === 'string' && data.id ? data.id : createLocalRecordId()
+  const plainData = cloneSyncRecord(data)
+  const cardId = typeof plainData.id === 'string' && plainData.id ? plainData.id : createLocalRecordId()
   const id = `${reviewSetId}:${cardId}`
-  const record = { ...data, id: cardId, review_set_id: reviewSetId }
+  const record = { ...plainData, id: cardId, review_set_id: reviewSetId }
   const fieldClock = createFieldClock()
   const clocks = Object.fromEntries(Object.keys(record).map(field => [field, fieldClock]))
   await localDatabase.transaction('rw', localDatabase.resources, localDatabase.outbox, async () => {
@@ -393,6 +403,7 @@ export async function putLocalSharedCardPatch(
   cardId: string,
   patch: Record<string, any>,
 ) {
+  const plainPatch = cloneSyncRecord(patch)
   const id = `${reviewSetId}:${cardId}`
   const key = resourceKey(accountId, 'review_set_cards', id)
   let result: Record<string, any> | undefined
@@ -400,8 +411,8 @@ export async function putLocalSharedCardPatch(
     const current = await localDatabase.resources.get(key)
     if (!current?.data || current.deleted) throw new Error('Local record not found.')
     const fieldClock = createFieldClock()
-    const clocks = Object.fromEntries(Object.keys(patch).map(field => [field, fieldClock]))
-    result = { ...current.data, ...patch, id: cardId, review_set_id: reviewSetId }
+    const clocks = Object.fromEntries(Object.keys(plainPatch).map(field => [field, fieldClock]))
+    result = { ...current.data, ...plainPatch, id: cardId, review_set_id: reviewSetId }
     await localDatabase.resources.put({
       ...current,
       data: result,
@@ -413,7 +424,7 @@ export async function putLocalSharedCardPatch(
       'review_set_cards',
       id,
       'patch',
-      { ...patch, review_set_id: reviewSetId },
+      { ...plainPatch, review_set_id: reviewSetId },
       clocks,
       {},
     ))

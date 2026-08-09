@@ -1,5 +1,6 @@
 import 'fake-indexeddb/auto'
 import { beforeEach, describe, expect, it } from 'vitest'
+import { reactive } from 'vue'
 import {
   applyExchangeResults,
   completeLocalBootstrap,
@@ -47,6 +48,29 @@ describe('offline local database', () => {
       recordId: 'task-1',
       kind: 'patch',
       payload: { name: 'Changed offline' },
+    })
+  })
+
+  it('stores nested Vue reactive values as plain sync data', async () => {
+    await completeLocalBootstrap(accountId, 0, [])
+    const trackers = reactive(['tracker-1'])
+    const trackerSnapshot = reactive({ 'tracker-1': 'Mood' })
+
+    const record = await putLocalCreate(accountId, 'journal_entries', {
+      title: 'Offline reflection',
+      tracker: trackers,
+      tracker_snapshot: trackerSnapshot,
+    })
+
+    expect(record.tracker).toEqual(['tracker-1'])
+    expect(record.tracker_snapshot).toEqual({ 'tracker-1': 'Mood' })
+    expect(await getLocalRecord(accountId, 'journal_entries', record.id)).toMatchObject({
+      tracker: ['tracker-1'],
+      tracker_snapshot: { 'tracker-1': 'Mood' },
+    })
+    expect((await pendingOperations(accountId))[0]?.payload).toMatchObject({
+      tracker: ['tracker-1'],
+      tracker_snapshot: { 'tracker-1': 'Mood' },
     })
   })
 
