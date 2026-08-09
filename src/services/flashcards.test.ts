@@ -8,6 +8,7 @@ import {
   flashcardDifficulty,
   formatReviewDuration,
   intervalFlashcardPhase,
+  reviewSetCardCount,
   sessionAccuracy,
   sortFlashcardsForReview,
 } from '@/services/flashcards'
@@ -103,6 +104,11 @@ describe('flashcard review helpers', () => {
     expect(formatReviewDuration(9)).toBe('9s')
     expect(formatReviewDuration(120)).toBe('2m')
     expect(formatReviewDuration(125)).toBe('2m 5s')
+  })
+
+  it('reflects the current Review set session limit in attached summaries', () => {
+    expect(reviewSetCardCount({ matchingCardCount: 12, maxCards: 20 })).toBe(12)
+    expect(reviewSetCardCount({ matchingCardCount: 50, maxCards: 20 })).toBe(20)
   })
 
   it('sorts a Review set using the configured card order', () => {

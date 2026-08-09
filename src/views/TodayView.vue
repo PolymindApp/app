@@ -10,6 +10,7 @@ import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import TaskCard from '@/components/TaskCard.vue'
 import TrackingLogBottomSheet from '@/components/TrackingLogBottomSheet.vue'
 import WeekDateNavigator from '@/components/WeekDateNavigator.vue'
+import { reviewSetCardCount } from '@/services/flashcards'
 import { isNativeHealthConnectSupported } from '@/services/healthConnect'
 import { formatIntervalDuration, intervalDuration } from '@/services/intervals'
 import { taskCompletionMarkerColor, toDateKey } from '@/services/schedule'
@@ -537,7 +538,7 @@ function reviewSetMeta(progress: TaskProgress) {
   return {
     name: reviewSet.name,
     mode: reviewSet.mode,
-    cardCount: reviewSet.matchingCardCount,
+    cardCount: reviewSetCardCount(reviewSet),
   }
 }
 

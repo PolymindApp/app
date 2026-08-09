@@ -172,8 +172,9 @@ const subtitle = computed(() => {
     return props.interval?.duration ? `Interval · ${props.interval.duration} total` : 'Interval'
   }
   if (isFlashcards.value) {
-    if (!props.reviewSet) return 'Flashcards'
-    return `${props.reviewSet.mode === 'passive' ? 'Passive' : 'Manual'} review · ${props.reviewSet.cardCount} cards`
+    if (!props.reviewSet) return 'Review set'
+    const cardLabel = props.reviewSet.cardCount === 1 ? 'card' : 'cards'
+    return `${props.reviewSet.name} · ${props.reviewSet.mode === 'passive' ? 'Passive' : 'Manual'} · ${props.reviewSet.cardCount} ${cardLabel}`
   }
   if (isTracking.value) {
     const total = target.value

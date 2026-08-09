@@ -6,7 +6,7 @@ import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import WeekNavigator from '@/components/WeekNavigator.vue'
 import { flashcardReviewProgressPercent } from '@/services/flashcardHistory'
-import { formatReviewDuration, reviewSortTitle, sessionAccuracy } from '@/services/flashcards'
+import { formatReviewDuration, reviewSetCardCount, reviewSortTitle, sessionAccuracy } from '@/services/flashcards'
 import { FLASHCARD_REVIEW_SET_ACTIONS } from '@/services/flashcardReviewSetActions'
 import { groupSessionsByDate } from '@/services/sessionHistory'
 import { useFlashcardStore } from '@/stores/flashcards'
@@ -50,10 +50,6 @@ function tagName(reviewSet: FlashcardReviewSet, id: string) {
   return reviewSet.tagDetails.find(tag => tag.id === id)?.name
     || store.tags.find(tag => tag.id === id)?.name
     || 'Removed tag'
-}
-
-function reviewSetCardCount(reviewSet: FlashcardReviewSet) {
-  return Math.min(reviewSet.matchingCardCount, reviewSet.maxCards)
 }
 
 function recentReviewColor(session: FlashcardReviewSession) {

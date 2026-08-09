@@ -9,6 +9,7 @@ import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import DatePickerField from '@/components/DatePickerField.vue'
 import FormActionBar from '@/components/FormActionBar.vue'
 import type { LongPressDragResult } from '@/directives/longPressDrag'
+import { reviewSetCardCount } from '@/services/flashcards'
 import { formatIntervalDuration, intervalDuration, intervalStepCount } from '@/services/intervals'
 import { TASK_TYPE_OPTIONS } from '@/services/taskTypes'
 import { useFlashcardStore } from '@/stores/flashcards'
@@ -97,7 +98,7 @@ const reviewSetItems = computed(() => flashcardStore.reviewSets.map(item => ({
   title: item.name,
   value: item.id,
   props: {
-    subtitle: `${item.mode === 'passive' ? 'Passive' : 'Manual'} · ${item.matchingCardCount} cards`,
+    subtitle: `${item.mode === 'passive' ? 'Passive' : 'Manual'} · ${reviewSetCardCount(item)} cards`,
   },
 })))
 const trackingTrackerItems = computed(() => trackingStore.trackers
@@ -138,7 +139,7 @@ function reviewSetForStep(step: ProgramStepDraft) {
 function reviewSetSummary(reviewSetId?: string) {
   const reviewSet = flashcardStore.reviewSets.find(item => item.id === reviewSetId)
   if (!reviewSet) return ''
-  return `${reviewSet.mode === 'passive' ? 'Passive' : 'Manual'} · ${reviewSet.matchingCardCount} cards`
+  return `${reviewSet.mode === 'passive' ? 'Passive' : 'Manual'} · ${reviewSetCardCount(reviewSet)} cards`
 }
 
 watch(() => draft.type, (type) => {
@@ -408,7 +409,7 @@ async function removeTask() {
         <template v-if="flashcardStore.reviewSets.length">
           <v-select
             v-model="draft.flashcardReviewSet"
-            label="Attached Review set"
+            label="Review set"
             :items="reviewSetItems"
             autocomplete="off"
             :rules="[v => Boolean(v) || 'Select a Review set']"
@@ -426,7 +427,7 @@ async function removeTask() {
         <div v-else class="text-center py-3">
           <v-icon icon="mdi-cards-outline" size="36" class="mb-3" />
           <h2 class="text-body-1 font-weight-black">Create a Review set first</h2>
-          <p class="text-body-2 muted mt-2 mb-4">Flashcard tasks need a saved Review set to run.</p>
+          <p class="text-body-2 muted mt-2 mb-4">Review set tasks need a saved Review set to run.</p>
           <v-btn color="secondary" variant="tonal" to="/flashcards/review-sets/new">Create Review set</v-btn>
         </div>
       </v-card>

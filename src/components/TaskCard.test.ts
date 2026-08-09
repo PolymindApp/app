@@ -355,7 +355,7 @@ describe('TaskCard amount actions', () => {
     expect(control.get('v-icon-stub').attributes('icon')).toBe('mdi-check-bold')
   })
 
-  it('shows and launches an attached flashcard Review set', async () => {
+  it('reflects live Review set details and launches the attached set', async () => {
     const flashcardProgress: TaskProgress = {
       ...progress,
       task: {
@@ -385,7 +385,13 @@ describe('TaskCard amount actions', () => {
       },
     })
 
-    expect(wrapper.get('.task-subtitle').text()).toBe('Manual review · 12 cards')
+    expect(wrapper.get('.task-subtitle').text()).toBe('Algebra · Manual · 12 cards')
+
+    await wrapper.setProps({
+      reviewSet: { name: 'Advanced algebra', cardCount: 1, mode: 'passive' },
+    })
+    expect(wrapper.get('.task-subtitle').text()).toBe('Advanced algebra · Passive · 1 card')
+
     const start = wrapper.findAll('button').find(button => button.text() === 'Start review')
     expect(start).toBeDefined()
     await start!.trigger('click')

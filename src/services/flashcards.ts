@@ -199,6 +199,12 @@ export function reviewSortTitle(value: FlashcardReviewSort) {
   return FLASHCARD_REVIEW_SORT_OPTIONS.find(option => option.value === value)?.title || value
 }
 
+export function reviewSetCardCount(
+  reviewSet: Pick<FlashcardReviewSet, 'matchingCardCount' | 'maxCards'>,
+) {
+  return Math.min(reviewSet.matchingCardCount, reviewSet.maxCards)
+}
+
 function compareText(left: string, right: string) {
   return left < right ? -1 : left > right ? 1 : 0
 }

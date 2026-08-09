@@ -3500,7 +3500,7 @@ final class Api
         $sourceOwner = (string) $reviewSet['owner'];
         if ($taskId === '') {
             if ($programStepId !== '' || $taskDate !== '') {
-                throw new ApiException(422, 'Task details require an attached flashcard task.');
+                throw new ApiException(422, 'Task details require an attached Review set task.');
             }
         } else {
             if ($taskDate === '') {
@@ -5066,7 +5066,7 @@ final class Api
                     throw new ApiException(422, 'Select a valid Review set for this task.');
                 }
             } elseif ($flashcardReviewSet !== '') {
-                throw new ApiException(422, 'Only flashcard tasks may have an attached Review set.');
+                throw new ApiException(422, 'Only Review set tasks may have an attached Review set.');
             }
             if (($record['type'] ?? '') === 'tracking') {
                 if (!is_array($trackingTrackers) || $trackingTrackers === []) {
@@ -5126,7 +5126,7 @@ final class Api
             } elseif ($flashcardReviewSet !== '') {
                 throw new ApiException(
                     422,
-                    'Only flashcard program steps may have an attached Review set.',
+                    'Only Review set program steps may have an attached Review set.',
                 );
             }
             return;
