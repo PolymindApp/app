@@ -508,12 +508,12 @@ function scrollToFeatures() {
     min-height: 5.5rem;
     align-items: center;
     flex-direction: row;
-    gap: .5rem;
+    gap: .25rem;
     padding-block: 1.25rem;
   }
 
   .landing-brand img {
-    width: 6.25rem;
+    width: 7.5rem;
   }
 
   .landing-header__actions {
@@ -524,7 +524,7 @@ function scrollToFeatures() {
   .landing-header__actions :deep(.v-btn) {
     min-width: 0;
     flex: 0 0 auto;
-    padding-inline: .75rem;
+    padding-inline: .625rem;
   }
 
   .landing-header__web-action {
