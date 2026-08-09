@@ -1,6 +1,11 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import TimerWheelPicker from '@/components/TimerWheelPicker.vue'
+import {
+  checkTaskReminderCapabilities,
+  openTaskReminderCapabilitySettings,
+} from '@/services/taskReminders'
+import type { TaskReminderCapability, TaskReminderCapabilityIssue } from '@/services/taskReminders'
 
 const props = defineProps<{
   enabled: boolean
@@ -11,12 +16,42 @@ const emit = defineEmits<{
   'update:enabled': [value: boolean]
   'update:times': [value: string[]]
 }>()
+const capabilityIssues = ref<TaskReminderCapabilityIssue[]>([])
+const checkingCapabilities = ref(false)
+const openingCapability = ref<TaskReminderCapability>()
+let capabilityCheckVersion = 0
+
+async function checkCapabilities() {
+  if (!props.available) return
+  const version = ++capabilityCheckVersion
+  checkingCapabilities.value = true
+  try {
+    const issues = await checkTaskReminderCapabilities()
+    if (version === capabilityCheckVersion) capabilityIssues.value = issues
+  } catch {
+    if (version === capabilityCheckVersion) capabilityIssues.value = []
+  } finally {
+    if (version === capabilityCheckVersion) checkingCapabilities.value = false
+  }
+}
+
+async function openCapabilitySettings(capability: TaskReminderCapability) {
+  openingCapability.value = capability
+  try {
+    await openTaskReminderCapabilitySettings(capability)
+  } finally {
+    openingCapability.value = undefined
+    await checkCapabilities()
+  }
+}
 
 const enabledModel = computed({
   get: () => props.enabled,
   set: (enabled: boolean) => {
     if (enabled && !props.times.length) emit('update:times', ['20:00'])
     emit('update:enabled', enabled)
+    if (enabled) void checkCapabilities()
+    else capabilityIssues.value = []
   },
 })
 
@@ -24,6 +59,7 @@ function updateTime(index: number, value: number | string) {
   const times = [...props.times]
   times[index] = String(value)
   emit('update:times', times)
+  void checkCapabilities()
 }
 
 function addTime() {
@@ -36,6 +72,7 @@ function addTime() {
     const candidate = `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`
     if (!used.has(candidate)) {
       emit('update:times', [...props.times, candidate])
+      void checkCapabilities()
       return
     }
   }
@@ -70,6 +107,31 @@ function removeTime(index: number) {
 
     <v-expand-transition>
       <div v-if="enabled && available" class="reminder-list mt-4">
+        <v-alert
+          v-if="capabilityIssues.length"
+          type="warning"
+          variant="tonal"
+          density="compact"
+          class="reminder-capabilities"
+        >
+          <strong>Reminder setup needs attention</strong>
+          <div
+            v-for="issue in capabilityIssues"
+            :key="issue.code"
+            class="reminder-capability mt-3"
+          >
+            <span>{{ issue.message }}</span>
+            <v-btn
+              size="small"
+              variant="tonal"
+              :loading="openingCapability === issue.code"
+              :disabled="checkingCapabilities || Boolean(openingCapability)"
+              @click="openCapabilitySettings(issue.code)"
+            >
+              {{ issue.action }}
+            </v-btn>
+          </div>
+        </v-alert>
         <div v-for="(time, index) in times" :key="index" class="reminder-time">
           <div class="d-flex align-center justify-space-between">
             <strong>Notification {{ index + 1 }}</strong>
@@ -101,5 +163,7 @@ function removeTime(index: number) {
 .field-help { color: rgb(var(--v-theme-on-surface) / .58); font-size: .75rem; line-height: 1.5; }
 .setting-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
 .reminder-list { display: grid; gap: 1rem; }
+.reminder-capability { display: grid; gap: .5rem; }
+.reminder-capability .v-btn { justify-self: start; }
 .reminder-time { display: grid; gap: .5rem; padding: 1rem; border: 1px solid rgb(var(--v-theme-on-surface) / .08); border-radius: 1rem; background: rgb(var(--v-theme-background) / .5); }
 </style>

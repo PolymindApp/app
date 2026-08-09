@@ -22,6 +22,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(ScreenWakeLockPlugin.class);
         registerPlugin(HealthConnectPlugin.class);
         registerPlugin(PasskeyPlugin.class);
+        registerPlugin(TaskReminderSettingsPlugin.class);
         super.onCreate(savedInstanceState);
         IntervalCuePlayer.preload(this);
 

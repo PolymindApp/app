@@ -3,12 +3,18 @@ import type { Task } from '@/types/domain'
 
 const mocks = vi.hoisted(() => ({
   addListener: vi.fn(),
+  areEnabled: vi.fn(),
   cancel: vi.fn(),
+  changeExactNotificationSetting: vi.fn(),
+  checkExactNotificationSetting: vi.fn(),
   checkPermissions: vi.fn(),
   createChannel: vi.fn(),
   getPending: vi.fn(),
+  getReminderStatus: vi.fn(),
   isNativePlatform: vi.fn(),
   getPlatform: vi.fn(),
+  openDoNotDisturbSettings: vi.fn(),
+  openNotificationSettings: vi.fn(),
   requestPermissions: vi.fn(),
   schedule: vi.fn(),
 }))
@@ -18,12 +24,20 @@ vi.mock('@capacitor/core', () => ({
     isNativePlatform: mocks.isNativePlatform,
     getPlatform: mocks.getPlatform,
   },
+  registerPlugin: () => ({
+    getStatus: mocks.getReminderStatus,
+    openDoNotDisturbSettings: mocks.openDoNotDisturbSettings,
+    openNotificationSettings: mocks.openNotificationSettings,
+  }),
 }))
 
 vi.mock('@capacitor/local-notifications', () => ({
   LocalNotifications: {
     addListener: mocks.addListener,
+    areEnabled: mocks.areEnabled,
     cancel: mocks.cancel,
+    changeExactNotificationSetting: mocks.changeExactNotificationSetting,
+    checkExactNotificationSetting: mocks.checkExactNotificationSetting,
     checkPermissions: mocks.checkPermissions,
     createChannel: mocks.createChannel,
     getPending: mocks.getPending,
@@ -33,7 +47,9 @@ vi.mock('@capacitor/local-notifications', () => ({
 }))
 
 import {
+  checkTaskReminderCapabilities,
   installTaskNotificationRouting,
+  openTaskReminderCapabilitySettings,
   reconcileTaskReminders,
   requestTaskReminderPermission,
   taskReminderNotificationId,
@@ -64,7 +80,15 @@ beforeEach(() => {
   mocks.isNativePlatform.mockReturnValue(true)
   mocks.getPlatform.mockReturnValue('android')
   mocks.checkPermissions.mockResolvedValue({ display: 'granted' })
+  mocks.areEnabled.mockResolvedValue({ value: true })
+  mocks.checkExactNotificationSetting.mockResolvedValue({ exact_alarm: 'granted' })
   mocks.requestPermissions.mockResolvedValue({ display: 'granted' })
+  mocks.getReminderStatus.mockResolvedValue({
+    notificationsEnabled: true,
+    channelEnabled: true,
+    doNotDisturbActive: false,
+    bypassesDoNotDisturb: false,
+  })
   mocks.getPending.mockResolvedValue({
     notifications: [
       { id: 1, extra: { kind: 'mom-tracking-reminder' } },
@@ -90,10 +114,10 @@ describe('task reminders', () => {
     expect(notifications).toEqual(expect.arrayContaining([
       expect.objectContaining({
         body: 'Evening review',
-        schedule: { on: { hour: 9, minute: 15 }, repeats: true },
+        schedule: { on: { hour: 9, minute: 15 }, repeats: true, allowWhileIdle: true },
       }),
       expect.objectContaining({
-        schedule: { on: { hour: 20, minute: 30 }, repeats: true },
+        schedule: { on: { hour: 20, minute: 30 }, repeats: true, allowWhileIdle: true },
       }),
     ]))
     expect(new Set(notifications.map((notification: { id: number }) => notification.id)).size).toBe(2)
@@ -113,6 +137,49 @@ describe('task reminders', () => {
 
     await expect(requestTaskReminderPermission()).resolves.toBe(true)
     expect(mocks.requestPermissions).toHaveBeenCalled()
+  })
+
+  it('reports blocked notifications, imprecise alarms, and Do Not Disturb', async () => {
+    mocks.areEnabled.mockResolvedValue({ value: false })
+    mocks.checkExactNotificationSetting.mockResolvedValue({ exact_alarm: 'denied' })
+    mocks.getReminderStatus.mockResolvedValue({
+      notificationsEnabled: false,
+      channelEnabled: false,
+      doNotDisturbActive: true,
+      bypassesDoNotDisturb: false,
+    })
+
+    await expect(checkTaskReminderCapabilities()).resolves.toEqual([
+      expect.objectContaining({ code: 'notifications' }),
+      expect.objectContaining({ code: 'exact_alarms' }),
+      expect.objectContaining({ code: 'do_not_disturb' }),
+    ])
+    expect(mocks.createChannel).toHaveBeenCalledWith(expect.objectContaining({ id: 'task-reminders' }))
+  })
+
+  it('opens the Android setting that matches each missing capability', async () => {
+    mocks.checkPermissions.mockResolvedValue({ display: 'denied' })
+
+    await openTaskReminderCapabilitySettings('notifications')
+    await openTaskReminderCapabilitySettings('exact_alarms')
+    await openTaskReminderCapabilitySettings('do_not_disturb')
+
+    expect(mocks.openNotificationSettings).toHaveBeenCalledOnce()
+    expect(mocks.changeExactNotificationSetting).toHaveBeenCalledOnce()
+    expect(mocks.openDoNotDisturbSettings).toHaveBeenCalledOnce()
+  })
+
+  it('opens notification settings when only the reminder channel is blocked', async () => {
+    mocks.getReminderStatus.mockResolvedValue({
+      notificationsEnabled: true,
+      channelEnabled: false,
+      doNotDisturbActive: false,
+      bypassesDoNotDisturb: false,
+    })
+
+    await openTaskReminderCapabilitySettings('notifications')
+
+    expect(mocks.openNotificationSettings).toHaveBeenCalledOnce()
   })
 
   it('opens tasks from a task notification and ignores other notification kinds', async () => {
