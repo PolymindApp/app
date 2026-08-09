@@ -1203,14 +1203,27 @@ async function runAgain(repetitions?: number) {
             </div>
             <div class="runner-progress-stack">
               <div class="runner-progress" :class="{ 'runner-progress--confirmation': currentConfirmation }">
-                <div class="progress-rings">
+                <div
+                  class="progress-rings"
+                  :class="{ 'progress-rings--with-image': Boolean(flashcardPhase?.card.image) }"
+                >
                   <IntervalTypeIcon
                     v-if="current.step.kind"
                     class="runner-type-backdrop"
+                    :class="{ 'runner-type-backdrop--hidden': Boolean(flashcardPhase?.card.image) }"
                     :kind="current.step.kind"
                     size="clamp(8rem, 44vw, 28rem)"
-                    :animated="session.status === 'running'"
+                    :animated="session.status === 'running' && !flashcardPhase?.card.image"
                   />
+                  <transition name="runner-flashcard-image">
+                    <img
+                      v-if="flashcardPhase?.card.image"
+                      :key="flashcardPhase.card.image"
+                      :src="flashcardPhase.card.image"
+                      alt=""
+                      class="runner-flashcard-image"
+                    />
+                  </transition>
                   <v-progress-circular
                     v-if="showTotalProgress"
                     class="progress-ring progress-ring--total"
@@ -1283,14 +1296,6 @@ async function runAgain(repetitions?: number) {
                       <span>{{ flashcardPhase.cardIndex + 1 }}/{{ session.flashcardReview.cards.length }}</span>
                     </div>
                   </div>
-                  <img
-                    v-if="flashcardPhase.card.image"
-                    :src="flashcardPhase.card.image"
-                    alt=""
-                    class="interval-review-card__image"
-                    width="256"
-                    height="256"
-                  />
                   <strong
                     v-if="flashcardPhase.side === 'front'"
                     :style="{
@@ -1657,11 +1662,13 @@ async function runAgain(repetitions?: number) {
   opacity: .3;
   pointer-events: none;
   filter: drop-shadow(0 0 2.75rem currentColor);
+  transition: opacity 200ms ease;
   transform-origin: center center;
   transform: translate(-50%, -50%) rotate(-8deg);
   -webkit-mask-image: radial-gradient(circle, #000 32%, rgba(0, 0, 0, .82) 56%, transparent 82%);
   mask-image: radial-gradient(circle, #000 32%, rgba(0, 0, 0, .82) 56%, transparent 82%);
 }
+.runner-type-backdrop--hidden { opacity: 0; }
 .runner-main,
 .runner-controls,
 .runner-details,
@@ -1688,7 +1695,6 @@ async function runAgain(repetitions?: number) {
 .interval-review-card__set { display: flex; min-width: 0; max-width: 75%; align-items: center; gap: .4rem; color: rgba(var(--v-theme-on-surface), .58); font-size: .62rem; font-weight: 900; letter-spacing: .1em; text-align: left; text-transform: uppercase; }
 .interval-review-card__set > .text-truncate { min-width: 0; }
 .interval-review-card__content small { color: rgba(var(--v-theme-on-surface), .58); font-size: .62rem; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
-.interval-review-card__image { width: min(100%, 12rem); height: auto; max-height: 12rem; border-radius: .75rem; object-fit: contain; }
 .interval-review-card__content strong { overflow-wrap: anywhere; font-size: clamp(1.05rem, 4.5vw, 1.5rem); line-height: 1.3; white-space: pre-wrap; }
 .interval-review-card :deep(.v-progress-linear) { border-radius: 0; }
 .runner-progress {
@@ -1731,6 +1737,22 @@ async function runAgain(repetitions?: number) {
   height: calc(100% - 32px) !important;
   opacity: 1;
 }
+.runner-flashcard-image {
+  position: absolute;
+  z-index: 0;
+  inset: 1.75rem;
+  width: calc(100% - 3.5rem);
+  height: calc(100% - 3.5rem);
+  border-radius: 100%;
+  object-fit: cover;
+  opacity: .68;
+  pointer-events: none;
+  filter: brightness(.72) saturate(.9);
+}
+.runner-flashcard-image-enter-active,
+.runner-flashcard-image-leave-active { transition: opacity 200ms ease; }
+.runner-flashcard-image-enter-from,
+.runner-flashcard-image-leave-to { opacity: 0; }
 .progress-rings__content {
   position: absolute;
   z-index: 2;
@@ -1744,6 +1766,7 @@ async function runAgain(repetitions?: number) {
   white-space: normal;
 }
 .timer-value { display: inline-block; font-family: "Arial Narrow", Impact, sans-serif; font-size: 4rem; font-weight: 900; letter-spacing: -.04em; transform-origin: center; }
+.progress-rings--with-image .timer-value { text-shadow: 0 .125rem .75rem rgba(0, 0, 0, .9); }
 .timer-value--count { color: rgb(var(--v-theme-warning)); animation: timer-value-pulse 560ms cubic-bezier(.22, 1, .36, 1); }
 @keyframes timer-value-pulse {
   0% { transform: scale(1); }
@@ -1950,11 +1973,6 @@ async function runAgain(repetitions?: number) {
     -webkit-line-clamp: 3;
   }
 
-  .interval-review-card__image {
-    width: min(100%, 6rem);
-    max-height: 6rem;
-  }
-
   .runner-progress {
     --runner-progress-inset: clamp(1rem, 5dvh, 2.5rem);
     display: flex;
@@ -2150,6 +2168,12 @@ async function runAgain(repetitions?: number) {
   .runner-completion-enter-active,
   .runner-completion-leave-active {
     transition: opacity 160ms ease;
+  }
+
+  .runner-type-backdrop,
+  .runner-flashcard-image-enter-active,
+  .runner-flashcard-image-leave-active {
+    transition: none;
   }
 
   .runner-completion-enter-from,

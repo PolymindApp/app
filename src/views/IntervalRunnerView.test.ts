@@ -90,7 +90,7 @@ const ConfirmDialogStub = defineComponent({
   `,
 })
 
-function intervalSession(status: 'running' | 'paused'): IntervalSession {
+function intervalSession(status: 'running' | 'paused', image = ''): IntervalSession {
   const now = new Date().toISOString()
   return {
     id: 'session-1',
@@ -127,7 +127,7 @@ function intervalSession(status: 'running' | 'paused'): IntervalSession {
         front: 'House',
         back: 'Maison',
         note: '',
-        image: '',
+        image,
         tags: [],
       }],
     },
@@ -177,7 +177,7 @@ function mountRunner() {
   })
 }
 
-describe('IntervalRunnerView flashcard context playback', () => {
+describe('IntervalRunnerView flashcard area', () => {
   beforeEach(() => {
     mocks.intervalStore.sessions = reactive([intervalSession('running')])
     mocks.intervalStore.updateSession.mockReset().mockImplementation(async (id, updates) => {
@@ -247,6 +247,29 @@ describe('IntervalRunnerView flashcard context playback', () => {
     await flushPromises()
 
     expect(mocks.intervalStore.sessions[0]?.status).toBe('running')
+
+    wrapper.unmount()
+  })
+
+  it('shows a flashcard image inside the progress rings and fades the type icon', async () => {
+    mocks.intervalStore.sessions = reactive([intervalSession('running', '/flashcard-image.jpg')])
+    const wrapper = mountRunner()
+    await flushPromises()
+
+    const image = wrapper.get('.progress-rings .runner-flashcard-image')
+    expect(image.attributes('src')).toBe('/flashcard-image.jpg')
+    expect(wrapper.find('.interval-review-card .runner-flashcard-image').exists()).toBe(false)
+    expect(wrapper.get('.runner-type-backdrop').classes()).toContain('runner-type-backdrop--hidden')
+
+    wrapper.unmount()
+  })
+
+  it('keeps the interval type icon visible when the flashcard has no image', async () => {
+    const wrapper = mountRunner()
+    await flushPromises()
+
+    expect(wrapper.find('.runner-flashcard-image').exists()).toBe(false)
+    expect(wrapper.get('.runner-type-backdrop').classes()).not.toContain('runner-type-backdrop--hidden')
 
     wrapper.unmount()
   })
