@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Capacitor } from '@capacitor/core'
-import { nextTick, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import AppForm from '@/components/AppForm.vue'
 import { isAndroidPasskeyAvailable } from '@/services/passkeys'
 import { useAuthStore } from '@/stores/auth'
@@ -9,6 +9,8 @@ import { useAuthStore } from '@/stores/auth'
 const allowAutomaticFocus = Capacitor.getPlatform() !== 'android'
 const auth = useAuthStore()
 const router = useRouter()
+const route = useRoute()
+const reauthenticating = computed(() => route.query.reauth === '1' && Boolean(auth.user))
 const mode = ref<'login' | 'register'>('login')
 const name = ref('')
 const email = ref('')
@@ -25,6 +27,7 @@ const validEmail = (value: string) => /.+@.+\..+/.test(value) || 'Enter a valid 
 const strongPassword = (value: string) => value.length >= 8 || 'Use at least 8 characters'
 
 onMounted(async () => {
+  if (reauthenticating.value) email.value = auth.user?.email || ''
   passkeyAvailable.value = await isAndroidPasskeyAvailable()
   if (!allowAutomaticFocus) return
   await nextTick()
@@ -45,7 +48,7 @@ async function submit() {
   try {
     if (mode.value === 'login') await auth.login(email.value, password.value)
     else await auth.register(name.value, email.value, password.value)
-    await router.replace('/tasks')
+    await router.replace(reauthenticating.value ? String(route.query.redirect || '/tasks') : '/tasks')
   } catch (error) {
     backendOffline.value = error instanceof TypeError || (error instanceof Error && /fetch|network/i.test(error.message))
   }
@@ -54,7 +57,7 @@ async function submit() {
 async function signInWithPasskey() {
   backendOffline.value = false
   try {
-    if (await auth.loginWithPasskey()) await router.replace('/tasks')
+    if (await auth.loginWithPasskey()) await router.replace(reauthenticating.value ? String(route.query.redirect || '/tasks') : '/tasks')
   } catch (error) {
     backendOffline.value = error instanceof TypeError || (error instanceof Error && /fetch|network/i.test(error.message))
   }
@@ -80,7 +83,7 @@ async function signInWithPasskey() {
         </section>
 
         <v-card class="auth-card pa-5 pa-sm-7" color="surface">
-          <div class="d-flex ga-2 mb-6">
+          <div v-if="!reauthenticating" class="d-flex ga-2 mb-6">
             <v-btn
               class="flex-grow-1"
               :variant="mode === 'login' ? 'flat' : 'text'"
@@ -103,7 +106,7 @@ async function signInWithPasskey() {
             {{ mode === 'login' ? 'Welcome back' : 'Create your space' }}
           </h2>
           <p class="text-body-2 muted mb-6">
-            {{ mode === 'login' ? 'Pick up where you left off.' : 'Create a private, synced workspace.' }}
+            {{ reauthenticating ? 'Sign in again to resume background synchronization.' : mode === 'login' ? 'Pick up where you left off.' : 'Create a private, synced workspace.' }}
           </p>
 
           <v-alert v-if="backendOffline" type="warning" variant="tonal" class="mb-4" density="compact">

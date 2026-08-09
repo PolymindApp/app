@@ -7,6 +7,22 @@ import type {
   FlashcardReviewSettings,
   ChatGPTConnectionStatus,
 } from '@/types/domain'
+import {
+  createLocalRecordId,
+  getLocalRecord,
+  hasLocalBootstrap,
+  listLocalRecords,
+  putLocalCreate,
+  putLocalCommand,
+  putLocalDelete,
+  putLocalPatch,
+  putLocalProjectionCreate,
+  putLocalProjectionDelete,
+  putLocalProjectionPatch,
+  putLocalSharedCardCreate,
+  putLocalSharedCardDelete,
+  putLocalSharedCardPatch,
+} from '@/lib/localDatabase'
 
 type RecordModel = Record<string, any> & { id: string }
 type AuthRecord = RecordModel & { email: string; name?: string; avatar?: string }
@@ -130,6 +146,51 @@ function normalizeAuthRecord(record: AuthRecord): AuthRecord {
   }
 }
 
+function localCreateDefaults(resource: string, body: Record<string, unknown>) {
+  const now = new Date().toISOString()
+  if (resource === 'flashcards') {
+    return {
+      note: '', image_url: '', image_file: '', library_image_id: 0, image_metadata: {},
+      tags: [], created_at: now, updated_at: now, last_reviewed_at: '',
+      passive_views: 0, success_count: 0, error_count: 0,
+      ...body,
+    }
+  }
+  if (resource === 'flashcard_review_sets') return { created_at: now, updated_at: now, ...body }
+  if (resource === 'journal_entries') {
+    return { task_snapshot: '', tracker_snapshot: {}, created_at: now, updated_at: now, ...body }
+  }
+  if (resource === 'entries') return { created_at: now, ...body }
+  return body
+}
+
+async function mirrorOwnedReviewSetProjection(
+  accountId: string,
+  record: RecordModel,
+  authRecord: AuthRecord | null,
+) {
+  const tagIds = Array.isArray(record.tags) ? record.tags : []
+  const [tags, cards] = await Promise.all([
+    listLocalRecords(accountId, 'flashcard_tags'),
+    listLocalRecords(accountId, 'flashcards'),
+  ])
+  const tagSet = new Set(tagIds)
+  const data = {
+    ...record,
+    access_role: 'owner',
+    share_id: '',
+    owner_name: authRecord?.name || '',
+    owner_avatar: authRecord?.avatar || '',
+    tag_details: tags.filter(tag => tagSet.has(tag.id)).map(tag => ({ id: tag.id, name: tag.name })),
+    matching_card_count: cards.filter(card => !tagIds.length
+      || (Array.isArray(card.tags) && card.tags.some((tag: string) => tagSet.has(tag)))).length,
+  }
+  const existing = await getLocalRecord(accountId, 'accessible_flashcard_review_sets', record.id)
+  return existing
+    ? putLocalProjectionPatch(accountId, 'accessible_flashcard_review_sets', record.id, data)
+    : putLocalProjectionCreate(accountId, 'accessible_flashcard_review_sets', data)
+}
+
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
@@ -156,6 +217,10 @@ class AuthStore {
     return expiration !== undefined && expiration > Date.now() / 1000
   }
 
+  get hasLocalSession() {
+    return Boolean(this.record)
+  }
+
   save(token: string, record: AuthRecord) {
     const normalized = normalizeAuthRecord(record)
     this.token = token
@@ -179,6 +244,18 @@ class AuthStore {
     this.notify()
   }
 
+  expireToken() {
+    this.token = ''
+    if (this.record) {
+      try {
+        localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ token: '', record: this.record }))
+      } catch {
+        // The cached account remains available in memory.
+      }
+    }
+    this.notify()
+  }
+
   onChange(listener: AuthListener, fireImmediately = false) {
     this.listeners.add(listener)
     if (fireImmediately) listener(this.token, this.record)
@@ -188,15 +265,11 @@ class AuthStore {
   private restore() {
     try {
       const saved = JSON.parse(localStorage.getItem(AUTH_STORAGE_KEY) || '')
-      if (saved?.token && saved?.record) {
-        this.token = saved.token
+      if (saved?.record) {
+        this.token = typeof saved.token === 'string' ? saved.token : ''
         this.record = normalizeAuthRecord(saved.record)
       }
-      if (!this.isValid) {
-        this.token = ''
-        this.record = null
-        localStorage.removeItem(AUTH_STORAGE_KEY)
-      }
+      if (this.token && !this.isValid) this.token = ''
     } catch {
       this.token = ''
       this.record = null
@@ -239,7 +312,20 @@ class CollectionClient<T extends RecordModel = RecordModel> {
     return records
   }
 
-  getList(page = 1, perPage = 30, options: ListOptions = {}) {
+  async getList(page = 1, perPage = 30, options: ListOptions = {}) {
+    const accountId = this.authStore.record?.id || ''
+    if (accountId && await hasLocalBootstrap(accountId)) {
+      const records = await listLocalRecords(accountId, this.name, options) as T[]
+      const offset = (page - 1) * perPage
+      const totalItems = records.length
+      return {
+        page,
+        perPage,
+        totalItems,
+        totalPages: Math.max(1, Math.ceil(totalItems / perPage)),
+        items: records.slice(offset, offset + perPage),
+      }
+    }
     const query = new URLSearchParams({
       page: String(page),
       perPage: String(perPage),
@@ -253,7 +339,13 @@ class CollectionClient<T extends RecordModel = RecordModel> {
     )
   }
 
-  getOne(id: string) {
+  async getOne(id: string) {
+    const accountId = this.authStore.record?.id || ''
+    if (accountId && await hasLocalBootstrap(accountId)) {
+      const record = await getLocalRecord(accountId, this.name, id)
+      if (!record) throw new ApiError(404, 'Record not found.')
+      return record as T
+    }
     return request<T>(
       `/collections/${encodeURIComponent(this.name)}/records/${encodeURIComponent(id)}`,
       {},
@@ -261,9 +353,21 @@ class CollectionClient<T extends RecordModel = RecordModel> {
     )
   }
 
-  create(body: Record<string, unknown>) {
+  async create(body: Record<string, unknown>) {
     if (this.name === 'users') {
       return request<T>('/auth/register', { method: 'POST', body }, this.authStore)
+    }
+    const accountId = this.authStore.record?.id || ''
+    if (accountId && await hasLocalBootstrap(accountId)) {
+      const record = await putLocalCreate(accountId, this.name, {
+        ...localCreateDefaults(this.name, body),
+        id: typeof body.id === 'string' && body.id ? body.id : createLocalRecordId(),
+        owner: accountId,
+      }) as T
+      if (this.name === 'flashcard_review_sets') {
+        await mirrorOwnedReviewSetProjection(accountId, record, this.authStore.record)
+      }
+      return record
     }
     return request<T>(
       `/collections/${encodeURIComponent(this.name)}/records`,
@@ -272,7 +376,15 @@ class CollectionClient<T extends RecordModel = RecordModel> {
     )
   }
 
-  update(id: string, body: Record<string, unknown>) {
+  async update(id: string, body: Record<string, unknown>) {
+    const accountId = this.authStore.record?.id || ''
+    if (accountId && await hasLocalBootstrap(accountId)) {
+      const record = await putLocalPatch(accountId, this.name, id, body) as T
+      if (this.name === 'flashcard_review_sets') {
+        await mirrorOwnedReviewSetProjection(accountId, record, this.authStore.record)
+      }
+      return record
+    }
     return request<T>(
       `/collections/${encodeURIComponent(this.name)}/records/${encodeURIComponent(id)}`,
       { method: 'PATCH', body },
@@ -281,6 +393,14 @@ class CollectionClient<T extends RecordModel = RecordModel> {
   }
 
   async delete(id: string) {
+    const accountId = this.authStore.record?.id || ''
+    if (accountId && await hasLocalBootstrap(accountId)) {
+      await putLocalDelete(accountId, this.name, id)
+      if (this.name === 'flashcard_review_sets') {
+        await putLocalProjectionDelete(accountId, 'accessible_flashcard_review_sets', id)
+      }
+      return true
+    }
     await request<void>(
       `/collections/${encodeURIComponent(this.name)}/records/${encodeURIComponent(id)}`,
       { method: 'DELETE' },
@@ -352,6 +472,12 @@ class ApiClient {
   }
 
   async updateAccount(name: string) {
+    const accountId = this.authStore.record?.id || ''
+    if (accountId && await hasLocalBootstrap(accountId)) {
+      const record = await putLocalPatch(accountId, 'users', accountId, { name: name.trim() }) as AuthRecord
+      this.authStore.save(this.authStore.token, record)
+      return record
+    }
     const record = await request<AuthRecord>(
       '/auth/account',
       { method: 'PATCH', body: { name } },
@@ -365,6 +491,16 @@ class ApiClient {
     if (image.type !== 'image/jpeg') {
       throw new ApiError(422, 'The avatar must be compressed as a JPEG.')
     }
+    const accountId = this.authStore.record?.id || ''
+    if (accountId && await hasLocalBootstrap(accountId)) {
+      const encoded = await blobDataUrl(image)
+      const record = await putLocalProjectionPatch(accountId, 'users', accountId, {
+        avatar: encoded,
+      }) as AuthRecord
+      await putLocalCommand(accountId, 'avatar.set', { image: encoded })
+      this.authStore.save(this.authStore.token, record)
+      return record
+    }
     const record = await request<AuthRecord>(
       '/auth/avatar',
       { method: 'POST', body: { image: await blobDataUrl(image) } },
@@ -375,6 +511,15 @@ class ApiClient {
   }
 
   async removeAvatar() {
+    const accountId = this.authStore.record?.id || ''
+    if (accountId && await hasLocalBootstrap(accountId)) {
+      const record = await putLocalProjectionPatch(accountId, 'users', accountId, {
+        avatar: '',
+      }) as AuthRecord
+      await putLocalCommand(accountId, 'avatar.remove', {})
+      this.authStore.save(this.authStore.token, record)
+      return record
+    }
     const record = await request<AuthRecord>(
       '/auth/avatar',
       { method: 'DELETE' },
@@ -385,6 +530,11 @@ class ApiClient {
   }
 
   async getUserSettings() {
+    const accountId = this.authStore.record?.id || ''
+    if (accountId && await hasLocalBootstrap(accountId)) {
+      const record = await getLocalRecord(accountId, 'users', accountId)
+      return record?.settings && typeof record.settings === 'object' ? record.settings : {}
+    }
     const response = await request<UserSettingsResponse>(
       '/auth/settings',
       {},
@@ -395,6 +545,18 @@ class ApiClient {
   }
 
   async updateUserSettings(settings: Record<string, unknown>) {
+    const accountId = this.authStore.record?.id || ''
+    if (accountId && await hasLocalBootstrap(accountId)) {
+      const current = await getLocalRecord(accountId, 'users', accountId)
+      const merged = {
+        ...(current?.settings && typeof current.settings === 'object' ? current.settings : {}),
+        ...settings,
+      }
+      const record = await putLocalProjectionPatch(accountId, 'users', accountId, { settings: merged }) as AuthRecord
+      await putLocalCommand(accountId, 'settings.patch', settings)
+      this.authStore.save(this.authStore.token, record)
+      return merged
+    }
     const response = await request<UserSettingsResponse>(
       '/auth/settings',
       { method: 'PATCH', body: settings },
@@ -428,7 +590,7 @@ class ApiClient {
     )
   }
 
-  completeIntervalSession(
+  async completeIntervalSession(
     sessionId: string,
     input: {
       runtimeState: unknown
@@ -436,6 +598,16 @@ class ApiClient {
       endedAt: string
     },
   ) {
+    const accountId = this.authStore.record?.id || ''
+    if (accountId && await hasLocalBootstrap(accountId)) {
+      const session = await putLocalPatch(accountId, 'interval_sessions', sessionId, {
+        status: 'completed',
+        runtime_state: input.runtimeState,
+        elapsed_seconds: Math.max(0, Math.round(input.elapsedSeconds)),
+        ended_at: input.endedAt,
+      })
+      return { session, occurrence: null }
+    }
     return request<CompleteIntervalSessionResponse>(
       `/interval-sessions/${encodeURIComponent(sessionId)}/complete`,
       {
@@ -450,7 +622,13 @@ class ApiClient {
     )
   }
 
-  updateIntervalSessionFlashcards(sessionId: string, flashcardSnapshot: unknown) {
+  async updateIntervalSessionFlashcards(sessionId: string, flashcardSnapshot: unknown) {
+    const accountId = this.authStore.record?.id || ''
+    if (accountId && await hasLocalBootstrap(accountId)) {
+      return putLocalPatch(accountId, 'interval_sessions', sessionId, {
+        flashcard_snapshot: flashcardSnapshot,
+      })
+    }
     return request<RecordModel>(
       `/interval-sessions/${encodeURIComponent(sessionId)}/flashcards`,
       {
@@ -479,7 +657,35 @@ class ApiClient {
     )
   }
 
-  importFlashcards(rows: FlashcardImportRow[]) {
+  async importFlashcards(rows: FlashcardImportRow[]) {
+    const accountId = this.authStore.record?.id || ''
+    if (accountId && await hasLocalBootstrap(accountId)) {
+      const existing = await listLocalRecords(accountId, 'flashcard_tags', { sort: 'name' })
+      const tagsByName = new Map(existing.map(tag => [String(tag.name).toLocaleLowerCase(), tag]))
+      const createdTags: RecordModel[] = []
+      const cards: RecordModel[] = []
+      for (const row of rows) {
+        const tagIds: string[] = []
+        for (const rawName of row.tags) {
+          const name = rawName.trim()
+          const key = name.toLocaleLowerCase()
+          let tag = tagsByName.get(key)
+          if (!tag) {
+            tag = await putLocalCreate(accountId, 'flashcard_tags', { name })
+            tagsByName.set(key, tag)
+            createdTags.push(tag as RecordModel)
+          }
+          tagIds.push(tag.id)
+        }
+        cards.push(await putLocalCreate(accountId, 'flashcards', localCreateDefaults('flashcards', {
+          front: row.front,
+          back: row.back,
+          note: row.note,
+          tags: [...new Set(tagIds)],
+        })) as RecordModel)
+      }
+      return { cards, tags: createdTags }
+    }
     return request<FlashcardImportResponse>(
       '/flashcards/import',
       { method: 'POST', body: { rows } },
@@ -487,7 +693,29 @@ class ApiClient {
     )
   }
 
-  bulkUpdateFlashcards(action: FlashcardBulkRecordAction, cardIds: string[], tagIds: string[] = []) {
+  async bulkUpdateFlashcards(action: FlashcardBulkRecordAction, cardIds: string[], tagIds: string[] = []) {
+    const accountId = this.authStore.record?.id || ''
+    if (accountId && await hasLocalBootstrap(accountId)) {
+      if (action === 'delete') {
+        await Promise.all(cardIds.map(id => putLocalDelete(accountId, 'flashcards', id)))
+        return { cards: [], deleted_ids: cardIds }
+      }
+      const cards: RecordModel[] = []
+      for (const id of cardIds) {
+        const current = await getLocalRecord(accountId, 'flashcards', id)
+        if (!current) continue
+        const currentTags = Array.isArray(current.tags) ? current.tags : []
+        const tags = action === 'add_tags'
+          ? [...new Set([...currentTags, ...tagIds])]
+          : action === 'set_tags'
+            ? [...new Set(tagIds)]
+            : action === 'remove_tags'
+              ? currentTags.filter((tag: string) => !tagIds.includes(tag))
+              : []
+        cards.push(await putLocalPatch(accountId, 'flashcards', id, { tags }) as RecordModel)
+      }
+      return { cards, deleted_ids: [] }
+    }
     return request<FlashcardBulkActionResponse>(
       '/flashcards/bulk',
       {
@@ -498,19 +726,47 @@ class ApiClient {
     )
   }
 
-  getAccessibleFlashcardReviewSets() {
+  async getAccessibleFlashcardReviewSets() {
+    const accountId = this.authStore.record?.id || ''
+    if (accountId && await hasLocalBootstrap(accountId)) {
+      return listLocalRecords(accountId, 'accessible_flashcard_review_sets', {
+        sort: 'sort_order,name',
+      })
+    }
     return request<RecordModel[]>('/flashcard-review-sets', {}, this.authStore)
   }
 
-  updateFlashcardReviewSetPreferences(reviewSetId: string, settings: FlashcardReviewSettings) {
+  async updateFlashcardReviewSetPreferences(reviewSetId: string, settings: FlashcardReviewSettings) {
+    const accountId = this.authStore.record?.id || ''
+    const body = flashcardReviewSettingsBody(settings)
+    if (accountId && await hasLocalBootstrap(accountId)) {
+      const record = await putLocalProjectionPatch(
+        accountId,
+        'accessible_flashcard_review_sets',
+        reviewSetId,
+        body,
+      )
+      await putLocalCommand(accountId, 'review_set_preferences.patch', {
+        review_set_id: reviewSetId,
+        ...body,
+      })
+      return record
+    }
     return request<RecordModel>(
       `/flashcard-review-sets/${encodeURIComponent(reviewSetId)}/preferences`,
-      { method: 'PATCH', body: flashcardReviewSettingsBody(settings) },
+      { method: 'PATCH', body },
       this.authStore,
     )
   }
 
-  getFlashcardReviewSetShares(reviewSetId: string) {
+  async getFlashcardReviewSetShares(reviewSetId: string) {
+    const accountId = this.authStore.record?.id || ''
+    if (accountId && await hasLocalBootstrap(accountId)) {
+      return listLocalRecords(accountId, 'flashcard_review_set_shares', {
+        filter: `review_set = "${reviewSetId}"`,
+        sort: 'email',
+      })
+    }
     return request<RecordModel[]>(
       `/flashcard-review-sets/${encodeURIComponent(reviewSetId)}/shares`,
       {},
@@ -518,11 +774,25 @@ class ApiClient {
     )
   }
 
-  createFlashcardReviewSetShare(
+  async createFlashcardReviewSetShare(
     reviewSetId: string,
     email: string,
     role: Exclude<FlashcardReviewSetAccessRole, 'owner'>,
   ) {
+    const accountId = this.authStore.record?.id || ''
+    if (accountId && await hasLocalBootstrap(accountId)) {
+      const now = new Date().toISOString()
+      const share = await putLocalProjectionCreate(accountId, 'flashcard_review_set_shares', {
+        id: createLocalRecordId(),
+        review_set: reviewSetId,
+        email: email.trim().toLocaleLowerCase(),
+        role,
+        created_at: now,
+        updated_at: now,
+      })
+      await putLocalCommand(accountId, 'review_set_share.create', share)
+      return share
+    }
     return request<RecordModel>(
       `/flashcard-review-sets/${encodeURIComponent(reviewSetId)}/shares`,
       { method: 'POST', body: { email, role } },
@@ -530,10 +800,19 @@ class ApiClient {
     )
   }
 
-  updateFlashcardReviewSetShare(
+  async updateFlashcardReviewSetShare(
     shareId: string,
     role: Exclude<FlashcardReviewSetAccessRole, 'owner'>,
   ) {
+    const accountId = this.authStore.record?.id || ''
+    if (accountId && await hasLocalBootstrap(accountId)) {
+      const share = await putLocalProjectionPatch(accountId, 'flashcard_review_set_shares', shareId, {
+        role,
+        updated_at: new Date().toISOString(),
+      })
+      await putLocalCommand(accountId, 'review_set_share.patch', { id: shareId, role })
+      return share
+    }
     return request<RecordModel>(
       `/flashcard-review-set-shares/${encodeURIComponent(shareId)}`,
       { method: 'PATCH', body: { role } },
@@ -541,7 +820,13 @@ class ApiClient {
     )
   }
 
-  removeFlashcardReviewSetShare(shareId: string) {
+  async removeFlashcardReviewSetShare(shareId: string) {
+    const accountId = this.authStore.record?.id || ''
+    if (accountId && await hasLocalBootstrap(accountId)) {
+      await putLocalProjectionDelete(accountId, 'flashcard_review_set_shares', shareId)
+      await putLocalCommand(accountId, 'review_set_share.delete', { id: shareId })
+      return
+    }
     return request<void>(
       `/flashcard-review-set-shares/${encodeURIComponent(shareId)}`,
       { method: 'DELETE' },
@@ -549,7 +834,71 @@ class ApiClient {
     )
   }
 
-  copyFlashcardReviewSet(reviewSetId: string) {
+  async copyFlashcardReviewSet(reviewSetId: string) {
+    const accountId = this.authStore.record?.id || ''
+    if (accountId && await hasLocalBootstrap(accountId)) {
+      const source = await getLocalRecord(accountId, 'accessible_flashcard_review_sets', reviewSetId)
+      if (!source) throw new ApiError(404, 'Review set not found.')
+      const sourceCards = await listLocalRecords(accountId, 'review_set_cards', {
+        filter: `review_set_id = "${reviewSetId}"`,
+      })
+      if (!sourceCards.length) throw new ApiError(409, 'No flashcards match this Review set.')
+      const existingTags = await listLocalRecords(accountId, 'flashcard_tags')
+      const baseName = `${String(source.name || 'Review set').trim()} copy`.slice(0, 160)
+      const tagNames = new Set(existingTags.map(tag => String(tag.name).toLocaleLowerCase()))
+      let scopeName = baseName.slice(0, 50)
+      for (let suffix = 2; tagNames.has(scopeName.toLocaleLowerCase()); suffix += 1) {
+        const ending = ` ${suffix}`
+        scopeName = `${baseName.slice(0, 50 - ending.length)}${ending}`
+      }
+      const scopeTag = await putLocalCreate(accountId, 'flashcard_tags', { name: scopeName })
+      const now = new Date().toISOString()
+      const reviewSet = await putLocalCreate(accountId, 'flashcard_review_sets', {
+        name: baseName,
+        tags: [scopeTag.id],
+        mode: source.mode,
+        card_sides: source.card_sides,
+        indefinite: Boolean(source.indefinite),
+        max_cards: Number(source.max_cards || 20),
+        front_seconds: Number(source.front_seconds || 5),
+        back_seconds: Number(source.back_seconds || 5),
+        back_speech_repeat_count: Number(source.back_speech_repeat_count || 1),
+        note_before_back: Boolean(source.note_before_back),
+        speech_enabled: Boolean(source.speech_enabled),
+        front_language: String(source.front_language || ''),
+        back_language: String(source.back_language || ''),
+        sort_mode: source.sort_mode,
+        sort_order: Number(source.sort_order || 0),
+        created_at: now,
+        updated_at: now,
+      })
+      const projection = await putLocalProjectionCreate(accountId, 'accessible_flashcard_review_sets', {
+        ...reviewSet,
+        access_role: 'owner',
+        owner_name: this.authStore.record?.name || '',
+        owner_avatar: this.authStore.record?.avatar || '',
+        share_id: '',
+        tag_details: [{ id: scopeTag.id, name: scopeName }],
+        matching_card_count: sourceCards.length,
+      })
+      for (const sourceCard of sourceCards) {
+        const card = await putLocalCreate(accountId, 'flashcards', localCreateDefaults('flashcards', {
+          front: sourceCard.front,
+          back: sourceCard.back,
+          note: sourceCard.note || '',
+          image_url: sourceCard.image_url || '',
+          image_file: sourceCard.image_file || '',
+          library_image_id: Number(sourceCard.library_image_id || 0),
+          image_metadata: sourceCard.image_metadata || {},
+          tags: [scopeTag.id],
+        }))
+        await putLocalProjectionCreate(accountId, 'review_set_cards', {
+          ...card,
+          review_set_id: reviewSet.id,
+        }, `${reviewSet.id}:${card.id}`)
+      }
+      return projection
+    }
     return request<RecordModel>(
       `/flashcard-review-sets/${encodeURIComponent(reviewSetId)}/copies`,
       { method: 'POST' },
@@ -557,7 +906,21 @@ class ApiClient {
     )
   }
 
-  getFlashcardReviewSetCards(reviewSetId: string) {
+  async getFlashcardReviewSetCards(reviewSetId: string) {
+    const accountId = this.authStore.record?.id || ''
+    if (accountId && await hasLocalBootstrap(accountId)) {
+      const reviewSet = await getLocalRecord(accountId, 'accessible_flashcard_review_sets', reviewSetId)
+      if (reviewSet?.owner === accountId) {
+        const tagIds = Array.isArray(reviewSet.tags) ? reviewSet.tags : []
+        return (await listLocalRecords(accountId, 'flashcards', { sort: '-created_at' }))
+          .filter(card => !tagIds.length || (Array.isArray(card.tags)
+            && card.tags.some((tag: string) => tagIds.includes(tag))))
+      }
+      return listLocalRecords(accountId, 'review_set_cards', {
+        filter: `review_set_id = "${reviewSetId}"`,
+        sort: '-created_at',
+      })
+    }
     return request<RecordModel[]>(
       `/flashcard-review-sets/${encodeURIComponent(reviewSetId)}/cards`,
       {},
@@ -565,7 +928,33 @@ class ApiClient {
     )
   }
 
-  createFlashcardReviewSetCard(reviewSetId: string, body: Record<string, unknown>) {
+  async createFlashcardReviewSetCard(reviewSetId: string, body: Record<string, unknown>) {
+    const accountId = this.authStore.record?.id || ''
+    if (accountId && await hasLocalBootstrap(accountId)) {
+      const reviewSet = await getLocalRecord(accountId, 'accessible_flashcard_review_sets', reviewSetId)
+      const now = new Date().toISOString()
+      if (reviewSet?.owner === accountId) {
+        return this.collection('flashcards').create({
+          ...body,
+          tags: Array.isArray(reviewSet.tags) ? reviewSet.tags : [],
+        })
+      }
+      return putLocalSharedCardCreate(accountId, reviewSetId, {
+        ...body,
+        tags: Array.isArray(reviewSet?.tags) ? reviewSet.tags : [],
+        note: typeof body.note === 'string' ? body.note : '',
+        image_url: typeof body.image_url === 'string' ? body.image_url : '',
+        image_file: '',
+        library_image_id: 0,
+        image_metadata: {},
+        created_at: now,
+        updated_at: now,
+        last_reviewed_at: '',
+        passive_views: 0,
+        success_count: 0,
+        error_count: 0,
+      })
+    }
     return request<RecordModel>(
       `/flashcard-review-sets/${encodeURIComponent(reviewSetId)}/cards`,
       { method: 'POST', body },
@@ -573,7 +962,19 @@ class ApiClient {
     )
   }
 
-  importFlashcardReviewSetCards(reviewSetId: string, rows: FlashcardImportRow[]) {
+  async importFlashcardReviewSetCards(reviewSetId: string, rows: FlashcardImportRow[]) {
+    const accountId = this.authStore.record?.id || ''
+    if (accountId && await hasLocalBootstrap(accountId)) {
+      const cards: RecordModel[] = []
+      for (const row of rows) {
+        cards.push(await this.createFlashcardReviewSetCard(reviewSetId, {
+          front: row.front,
+          back: row.back,
+          note: row.note,
+        }))
+      }
+      return { cards, tags: [] }
+    }
     return request<FlashcardImportResponse>(
       `/flashcard-review-sets/${encodeURIComponent(reviewSetId)}/cards/import`,
       { method: 'POST', body: { rows } },
@@ -581,7 +982,15 @@ class ApiClient {
     )
   }
 
-  bulkUpdateFlashcardReviewSetCards(reviewSetId: string, cardIds: string[]) {
+  async bulkUpdateFlashcardReviewSetCards(reviewSetId: string, cardIds: string[]) {
+    const accountId = this.authStore.record?.id || ''
+    if (accountId && await hasLocalBootstrap(accountId)) {
+      const reviewSet = await getLocalRecord(accountId, 'accessible_flashcard_review_sets', reviewSetId)
+      await Promise.all(cardIds.map(cardId => reviewSet?.owner === accountId
+        ? this.collection('flashcards').delete(cardId)
+        : putLocalSharedCardDelete(accountId, reviewSetId, cardId)))
+      return { cards: [], deleted_ids: cardIds }
+    }
     return request<FlashcardBulkActionResponse>(
       `/flashcard-review-sets/${encodeURIComponent(reviewSetId)}/cards/bulk`,
       { method: 'POST', body: { action: 'delete', card_ids: cardIds } },
@@ -589,11 +998,25 @@ class ApiClient {
     )
   }
 
-  updateFlashcardReviewSetCard(
+  async updateFlashcardReviewSetCard(
     reviewSetId: string,
     cardId: string,
     body: Record<string, unknown>,
   ) {
+    const accountId = this.authStore.record?.id || ''
+    if (accountId && await hasLocalBootstrap(accountId)) {
+      const reviewSet = await getLocalRecord(accountId, 'accessible_flashcard_review_sets', reviewSetId)
+      if (reviewSet?.owner === accountId) {
+        return this.collection('flashcards').update(cardId, {
+          ...body,
+          updated_at: new Date().toISOString(),
+        })
+      }
+      return putLocalSharedCardPatch(accountId, reviewSetId, cardId, {
+        ...body,
+        updated_at: new Date().toISOString(),
+      })
+    }
     return request<RecordModel>(
       `/flashcard-review-sets/${encodeURIComponent(reviewSetId)}/cards/${encodeURIComponent(cardId)}`,
       { method: 'PATCH', body },
@@ -601,7 +1024,14 @@ class ApiClient {
     )
   }
 
-  deleteFlashcardReviewSetCard(reviewSetId: string, cardId: string) {
+  async deleteFlashcardReviewSetCard(reviewSetId: string, cardId: string) {
+    const accountId = this.authStore.record?.id || ''
+    if (accountId && await hasLocalBootstrap(accountId)) {
+      const reviewSet = await getLocalRecord(accountId, 'accessible_flashcard_review_sets', reviewSetId)
+      if (reviewSet?.owner === accountId) await this.collection('flashcards').delete(cardId)
+      else await putLocalSharedCardDelete(accountId, reviewSetId, cardId)
+      return
+    }
     return request<void>(
       `/flashcard-review-sets/${encodeURIComponent(reviewSetId)}/cards/${encodeURIComponent(cardId)}`,
       { method: 'DELETE' },
@@ -613,6 +1043,18 @@ class ApiClient {
     if (image.type !== 'image/jpeg') {
       throw new ApiError(422, 'The card image must be compressed as a JPEG.')
     }
+    const accountId = this.authStore.record?.id || ''
+    if (accountId && await hasLocalBootstrap(accountId)) {
+      const reviewSet = await getLocalRecord(accountId, 'accessible_flashcard_review_sets', reviewSetId)
+      if (reviewSet?.owner === accountId) return this.updateFlashcardImage(cardId, image)
+      return putLocalSharedCardPatch(accountId, reviewSetId, cardId, {
+        image_url: await blobDataUrl(image),
+        image_file: '',
+        library_image_id: 0,
+        image_metadata: {},
+        updated_at: new Date().toISOString(),
+      })
+    }
     return request<RecordModel>(
       `/flashcard-review-sets/${encodeURIComponent(reviewSetId)}/cards/${encodeURIComponent(cardId)}/image`,
       { method: 'POST', body: { image: await blobDataUrl(image) } },
@@ -620,7 +1062,19 @@ class ApiClient {
     )
   }
 
-  removeFlashcardReviewSetCardImage(reviewSetId: string, cardId: string) {
+  async removeFlashcardReviewSetCardImage(reviewSetId: string, cardId: string) {
+    const accountId = this.authStore.record?.id || ''
+    if (accountId && await hasLocalBootstrap(accountId)) {
+      const reviewSet = await getLocalRecord(accountId, 'accessible_flashcard_review_sets', reviewSetId)
+      if (reviewSet?.owner === accountId) return this.removeFlashcardImage(cardId)
+      return putLocalSharedCardPatch(accountId, reviewSetId, cardId, {
+        image_url: '',
+        image_file: '',
+        library_image_id: 0,
+        image_metadata: {},
+        updated_at: new Date().toISOString(),
+      })
+    }
     return request<RecordModel>(
       `/flashcard-review-sets/${encodeURIComponent(reviewSetId)}/cards/${encodeURIComponent(cardId)}/image`,
       { method: 'DELETE' },
@@ -663,6 +1117,16 @@ class ApiClient {
     if (image.type !== 'image/jpeg') {
       throw new ApiError(422, 'The card image must be compressed as a JPEG.')
     }
+    const accountId = this.authStore.record?.id || ''
+    if (accountId && await hasLocalBootstrap(accountId)) {
+      return putLocalPatch(accountId, 'flashcards', cardId, {
+        image_url: await blobDataUrl(image),
+        image_file: '',
+        library_image_id: 0,
+        image_metadata: {},
+        updated_at: new Date().toISOString(),
+      })
+    }
     return request<RecordModel>(
       `/flashcards/${encodeURIComponent(cardId)}/image`,
       { method: 'POST', body: { image: await blobDataUrl(image) } },
@@ -670,7 +1134,17 @@ class ApiClient {
     )
   }
 
-  removeFlashcardImage(cardId: string) {
+  async removeFlashcardImage(cardId: string) {
+    const accountId = this.authStore.record?.id || ''
+    if (accountId && await hasLocalBootstrap(accountId)) {
+      return putLocalPatch(accountId, 'flashcards', cardId, {
+        image_url: '',
+        image_file: '',
+        library_image_id: 0,
+        image_metadata: {},
+        updated_at: new Date().toISOString(),
+      })
+    }
     return request<RecordModel>(
       `/flashcards/${encodeURIComponent(cardId)}/image`,
       { method: 'DELETE' },
@@ -750,7 +1224,7 @@ async function request<T>(
 
   const payload = await response.json().catch(() => ({}))
   if (!response.ok) {
-    if (response.status === 401) authStore.clear()
+    if (response.status === 401) authStore.expireToken()
     throw new ApiError(
       response.status,
       typeof payload.message === 'string' ? payload.message : `API request failed (${response.status}).`,

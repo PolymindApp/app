@@ -255,7 +255,7 @@ describe('Polymind API client adapter', () => {
     expect((firstOptions.headers as Headers).get('Authorization')).toBe(`Bearer ${token}`)
   })
 
-  it('clears local authentication after an unauthorized response', async () => {
+  it('expires the remote token but preserves the cached offline account after an unauthorized response', async () => {
     const token = futureToken()
     localStorage.setItem('mom-api-auth', JSON.stringify({
       token,
@@ -269,6 +269,9 @@ describe('Polymind API client adapter', () => {
     const { ApiError, api } = await import('./api')
     await expect(api.collection('tasks').getList()).rejects.toBeInstanceOf(ApiError)
     expect(api.authStore.isValid).toBe(false)
-    expect(localStorage.getItem('mom-api-auth')).toBeNull()
+    expect(JSON.parse(localStorage.getItem('mom-api-auth') || '{}')).toEqual({
+      token: '',
+      record: { id: 'user-1', email: 'person@example.com', avatar: '' },
+    })
   })
 })

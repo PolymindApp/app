@@ -344,6 +344,13 @@ export const useIntervalStore = defineStore('intervals', () => {
     if (index >= 0) sessions.value.splice(index, 1, mapped)
     else sessions.value.unshift(mapped)
     if (response.occurrence) useTaskStore().upsertOccurrenceRecord(response.occurrence)
+    else if (mapped.status === 'completed' && mapped.task && mapped.taskDate) {
+      await useTaskStore().completeAttributedTask(
+        mapped.task,
+        mapped.taskDate,
+        mapped.programStep || '',
+      )
+    }
     localStorage.removeItem(RECOVERY_KEY)
     return mapped
   }

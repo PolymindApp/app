@@ -1,8 +1,10 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { ApiError, api, apiAssetUrl } from '@/lib/api'
+import { hasLocalBootstrap } from '@/lib/localDatabase'
 import {
   cardMatchesTags,
+  createFlashcardReviewPreviewSession,
   DEFAULT_FLASHCARD_BACK_SPEECH_REPEATS,
   DEFAULT_FLASHCARD_REVIEW_CARD_SIDES,
   DEFAULT_FLASHCARD_SESSION_CARDS,
@@ -257,6 +259,18 @@ export const useFlashcardStore = defineStore('flashcards', () => {
 
   async function deleteTag(id: string) {
     await api.collection('flashcard_tags').delete(id)
+    await Promise.all([
+      ...cards.value
+        .filter(card => card.tags.includes(id))
+        .map(card => api.collection('flashcards').update(card.id, {
+          tags: card.tags.filter(tag => tag !== id),
+        })),
+      ...reviewSets.value
+        .filter(set => set.owner === api.authStore.record?.id && set.tags.includes(id))
+        .map(set => api.collection('flashcard_review_sets').update(set.id, {
+          tags: set.tags.filter(tag => tag !== id),
+        })),
+    ])
     tags.value = tags.value.filter(tag => tag.id !== id)
     cards.value.forEach(card => { card.tags = card.tags.filter(tag => tag !== id) })
     reviewSets.value.forEach(set => { set.tags = set.tags.filter(tag => tag !== id) })
@@ -620,7 +634,53 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       if (sameLaunch) return active
       throw new Error(`${active.name} is already in progress. Finish or end it before starting another review.`)
     }
-    const record = await api.startFlashcardReviewSession(reviewSetId, attribution)
+    const accountId = api.authStore.record?.id || ''
+    let record: Record<string, any>
+    if (accountId && await hasLocalBootstrap(accountId)) {
+      const reviewSet = reviewSets.value.find(item => item.id === reviewSetId)
+      if (!reviewSet) throw new Error('Review set not found.')
+      let availableCards = reviewSet.accessRole === 'owner'
+        ? cards.value
+        : reviewSetCards.value[reviewSetId]
+      if (!availableCards) availableCards = await loadReviewSetCards(reviewSetId)
+      const preview = createFlashcardReviewPreviewSession(reviewSet, availableCards)
+      if (!preview) throw new Error('No cards match this Review set.')
+      const now = new Date().toISOString()
+      record = await api.collection('flashcard_review_sessions').create({
+        source_owner: reviewSet.owner,
+        review_set: reviewSetId,
+        status: 'running',
+        snapshot_name: preview.name,
+        mode_snapshot: preview.mode,
+        card_sides_snapshot: preview.cardSides,
+        indefinite_snapshot: preview.indefinite,
+        max_cards_snapshot: preview.maxCards,
+        sort_snapshot: preview.sortMode,
+        tags_snapshot: preview.tags,
+        front_seconds_snapshot: preview.frontSeconds,
+        back_seconds_snapshot: preview.backSeconds,
+        back_speech_repeat_count_snapshot: preview.backSpeechRepeatCount,
+        note_before_back_snapshot: preview.noteBeforeBack,
+        speech_enabled_snapshot: preview.speechEnabled,
+        front_language_snapshot: preview.frontLanguage,
+        back_language_snapshot: preview.backLanguage,
+        queue_state: preview.queue,
+        started_at: now,
+        ended_at: '',
+        updated_at: now,
+        elapsed_seconds: 0,
+        total_cards: preview.queue.length,
+        viewed_count: 0,
+        success_count: 0,
+        error_count: 0,
+        ejected_count: 0,
+        task: attribution.task || '',
+        program_step: attribution.programStep || '',
+        task_date: attribution.task ? attribution.taskDate || '' : '',
+      })
+    } else {
+      record = await api.startFlashcardReviewSession(reviewSetId, attribution)
+    }
     const session = mapSession(record)
     sessions.value.unshift(session)
     return session
@@ -628,7 +688,10 @@ export const useFlashcardStore = defineStore('flashcards', () => {
 
   async function act(sessionId: string, action: FlashcardReviewAction, elapsedSeconds: number) {
     const current = sessions.value.find(session => session.id === sessionId)?.queue[0]
-    const response = await api.actOnFlashcardReviewSession(sessionId, action, elapsedSeconds)
+    const accountId = api.authStore.record?.id || ''
+    const response = accountId && await hasLocalBootstrap(accountId)
+      ? await actOnLocalSession(sessionId, action, elapsedSeconds)
+      : await api.actOnFlashcardReviewSession(sessionId, action, elapsedSeconds)
     const session = mapSession(response.session)
     const index = sessions.value.findIndex(item => item.id === session.id)
     if (index >= 0) sessions.value.splice(index, 1, session)
@@ -648,12 +711,130 @@ export const useFlashcardStore = defineStore('flashcards', () => {
   }
 
   async function updateSessionSettings(sessionId: string, settings: FlashcardReviewSettings) {
-    const record = await api.updateFlashcardReviewSessionSettings(sessionId, settings)
+    const accountId = api.authStore.record?.id || ''
+    const record = accountId && await hasLocalBootstrap(accountId)
+      ? await api.collection('flashcard_review_sessions').update(sessionId, {
+          mode_snapshot: settings.mode,
+          card_sides_snapshot: settings.cardSides,
+          indefinite_snapshot: settings.mode === 'passive' && settings.indefinite,
+          max_cards_snapshot: settings.maxCards,
+          front_seconds_snapshot: settings.frontSeconds,
+          back_seconds_snapshot: settings.backSeconds,
+          back_speech_repeat_count_snapshot: settings.backSpeechRepeatCount,
+          note_before_back_snapshot: settings.noteBeforeBack,
+          speech_enabled_snapshot: settings.speechEnabled,
+          front_language_snapshot: settings.frontLanguage,
+          back_language_snapshot: settings.backLanguage,
+          sort_snapshot: settings.sortMode,
+          updated_at: new Date().toISOString(),
+        })
+      : await api.updateFlashcardReviewSessionSettings(sessionId, settings)
     const session = mapSession(record)
     const index = sessions.value.findIndex(item => item.id === session.id)
     if (index >= 0) sessions.value.splice(index, 1, session)
     else sessions.value.unshift(session)
     return session
+  }
+
+  async function actOnLocalSession(
+    sessionId: string,
+    action: FlashcardReviewAction,
+    elapsedSeconds: number,
+  ) {
+    const current = sessions.value.find(session => session.id === sessionId)
+    if (!current) throw new Error('Flashcard review not found.')
+    if (['completed', 'ended'].includes(current.status)) {
+      throw new Error('This flashcard review has already ended.')
+    }
+
+    const queue = current.queue.map(card => ({ ...card, tags: [...card.tags] }))
+    const now = new Date().toISOString()
+    let status = current.status
+    let endedAt = current.endedAt || ''
+    let viewedCount = current.viewedCount
+    let successCount = current.successCount
+    let errorCount = current.errorCount
+    let ejectedCount = current.ejectedCount
+    let totalCards = current.totalCards
+    let event: Record<string, unknown> | undefined
+
+    if (action === 'pause') {
+      status = 'paused'
+    } else if (action === 'resume') {
+      status = 'running'
+    } else if (action === 'end') {
+      status = current.indefinite && viewedCount + ejectedCount > 0 ? 'completed' : 'ended'
+      endedAt = now
+    } else {
+      if (status !== 'running') throw new Error('Resume this flashcard review before continuing.')
+      if (!queue.length) throw new Error('This flashcard review has no remaining cards.')
+      if (action === 'previous') {
+        if (queue.length > 1) queue.unshift(queue.pop()!)
+      } else if (action === 'next' || action === 'push') {
+        if (queue.length > 1) queue.push(queue.shift()!)
+      } else {
+        const card = queue.shift()!
+        const outcome = action === 'view' ? 'passive' : action
+        if (action === 'eject') ejectedCount += 1
+        else {
+          viewedCount += 1
+          if (action === 'success') successCount += 1
+          if (action === 'error') errorCount += 1
+          if (action === 'view' && current.indefinite) queue.push(card)
+        }
+        event = {
+          session: sessionId,
+          card: card.id,
+          outcome,
+          reviewed_at: now,
+          front_snapshot: card.front,
+          back_snapshot: card.back,
+          tags_snapshot: card.tags,
+        }
+        if (!queue.length) {
+          status = 'completed'
+          endedAt = now
+        }
+      }
+    }
+    if (current.indefinite) totalCards = queue.length
+
+    if (event) await api.collection('flashcard_review_events').create(event)
+    const session = await api.collection('flashcard_review_sessions').update(sessionId, {
+      status,
+      queue_state: queue,
+      updated_at: now,
+      ended_at: endedAt,
+      elapsed_seconds: Math.max(current.elapsedSeconds, Math.round(elapsedSeconds)),
+      viewed_count: viewedCount,
+      success_count: successCount,
+      error_count: errorCount,
+      ejected_count: ejectedCount,
+      total_cards: totalCards,
+    })
+    let occurrence: Record<string, any> | null = null
+    if (status === 'completed' && current.task && current.taskDate) {
+      const taskStore = useTaskStore()
+      const progress = taskStore.progressForDate(new Date(`${current.taskDate}T12:00:00`))
+        .find(item => item.task.id === current.task
+          && (item.programStep?.id || '') === (current.programStep || ''))
+      if (progress && !progress.complete) {
+        await taskStore.toggleComplete(progress, true)
+        occurrence = progress.occurrence ? {
+          id: progress.occurrence.id,
+          task: progress.occurrence.task,
+          program_step: progress.occurrence.programStep || '',
+          scheduled_date: progress.occurrence.scheduledDate,
+          status: 'completed',
+          sealed: progress.occurrence.sealed,
+          completed_at: now,
+          snapshot_name: progress.occurrence.snapshotName,
+          snapshot_target: progress.occurrence.snapshotTarget || 0,
+          snapshot_unit: progress.occurrence.snapshotUnit || '',
+        } : null
+      }
+    }
+    return { session, occurrence }
   }
 
   return {

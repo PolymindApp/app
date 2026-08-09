@@ -5,6 +5,14 @@ const config: CapacitorConfig = {
   appName: 'Polymind',
   webDir: 'dist',
   plugins: {
+    BackgroundRunner: {
+      label: 'dev.coulombe.mom.sync',
+      src: 'runners/background.js',
+      event: 'backgroundSync',
+      repeat: true,
+      interval: 15,
+      autoStart: true,
+    },
     SystemBars: {
       insetsHandling: 'css',
       style: 'DARK',

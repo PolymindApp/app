@@ -393,7 +393,8 @@ CREATE TABLE interval_sessions (
     program_step TEXT NOT NULL DEFAULT '',
     task_date TEXT NOT NULL DEFAULT '',
     note TEXT NOT NULL DEFAULT '',
-    flashcard_snapshot JSON NOT NULL DEFAULT '{}'
+    flashcard_snapshot JSON NOT NULL DEFAULT '{}',
+    client_id TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX idx_interval_sessions_owner_started
@@ -404,6 +405,8 @@ CREATE INDEX idx_interval_sessions_owner_task_date
     ON interval_sessions (owner, task, task_date);
 CREATE INDEX idx_interval_sessions_owner_program_step_date
     ON interval_sessions (owner, program_step, task_date);
+CREATE INDEX idx_interval_sessions_owner_client_status
+    ON interval_sessions (owner, client_id, status);
 
 CREATE TABLE flashcard_review_sessions (
     id TEXT PRIMARY KEY NOT NULL DEFAULT ('r' || lower(hex(randomblob(7)))),
@@ -437,7 +440,8 @@ CREATE TABLE flashcard_review_sessions (
     ejected_count INTEGER NOT NULL DEFAULT 0,
     task TEXT NOT NULL DEFAULT '',
     program_step TEXT NOT NULL DEFAULT '',
-    task_date TEXT NOT NULL DEFAULT ''
+    task_date TEXT NOT NULL DEFAULT '',
+    client_id TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX idx_flashcard_review_sessions_owner_started
@@ -446,9 +450,11 @@ CREATE INDEX idx_flashcard_review_sessions_owner_status
     ON flashcard_review_sessions (owner, status);
 CREATE INDEX idx_flashcard_review_sessions_owner_task_date
     ON flashcard_review_sessions (owner, task, task_date);
-CREATE UNIQUE INDEX idx_flashcard_review_sessions_one_active
-    ON flashcard_review_sessions (owner)
-    WHERE status IN ('running', 'paused');
+CREATE UNIQUE INDEX idx_flashcard_review_sessions_one_active_device
+    ON flashcard_review_sessions (owner, client_id)
+    WHERE client_id <> '' AND status IN ('running', 'paused');
+CREATE INDEX idx_flashcard_review_sessions_owner_client_status
+    ON flashcard_review_sessions (owner, client_id, status);
 
 CREATE TABLE flashcard_review_events (
     id TEXT PRIMARY KEY NOT NULL DEFAULT ('r' || lower(hex(randomblob(7)))),
@@ -563,6 +569,48 @@ CREATE TABLE mom_passkeys (
 );
 
 CREATE INDEX idx_mom_passkeys_user ON mom_passkeys (user_id);
+
+CREATE TABLE sync_record_versions (
+    account_id TEXT NOT NULL,
+    resource TEXT NOT NULL,
+    record_id TEXT NOT NULL,
+    revision INTEGER NOT NULL DEFAULT 1,
+    field_clocks JSON NOT NULL DEFAULT '{}',
+    deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    modified_at TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (account_id, resource, record_id)
+);
+CREATE INDEX idx_sync_record_versions_resource
+    ON sync_record_versions (account_id, resource, deleted, record_id);
+
+CREATE TABLE sync_change_log (
+    sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id TEXT NOT NULL,
+    resource TEXT NOT NULL,
+    record_id TEXT NOT NULL,
+    action TEXT NOT NULL CHECK (action IN ('upsert', 'delete')),
+    changed_at TEXT NOT NULL
+);
+CREATE INDEX idx_sync_change_log_account_sequence
+    ON sync_change_log (account_id, sequence);
+
+CREATE TABLE sync_operation_receipts (
+    account_id TEXT NOT NULL,
+    client_id TEXT NOT NULL,
+    operation_id TEXT NOT NULL,
+    response JSON NOT NULL,
+    applied_at TEXT NOT NULL,
+    PRIMARY KEY (account_id, client_id, operation_id)
+);
+
+CREATE TABLE sync_clients (
+    account_id TEXT NOT NULL,
+    client_id TEXT NOT NULL,
+    acknowledged_cursor INTEGER NOT NULL DEFAULT 0,
+    protocol_version INTEGER NOT NULL DEFAULT 1,
+    last_seen_at TEXT NOT NULL,
+    PRIMARY KEY (account_id, client_id)
+);
 
 CREATE TABLE mom_schema_migrations (
     version TEXT PRIMARY KEY NOT NULL,

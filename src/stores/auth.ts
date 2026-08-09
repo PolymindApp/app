@@ -1,6 +1,12 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { api } from '@/lib/api'
+import { eraseLocalAccount } from '@/lib/localDatabase'
+import {
+  clearBackgroundSyncStage,
+  clearOfflineMediaCache,
+  flushBeforeSignOut,
+} from '@/services/offlineSync'
 import {
   createAndroidPasskey,
   getAndroidPasskey,
@@ -14,12 +20,13 @@ export const useAuthStore = defineStore('auth', () => {
   const avatarLoading = ref(false)
   const passkeyLoading = ref(false)
   const error = ref('')
+  const logoutLoading = ref(false)
 
   api.authStore.onChange((_token, record) => {
     user.value = record
   })
 
-  const isAuthenticated = computed(() => api.authStore.isValid)
+  const isAuthenticated = computed(() => api.authStore.hasLocalSession)
   const firstName = computed(() => user.value?.name?.split(' ')[0] || 'You')
 
   async function login(email: string, password: string) {
@@ -148,8 +155,27 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  function logout() {
-    api.authStore.clear()
+  async function logout() {
+    const accountId = api.authStore.record?.id || ''
+    logoutLoading.value = true
+    error.value = ''
+    try {
+      if (accountId) {
+        const pending = await flushBeforeSignOut(accountId)
+        if (pending > 0) {
+          throw new Error('Your unsynchronized changes are still saved on this device. Connect before signing out so they are not lost.')
+        }
+        await clearBackgroundSyncStage()
+        await eraseLocalAccount(accountId)
+        await clearOfflineMediaCache()
+      }
+      api.authStore.clear()
+    } catch (cause) {
+      error.value = cause instanceof Error ? cause.message : 'Unable to safely sign out.'
+      throw cause
+    } finally {
+      logoutLoading.value = false
+    }
   }
 
   return {
@@ -159,6 +185,7 @@ export const useAuthStore = defineStore('auth', () => {
     avatarLoading,
     passkeyLoading,
     error,
+    logoutLoading,
     isAuthenticated,
     firstName,
     hasRegisteredPasskey,

@@ -65,10 +65,10 @@ const router = createRouter({
 })
 
 router.beforeEach((to) => {
-  const authenticated = api.authStore.isValid
+  const authenticated = api.authStore.hasLocalSession
   if (to.meta.webOnly && isNativeAndroidOrIosApp()) return { name: 'auth' }
   if (to.meta.auth && !authenticated) return { name: 'auth', query: { redirect: to.fullPath } }
-  if (to.meta.guest && authenticated) return { name: 'tasks' }
+  if (to.meta.guest && authenticated && to.query.reauth !== '1') return { name: 'tasks' }
 })
 
 export default router

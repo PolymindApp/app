@@ -26,6 +26,7 @@ final class Api
         'sort_mode',
     ];
     private readonly CodexBridgeClient $codexBridge;
+    private readonly SyncService $syncService;
 
     public function __construct(
         private readonly Config $config,
@@ -36,6 +37,7 @@ final class Api
             $config->codexBridgeToken,
             $config->secret,
         );
+        $this->syncService = new SyncService($database, $config);
     }
 
     public function run(): never
@@ -113,6 +115,18 @@ final class Api
             }
             if (($method === 'GET' || $method === 'PATCH') && $path === '/auth/settings') {
                 $this->userSettings($method);
+            }
+            if ($method === 'POST' && $path === '/sync/bootstrap') {
+                $this->respond($this->syncService->bootstrap(
+                    $this->authenticate(),
+                    $this->jsonBody(),
+                ));
+            }
+            if ($method === 'POST' && $path === '/sync/exchange') {
+                $this->respond($this->syncService->exchange(
+                    $this->authenticate(),
+                    $this->jsonBody(),
+                ));
             }
             if (
                 in_array($method, ['GET', 'POST', 'DELETE'], true)

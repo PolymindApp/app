@@ -105,7 +105,7 @@ suffix="$(php -r 'echo bin2hex(random_bytes(5));')"
 password="correct-horse-battery"
 
 migration_count="$(sqlite3 "$test_db" 'SELECT COUNT(*) FROM mom_schema_migrations;')"
-[[ "$migration_count" == 29 ]] || {
+[[ "$migration_count" == 30 ]] || {
   echo "The API did not apply the complete database migration sequence." >&2
   exit 1
 }
@@ -154,6 +154,95 @@ register "Alice API" "$alice_email" >/dev/null
 alice_login="$(login "$alice_email")"
 alice_token="$(json_field token <<<"$alice_login")"
 alice_id="$(php -r '$data=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); echo $data["record"]["id"];' <<<"$alice_login")"
+
+sync_bootstrap="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"clientId":"integration-client"}' \
+  "$api_url/sync/bootstrap")"
+php -r '
+  $response = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+  $hasUser = false;
+  foreach ($response["resources"] ?? [] as $resource) {
+      if (($resource["resource"] ?? "") === "users" && ($resource["deleted"] ?? true) === false) {
+          $hasUser = true;
+      }
+  }
+  if (!is_int($response["watermark"] ?? null) || !$hasUser || ($response["protocolVersion"] ?? null) !== 1) {
+      fwrite(STDERR, "The offline bootstrap response was invalid.\n");
+      exit(1);
+  }
+' <<<"$sync_bootstrap"
+
+sync_tag_id="sync-tag-$suffix"
+sync_create_body="$(php -r '
+  echo json_encode([
+      "clientId" => "integration-client",
+      "cursor" => 0,
+      "operations" => [[
+          "operationId" => "sync-create-tag",
+          "resource" => "tags",
+          "recordId" => $argv[1],
+          "kind" => "create",
+          "payload" => ["name" => "Offline tag"],
+          "fieldClocks" => ["name" => "9999999999999-000001-integration-client"],
+          "dependsOn" => [],
+      ]],
+  ], JSON_THROW_ON_ERROR);
+' "$sync_tag_id")"
+sync_create_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "$sync_create_body" \
+  "$api_url/sync/exchange")"
+php -r '
+  $response = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+  $ack = $response["acknowledgements"][0] ?? [];
+  if (($ack["status"] ?? null) !== "applied" || ($ack["resource"]["data"]["name"] ?? null) !== "Offline tag") {
+      fwrite(STDERR, "The offline exchange did not apply an optimistic create.\n");
+      exit(1);
+  }
+' <<<"$sync_create_response"
+sync_duplicate_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "$sync_create_body" \
+  "$api_url/sync/exchange")"
+php -r '
+  $response = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+  if (($response["acknowledgements"][0]["status"] ?? null) !== "duplicate") {
+      fwrite(STDERR, "The offline exchange was not idempotent.\n");
+      exit(1);
+  }
+' <<<"$sync_duplicate_response"
+sync_delete_body="$(php -r '
+  echo json_encode([
+      "clientId" => "integration-client",
+      "cursor" => 0,
+      "operations" => [[
+          "operationId" => "sync-delete-tag",
+          "resource" => "tags",
+          "recordId" => $argv[1],
+          "kind" => "delete",
+          "payload" => (object) [],
+          "fieldClocks" => ["*" => "9999999999999-000002-integration-client"],
+          "dependsOn" => [],
+      ]],
+  ], JSON_THROW_ON_ERROR);
+' "$sync_tag_id")"
+sync_delete_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "$sync_delete_body" \
+  "$api_url/sync/exchange")"
+php -r '
+  $response = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+  $ack = $response["acknowledgements"][0] ?? [];
+  if (($ack["status"] ?? null) !== "applied" || ($ack["resource"]["deleted"] ?? false) !== true) {
+      fwrite(STDERR, "The offline exchange did not apply a delete.\n");
+      exit(1);
+  }
+' <<<"$sync_delete_response"
 
 account_response="$(curl --silent --show-error --fail \
   -X PATCH -H "Content-Type: application/json" \

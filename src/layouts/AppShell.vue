@@ -4,8 +4,10 @@ import { Capacitor } from '@capacitor/core'
 import { useDisplay } from 'vuetify'
 import { useRouter } from 'vue-router'
 import AccountMenu from '@/components/AccountMenu.vue'
+import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import MainNavigationIcon from '@/components/MainNavigationIcon.vue'
+import { localDataChangedEvent } from '@/lib/localDatabase'
 import {
   bottomNavigationFontSize,
   mainMenuTransitionDirection,
@@ -22,7 +24,11 @@ import {
 import { useAuthStore } from '@/stores/auth'
 import { useFlashcardStore } from '@/stores/flashcards'
 import { useIntervalStore } from '@/stores/intervals'
+import { useJournalStore } from '@/stores/journal'
 import { useSnackbarStore } from '@/stores/snackbar'
+import { useSyncStore } from '@/stores/sync'
+import { useTaskStore } from '@/stores/tasks'
+import { useTrackingStore } from '@/stores/tracking'
 
 const { mdAndUp } = useDisplay()
 const router = useRouter()
@@ -30,7 +36,12 @@ const auth = useAuthStore()
 const flashcardStore = useFlashcardStore()
 const intervalStore = useIntervalStore()
 const snackbar = useSnackbarStore()
+const syncStore = useSyncStore()
+const taskStore = useTaskStore()
+const trackingStore = useTrackingStore()
+const journalStore = useJournalStore()
 const logoutDialog = ref(false)
+const syncSheet = ref(false)
 const pageTransition = ref('page-level-forward')
 const isIos = Capacitor.getPlatform() === 'ios'
 const isBrowser = Capacitor.getPlatform() === 'web'
@@ -46,6 +57,7 @@ const documentTitle = typeof document === 'undefined'
   : document.title
 let documentTitleFrame = 0
 let documentTitleTimer: number | undefined
+let localRefreshTimer: number | undefined
 
 const items = computed(() => visibleMainNavItems(
   storedMenuOrder.value ?? auth.user?.settings?.mainMenuOrder,
@@ -56,6 +68,37 @@ const flashcardIsRunning = computed(() => flashcardStore.activeSession?.status =
 const intervalSessionIsActive = computed(() => Boolean(intervalStore.activeSession))
 const flashcardSessionIsActive = computed(() => Boolean(flashcardStore.activeSession))
 const sessionIsRunning = computed(() => intervalIsRunning.value || flashcardIsRunning.value)
+const syncLabel = computed(() => {
+  const status = syncStore.status
+  if (status.issueCount) return 'Sync needs attention'
+  if (status.phase === 'auth-required') return 'Sign in to sync'
+  if (status.phase === 'offline') return status.pendingCount
+    ? `${status.pendingCount} saved on device`
+    : 'Offline'
+  if (status.phase === 'hydrating') return 'Preparing offline data'
+  if (status.phase === 'syncing') return status.pendingCount ? 'Sending changes' : 'Syncing'
+  if (status.pendingCount) return `${status.pendingCount} waiting to sync`
+  return 'Up to date'
+})
+const syncIcon = computed(() => {
+  if (syncStore.status.issueCount) return 'mdi-alert-circle-outline'
+  if (syncStore.status.phase === 'auth-required') return 'mdi-account-alert-outline'
+  if (syncStore.status.phase === 'offline') return 'mdi-cloud-off-outline'
+  if (['hydrating', 'syncing'].includes(syncStore.status.phase)) return 'mdi-cloud-sync-outline'
+  return 'mdi-cloud-check-outline'
+})
+const syncColor = computed(() => syncStore.status.issueCount
+  ? 'warning'
+  : syncStore.status.phase === 'offline' || syncStore.status.phase === 'auth-required'
+    ? 'medium-emphasis'
+    : 'secondary')
+const lastSyncedLabel = computed(() => {
+  if (!syncStore.status.lastSyncedAt) return 'Not synchronized yet'
+  const date = new Date(syncStore.status.lastSyncedAt)
+  return Number.isNaN(date.getTime())
+    ? 'Not synchronized yet'
+    : `Last synchronized ${date.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}`
+})
 
 const immersive = computed(() => Boolean(router.currentRoute.value.meta.immersive))
 const pageTitle = computed(() => String(router.currentRoute.value.meta.title || 'Polymind'))
@@ -163,10 +206,26 @@ function refreshStoredMenuSettings() {
   storedHiddenMenuItems.value = readStoredHiddenMainMenuItems()
 }
 
+function scheduleLocalRefresh() {
+  if (localRefreshTimer !== undefined) window.clearTimeout(localRefreshTimer)
+  localRefreshTimer = window.setTimeout(() => {
+    localRefreshTimer = undefined
+    void Promise.allSettled([
+      intervalStore.load(),
+      flashcardStore.load(),
+      taskStore.load(),
+      trackingStore.load(),
+      journalStore.reloadCurrentRange(),
+    ])
+  }, 250)
+}
+
 onMounted(() => {
   window.addEventListener(MAIN_MENU_ORDER_CHANGED_EVENT, refreshStoredMenuSettings)
   window.addEventListener(MAIN_MENU_VISIBILITY_CHANGED_EVENT, refreshStoredMenuSettings)
   window.addEventListener('storage', refreshStoredMenuSettings)
+  window.addEventListener(localDataChangedEvent, scheduleLocalRefresh)
+  void syncStore.refresh()
   void Promise.allSettled([
     !intervalStore.loading ? intervalStore.load() : Promise.resolve(),
     !flashcardStore.loading ? flashcardStore.load() : Promise.resolve(),
@@ -179,12 +238,19 @@ onBeforeUnmount(() => {
   window.removeEventListener(MAIN_MENU_ORDER_CHANGED_EVENT, refreshStoredMenuSettings)
   window.removeEventListener(MAIN_MENU_VISIBILITY_CHANGED_EVENT, refreshStoredMenuSettings)
   window.removeEventListener('storage', refreshStoredMenuSettings)
+  window.removeEventListener(localDataChangedEvent, scheduleLocalRefresh)
+  if (localRefreshTimer !== undefined) window.clearTimeout(localRefreshTimer)
 })
 
-function logout() {
-  logoutDialog.value = false
-  auth.logout()
-  router.replace('/auth')
+async function logout() {
+  try {
+    await auth.logout()
+    logoutDialog.value = false
+    await router.replace('/auth')
+  } catch {
+    logoutDialog.value = false
+    syncSheet.value = true
+  }
 }
 
 function pinLeavingPage(element: Element) {
@@ -239,7 +305,15 @@ function releaseLeavingPage(element: Element) {
       </v-list>
 
       <template #append>
-        <div class="pa-4">
+        <div class="pa-4 d-grid ga-1">
+          <v-btn
+            variant="text"
+            :prepend-icon="syncIcon"
+            :color="syncColor"
+            @click="syncSheet = true"
+          >
+            {{ syncLabel }}
+          </v-btn>
           <v-btn block variant="text" prepend-icon="mdi-logout" @click="logoutDialog = true">Sign out</v-btn>
         </div>
       </template>
@@ -268,15 +342,32 @@ function releaseLeavingPage(element: Element) {
 
           <h1 class="app-bar__title">{{ pageTitle }}</h1>
 
-          <AccountMenu
-            :account-name="accountName"
-            :account-email="accountEmail"
-            :account-initials="accountInitials"
-            :account-avatar="accountAvatar"
-            @open-account="router.push('/account')"
-            @open-settings="router.push('/settings')"
-            @sign-out="logoutDialog = true"
-          />
+          <div class="app-bar__actions">
+            <v-btn
+              :icon="syncIcon"
+              :color="syncColor"
+              variant="text"
+              :aria-label="syncLabel"
+              @click="syncSheet = true"
+            >
+              <v-icon :icon="syncIcon" />
+              <v-badge
+                v-if="syncStore.status.pendingCount || syncStore.status.issueCount"
+                :content="syncStore.status.issueCount || syncStore.status.pendingCount"
+                color="warning"
+                floating
+              />
+            </v-btn>
+            <AccountMenu
+              :account-name="accountName"
+              :account-email="accountEmail"
+              :account-initials="accountInitials"
+              :account-avatar="accountAvatar"
+              @open-account="router.push('/account')"
+              @open-settings="router.push('/settings')"
+              @sign-out="logoutDialog = true"
+            />
+          </div>
         </div>
       </header>
     </transition>
@@ -332,11 +423,76 @@ function releaseLeavingPage(element: Element) {
     <ConfirmDialog
       v-model="logoutDialog"
       title="Sign out?"
-      message="Are you sure you want to end your current session?"
+      :message="auth.error || 'Your latest changes will synchronize before offline data is removed from this device.'"
       confirm-text="Sign out"
       icon="mdi-logout"
+      :loading="auth.logoutLoading"
       @confirm="logout"
     />
+
+    <ActionBottomSheet
+      v-model="syncSheet"
+      title="Synchronization"
+      :description="syncLabel"
+      aria-label="Synchronization status"
+    >
+      <template #content>
+        <div class="sync-panel">
+          <div class="d-flex align-center ga-3">
+            <v-avatar :color="syncColor" variant="tonal" size="42">
+              <v-icon :icon="syncIcon" />
+            </v-avatar>
+            <div class="min-width-0">
+              <p class="text-body-2 font-weight-bold mb-0">{{ syncLabel }}</p>
+              <p class="text-caption text-medium-emphasis mb-0">{{ lastSyncedLabel }}</p>
+            </div>
+          </div>
+          <p v-if="syncStore.status.message || auth.error" class="text-body-2 text-medium-emphasis mb-0">
+            {{ auth.error || syncStore.status.message }}
+          </p>
+          <v-list v-if="syncStore.issues.length" bg-color="transparent" class="pa-0">
+            <v-list-item
+              v-for="issue in syncStore.issues"
+              :key="issue.id"
+              prepend-icon="mdi-alert-outline"
+              :title="issue.message"
+              :subtitle="issue.resource.replaceAll('_', ' ')"
+            >
+              <template #append>
+                <v-btn
+                  size="small"
+                  variant="text"
+                  color="warning"
+                  @click="syncStore.discardIssue(issue.id)"
+                >
+                  Discard
+                </v-btn>
+              </template>
+            </v-list-item>
+          </v-list>
+          <v-btn
+            v-if="syncStore.status.phase === 'auth-required'"
+            block
+            color="secondary"
+            prepend-icon="mdi-login"
+            @click="router.push({ path: '/auth', query: { reauth: '1', redirect: router.currentRoute.value.fullPath } })"
+          >
+            Sign in to sync
+          </v-btn>
+          <v-btn
+            v-else
+            block
+            color="secondary"
+            variant="tonal"
+            prepend-icon="mdi-sync"
+            :loading="syncStore.status.phase === 'syncing' || syncStore.status.phase === 'hydrating'"
+            @click="syncStore.syncNow('manual')"
+          >
+            Sync now
+          </v-btn>
+        </div>
+      </template>
+    </ActionBottomSheet>
 
     <v-snackbar
       :key="snackbar.revision"
@@ -382,9 +538,21 @@ function releaseLeavingPage(element: Element) {
   height: 60px;
   margin: 0 auto;
   padding: 0 1rem;
-  grid-template-columns: 0 minmax(0, 1fr) 44px;
+  grid-template-columns: 0 minmax(0, 1fr) 88px;
   align-items: center;
   gap: 0;
+}
+
+.app-bar__actions {
+  display: flex;
+  width: 88px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.sync-panel {
+  display: grid;
+  gap: 1rem;
 }
 
 .app-bar__leading {
@@ -443,13 +611,13 @@ function releaseLeavingPage(element: Element) {
 }
 
 .app-bar--back .app-bar__inner {
-  grid-template-columns: 44px minmax(0, 1fr) 44px;
+  grid-template-columns: 44px minmax(0, 1fr) 88px;
   gap: 1rem;
 }
 
 .app-bar--ios .app-bar__inner {
   padding: 0 .5rem;
-  grid-template-columns: 44px minmax(0, 1fr) 44px;
+  grid-template-columns: 44px minmax(0, 1fr) 88px;
   gap: .5rem;
 }
 

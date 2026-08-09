@@ -104,10 +104,19 @@ The reconstructed PHP-era history is:
 | `202608080002` | Legacy encrypted per-user OpenAI API connections |
 | `202608080003` | Review set note-before-answer display preference |
 | `202608080004` | Remove legacy API keys in favor of hosted ChatGPT authentication |
+| `202608090001` | Offline synchronization versions, change log, idempotency receipts, client cursors, and per-device active sessions |
 
 Existing PHP databases are advanced without recreating application data. Migration `202608080004` is the explicit exception for deletion: it removes credentials from the superseded API-key connection. The schema is validated after migration, including required columns.
 
 Migration files in `server/migrations` are immutable after deployment. Any later schema or data change must be a new file named with the next 12-digit version and a descriptive suffix. Editing or removing an applied migration causes startup to fail instead of silently accepting schema drift.
+
+## Offline synchronization
+
+Authenticated clients initialize their local database with `POST /sync/bootstrap`, then use `POST /sync/exchange` for both queued operations and cursor-based pulls. An exchange accepts at most 100 ordered operations and returns at most 500 coalesced changes. Operation receipts make retries safe across browser service workers, native background execution, request timeouts, and foreground recovery.
+
+Owned collection records carry server revisions and per-field hybrid logical clocks. The exchange applies last-writer-wins only to fields changed by both clients; deletes are terminal for the same record ID. Flashcard review events remain additive and update reviewer statistics exactly once. Unique tag names and task occurrences return replacement IDs so clients can rewrite queued relationships rather than dropping work. Review-set access, shared-card projections, preferences, shares, account settings, avatars, and compressed card images use the same exchange contract.
+
+The initial bootstrap is the only network-dependent preparation step. After it completes, token expiry does not remove the cached account. The client must reauthenticate before it can exchange again, and sign-out should flush before erasing local account data.
 
 Recommended deployment order:
 

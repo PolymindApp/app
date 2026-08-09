@@ -387,6 +387,17 @@ export const useTaskStore = defineStore('tasks', () => {
     Object.assign(occurrence, mapOccurrence(record))
   }
 
+  async function completeAttributedTask(taskId: string, dateKey: string, programStepId = '') {
+    if (!taskId || !dateKey) return undefined
+    const progress = progressForDate(parseISO(dateKey)).find(item => (
+      item.task.id === taskId
+      && (item.programStep?.id || '') === programStepId
+    ))
+    if (!progress) return undefined
+    if (!progress.complete) await toggleComplete(progress, true)
+    return occurrenceFor(progress.task, parseISO(dateKey), progress.programStep)
+  }
+
   async function setDailyTotalSealed(progress: TaskProgress) {
     if (progress.task.type !== 'daily_total' || progress.programStep) return
     const progressDate = parseISO(progress.scheduledDate)
@@ -649,6 +660,7 @@ export const useTaskStore = defineStore('tasks', () => {
     makeProgress,
     entriesFor,
     toggleComplete,
+    completeAttributedTask,
     setDailyTotalSealed,
     addEntry,
     loadEntryNoteHistory,

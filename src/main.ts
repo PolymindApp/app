@@ -12,6 +12,7 @@ import { preloadIntervalCueAudio } from './services/intervalCues'
 import { installFlashcardNotificationRouting } from './services/flashcardNotificationRouting'
 import { installIntervalNotificationRouting } from './services/intervalNotificationRouting'
 import { installTrackingNotificationRouting } from './services/trackingReminders'
+import { startOfflineSync } from './services/offlineSync'
 import {
   readAndroidRoute,
   rememberAndroidRoute,
@@ -39,7 +40,7 @@ const app = createApp(App)
 
 if (
   nativePlatform === 'android'
-  && api.authStore.isValid
+  && api.authStore.hasLocalSession
   && window.location.pathname === '/'
 ) {
   const savedRoute = readAndroidRoute(router)
@@ -47,6 +48,7 @@ if (
 }
 
 app.mount('#app')
+void startOfflineSync()
 
 if (nativePlatform === 'android') {
   installAndroidFocusAutoScroll()

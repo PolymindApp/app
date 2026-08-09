@@ -2,6 +2,14 @@
 
 A mobile-first personal management app for tasks, plans, habits, workouts, and programmable intervals. The client uses Vue 3, Vuetify, and TypeScript. A PHP API provides password/passkey authentication and secure SQLite access.
 
+## Offline-first data
+
+After the first authenticated bootstrap, the app reads and writes its core data from IndexedDB. Edits, deletions, task progress, interval state, flashcard reviews, settings, shares, and compressed images update the interface immediately and enter an ordered outbox. The app exchanges that outbox with the PHP API in the background, pulls remote changes every 15 seconds while active, and retries automatically after reconnect, focus, or app resume. A service worker precaches the web shell and uses Background Sync when the browser supports it; Android and iOS use Capacitor Background Runner as a best-effort closed-app uploader.
+
+Synchronization is idempotent per client operation. Additive activity records are retained, mutable records merge by field clock, and server-observed deletion wins over pending edits. Duplicate tag and occurrence creates resolve to the existing server ID and rewrite later queued relations. Rejected operations remain visible in the app’s synchronization panel until a corrected edit succeeds or the local change is discarded.
+
+An expired bearer token pauses remote exchange without locking the user out of cached data. Signing in again resumes synchronization. Sign-out first flushes the outbox and then erases that account’s IndexedDB data; it refuses to erase while unsynchronized or rejected changes remain.
+
 ## Requirements
 
 - Node.js 22+
@@ -140,6 +148,8 @@ The API serves these routes:
 GET    /health
 POST   /auth/register
 POST   /auth/login
+POST   /sync/bootstrap
+POST   /sync/exchange
 POST   /auth/passkeys/register/options
 POST   /auth/passkeys/register/verify
 POST   /auth/passkeys/login/options

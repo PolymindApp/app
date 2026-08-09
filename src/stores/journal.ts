@@ -45,8 +45,10 @@ export const useJournalStore = defineStore('journal', () => {
   const loaded = ref(false)
   const error = ref('')
   let rangeRequest = 0
+  let lastRange: [string, string] | undefined
 
   async function loadRange(start: string, end: string) {
+    lastRange = [start, end]
     const request = ++rangeRequest
     loading.value = true
     error.value = ''
@@ -67,6 +69,10 @@ export const useJournalStore = defineStore('journal', () => {
     } finally {
       if (request === rangeRequest) loading.value = false
     }
+  }
+
+  function reloadCurrentRange() {
+    return lastRange ? loadRange(...lastRange) : Promise.resolve(false)
   }
 
   async function getEntry(id: string) {
@@ -107,6 +113,7 @@ export const useJournalStore = defineStore('journal', () => {
     loaded,
     error,
     loadRange,
+    reloadCurrentRange,
     getEntry,
     saveEntry,
     deleteEntry,
