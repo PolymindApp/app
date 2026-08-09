@@ -21,12 +21,14 @@ import {
   reviewSetInsightDailyValues,
   reviewSetInsightRangeBounds,
 } from '@/services/reviewSetInsights'
+import { INTERVAL_INSIGHT_PROFILE, intervalInsightDailyValues } from '@/services/intervalInsights'
 import { useIntervalStore } from '@/stores/intervals'
 import { useTaskStore } from '@/stores/tasks'
 import { useTrackingStore } from '@/stores/tracking'
 import type {
   FlashcardReviewSession,
   FlashcardReviewSet,
+  IntervalSession,
   TrackingAnalysisSource,
   TrackingDailyValue,
 } from '@/types/domain'
@@ -89,10 +91,8 @@ const factorSources = computed<TrackingFactorSource[]>(() => [
     name: `Interval · ${template.name}`,
     role: 'factor' as const,
     favorableDirection: 'neutral' as const,
-    unit: 'runs',
     color: template.color,
-    factorMode: 'presence' as const,
-    scaleMin: 0,
+    ...INTERVAL_INSIGHT_PROFILE,
   })),
   ...reviewSets.value.map((reviewSet) => ({
     id: `review_set:${reviewSet.id}`,
@@ -258,7 +258,6 @@ async function factorDailyValues(sourceId: string, start: string, end: string): 
   if (source === 'tracker') {
     return trackerDailyValues(id || '', start, end)
   }
-  const dates = dateRangeKeys(start, end)
   if (source === 'task') {
     const task = tasks.tasks.find((item) => item.id === id)
     if (!task) return []
@@ -277,15 +276,20 @@ async function factorDailyValues(sourceId: string, start: string, end: string): 
   }
   if (source === 'interval') {
     const records = await api.collection('interval_sessions').getFullList({
-      filter: `template = "${id}" && status = "completed" && task_date >= "${start}" && task_date <= "${end}"`,
+      filter: `template = "${id}" && task_date >= "${start}" && task_date <= "${end}"`,
       sort: 'task_date',
     })
-    const counts = new Map<string, number>()
-    records.forEach((record) => {
-      const date = String(record.task_date)
-      counts.set(date, (counts.get(date) || 0) + 1)
-    })
-    return dates.map((date) => ({ date, value: counts.get(date) || 0 }))
+    return intervalInsightDailyValues(
+      id || '',
+      records.map((record) => ({
+        template: String(record.template || ''),
+        taskDate: String(record.task_date || ''),
+        status: record.status as IntervalSession['status'],
+        elapsedSeconds: Number(record.elapsed_seconds || 0),
+      })),
+      start,
+      end,
+    )
   }
   if (source === 'review_set') {
     const bounds = reviewSetInsightRangeBounds(start, end)
