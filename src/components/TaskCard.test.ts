@@ -425,6 +425,34 @@ describe('TaskCard amount actions', () => {
     expect(wrapper.get('.task-menu-button').attributes()).not.toHaveProperty('data-task-drag-handle')
   })
 
+  it('keeps tasks outside the schedule compact and editable', async () => {
+    const wrapper = mount(TaskCard, {
+      props: { progress, scheduleStatus: 'not-scheduled' },
+      global: {
+        stubs: {
+          VBtn: VBtnStub,
+          VCard: { template: '<div><slot /></div>' },
+          VExpandTransition: { template: '<div><slot /></div>' },
+          ExpandTransition: { template: '<div><slot /></div>' },
+          VIcon: true,
+          VProgressCircular: { template: '<div><slot /></div>' },
+          VProgressLinear: true,
+        },
+      },
+    })
+
+    expect(wrapper.get('.schedule-status').text()).toBe('Not scheduled')
+    expect(wrapper.find('.task-card-body').exists()).toBe(false)
+    expect(wrapper.get('.task-card-header-main').attributes()).not.toHaveProperty('role')
+    expect(wrapper.get('.task-card-header-main').attributes()).not.toHaveProperty('aria-expanded')
+
+    await wrapper.get('[aria-label="More actions for Water"]').trigger('click')
+    expect(wrapper.emitted('actions')).toEqual([[progress]])
+
+    await wrapper.setProps({ scheduleStatus: 'paused' })
+    expect(wrapper.get('.schedule-status').text()).toBe('Paused')
+  })
+
   it('toggles a check-off only from its Done and Undone button', async () => {
     const checkProgress: TaskProgress = {
       ...progress,

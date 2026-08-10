@@ -24,7 +24,7 @@ import {
   taskEntryNoteForAmount,
   taskEntryNoteOptions,
 } from '@/services/taskEntryNotes'
-import { TASK_FILTER_ITEMS } from '@/services/taskFilters'
+import { TASK_FILTER_ITEMS, tasksWithoutProgress } from '@/services/taskFilters'
 import type { TaskFilterId } from '@/services/taskFilters'
 import { taskIdsFromProgressDrag, taskProgressDragKey } from '@/services/taskReordering'
 import { useIntervalStore } from '@/stores/intervals'
@@ -82,6 +82,7 @@ const trackingSheetContext = ref('')
 const taskPage = ref<HTMLElement>()
 const valuePulseVersions = ref<Record<string, number>>({})
 const showCompleted = ref(false)
+const showNotScheduled = ref(false)
 const taskFiltersOpen = ref(false)
 const reorderingTasks = ref(false)
 const recentlyCompletedKeys = ref(new Set<string>())
@@ -135,12 +136,27 @@ const taskDateMarkers = computed(() => visibleWeekDates.value.flatMap((date) => 
   }]
 }))
 
-const required = computed(() => selectedProgress.value.filter((item) => item.task.mandatory))
-const optional = computed(() => selectedProgress.value.filter((item) => !item.task.mandatory))
+const notScheduledProgress = computed(() => tasksWithoutProgress(
+  store.tasks,
+  selectedProgress.value,
+).map(task => store.makeProgress(task, selectedDate.value)))
+const displayedProgress = computed(() => {
+  const progressItems = showNotScheduled.value
+    ? [...selectedProgress.value, ...notScheduledProgress.value]
+    : selectedProgress.value
+  return [...progressItems].sort((left, right) => (
+    Number(right.task.mandatory) - Number(left.task.mandatory)
+    || left.task.sortOrder - right.task.sortOrder
+    || (left.programStep?.sortOrder ?? 0) - (right.programStep?.sortOrder ?? 0)
+  ))
+})
+const required = computed(() => displayedProgress.value.filter((item) => item.task.mandatory))
+const optional = computed(() => displayedProgress.value.filter((item) => !item.task.mandatory))
 const visibleRequired = computed(() => required.value.filter(taskIsVisible))
 const visibleOptional = computed(() => optional.value.filter(taskIsVisible))
 const reviewItems = computed(() => store.reviewProgressForDate(selectedDate.value))
 const doneCount = computed(() => selectedProgress.value.filter((item) => item.complete).length)
+const taskFiltersActive = computed(() => showCompleted.value || showNotScheduled.value)
 let appStateListener: Awaited<ReturnType<typeof App.addListener>> | undefined
 
 onMounted(async () => {
@@ -245,13 +261,25 @@ function taskIsVisible(progress: TaskProgress) {
 }
 
 function taskFilterEnabled(filter: TaskFilterId) {
-  return filter === 'completed' && showCompleted.value
+  if (filter === 'completed') return showCompleted.value
+  return showNotScheduled.value
 }
 
 function toggleTaskFilter(filter: TaskFilterId) {
-  if (filter !== 'completed') return
-  captureTaskCardPositions = showCompleted.value
-  showCompleted.value = !showCompleted.value
+  if (filter === 'completed') {
+    captureTaskCardPositions = showCompleted.value
+    showCompleted.value = !showCompleted.value
+    return
+  }
+  captureTaskCardPositions = showNotScheduled.value
+  showNotScheduled.value = !showNotScheduled.value
+}
+
+function taskScheduleStatus(progress: TaskProgress) {
+  if (!showNotScheduled.value || selectedProgress.value.some(item => item.task.id === progress.task.id)) {
+    return undefined
+  }
+  return progress.task.active ? 'not-scheduled' as const : 'paused' as const
 }
 
 function pinLeavingTaskCard(element: Element) {
@@ -751,17 +779,17 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
     <v-alert v-if="flashcardStartError" type="error" variant="tonal" class="mt-4">
       {{ flashcardStartError }}
     </v-alert>
-    <template v-if="selectedProgress.length">
+    <template v-if="displayedProgress.length">
       <section v-if="required.length">
         <div class="section-heading task-section-heading">
           <h2>Tasks</h2>
           <div class="task-section-heading__controls">
             <v-btn
               size="small"
-              :variant="showCompleted ? 'tonal' : 'text'"
-              :color="showCompleted ? 'secondary' : undefined"
+              :variant="taskFiltersActive ? 'tonal' : 'text'"
+              :color="taskFiltersActive ? 'secondary' : undefined"
               prepend-icon="mdi-filter-variant"
-              :aria-pressed="showCompleted"
+              :aria-pressed="taskFiltersActive"
               @click="taskFiltersOpen = true"
             >
               Filter
@@ -794,6 +822,7 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
           >
             <TaskCard
               :progress="item"
+              :schedule-status="taskScheduleStatus(item)"
               :busy="progressIsBusy(item)"
               :value-pulse="valuePulseFor(item)"
               :syncing="item.task.type === 'step_counter' && stepCountLoading"
@@ -829,10 +858,10 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
           <div v-else class="task-section-heading__controls">
             <v-btn
               size="small"
-              :variant="showCompleted ? 'tonal' : 'text'"
-              :color="showCompleted ? 'secondary' : undefined"
+              :variant="taskFiltersActive ? 'tonal' : 'text'"
+              :color="taskFiltersActive ? 'secondary' : undefined"
               prepend-icon="mdi-filter-variant"
-              :aria-pressed="showCompleted"
+              :aria-pressed="taskFiltersActive"
               @click="taskFiltersOpen = true"
             >
               Filter
@@ -865,6 +894,7 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
           >
             <TaskCard
               :progress="item"
+              :schedule-status="taskScheduleStatus(item)"
               :busy="progressIsBusy(item)"
               :value-pulse="valuePulseFor(item)"
               :syncing="item.task.type === 'step_counter' && stepCountLoading"
@@ -897,8 +927,24 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
     <v-card v-else-if="!loading" class="surface-card empty-card pa-8 mt-6 text-center">
       <div class="empty-icon mx-auto mb-4"><v-icon icon="mdi-arm-flex-outline" size="32" /></div>
       <h2 class="text-h6 font-weight-black">No tasks scheduled</h2>
-      <p class="text-body-2 muted mt-2 mb-5">Build your first routine and it will show up here.</p>
-      <v-btn color="secondary" append-icon="mdi-plus" to="/tasks/new">Create a task</v-btn>
+      <p class="text-body-2 muted mt-2 mb-5">
+        {{ store.tasks.length
+          ? 'Use the filter to see routines that are not scheduled for this day.'
+          : 'Build your first routine and it will show up here.' }}
+      </p>
+      <div class="d-flex flex-wrap justify-center ga-2">
+        <v-btn
+          v-if="store.tasks.length"
+          variant="tonal"
+          prepend-icon="mdi-filter-variant"
+          @click="taskFiltersOpen = true"
+        >
+          Filter
+        </v-btn>
+        <v-btn color="secondary" prepend-icon="mdi-plus" to="/tasks/new">
+          {{ store.tasks.length ? 'New' : 'Create a task' }}
+        </v-btn>
+      </div>
     </v-card>
 
     <v-dialog

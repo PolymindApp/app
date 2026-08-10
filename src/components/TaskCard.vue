@@ -49,6 +49,7 @@ const props = defineProps<{
   canWriteJournal?: boolean
   syncing?: boolean
   stepCountError?: string
+  scheduleStatus?: 'not-scheduled' | 'paused'
 }>()
 const emit = defineEmits<{
   toggle: [progress: TaskProgress, complete: boolean]
@@ -85,6 +86,7 @@ const isTracking = computed(() => !step.value && task.value.type === 'tracking')
 const isJournal = computed(() => !step.value && task.value.type === 'journal')
 const isDailyTotal = computed(() => !step.value && task.value.type === 'daily_total')
 const isStepCounter = computed(() => !step.value && task.value.type === 'step_counter')
+const headerExpandable = computed(() => !isCheck.value && !props.scheduleStatus)
 const canLogAmount = computed(() => taskCanLogAmounts(props.progress))
 const canLogTime = computed(() => !step.value && task.value.type === 'duration')
 const canToggleCheck = computed(() =>
@@ -204,7 +206,7 @@ function toggleCheckCompletion() {
 }
 
 function toggleExpandedFromHeader() {
-  if (isCheck.value) return
+  if (!headerExpandable.value) return
   expanded.value = !expanded.value
   storeExpansionState(props.progress, expanded.value)
 }
@@ -246,19 +248,23 @@ watch(() => props.valuePulse, async (pulse, previousPulse) => {
 <template>
   <v-card
     class="task-card surface-card pa-4"
-    :class="{ 'task-card--done': displayedComplete, 'task-card--sealed': progress.sealed }"
+    :class="{
+      'task-card--done': displayedComplete,
+      'task-card--sealed': progress.sealed,
+      'task-card--outside-schedule': scheduleStatus,
+    }"
     :style="{ '--task-color': taskColor }"
   >
     <div class="d-flex align-start ga-3">
       <div
         class="task-card-header-main d-flex align-start ga-3 flex-grow-1 min-width-0"
         data-task-drag-handle
-        :class="{ 'task-card-header-main--expandable': !isCheck }"
-        :role="!isCheck ? 'button' : undefined"
-        :tabindex="!isCheck ? 0 : undefined"
-        :aria-label="!isCheck ? `${expanded ? 'Collapse' : 'Expand'} ${title}` : undefined"
-        :aria-expanded="!isCheck ? expanded : undefined"
-        :aria-controls="!isCheck ? detailsId : undefined"
+        :class="{ 'task-card-header-main--expandable': headerExpandable }"
+        :role="headerExpandable ? 'button' : undefined"
+        :tabindex="headerExpandable ? 0 : undefined"
+        :aria-label="headerExpandable ? `${expanded ? 'Collapse' : 'Expand'} ${title}` : undefined"
+        :aria-expanded="headerExpandable ? expanded : undefined"
+        :aria-controls="headerExpandable ? detailsId : undefined"
         @click="toggleExpandedFromHeader"
         @keydown.enter.prevent="toggleExpandedFromHeader"
         @keydown.space.prevent="toggleExpandedFromHeader"
@@ -279,6 +285,9 @@ watch(() => props.valuePulse, async (pulse, previousPulse) => {
           <div class="d-flex align-center ga-2 flex-wrap">
             <h3 class="task-title">{{ title }}</h3>
             <span v-if="task.mandatory" class="required-dot">Required</span>
+            <span v-if="scheduleStatus" class="schedule-status">
+              {{ scheduleStatus === 'paused' ? 'Paused' : 'Not scheduled' }}
+            </span>
           </div>
           <p class="task-subtitle text-truncate mt-1">{{ subtitle || 'Personal' }}</p>
         </div>
@@ -299,6 +308,7 @@ watch(() => props.valuePulse, async (pulse, previousPulse) => {
 
     <v-expand-transition>
       <div
+        v-if="!scheduleStatus"
         v-show="isCheck || expanded"
         :id="!isCheck ? detailsId : undefined"
         class="task-card-body"
@@ -635,6 +645,7 @@ watch(() => props.valuePulse, async (pulse, previousPulse) => {
 }
 
 .required-dot,
+.schedule-status,
 .period-pill {
   padding: 3px 7px;
   border-radius: 999px;
@@ -644,6 +655,10 @@ watch(() => props.valuePulse, async (pulse, previousPulse) => {
   font-weight: 850;
   letter-spacing: .07em;
   text-transform: uppercase;
+}
+
+.schedule-status {
+  color: rgb(var(--v-theme-on-surface) / .62);
 }
 
 .period-pill {
