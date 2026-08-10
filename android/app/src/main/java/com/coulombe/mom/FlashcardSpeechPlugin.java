@@ -33,6 +33,7 @@ public class FlashcardSpeechPlugin extends Plugin {
     private static final int NOTIFICATION_PERMISSION_REQUEST = 9021;
 
     private final List<PluginCall> pendingLanguageCalls = new ArrayList<>();
+    private PluginCall pendingSpeechCall;
     private TextToSpeech speech;
     private boolean speechReady;
     private boolean speechFailed;
@@ -74,6 +75,7 @@ public class FlashcardSpeechPlugin extends Plugin {
                 });
             }
             resolvePendingLanguageCalls();
+            resolvePendingSpeechCall();
         });
     }
 
@@ -94,10 +96,22 @@ public class FlashcardSpeechPlugin extends Plugin {
             call.reject("Text and a valid language are required.");
             return;
         }
+        if (!speechReady && !speechFailed) {
+            if (pendingSpeechCall != null) pendingSpeechCall.resolve();
+            pendingSpeechCall = call;
+            return;
+        }
         if (!speechReady) {
             call.unavailable("Speech synthesis is not available on this device.");
             return;
         }
+
+        speakReady(call);
+    }
+
+    private void speakReady(PluginCall call) {
+        String text = call.getString("text", "").trim();
+        String language = call.getString("language", "").trim();
 
         int availability = speech.setLanguage(Locale.forLanguageTag(language));
         if (
@@ -133,6 +147,10 @@ public class FlashcardSpeechPlugin extends Plugin {
 
     @PluginMethod
     public void stopSpeaking(PluginCall call) {
+        if (pendingSpeechCall != null) {
+            pendingSpeechCall.resolve();
+            pendingSpeechCall = null;
+        }
         if (speech != null) speech.stop();
         volumeBoost.stop();
         call.resolve();
@@ -206,6 +224,14 @@ public class FlashcardSpeechPlugin extends Plugin {
         pendingLanguageCalls.clear();
     }
 
+    private void resolvePendingSpeechCall() {
+        PluginCall call = pendingSpeechCall;
+        pendingSpeechCall = null;
+        if (call == null) return;
+        if (speechReady) speakReady(call);
+        else call.unavailable("Speech synthesis is not available on this device.");
+    }
+
     private void resolveLanguages(PluginCall call) {
         JSObject result = new JSObject();
         result.put("available", speechReady);
@@ -229,6 +255,10 @@ public class FlashcardSpeechPlugin extends Plugin {
             call.unavailable("Speech synthesis stopped before languages were loaded.");
         }
         pendingLanguageCalls.clear();
+        if (pendingSpeechCall != null) {
+            pendingSpeechCall.unavailable("Speech synthesis stopped before playback started.");
+            pendingSpeechCall = null;
+        }
         if (volumeBoost != null) volumeBoost.stop();
         if (speech != null) {
             speech.stop();
