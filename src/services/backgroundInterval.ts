@@ -34,9 +34,11 @@ interface BackgroundIntervalPlugin {
       backLanguage: string
     }
   }): Promise<void>
+  playCue(options: { name: NativeIntervalCueName }): Promise<void>
   stop(): Promise<void>
 }
 
+export type NativeIntervalCueName = 'count' | 'go' | 'complete'
 const BackgroundInterval = registerPlugin<BackgroundIntervalPlugin>('BackgroundInterval')
 const MAX_NATIVE_STEPS = 10_000
 let nativeBackgroundIntervalActive = false
@@ -110,6 +112,12 @@ export async function stopBackgroundInterval() {
   } finally {
     nativeBackgroundIntervalActive = false
   }
+}
+
+export async function playNativeIntervalCue(name: NativeIntervalCueName) {
+  if (Capacitor.getPlatform() !== 'android') return false
+  await BackgroundInterval.playCue({ name })
+  return true
 }
 
 export function nativeBackgroundIntervalOwnsCues() {

@@ -1,8 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('@/services/backgroundInterval', () => ({
-  nativeBackgroundIntervalOwnsCues: () => false,
+const backgroundIntervalMocks = vi.hoisted(() => ({
+  nativeBackgroundIntervalOwnsCues: vi.fn(() => false),
+  playNativeIntervalCue: vi.fn(async () => false),
 }))
+
+vi.mock('@/services/backgroundInterval', () => backgroundIntervalMocks)
 
 const audioContexts: FakeAudioContext[] = []
 
@@ -13,6 +16,8 @@ class FakeAudioContext {
     buffer: AudioBuffer | null
     connect: ReturnType<typeof vi.fn>
     start: ReturnType<typeof vi.fn>
+    stop: ReturnType<typeof vi.fn>
+    onended?: () => void
   }> = []
   decodeAudioData = vi.fn(async (data: ArrayBuffer) => ({
     marker: new Uint8Array(data)[0],
@@ -22,6 +27,7 @@ class FakeAudioContext {
       buffer: null as AudioBuffer | null,
       connect: vi.fn(),
       start: vi.fn(),
+      stop: vi.fn(),
     }
     this.sources.push(source)
     return source
@@ -39,6 +45,8 @@ beforeEach(() => {
   vi.resetModules()
   vi.restoreAllMocks()
   audioContexts.length = 0
+  backgroundIntervalMocks.nativeBackgroundIntervalOwnsCues.mockReset().mockReturnValue(false)
+  backgroundIntervalMocks.playNativeIntervalCue.mockReset().mockResolvedValue(false)
   Object.defineProperty(navigator, 'wakeLock', {
     configurable: true,
     value: undefined,
@@ -103,6 +111,50 @@ describe('interval cue audio', () => {
 
     await vi.waitFor(() => expect(audioContexts[0]?.sources[0]?.start).toHaveBeenCalledOnce())
     expect(audioContexts[0].sources[0].buffer).toMatchObject({ marker: 3 })
+  })
+
+  it('uses the native cue player for interval signals when Android accepts the cue', async () => {
+    backgroundIntervalMocks.playNativeIntervalCue.mockResolvedValue(true)
+    const { playIntervalGoCue } = await import('./intervalCues')
+
+    playIntervalGoCue({ soundEnabled: true, vibrationEnabled: false })
+
+    await vi.waitFor(() => expect(backgroundIntervalMocks.playNativeIntervalCue).toHaveBeenCalledWith('go'))
+    expect(audioContexts).toHaveLength(0)
+  })
+
+  it('falls back to Web Audio when the Android cue bridge rejects the request', async () => {
+    backgroundIntervalMocks.playNativeIntervalCue.mockRejectedValue(new Error('Bridge unavailable'))
+    const { playIntervalCompleteCue } = await import('./intervalCues')
+
+    playIntervalCompleteCue({ soundEnabled: true, vibrationEnabled: false })
+
+    await vi.waitFor(() => expect(audioContexts[0]?.sources[0]?.start).toHaveBeenCalledOnce())
+  })
+
+  it('gives the final signal priority over a countdown sound still playing', async () => {
+    const { playIntervalCompleteCue, playIntervalCountCue } = await import('./intervalCues')
+    const cues = { soundEnabled: true, vibrationEnabled: false }
+
+    playIntervalCountCue(cues)
+    await vi.waitFor(() => expect(audioContexts[0]?.sources[0]?.start).toHaveBeenCalledOnce())
+    playIntervalCompleteCue(cues)
+    await vi.waitFor(() => expect(audioContexts[0]?.sources[1]?.start).toHaveBeenCalledOnce())
+
+    expect(audioContexts[0].sources[0].stop).toHaveBeenCalledOnce()
+    expect(audioContexts[0].sources[1].stop).not.toHaveBeenCalled()
+  })
+
+  it('does not let a countdown sound overlap a terminal signal', async () => {
+    const { playIntervalCountCue, playIntervalGoCue } = await import('./intervalCues')
+    const cues = { soundEnabled: true, vibrationEnabled: false }
+
+    playIntervalGoCue(cues)
+    await vi.waitFor(() => expect(audioContexts[0]?.sources[0]?.start).toHaveBeenCalledOnce())
+    playIntervalCountCue(cues)
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledWith('/sounds/count.mp3'))
+
+    expect(audioContexts[0].sources).toHaveLength(1)
   })
 
   it('plays the completion sound for a completed review set', async () => {

@@ -68,6 +68,26 @@ public class BackgroundIntervalPlugin extends Plugin {
     }
 
     @PluginMethod
+    public void playCue(PluginCall call) {
+        String name = call.getString("name", "");
+        switch (name) {
+            case "count":
+                IntervalCuePlayer.playCount(getContext());
+                break;
+            case "go":
+                IntervalCuePlayer.playGo(getContext());
+                break;
+            case "complete":
+                IntervalCuePlayer.playComplete(getContext());
+                break;
+            default:
+                call.reject("A valid interval cue name is required.");
+                return;
+        }
+        call.resolve();
+    }
+
+    @PluginMethod
     public void stop(PluginCall call) {
         Intent intent = new Intent(getContext(), BackgroundIntervalService.class);
         getContext().stopService(intent);

@@ -1,5 +1,8 @@
 import type { IntervalCueSettings } from '@/types/domain'
-import { nativeBackgroundIntervalOwnsCues } from '@/services/backgroundInterval'
+import {
+  nativeBackgroundIntervalOwnsCues,
+  playNativeIntervalCue,
+} from '@/services/backgroundInterval'
 export { requestScreenWakeLock as requestIntervalWakeLock } from '@/services/screenWakeLock'
 
 let audioContext: AudioContext | undefined
@@ -14,6 +17,10 @@ const cueData: Partial<Record<CueName, ArrayBuffer>> = {}
 const cueDataLoads: Partial<Record<CueName, Promise<ArrayBuffer>>> = {}
 const cueBuffers: Partial<Record<CueName, AudioBuffer>> = {}
 const cueBufferLoads: Partial<Record<CueName, Promise<AudioBuffer>>> = {}
+let activeCountSource: AudioBufferSourceNode | undefined
+let activeSignalSource: AudioBufferSourceNode | undefined
+let signalGeneration = 0
+let latestSignalRequest = 0
 
 function fetchCue(name: CueName) {
   if (cueData[name]) return Promise.resolve(cueData[name])
@@ -87,16 +94,52 @@ export async function prepareIntervalCues(cues: IntervalCueSettings) {
 
 function playCue(name: CueName, cues: IntervalCueSettings) {
   if (!cues.soundEnabled || nativeBackgroundIntervalOwnsCues()) return
-  playAudioCue(name)
+  void playNativeIntervalCue(name)
+    .then((playedNatively) => {
+      if (!playedNatively) playAudioCue(name)
+    })
+    .catch(() => {
+      // Fall back to Web Audio if the Android bridge cannot accept the cue.
+      playAudioCue(name)
+    })
 }
 
 function playAudioCue(name: CueName) {
+  const isSignal = name !== 'count'
+  if (isSignal) signalGeneration += 1
+  const requestedGeneration = signalGeneration
+  const signalRequest = isSignal ? ++latestSignalRequest : latestSignalRequest
+
   void prepareAudioCue(name)
     .then((buffer) => {
       if (!audioContext) return
+      if (!isSignal && requestedGeneration !== signalGeneration) return
+      if (isSignal && signalRequest !== latestSignalRequest) return
+      if (!isSignal && activeSignalSource) return
+
+      const stopSource = (source: AudioBufferSourceNode | undefined) => {
+        try {
+          source?.stop()
+        } catch {
+          // The source may already have ended naturally.
+        }
+      }
+      stopSource(activeCountSource)
+      activeCountSource = undefined
+      if (isSignal) {
+        stopSource(activeSignalSource)
+        activeSignalSource = undefined
+      }
+
       const source = audioContext.createBufferSource()
       source.buffer = buffer
       source.connect(audioContext.destination)
+      if (isSignal) activeSignalSource = source
+      else activeCountSource = source
+      source.onended = () => {
+        if (activeCountSource === source) activeCountSource = undefined
+        if (activeSignalSource === source) activeSignalSource = undefined
+      }
       source.start()
     })
     .catch(() => {
