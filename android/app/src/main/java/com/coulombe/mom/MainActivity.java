@@ -18,6 +18,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         registerPlugin(BackgroundIntervalPlugin.class);
+        registerPlugin(BackgroundSyncStagePlugin.class);
         registerPlugin(FlashcardSpeechPlugin.class);
         registerPlugin(ScreenWakeLockPlugin.class);
         registerPlugin(HealthConnectPlugin.class);

@@ -1,9 +1,12 @@
 import { reactive } from 'vue'
 import { App } from '@capacitor/app'
-import { BackgroundRunner } from '@capacitor/background-runner'
 import { Capacitor } from '@capacitor/core'
 import { Network } from '@capacitor/network'
 import { api } from '@/lib/api'
+import {
+  removeBackgroundSyncStage,
+  writeBackgroundSyncStage,
+} from '@/services/backgroundSyncStage'
 import {
   applyExchangeResults,
   completeLocalBootstrap,
@@ -166,11 +169,7 @@ export async function flushBeforeSignOut(accountId: string) {
 export async function clearBackgroundSyncStage() {
   if (!Capacitor.isNativePlatform()) return
   try {
-    await BackgroundRunner.dispatchEvent({
-      label: 'dev.coulombe.mom.sync',
-      event: 'clearSync',
-      details: {},
-    })
+    await removeBackgroundSyncStage()
   } catch {
     // The account database is still erased; an empty idempotent batch cannot be restaged.
   }
@@ -332,25 +331,21 @@ async function stageNativeBackgroundBatch(accountId: string) {
     pendingOperations(accountId),
   ])
   try {
-    await BackgroundRunner.dispatchEvent({
-      label: 'dev.coulombe.mom.sync',
-      event: 'stageSync',
-      details: {
-        url: `${baseUrl}/sync/exchange`,
-        token: api.authStore.token,
-        clientId: metadata.clientId,
-        cursor: metadata.cursor,
-        operations: operations.map(operation => ({
-          operationId: operation.operationId,
-          transactionId: operation.transactionId,
-          resource: operation.resource,
-          recordId: operation.recordId,
-          kind: operation.kind,
-          payload: operation.payload,
-          fieldClocks: operation.fieldClocks,
-          dependsOn: operation.dependsOn,
-        })),
-      },
+    await writeBackgroundSyncStage({
+      url: `${baseUrl}/sync/exchange`,
+      token: api.authStore.token,
+      clientId: metadata.clientId,
+      cursor: metadata.cursor,
+      operations: operations.map(operation => ({
+        operationId: operation.operationId,
+        transactionId: operation.transactionId,
+        resource: operation.resource,
+        recordId: operation.recordId,
+        kind: operation.kind,
+        payload: operation.payload,
+        fieldClocks: operation.fieldClocks,
+        dependsOn: operation.dependsOn,
+      })),
     })
   } catch {
     // Background scheduling is opportunistic; foreground sync remains authoritative.
