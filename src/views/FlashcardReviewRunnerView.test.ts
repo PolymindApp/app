@@ -62,6 +62,33 @@ const ButtonStub = defineComponent({
   `,
 })
 
+const FlashcardContextActionsStub = defineComponent({
+  props: { modelValue: Boolean },
+  template: '<div v-if="modelValue" class="flashcard-context-actions" />',
+})
+
+const RunnerSessionActionsStub = defineComponent({
+  name: 'RunnerSessionActions',
+  props: {
+    modelValue: Boolean,
+    items: { type: Array, default: () => [] },
+  },
+  emits: ['update:modelValue', 'action'],
+  template: `
+    <div v-if="modelValue" class="runner-session-actions">
+      <button
+        v-for="item in items"
+        :key="item.action"
+        type="button"
+        :data-action="item.action"
+        :disabled="item.disabled"
+        :aria-pressed="item.toggle ? item.active : undefined"
+        @click="$emit('update:modelValue', false); $emit('action', item.action)"
+      >{{ item.title }}</button>
+    </div>
+  `,
+})
+
 const reviewSet: FlashcardReviewSet = {
   id: 'set-1',
   name: 'Vocabulary',
@@ -143,9 +170,10 @@ function mountRunner() {
         AppForm: { template: '<form><slot /></form>' },
         ConfirmDialog: true,
         FlashcardCardDialog: true,
-        FlashcardContextActions: true,
+        FlashcardContextActions: FlashcardContextActionsStub,
         FlashcardResponseText: true,
         FlashcardReviewSettingsFields: true,
+        RunnerSessionActions: RunnerSessionActionsStub,
         VAlert: true,
         VBtn: ButtonStub,
         VCard: { template: '<section><slot /></section>' },
@@ -177,6 +205,7 @@ describe('FlashcardReviewRunnerView Review set preview', () => {
     mocks.store.load.mockReset().mockResolvedValue(undefined)
     mocks.store.loadSession.mockReset()
     mocks.store.loadReviewSetCards.mockReset()
+    mocks.store.act.mockReset()
     mocks.store.startReview.mockReset().mockImplementation(async () => {
       const session = runningSession()
       mocks.store.sessions.unshift(session)
@@ -190,8 +219,14 @@ describe('FlashcardReviewRunnerView Review set preview', () => {
 
     expect(mocks.store.startReview).not.toHaveBeenCalled()
     expect(wrapper.get('[aria-label="Start review"]').attributes('disabled')).toBeUndefined()
-    expect(wrapper.get('[aria-label="End review"]').attributes('disabled')).toBeDefined()
     expect(wrapper.find('[aria-label="Eject current card"]').exists()).toBe(false)
+    expect(wrapper.findAll('button').filter(button => button.text() === 'Options')).toHaveLength(0)
+    expect(wrapper.getComponent(RunnerSessionActionsStub).props('items')).toEqual([
+      expect.objectContaining({ action: 'options', disabled: true }),
+      expect.objectContaining({ action: 'eject', disabled: true }),
+      expect.objectContaining({ action: 'restart', disabled: true }),
+      expect.objectContaining({ action: 'end', disabled: true }),
+    ])
 
     await wrapper.get('[aria-label="Start review"]').trigger('click')
     await flushPromises()
@@ -207,12 +242,17 @@ describe('FlashcardReviewRunnerView Review set preview', () => {
       query: {},
     })
     expect(wrapper.find('[aria-label="Pause review"]').exists()).toBe(true)
-    expect(wrapper.find('[aria-label="Eject current card"]').exists()).toBe(true)
+    expect(wrapper.getComponent(RunnerSessionActionsStub).props('items')).toEqual([
+      expect.objectContaining({ action: 'options', disabled: false }),
+      expect.objectContaining({ action: 'eject', disabled: false }),
+      expect.objectContaining({ action: 'restart', disabled: false }),
+      expect.objectContaining({ action: 'end', disabled: false }),
+    ])
 
     wrapper.unmount()
   })
 
-  it('toggles TTS over-amplification without replaying before Stop', async () => {
+  it('orders Review actions and toggles TTS amplification without replaying', async () => {
     const active = {
       ...runningSession(),
       speechEnabled: true,
@@ -227,19 +267,69 @@ describe('FlashcardReviewRunnerView Review set preview', () => {
     mocks.speakFlashcardText.mockClear()
 
     const actions = wrapper.get('.runner-header__actions').findAll('button')
-    expect(actions.map(button => button.attributes('aria-label'))).toEqual([
-      'Enable TTS over-amplification',
-      'End review',
-    ])
-    expect(actions[0]!.attributes('aria-pressed')).toBe('false')
+    expect(actions.map(button => button.attributes('aria-label'))).toEqual(['Review actions'])
 
     await actions[0]!.trigger('click')
+    const menuItems = wrapper.findAll('.runner-session-actions button')
+    expect(menuItems.map(button => button.text())).toEqual([
+      'Card options',
+      'Enable TTS amplification',
+      'Eject current card',
+      'Restart review',
+      'End review',
+    ])
+    expect(menuItems[1]!.attributes('aria-pressed')).toBe('false')
+
+    await menuItems[1]!.trigger('click')
     await flushPromises()
 
     expect(mocks.toggleSpeechOverAmplification).toHaveBeenCalledOnce()
     expect(mocks.speakFlashcardText).not.toHaveBeenCalled()
-    expect(actions[0]!.attributes('aria-label')).toBe('Disable TTS over-amplification')
-    expect(actions[0]!.attributes('aria-pressed')).toBe('true')
+
+    await actions[0]!.trigger('click')
+    expect(wrapper.get('[data-action="amplification"]').text()).toBe('Disable TTS amplification')
+    expect(wrapper.get('[data-action="amplification"]').attributes('aria-pressed')).toBe('true')
+
+    await wrapper.get('[data-action="options"]').trigger('click')
+    expect(wrapper.find('.flashcard-context-actions').exists()).toBe(true)
+
+    wrapper.unmount()
+  })
+
+  it('restarts the Review set session from the actions menu', async () => {
+    const active = {
+      ...runningSession(),
+      elapsedSeconds: 42,
+      viewedCount: 3,
+      successCount: 2,
+      errorCount: 1,
+    }
+    mocks.route.params = { sessionId: active.id }
+    mocks.store.sessions = reactive([active])
+    mocks.store.loadSession.mockResolvedValue(active)
+    mocks.store.act.mockImplementation(async (_id, action) => {
+      if (action !== 'restart') return active
+      Object.assign(active, {
+        status: 'running',
+        elapsedSeconds: 0,
+        viewedCount: 0,
+        successCount: 0,
+        errorCount: 0,
+        ejectedCount: 0,
+      })
+      return active
+    })
+
+    const wrapper = mountRunner()
+    await flushPromises()
+
+    await wrapper.get('[aria-label="Review actions"]').trigger('click')
+    await wrapper.get('[data-action="restart"]').trigger('click')
+    await flushPromises()
+
+    expect(mocks.store.act).toHaveBeenCalledWith('session-1', 'restart', expect.any(Number))
+    expect(active.elapsedSeconds).toBe(0)
+    expect(active.viewedCount).toBe(0)
 
     wrapper.unmount()
   })

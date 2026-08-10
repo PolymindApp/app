@@ -3827,7 +3827,8 @@ final class Api
         }
         $action = $body['action'];
         $validActions = [
-            'success', 'error', 'view', 'previous', 'next', 'push', 'eject', 'pause', 'resume', 'end',
+            'success', 'error', 'view', 'previous', 'next', 'push', 'eject', 'pause', 'resume',
+            'restart', 'end',
         ];
         if (!in_array($action, $validActions, true)) {
             throw new ApiException(422, 'The review action is invalid.');
@@ -3873,7 +3874,21 @@ final class Api
             $totalCards = (int) $session['total_cards'];
             $occurrence = null;
 
-            if ($action === 'pause') {
+            if ($action === 'restart') {
+                $selection = $this->flashcardReviewSelection([
+                    'tags' => $session['tags_snapshot'],
+                    'sort_mode' => $session['sort_snapshot'],
+                    'max_cards' => $session['max_cards_snapshot'],
+                ], (string) ($session['source_owner'] ?: $owner), $owner);
+                $queue = $selection['queue'];
+                $endedAt = '';
+                $elapsedSeconds = 0;
+                $viewedCount = 0;
+                $successCount = 0;
+                $errorCount = 0;
+                $ejectedCount = 0;
+                $totalCards = count($queue);
+            } elseif ($action === 'pause') {
                 if ($status !== 'running') {
                     throw new ApiException(409, 'This flashcard review is already paused.');
                 }

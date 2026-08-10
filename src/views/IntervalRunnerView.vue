@@ -11,6 +11,7 @@ import FlashcardReviewSettingsFields from '@/components/FlashcardReviewSettingsF
 import AppForm from '@/components/AppForm.vue'
 import IntervalTypeIcon from '@/components/IntervalTypeIcon.vue'
 import LabeledSlider from '@/components/LabeledSlider.vue'
+import RunnerSessionActions from '@/components/RunnerSessionActions.vue'
 import { stopBackgroundInterval, syncBackgroundInterval } from '@/services/backgroundInterval'
 import {
   flashcardSpeechOverAmplificationIsEnabled,
@@ -52,6 +53,7 @@ import {
   MIN_GLOBAL_REPETITIONS,
 } from '@/services/intervals'
 import { isTaskScheduled, stepsForDate, toDateKey } from '@/services/schedule'
+import { intervalRunnerSessionMenuItems } from '@/services/runnerSessionActions'
 import { useFlashcardStore } from '@/stores/flashcards'
 import { useIntervalStore } from '@/stores/intervals'
 import { useTaskStore } from '@/stores/tasks'
@@ -64,6 +66,7 @@ import type {
   IntervalFlashcardReviewSnapshot,
   IntervalRuntimeState,
   IntervalSession,
+  RunnerSessionAction,
 } from '@/types/domain'
 
 const route = useRoute()
@@ -76,6 +79,7 @@ const syncing = ref(false)
 const starting = ref(false)
 const speechOverAmplified = ref(flashcardSpeechOverAmplificationIsEnabled())
 const speechOverAmplificationBusy = ref(false)
+const sessionActionsSheet = ref(false)
 const endDialog = ref(false)
 const noteDialog = ref(false)
 const noteDraft = ref('')
@@ -187,6 +191,13 @@ const flashcardReviewSet = computed(() => flashcardStore.reviewSets
 const canManageIntervalCards = computed(() => Boolean(
   flashcardReviewSet.value && flashcardReviewSet.value.accessRole !== 'readonly',
 ))
+const sessionActionItems = computed(() => intervalRunnerSessionMenuItems({
+  speechAvailable: Boolean(session.value?.flashcardReview?.speechEnabled && flashcardPhase.value),
+  amplified: speechOverAmplified.value,
+  busy: syncing.value || starting.value || speechOverAmplificationBusy.value,
+  preview: isTemplatePreview.value,
+}))
+const sessionActionsDisabled = computed(() => sessionActionItems.value.every(item => item.disabled))
 const intervalFlashcardSource = computed(() => {
   const reviewSet = flashcardReviewSet.value
   if (!reviewSet) return []
@@ -445,6 +456,12 @@ async function toggleSpeechOverAmplification() {
   } finally {
     speechOverAmplificationBusy.value = false
   }
+}
+
+function handleRunnerSessionAction(action: RunnerSessionAction) {
+  if (action === 'amplification') void toggleSpeechOverAmplification()
+  else if (action === 'restart') void restart()
+  else if (action === 'end') endDialog.value = true
 }
 
 function pulseTimer(effect: 'count') {
@@ -1241,20 +1258,14 @@ async function runAgain(repetitions?: number) {
           </div>
           <div class="runner-header__actions">
             <v-btn
-              v-if="session.flashcardReview?.speechEnabled && flashcardPhase"
-              class="runner-header__speech-button"
-              :icon="speechOverAmplified ? 'mdi-volume-plus' : 'mdi-volume-high'"
-              :variant="speechOverAmplified ? 'tonal' : 'text'"
-              :color="speechOverAmplified ? 'secondary' : undefined"
-              :aria-label="speechOverAmplified
-                ? 'Disable TTS over-amplification'
-                : 'Enable TTS over-amplification'"
-              :aria-pressed="speechOverAmplified"
-              :disabled="syncing || starting || speechOverAmplificationBusy"
+              icon="mdi-dots-vertical"
+              variant="text"
+              class="runner-actions-button"
+              aria-label="Interval actions"
+              :disabled="sessionActionsDisabled"
               @touchstart.stop
-              @click.stop="toggleSpeechOverAmplification"
+              @click.stop="sessionActionsSheet = true"
             />
-            <v-btn icon="mdi-stop-circle-outline" variant="text" color="error" aria-label="End session" :disabled="isTemplatePreview" @click="endDialog = true" />
           </div>
         </header>
 
@@ -1362,7 +1373,6 @@ async function runAgain(repetitions?: number) {
               @click.stop="isTemplatePreview ? requestStartTemplate() : session.status === 'paused' ? resume() : pause()"
             />
             <v-btn icon="mdi-skip-next" variant="tonal" size="large" aria-label="Skip interval" :disabled="isTemplatePreview || currentConfirmation" @click="skip" />
-            <v-btn prepend-icon="mdi-restart" variant="text" class="restart-button" :disabled="isTemplatePreview" @click="restart">Restart</v-btn>
           </footer>
 
           <button
@@ -1453,26 +1463,26 @@ async function runAgain(repetitions?: number) {
               :to="returnTo"
             />
             <v-btn
-              icon="mdi-restart"
+              icon="mdi-dots-vertical"
               variant="text"
-              class="restart-button"
-              aria-label="Restart interval"
-              :disabled="isTemplatePreview"
-              @click="restart"
-            />
-            <v-btn
-              icon="mdi-stop-circle-outline"
-              variant="text"
-              color="error"
-              class="runner-stop-button"
-              aria-label="Stop interval"
-              :disabled="isTemplatePreview"
-              @click="endDialog = true"
+              class="runner-actions-button"
+              aria-label="Interval actions"
+              :disabled="sessionActionsDisabled"
+              @touchstart.stop
+              @click.stop="sessionActionsSheet = true"
             />
           </footer>
         </div>
       </div>
     </transition>
+
+    <RunnerSessionActions
+      v-model="sessionActionsSheet"
+      title="Interval actions"
+      aria-label="Interval session actions"
+      :items="sessionActionItems"
+      @action="handleRunnerSessionAction"
+    />
 
     <FlashcardContextActions
       v-model="flashcardContextSheet"
@@ -1736,7 +1746,7 @@ async function runAgain(repetitions?: number) {
 }
 .runner-header { display: grid; grid-template-columns: 3rem minmax(0, 1fr) auto; align-items: center; }
 .runner-header__actions { display: flex; align-items: center; justify-content: flex-end; gap: .125rem; }
-.runner-header__speech-button { min-width: 2.75rem; min-height: 2.75rem; }
+.runner-actions-button { min-width: 2.75rem; min-height: 2.75rem; }
 .runner-label { color: rgb(var(--v-theme-on-surface) / .52); font-size: .68rem; font-weight: 850; letter-spacing: .1em; text-transform: uppercase; }
 .runner-stage { position: relative; display: flex; min-height: 0; flex: 1; flex-direction: column; isolation: isolate; }
 .runner-type-backdrop {
@@ -1863,7 +1873,6 @@ async function runAgain(repetitions?: number) {
 .next-copy { color: rgb(var(--v-theme-on-surface) / .56); font-size: .78rem; }
 .runner-controls { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; justify-items: center; gap: 1rem; }
 .runner-controls--landscape { display: none; }
-.restart-button { grid-column: 1 / -1; }
 .finish-card { width: 100%; max-width: 620px; margin: auto; text-align: center; }
 .finish-icon { display: grid; width: 72px; height: 72px; margin: 0 auto 1rem; place-items: center; border-radius: 24px; background: rgb(var(--v-theme-secondary)); color: rgb(var(--v-theme-on-secondary)); }
 .finish-card h1 { margin-top: .75rem; font-size: clamp(2.8rem, 12vw, 5rem); }
@@ -2172,16 +2181,8 @@ async function runAgain(repetitions?: number) {
     grid-column: 1;
   }
 
-  .runner-controls--landscape .restart-button {
-    grid-column: 2;
-  }
-
-  .runner-controls--landscape .runner-stop-button {
+  .runner-controls--landscape .runner-actions-button {
     grid-column: 3;
-  }
-
-  .restart-button {
-    grid-column: 1 / -1;
   }
 
   .runner-page--finished {

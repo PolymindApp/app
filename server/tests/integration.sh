@@ -1708,6 +1708,31 @@ navigation_restored_front="$(php -r '
 curl --silent --show-error --fail \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $alice_token" \
+  --data '{"action":"success","elapsed_seconds":3}' \
+  "$api_url/flashcard-review-sessions/$navigation_session_id/actions" >/dev/null
+navigation_restart_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"action":"restart","elapsed_seconds":3}' \
+  "$api_url/flashcard-review-sessions/$navigation_session_id/actions")"
+navigation_restart_summary="$(php -r '
+  $data = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+  $session = $data["session"];
+  echo $session["status"] . ":"
+    . count($session["queue_state"]) . ":"
+    . $session["elapsed_seconds"] . ":"
+    . $session["viewed_count"] . ":"
+    . $session["success_count"] . ":"
+    . $session["error_count"] . ":"
+    . $session["ejected_count"];
+' <<<"$navigation_restart_response")"
+[[ "$navigation_restart_summary" == "running:2:0:0:0:0:0" ]] || {
+  echo "Restarting a Review set session did not reset its queue, timer, and counters." >&2
+  exit 1
+}
+curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
   --data '{"action":"end","elapsed_seconds":0}' \
   "$api_url/flashcard-review-sessions/$navigation_session_id/actions" >/dev/null
 curl --silent --show-error --fail \

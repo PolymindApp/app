@@ -254,10 +254,10 @@ export function sortFlashcardsForReview(
   })
 }
 
-function flashcardReviewQueue(
+export function flashcardReviewQueue(
   reviewSet: FlashcardReviewSet,
   cards: Flashcard[],
-  random: () => number,
+  random = Math.random,
 ) {
   return sortFlashcardsForReview(
     cards.filter(card => cardMatchesTags(card, reviewSet.tags)),

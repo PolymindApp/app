@@ -97,6 +97,28 @@ const ConfirmDialogStub = defineComponent({
   `,
 })
 
+const RunnerSessionActionsStub = defineComponent({
+  name: 'RunnerSessionActions',
+  props: {
+    modelValue: Boolean,
+    items: { type: Array, default: () => [] },
+  },
+  emits: ['update:modelValue', 'action'],
+  template: `
+    <div v-if="modelValue" class="runner-session-actions">
+      <button
+        v-for="item in items"
+        :key="item.action"
+        type="button"
+        :data-action="item.action"
+        :disabled="item.disabled"
+        :aria-pressed="item.toggle ? item.active : undefined"
+        @click="$emit('update:modelValue', false); $emit('action', item.action)"
+      >{{ item.title }}</button>
+    </div>
+  `,
+})
+
 function intervalSession(status: 'running' | 'paused', image = ''): IntervalSession {
   const now = new Date().toISOString()
   return {
@@ -166,6 +188,7 @@ function mountRunner() {
         FlashcardReviewSettingsFields: true,
         IntervalTypeIcon: true,
         LabeledSlider: true,
+        RunnerSessionActions: RunnerSessionActionsStub,
         VAlert: true,
         VBtn: true,
         VCard: true,
@@ -202,7 +225,7 @@ describe('IntervalRunnerView flashcard area', () => {
     mocks.toggleSpeechOverAmplification.mockReset().mockResolvedValue(true)
   })
 
-  it('toggles TTS over-amplification without replaying before Stop', async () => {
+  it('orders session actions and toggles TTS amplification without replaying', async () => {
     const active = intervalSession('running')
     if (!active.flashcardReview) throw new Error('Expected a Review set snapshot')
     active.flashcardReview.speechEnabled = true
@@ -214,29 +237,38 @@ describe('IntervalRunnerView flashcard area', () => {
     vi.mocked(speakFlashcardText).mockClear()
 
     const actions = wrapper.get('.runner-header__actions').findAllComponents({ name: 'VBtn' })
-    expect(actions.map(button => button.attributes('aria-label'))).toEqual([
-      'Enable TTS over-amplification',
-      'End session',
-    ])
-    expect(actions[0]!.attributes('aria-pressed')).toBe('false')
+    expect(actions.map(button => button.attributes('aria-label'))).toEqual(['Interval actions'])
 
     await actions[0]!.trigger('click')
+    const menuItems = wrapper.findAll('.runner-session-actions button')
+    expect(menuItems.map(button => button.text())).toEqual([
+      'Enable TTS amplification',
+      'Restart interval',
+      'End session',
+    ])
+    expect(menuItems[0]!.attributes('aria-pressed')).toBe('false')
+
+    await menuItems[0]!.trigger('click')
     await flushPromises()
 
     expect(mocks.toggleSpeechOverAmplification).toHaveBeenCalledOnce()
     expect(speakFlashcardText).not.toHaveBeenCalled()
-    expect(actions[0]!.attributes('aria-label')).toBe('Disable TTS over-amplification')
-    expect(actions[0]!.attributes('aria-pressed')).toBe('true')
+
+    await actions[0]!.trigger('click')
+    expect(wrapper.get('[data-action="amplification"]').text()).toBe('Disable TTS amplification')
+    expect(wrapper.get('[data-action="amplification"]').attributes('aria-pressed')).toBe('true')
 
     wrapper.unmount()
   })
 
-  it('places the mini Review set card below the portrait Restart control', async () => {
+  it('places the mini Review set card below the portrait controls without a Restart button', async () => {
     const wrapper = mountRunner()
     await flushPromises()
 
     const portraitControls = wrapper.get('.runner-controls--portrait').element
     expect(portraitControls.nextElementSibling).toBe(wrapper.get('.interval-review-card').element)
+    expect(wrapper.find('.restart-button').exists()).toBe(false)
+    expect(wrapper.findAll('[aria-label="Interval actions"]')).toHaveLength(2)
 
     wrapper.unmount()
   })

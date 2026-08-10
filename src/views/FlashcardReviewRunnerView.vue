@@ -7,6 +7,7 @@ import FlashcardCardDialog from '@/components/FlashcardCardDialog.vue'
 import FlashcardContextActions from '@/components/FlashcardContextActions.vue'
 import FlashcardResponseText from '@/components/FlashcardResponseText.vue'
 import FlashcardReviewSettingsFields from '@/components/FlashcardReviewSettingsFields.vue'
+import RunnerSessionActions from '@/components/RunnerSessionActions.vue'
 import {
   backgroundFlashcardReviewState,
   flashcardSpeechOverAmplificationIsEnabled,
@@ -19,6 +20,7 @@ import {
   toggleFlashcardSpeechOverAmplification,
 } from '@/services/flashcardSpeech'
 import { playReviewCompleteCue } from '@/services/intervalCues'
+import { reviewRunnerSessionMenuItems } from '@/services/runnerSessionActions'
 import { requestScreenWakeLock, type ScreenWakeLock } from '@/services/screenWakeLock'
 import {
   createFlashcardReviewPreviewSession,
@@ -43,6 +45,7 @@ import type {
   FlashcardReviewSettings,
   FlashcardReviewSide,
   FlashcardSpeechSupport,
+  RunnerSessionAction,
 } from '@/types/domain'
 
 const route = useRoute()
@@ -52,6 +55,7 @@ const loading = ref(true)
 const busy = ref(false)
 const error = ref('')
 const revealed = ref(false)
+const sessionActionsSheet = ref(false)
 const endDialog = ref(false)
 const cardMenuOpen = ref(false)
 const cardEditorDialog = ref(false)
@@ -206,6 +210,16 @@ const sessionSettingsChanged = computed(() => sessionSettingsDialog.value
   && flashcardReviewSettingsSignature(sessionSettingsDraft) !== sessionSettingsOriginal.value)
 const canSaveSessionSettings = computed(() => sessionSettingsChanged.value
   && flashcardReviewSettingsAreValid(sessionSettingsDraft, sessionSettingsMinimumCards.value))
+const sessionActionItems = computed(() => reviewRunnerSessionMenuItems({
+  speechAvailable: Boolean(session.value?.speechEnabled && currentCard.value),
+  amplified: speechOverAmplified.value,
+  busy: busy.value || speechOverAmplificationBusy.value,
+  preview: isReviewSetPreview.value,
+  finished: isFinished.value,
+  hasCard: Boolean(currentCard.value),
+  canRestart: Boolean(session.value?.reviewSet),
+}))
+const sessionActionsDisabled = computed(() => sessionActionItems.value.every(item => item.disabled))
 
 watch([
   loading,
@@ -431,7 +445,7 @@ async function performAction(
     const updated = await store.act(session.value.id, action, elapsedSeconds.value)
     localElapsedMs.value = updated.elapsedSeconds * 1000
     lastTickAt = Date.now()
-    if (['success', 'error', 'view', 'previous', 'next', 'push', 'eject'].includes(action)) resetCurrentCardPhase()
+    if (['success', 'error', 'view', 'previous', 'next', 'push', 'eject', 'restart'].includes(action)) resetCurrentCardPhase()
     if (
       previousStatus === 'running'
       && updated.status === 'completed'
@@ -513,6 +527,18 @@ async function resumeReview() {
   await performAction('resume')
   lastTickAt = Date.now()
   visibilityPaused.value = false
+}
+
+async function restartReview() {
+  const value = session.value
+  if (!value?.reviewSet || isReviewSetPreview.value || isFinished.value || busy.value) return
+  lastSpokenKey = ''
+  speechPlaybackWarning.value = ''
+  await stopBackgroundFlashcardReview()
+  await stopFlashcardSpeech()
+  const restarted = await performAction('restart')
+  if (!restarted) await syncNativeBackground()
+  await speakCurrentSide()
 }
 
 function handleVisibilityChange() {
@@ -911,6 +937,14 @@ function handleSessionMenuAction(action: FlashcardContextAction) {
   }
 }
 
+function handleRunnerSessionAction(action: RunnerSessionAction) {
+  if (action === 'options') cardMenuOpen.value = true
+  else if (action === 'amplification') void toggleSpeechOverAmplification()
+  else if (action === 'eject') requestCurrentCardEjection()
+  else if (action === 'restart') void restartReview()
+  else if (action === 'end') endDialog.value = true
+}
+
 async function ejectCurrentCard() {
   if (!session.value || busy.value) return
   const restorePaused = session.value.status === 'paused'
@@ -962,26 +996,13 @@ async function leaveRunner() {
         </div>
         <div class="runner-header__actions">
           <v-btn
-            v-if="session.speechEnabled && currentCard"
-            class="runner-header__speech-button"
-            :icon="speechOverAmplified ? 'mdi-volume-plus' : 'mdi-volume-high'"
-            :variant="speechOverAmplified ? 'tonal' : 'text'"
-            :color="speechOverAmplified ? 'secondary' : undefined"
-            :aria-label="speechOverAmplified
-              ? 'Disable TTS over-amplification'
-              : 'Enable TTS over-amplification'"
-            :aria-pressed="speechOverAmplified"
-            :disabled="isFinished || busy || speechOverAmplificationBusy"
-            @touchstart.stop
-            @click.stop="toggleSpeechOverAmplification"
-          />
-          <v-btn
-            icon="mdi-stop-circle-outline"
+            icon="mdi-dots-vertical"
             variant="text"
-            color="error"
-            aria-label="End review"
-            :disabled="isReviewSetPreview || isFinished || busy"
-            @click="endDialog = true"
+            class="runner-actions-button"
+            aria-label="Review actions"
+            :disabled="sessionActionsDisabled"
+            @touchstart.stop
+            @click.stop="sessionActionsSheet = true"
           />
         </div>
       </header>
@@ -1239,33 +1260,16 @@ async function leaveRunner() {
           </div>
         </footer>
 
-        <div class="d-flex justify-center ga-2">
-          <v-btn
-            v-if="!isReviewSetPreview"
-            size="large"
-            variant="text"
-            color="warning"
-            prepend-icon="mdi-eject-outline"
-            aria-label="Eject current card"
-            :disabled="busy || !currentCard"
-            @click="requestCurrentCardEjection"
-          >
-            Eject card
-          </v-btn>
-          <v-btn
-            size="large"
-            variant="text"
-            :disabled="isReviewSetPreview || busy"
-            @click="cardMenuOpen = true"
-          >
-            <template #prepend>
-              <v-icon icon="mdi-dots-horizontal" size="1.125rem" />
-            </template>
-            Options
-          </v-btn>
-        </div>
       </section>
     </template>
+
+    <RunnerSessionActions
+      v-model="sessionActionsSheet"
+      title="Review actions"
+      aria-label="Review session actions"
+      :items="sessionActionItems"
+      @action="handleRunnerSessionAction"
+    />
 
     <FlashcardContextActions
       v-model="cardMenuOpen"
@@ -1375,7 +1379,7 @@ async function leaveRunner() {
 .runner-header__title strong { max-width: 100%; font-size: .88rem; }
 .runner-header__title span { color: rgba(var(--v-theme-on-surface), .52); font-size: .68rem; font-weight: 800; }
 .runner-header__actions { display: flex; align-items: center; justify-content: flex-end; gap: .125rem; }
-.runner-header__speech-button { min-width: 2.75rem; min-height: 2.75rem; }
+.runner-actions-button { min-width: 2.75rem; min-height: 2.75rem; }
 .runner-state { display: flex; min-height: 100dvh; align-items: center; justify-content: center; flex-direction: column; gap: 1rem; }
 .runner-alert { width: min(44rem, calc(100% - 2rem)); flex: 0 0 auto; margin: 1rem auto 0; }
 .runner-alert--speech { width: fit-content; max-width: calc(100% - 2rem); margin-top: .5rem; padding: .25rem .5rem !important; font-size: .7rem; line-height: 1.35; }

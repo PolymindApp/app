@@ -8,6 +8,7 @@ import {
   DEFAULT_FLASHCARD_BACK_SPEECH_REPEATS,
   DEFAULT_FLASHCARD_REVIEW_CARD_SIDES,
   DEFAULT_FLASHCARD_SESSION_CARDS,
+  flashcardReviewQueue,
 } from '@/services/flashcards'
 import { useSnackbarStore } from '@/stores/snackbar'
 import { useTaskStore } from '@/stores/tasks'
@@ -747,7 +748,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       throw new Error('This flashcard review has already ended.')
     }
 
-    const queue = current.queue.map(card => ({ ...card, tags: [...card.tags] }))
+    let queue = current.queue.map(card => ({ ...card, tags: [...card.tags] }))
     const now = new Date().toISOString()
     let status = current.status
     let endedAt = current.endedAt || ''
@@ -758,7 +759,27 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     let totalCards = current.totalCards
     let event: Record<string, unknown> | undefined
 
-    if (action === 'pause') {
+    if (action === 'restart') {
+      const reviewSet = reviewSets.value.find(item => item.id === current.reviewSet)
+      if (!reviewSet) throw new Error('The Review set for this session is no longer available.')
+      let availableCards = reviewSet.accessRole === 'owner'
+        ? cards.value
+        : reviewSetCards.value[reviewSet.id]
+      if (!availableCards) availableCards = await loadReviewSetCards(reviewSet.id)
+      queue = flashcardReviewQueue({
+        ...reviewSet,
+        tags: [...current.tags],
+        sortMode: current.sortMode,
+        maxCards: current.maxCards,
+      }, availableCards)
+      if (!queue.length) throw new Error('No flashcards match this Review set.')
+      endedAt = ''
+      viewedCount = 0
+      successCount = 0
+      errorCount = 0
+      ejectedCount = 0
+      totalCards = queue.length
+    } else if (action === 'pause') {
       status = 'paused'
     } else if (action === 'resume') {
       status = 'running'
@@ -805,7 +826,9 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       queue_state: queue,
       updated_at: now,
       ended_at: endedAt,
-      elapsed_seconds: Math.max(current.elapsedSeconds, Math.round(elapsedSeconds)),
+      elapsed_seconds: action === 'restart'
+        ? 0
+        : Math.max(current.elapsedSeconds, Math.round(elapsedSeconds)),
       viewed_count: viewedCount,
       success_count: successCount,
       error_count: errorCount,
