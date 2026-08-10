@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
     query: {} as Record<string, string>,
   },
   router: { replace: vi.fn() },
+  speechOverAmplificationIsEnabled: vi.fn(),
   intervalStore: {
     loaded: true,
     templates: [],
@@ -41,6 +42,7 @@ const mocks = vi.hoisted(() => ({
   },
   speakFlashcardText: vi.fn(),
   stopFlashcardSpeech: vi.fn(),
+  toggleSpeechOverAmplification: vi.fn(),
 }))
 
 vi.mock('vue-router', () => ({
@@ -56,9 +58,11 @@ vi.mock('@/services/backgroundInterval', () => ({
   syncBackgroundInterval: vi.fn().mockResolvedValue(undefined),
 }))
 vi.mock('@/services/flashcardSpeech', () => ({
+  flashcardSpeechOverAmplificationIsEnabled: mocks.speechOverAmplificationIsEnabled,
   loadFlashcardSpeechSupport: vi.fn().mockResolvedValue({ available: false, languages: [] }),
   speakFlashcardText: mocks.speakFlashcardText,
   stopFlashcardSpeech: mocks.stopFlashcardSpeech,
+  toggleFlashcardSpeechOverAmplification: mocks.toggleSpeechOverAmplification,
 }))
 vi.mock('@/services/intervalCues', () => ({
   notifyIntervalTransition: vi.fn().mockResolvedValue(undefined),
@@ -192,11 +196,13 @@ describe('IntervalRunnerView flashcard area', () => {
     mocks.intervalStore.load.mockReset().mockResolvedValue(undefined)
     mocks.flashcardStore.load.mockReset().mockResolvedValue(undefined)
     mocks.taskStore.load.mockReset().mockResolvedValue(undefined)
+    mocks.speechOverAmplificationIsEnabled.mockReset().mockReturnValue(false)
     mocks.speakFlashcardText.mockReset().mockResolvedValue(undefined)
     mocks.stopFlashcardSpeech.mockReset().mockResolvedValue(undefined)
+    mocks.toggleSpeechOverAmplification.mockReset().mockResolvedValue(true)
   })
 
-  it('replays the current TTS from the header button before Stop', async () => {
+  it('toggles TTS over-amplification without replaying before Stop', async () => {
     const active = intervalSession('running')
     if (!active.flashcardReview) throw new Error('Expected a Review set snapshot')
     active.flashcardReview.speechEnabled = true
@@ -209,14 +215,18 @@ describe('IntervalRunnerView flashcard area', () => {
 
     const actions = wrapper.get('.runner-header__actions').findAllComponents({ name: 'VBtn' })
     expect(actions.map(button => button.attributes('aria-label'))).toEqual([
-      'Replay current speech',
+      'Enable TTS over-amplification',
       'End session',
     ])
+    expect(actions[0]!.attributes('aria-pressed')).toBe('false')
 
     await actions[0]!.trigger('click')
     await flushPromises()
 
-    expect(speakFlashcardText).toHaveBeenCalledWith('House', 'en-CA')
+    expect(mocks.toggleSpeechOverAmplification).toHaveBeenCalledOnce()
+    expect(speakFlashcardText).not.toHaveBeenCalled()
+    expect(actions[0]!.attributes('aria-label')).toBe('Disable TTS over-amplification')
+    expect(actions[0]!.attributes('aria-pressed')).toBe('true')
 
     wrapper.unmount()
   })

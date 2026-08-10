@@ -1,4 +1,5 @@
 import { Capacitor, registerPlugin } from '@capacitor/core'
+import { flashcardSpeechOverAmplificationIsEnabled } from '@/services/flashcardSpeech'
 import {
   intervalFlashcardReviewElapsedMs,
   intervalStepCount,
@@ -36,6 +37,7 @@ interface BackgroundIntervalPlugin {
       speechEnabled: boolean
       frontLanguage: string
       backLanguage: string
+      overAmplified: boolean
     }
   }): Promise<void>
   playCue(options: { name: NativeIntervalCueName }): Promise<void>
@@ -99,6 +101,7 @@ export async function syncBackgroundInterval(session: IntervalSession) {
               speechEnabled: true,
               frontLanguage: session.flashcardReview.frontLanguage,
               backLanguage: session.flashcardReview.backLanguage,
+              overAmplified: flashcardSpeechOverAmplificationIsEnabled(),
             },
           }
         : {}),

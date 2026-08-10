@@ -85,6 +85,7 @@ describe('background interval Review set playback', () => {
         expect.objectContaining({ name: 'Read', flashcardReviewEnabled: true }),
         expect.objectContaining({ name: 'Silent', flashcardReviewEnabled: false }),
       ],
+      flashcardReview: expect.objectContaining({ overAmplified: false }),
     }))
   })
 })

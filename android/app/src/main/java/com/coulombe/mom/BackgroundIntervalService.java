@@ -19,6 +19,7 @@ import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.os.VibratorManager;
 import android.speech.tts.TextToSpeech;
+import android.speech.tts.UtteranceProgressListener;
 
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
@@ -54,6 +55,7 @@ public class BackgroundIntervalService extends Service {
     private final List<ReviewCard> reviewCards = new ArrayList<>();
     private PowerManager.WakeLock wakeLock;
     private TextToSpeech speech;
+    private TtsVolumeBoost volumeBoost;
     private boolean speechReady;
     private String sessionId = "";
     private String sessionName = "Interval";
@@ -75,6 +77,7 @@ public class BackgroundIntervalService extends Service {
     private String lastReviewSpeechKey = "";
     private String pendingReviewSpeechText = "";
     private String pendingReviewSpeechLanguage = "";
+    private boolean reviewSpeechOverAmplified;
     private boolean appWasVisible;
 
     private final Runnable ticker = new Runnable() {
@@ -140,6 +143,7 @@ public class BackgroundIntervalService extends Service {
     public void onCreate() {
         super.onCreate();
         createNotificationChannel();
+        volumeBoost = new TtsVolumeBoost(this);
         speech = new TextToSpeech(this, status -> {
             speechReady = status == TextToSpeech.SUCCESS;
             TextToSpeech currentSpeech = speech;
@@ -150,6 +154,25 @@ public class BackgroundIntervalService extends Service {
                         .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                         .build()
                 );
+                currentSpeech.setOnUtteranceProgressListener(new UtteranceProgressListener() {
+                    @Override
+                    public void onStart(String utteranceId) {}
+
+                    @Override
+                    public void onDone(String utteranceId) {
+                        volumeBoost.finish(utteranceId);
+                    }
+
+                    @Override
+                    public void onError(String utteranceId) {
+                        volumeBoost.finish(utteranceId);
+                    }
+
+                    @Override
+                    public void onStop(String utteranceId, boolean interrupted) {
+                        volumeBoost.finish(utteranceId);
+                    }
+                });
                 speakPendingReviewSide();
             }
         });
@@ -223,13 +246,13 @@ public class BackgroundIntervalService extends Service {
 
         if (encodedReview == null || encodedReview.trim().isEmpty()) {
             lastReviewSpeechKey = "";
-            if (speech != null) speech.stop();
+            stopSpeechPlayback();
             return;
         }
         JSONObject review = new JSONObject(encodedReview);
         if (!review.optBoolean("speechEnabled", false)) {
             lastReviewSpeechKey = "";
-            if (speech != null) speech.stop();
+            stopSpeechPlayback();
             return;
         }
 
@@ -255,6 +278,7 @@ public class BackgroundIntervalService extends Service {
             : "both";
         reviewFrontLanguage = review.optString("frontLanguage", "").trim();
         reviewBackLanguage = review.optString("backLanguage", "").trim();
+        reviewSpeechOverAmplified = review.optBoolean("overAmplified", false);
         if (!previousSessionId.equals(sessionId)) lastReviewSpeechKey = "";
         if (!currentStepPlaysFlashcardReview()) pauseReviewSpeech();
     }
@@ -270,7 +294,7 @@ public class BackgroundIntervalService extends Service {
         lastReviewSpeechKey = "";
         pendingReviewSpeechText = "";
         pendingReviewSpeechLanguage = "";
-        if (speech != null) speech.stop();
+        stopSpeechPlayback();
     }
 
     private long currentReviewElapsedMs(long now) {
@@ -321,7 +345,7 @@ public class BackgroundIntervalService extends Service {
             return;
         }
         if (appVisible) {
-            if (!appWasVisible && speech != null) speech.stop();
+            if (!appWasVisible) stopSpeechPlayback();
             lastReviewSpeechKey = "";
             pendingReviewSpeechText = "";
             pendingReviewSpeechLanguage = "";
@@ -357,14 +381,22 @@ public class BackgroundIntervalService extends Service {
             availability == TextToSpeech.LANG_MISSING_DATA
             || availability == TextToSpeech.LANG_NOT_SUPPORTED
         ) return;
-        speech.speak(
+        String utteranceId = "mom-background-interval-flashcard-" + System.nanoTime();
+        volumeBoost.start(utteranceId, reviewSpeechOverAmplified);
+        int result = speech.speak(
             pendingReviewSpeechText,
             TextToSpeech.QUEUE_FLUSH,
             null,
-            "mom-background-interval-flashcard-" + System.nanoTime()
+            utteranceId
         );
+        if (result == TextToSpeech.ERROR) volumeBoost.finish(utteranceId);
         pendingReviewSpeechText = "";
         pendingReviewSpeechLanguage = "";
+    }
+
+    private void stopSpeechPlayback() {
+        if (speech != null) speech.stop();
+        if (volumeBoost != null) volumeBoost.stop();
     }
 
     private void startAsForeground() {
@@ -399,7 +431,7 @@ public class BackgroundIntervalService extends Service {
         if (!MainActivity.isAppVisible()) playCompleteCue();
         running = false;
         handler.removeCallbacks(ticker);
-        if (speech != null) speech.stop();
+        stopSpeechPlayback();
         releaseWakeLock();
         NotificationManager manager = getSystemService(NotificationManager.class);
         manager.notify(NOTIFICATION_ID + 1, buildNotification(true));
@@ -410,7 +442,7 @@ public class BackgroundIntervalService extends Service {
     private void stopTimer() {
         running = false;
         handler.removeCallbacks(ticker);
-        if (speech != null) speech.stop();
+        stopSpeechPlayback();
         releaseWakeLock();
         stopForeground(STOP_FOREGROUND_REMOVE);
         stopSelf();
@@ -545,6 +577,7 @@ public class BackgroundIntervalService extends Service {
         running = false;
         handler.removeCallbacksAndMessages(null);
         releaseWakeLock();
+        if (volumeBoost != null) volumeBoost.stop();
         if (speech != null) {
             speech.stop();
             speech.shutdown();

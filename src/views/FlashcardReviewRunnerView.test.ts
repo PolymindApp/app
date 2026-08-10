@@ -9,7 +9,9 @@ const mocks = vi.hoisted(() => ({
     query: {} as Record<string, string>,
   },
   router: { replace: vi.fn() },
+  speechOverAmplificationIsEnabled: vi.fn(),
   speakFlashcardText: vi.fn(),
+  toggleSpeechOverAmplification: vi.fn(),
   store: {
     loaded: true,
     reviewSets: [] as FlashcardReviewSet[],
@@ -32,12 +34,14 @@ vi.mock('vue-router', () => ({
 vi.mock('@/stores/flashcards', () => ({ useFlashcardStore: () => mocks.store }))
 vi.mock('@/services/flashcardSpeech', () => ({
   backgroundFlashcardReviewState: vi.fn().mockResolvedValue(undefined),
+  flashcardSpeechOverAmplificationIsEnabled: mocks.speechOverAmplificationIsEnabled,
   loadFlashcardSpeechSupport: vi.fn().mockResolvedValue({ available: false, languages: [] }),
   nativeFlashcardBackgroundIsAvailable: vi.fn().mockReturnValue(false),
   speakFlashcardText: mocks.speakFlashcardText,
   stopBackgroundFlashcardReview: vi.fn().mockResolvedValue(undefined),
   stopFlashcardSpeech: vi.fn().mockResolvedValue(undefined),
   syncBackgroundFlashcardReview: vi.fn().mockResolvedValue(false),
+  toggleFlashcardSpeechOverAmplification: mocks.toggleSpeechOverAmplification,
 }))
 vi.mock('@/services/intervalCues', () => ({ playReviewCompleteCue: vi.fn() }))
 vi.mock('@/services/screenWakeLock', () => ({
@@ -46,11 +50,12 @@ vi.mock('@/services/screenWakeLock', () => ({
 
 const ButtonStub = defineComponent({
   inheritAttrs: false,
-  props: { ariaLabel: String, disabled: Boolean, loading: Boolean },
+  props: { ariaLabel: String, ariaPressed: [Boolean, String], disabled: Boolean, loading: Boolean },
   emits: ['click'],
   template: `
     <button
       :aria-label="ariaLabel"
+      :aria-pressed="ariaPressed"
       :disabled="disabled || loading"
       @click="$emit('click', $event)"
     ><slot /></button>
@@ -163,7 +168,9 @@ describe('FlashcardReviewRunnerView Review set preview', () => {
     mocks.route.params = { reviewSetId: 'set-1' }
     mocks.route.query = {}
     mocks.router.replace.mockReset().mockResolvedValue(undefined)
+    mocks.speechOverAmplificationIsEnabled.mockReset().mockReturnValue(false)
     mocks.speakFlashcardText.mockReset().mockResolvedValue(undefined)
+    mocks.toggleSpeechOverAmplification.mockReset().mockResolvedValue(true)
     mocks.store.reviewSets = [reviewSet]
     mocks.store.cards = [card]
     mocks.store.sessions = reactive<FlashcardReviewSession[]>([])
@@ -205,7 +212,7 @@ describe('FlashcardReviewRunnerView Review set preview', () => {
     wrapper.unmount()
   })
 
-  it('replays the current TTS from the header button before Stop', async () => {
+  it('toggles TTS over-amplification without replaying before Stop', async () => {
     const active = {
       ...runningSession(),
       speechEnabled: true,
@@ -221,14 +228,18 @@ describe('FlashcardReviewRunnerView Review set preview', () => {
 
     const actions = wrapper.get('.runner-header__actions').findAll('button')
     expect(actions.map(button => button.attributes('aria-label'))).toEqual([
-      'Replay current speech',
+      'Enable TTS over-amplification',
       'End review',
     ])
+    expect(actions[0]!.attributes('aria-pressed')).toBe('false')
 
     await actions[0]!.trigger('click')
     await flushPromises()
 
-    expect(mocks.speakFlashcardText).toHaveBeenCalledWith('House', 'en-CA')
+    expect(mocks.toggleSpeechOverAmplification).toHaveBeenCalledOnce()
+    expect(mocks.speakFlashcardText).not.toHaveBeenCalled()
+    expect(actions[0]!.attributes('aria-label')).toBe('Disable TTS over-amplification')
+    expect(actions[0]!.attributes('aria-pressed')).toBe('true')
 
     wrapper.unmount()
   })

@@ -15,7 +15,8 @@ interface NativeSpeechSupport {
 
 interface FlashcardSpeechPlugin {
   getLanguages(): Promise<NativeSpeechSupport>
-  speak(options: { text: string; language: string }): Promise<void>
+  speak(options: { text: string; language: string; overAmplified: boolean }): Promise<void>
+  setOverAmplification(options: { enabled: boolean }): Promise<void>
   stopSpeaking(): Promise<void>
   startBackground(options: {
     sessionId: string
@@ -31,6 +32,7 @@ interface FlashcardSpeechPlugin {
     frontLanguage: string
     backLanguage: string
     elapsedMs: number
+    overAmplified: boolean
   }): Promise<void>
   getBackgroundState(): Promise<{ state?: BackgroundFlashcardReviewState }>
   stopBackground(options: { clearState: boolean }): Promise<void>
@@ -40,6 +42,7 @@ const NativeFlashcardSpeech = registerPlugin<FlashcardSpeechPlugin>('FlashcardSp
 let nativeBackgroundActive = false
 let activeBrowserUtterance: SpeechSynthesisUtterance | undefined
 let browserVoiceLoad: Promise<SpeechSynthesisVoice[]> | undefined
+let speechOverAmplificationEnabled = false
 
 function isNativeAndroid() {
   return Capacitor.getPlatform() === 'android' && Capacitor.isNativePlatform()
@@ -47,6 +50,28 @@ function isNativeAndroid() {
 
 export function nativeFlashcardBackgroundIsAvailable() {
   return isNativeAndroid()
+}
+
+export function flashcardSpeechOverAmplificationIsEnabled() {
+  return speechOverAmplificationEnabled
+}
+
+export async function setFlashcardSpeechOverAmplification(enabled: boolean) {
+  const previous = speechOverAmplificationEnabled
+  speechOverAmplificationEnabled = enabled
+  if (!isNativeAndroid()) return enabled
+
+  try {
+    await NativeFlashcardSpeech.setOverAmplification({ enabled })
+    return enabled
+  } catch (cause) {
+    speechOverAmplificationEnabled = previous
+    throw cause
+  }
+}
+
+export function toggleFlashcardSpeechOverAmplification() {
+  return setFlashcardSpeechOverAmplification(!speechOverAmplificationEnabled)
 }
 
 export function normalizeSpeechLanguage(value: string) {
@@ -150,7 +175,11 @@ export async function speakFlashcardText(text: string, language: string) {
   if (!content || !language) return
   if (isNativeAndroid()) {
     await stopFlashcardSpeech()
-    await NativeFlashcardSpeech.speak({ text: content, language })
+    await NativeFlashcardSpeech.speak({
+      text: content,
+      language,
+      overAmplified: speechOverAmplificationEnabled,
+    })
     return
   }
   if (
@@ -167,6 +196,7 @@ export async function speakFlashcardText(text: string, language: string) {
   const utterance = new window.SpeechSynthesisUtterance(content)
   utterance.lang = voice.lang
   utterance.voice = voice
+  if (speechOverAmplificationEnabled) utterance.volume = 1
   await new Promise<void>((resolve, reject) => {
     let settled = false
     const settle = (cause?: Error) => {
@@ -248,6 +278,7 @@ export async function syncBackgroundFlashcardReview(
       frontLanguage: session.frontLanguage,
       backLanguage: session.backLanguage,
       elapsedMs: Math.max(0, Math.round(elapsedMs)),
+      overAmplified: speechOverAmplificationEnabled,
     })
     nativeBackgroundActive = true
     return true

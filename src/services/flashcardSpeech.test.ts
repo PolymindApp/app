@@ -1,13 +1,17 @@
 import {
   defaultFlashcardSpeechLanguage,
+  flashcardSpeechOverAmplificationIsEnabled,
   loadFlashcardSpeechSupport,
   normalizeSpeechLanguage,
+  setFlashcardSpeechOverAmplification,
   speakFlashcardText,
   speechLanguageOptions,
   stopFlashcardSpeech,
+  toggleFlashcardSpeechOverAmplification,
 } from '@/services/flashcardSpeech'
 
-afterEach(() => {
+afterEach(async () => {
+  await setFlashcardSpeechOverAmplification(false)
   vi.unstubAllGlobals()
 })
 
@@ -24,6 +28,16 @@ describe('flashcard speech helpers', () => {
     Object.defineProperty(navigator, 'language', { value: 'fr-CA', configurable: true })
     expect(defaultFlashcardSpeechLanguage(languages)).toBe('fr-FR')
     Object.defineProperty(navigator, 'language', { value: original, configurable: true })
+  })
+
+  it('toggles over-amplification without speaking', async () => {
+    expect(flashcardSpeechOverAmplificationIsEnabled()).toBe(false)
+
+    await expect(toggleFlashcardSpeechOverAmplification()).resolves.toBe(true)
+    expect(flashcardSpeechOverAmplificationIsEnabled()).toBe(true)
+
+    await expect(toggleFlashcardSpeechOverAmplification()).resolves.toBe(false)
+    expect(flashcardSpeechOverAmplificationIsEnabled()).toBe(false)
   })
 
   it('uses and retains a matching browser voice while speaking', async () => {
@@ -58,12 +72,13 @@ describe('flashcard speech helpers', () => {
     vi.stubGlobal('speechSynthesis', synthesis)
     vi.stubGlobal('SpeechSynthesisUtterance', FakeUtterance)
 
+    await setFlashcardSpeechOverAmplification(true)
     await speakFlashcardText('Front of card', 'en_US')
 
     expect(synthesis.resume).toHaveBeenCalledOnce()
     expect(synthesis.speak).toHaveBeenCalledOnce()
     const utterance = vi.mocked(synthesis.speak).mock.calls[0][0]
-    expect(utterance).toMatchObject({ text: 'Front of card', lang: 'en-US', voice })
+    expect(utterance).toMatchObject({ text: 'Front of card', lang: 'en-US', voice, volume: 1 })
     expect(synthesis.cancel).not.toHaveBeenCalled()
 
     await stopFlashcardSpeech()

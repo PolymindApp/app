@@ -18,6 +18,7 @@ import android.os.Looper;
 import android.os.PowerManager;
 import android.os.SystemClock;
 import android.speech.tts.TextToSpeech;
+import android.speech.tts.UtteranceProgressListener;
 
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
@@ -47,7 +48,9 @@ public class BackgroundFlashcardService extends Service {
     private SharedPreferences preferences;
     private PowerManager.WakeLock wakeLock;
     private TextToSpeech speech;
+    private TtsVolumeBoost volumeBoost;
     private boolean speechReady;
+    private boolean speechOverAmplified;
     private boolean running;
     private boolean finished;
     private boolean indefinite;
@@ -107,6 +110,7 @@ public class BackgroundFlashcardService extends Service {
         activeInstance = this;
         preferences = getSharedPreferences(PREFERENCES, MODE_PRIVATE);
         createNotificationChannel();
+        volumeBoost = new TtsVolumeBoost(this);
         speech = new TextToSpeech(this, status -> {
             speechReady = status == TextToSpeech.SUCCESS;
             if (speechReady) {
@@ -116,6 +120,25 @@ public class BackgroundFlashcardService extends Service {
                         .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                         .build()
                 );
+                speech.setOnUtteranceProgressListener(new UtteranceProgressListener() {
+                    @Override
+                    public void onStart(String utteranceId) {}
+
+                    @Override
+                    public void onDone(String utteranceId) {
+                        volumeBoost.finish(utteranceId);
+                    }
+
+                    @Override
+                    public void onError(String utteranceId) {
+                        volumeBoost.finish(utteranceId);
+                    }
+
+                    @Override
+                    public void onStop(String utteranceId, boolean interrupted) {
+                        volumeBoost.finish(utteranceId);
+                    }
+                });
                 speakPendingSide();
             }
         });
@@ -167,6 +190,7 @@ public class BackgroundFlashcardService extends Service {
         backDurationMs = baseBackDurationMs * backSpeechRepeatCount;
         frontLanguage = config.optString("frontLanguage", "").trim();
         backLanguage = config.optString("backLanguage", "").trim();
+        speechOverAmplified = config.optBoolean("overAmplified", false);
         baseElapsedMs = Math.max(0L, config.optLong("elapsedMs", 0L));
         configuredElapsedMs = SystemClock.elapsedRealtime();
         long remainingMs = Math.max(1L, config.optLong("remainingMs", 1L));
@@ -182,7 +206,7 @@ public class BackgroundFlashcardService extends Service {
         lastNotificationSecond = -1L;
         pendingSpeechText = "";
         pendingSpeechLanguage = "";
-        if (speech != null) speech.stop();
+        stopSpeechPlayback();
         persistState();
     }
 
@@ -247,14 +271,22 @@ public class BackgroundFlashcardService extends Service {
             availability == TextToSpeech.LANG_MISSING_DATA
             || availability == TextToSpeech.LANG_NOT_SUPPORTED
         ) return;
-        speech.speak(
+        String utteranceId = "mom-background-flashcard-" + System.nanoTime();
+        volumeBoost.start(utteranceId, speechOverAmplified);
+        int result = speech.speak(
             pendingSpeechText,
             TextToSpeech.QUEUE_FLUSH,
             null,
-            "mom-background-flashcard-" + System.nanoTime()
+            utteranceId
         );
+        if (result == TextToSpeech.ERROR) volumeBoost.finish(utteranceId);
         pendingSpeechText = "";
         pendingSpeechLanguage = "";
+    }
+
+    private void stopSpeechPlayback() {
+        if (speech != null) speech.stop();
+        if (volumeBoost != null) volumeBoost.stop();
     }
 
     private void startAsForeground() {
@@ -275,7 +307,7 @@ public class BackgroundFlashcardService extends Service {
         running = false;
         finished = true;
         handler.removeCallbacks(ticker);
-        if (speech != null) speech.stop();
+        stopSpeechPlayback();
         if (!MainActivity.isAppVisible()) IntervalCuePlayer.playComplete(this);
         persistState();
         releaseWakeLock();
@@ -290,7 +322,7 @@ public class BackgroundFlashcardService extends Service {
     private void stopReview(boolean clearState) {
         running = false;
         handler.removeCallbacks(ticker);
-        if (speech != null) speech.stop();
+        stopSpeechPlayback();
         releaseWakeLock();
         stopForeground(STOP_FOREGROUND_REMOVE);
         if (clearState && preferences != null) {
@@ -412,6 +444,7 @@ public class BackgroundFlashcardService extends Service {
         activeInstance = null;
         handler.removeCallbacksAndMessages(null);
         releaseWakeLock();
+        if (volumeBoost != null) volumeBoost.stop();
         if (speech != null) {
             speech.stop();
             speech.shutdown();

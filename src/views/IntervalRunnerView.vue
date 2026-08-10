@@ -13,8 +13,11 @@ import IntervalTypeIcon from '@/components/IntervalTypeIcon.vue'
 import LabeledSlider from '@/components/LabeledSlider.vue'
 import { stopBackgroundInterval, syncBackgroundInterval } from '@/services/backgroundInterval'
 import {
+  flashcardSpeechOverAmplificationIsEnabled,
+  loadFlashcardSpeechSupport,
   speakFlashcardText,
   stopFlashcardSpeech,
+  toggleFlashcardSpeechOverAmplification,
 } from '@/services/flashcardSpeech'
 import {
   cardMatchesTags,
@@ -24,7 +27,6 @@ import {
   flashcardReviewSettingsAreValid,
   flashcardReviewSettingsSignature,
 } from '@/services/flashcards'
-import { loadFlashcardSpeechSupport } from '@/services/flashcardSpeech'
 import { createIntervalCueHandoff } from '@/services/intervalCueHandoff'
 import {
   notifyIntervalTransition,
@@ -72,6 +74,8 @@ const taskStore = useTaskStore()
 const displayRemainingMs = ref(0)
 const syncing = ref(false)
 const starting = ref(false)
+const speechOverAmplified = ref(flashcardSpeechOverAmplificationIsEnabled())
+const speechOverAmplificationBusy = ref(false)
 const endDialog = ref(false)
 const noteDialog = ref(false)
 const noteDraft = ref('')
@@ -428,26 +432,19 @@ async function speakCurrentFlashcardSide() {
   }
 }
 
-function replayCurrentFlashcardSide() {
+async function toggleSpeechOverAmplification() {
+  if (speechOverAmplificationBusy.value) return
   const item = session.value
-  const review = item?.flashcardReview
-  const phase = flashcardPhase.value
-  if (
-    document.visibilityState !== 'visible'
-    || item?.status !== 'running'
-    || !review?.speechEnabled
-    || !phase
-    || syncing.value
-    || starting.value
-  ) return
-
-  lastSpokenFlashcardKey = ''
-  void speakFlashcardText(
-    phase.side === 'front' ? phase.card.front : phase.card.back,
-    phase.side === 'front' ? review.frontLanguage : review.backLanguage,
-  ).catch(() => {
-    // Manual speech replay is optional; interval playback remains uninterrupted.
-  })
+  if (!item) return
+  speechOverAmplificationBusy.value = true
+  try {
+    speechOverAmplified.value = await toggleFlashcardSpeechOverAmplification()
+    if (item.status === 'running') await syncNativeTimer(item)
+  } catch {
+    backgroundError.value = 'TTS over-amplification could not be changed.'
+  } finally {
+    speechOverAmplificationBusy.value = false
+  }
 }
 
 function pulseTimer(effect: 'count') {
@@ -1240,13 +1237,16 @@ async function runAgain(repetitions?: number) {
             <v-btn
               v-if="session.flashcardReview?.speechEnabled && flashcardPhase"
               class="runner-header__speech-button"
-              icon="mdi-volume-high"
-              variant="text"
-              color="secondary"
-              aria-label="Replay current speech"
-              :disabled="isTemplatePreview || session.status !== 'running' || syncing || starting"
+              :icon="speechOverAmplified ? 'mdi-volume-plus' : 'mdi-volume-high'"
+              :variant="speechOverAmplified ? 'tonal' : 'text'"
+              :color="speechOverAmplified ? 'secondary' : undefined"
+              :aria-label="speechOverAmplified
+                ? 'Disable TTS over-amplification'
+                : 'Enable TTS over-amplification'"
+              :aria-pressed="speechOverAmplified"
+              :disabled="syncing || starting || speechOverAmplificationBusy"
               @touchstart.stop
-              @click.stop="replayCurrentFlashcardSide"
+              @click.stop="toggleSpeechOverAmplification"
             />
             <v-btn icon="mdi-stop-circle-outline" variant="text" color="error" aria-label="End session" :disabled="isTemplatePreview" @click="endDialog = true" />
           </div>

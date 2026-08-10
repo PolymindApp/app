@@ -7,6 +7,7 @@ import android.content.pm.PackageManager;
 import android.media.AudioAttributes;
 import android.os.Build;
 import android.speech.tts.TextToSpeech;
+import android.speech.tts.UtteranceProgressListener;
 
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
@@ -36,9 +37,12 @@ public class FlashcardSpeechPlugin extends Plugin {
     private boolean speechReady;
     private boolean speechFailed;
     private boolean notificationPermissionRequested;
+    private boolean overAmplificationEnabled;
+    private TtsVolumeBoost volumeBoost;
 
     @Override
     public void load() {
+        volumeBoost = new TtsVolumeBoost(getContext());
         speech = new TextToSpeech(getContext(), status -> {
             speechReady = status == TextToSpeech.SUCCESS;
             speechFailed = !speechReady;
@@ -49,6 +53,25 @@ public class FlashcardSpeechPlugin extends Plugin {
                         .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                         .build()
                 );
+                speech.setOnUtteranceProgressListener(new UtteranceProgressListener() {
+                    @Override
+                    public void onStart(String utteranceId) {}
+
+                    @Override
+                    public void onDone(String utteranceId) {
+                        volumeBoost.finish(utteranceId);
+                    }
+
+                    @Override
+                    public void onError(String utteranceId) {
+                        volumeBoost.finish(utteranceId);
+                    }
+
+                    @Override
+                    public void onStop(String utteranceId, boolean interrupted) {
+                        volumeBoost.finish(utteranceId);
+                    }
+                });
             }
             resolvePendingLanguageCalls();
         });
@@ -84,13 +107,17 @@ public class FlashcardSpeechPlugin extends Plugin {
             call.unavailable("The selected speech language is not installed.");
             return;
         }
+        overAmplificationEnabled = Boolean.TRUE.equals(call.getBoolean("overAmplified", false));
+        String utteranceId = "mom-flashcard-" + System.nanoTime();
+        volumeBoost.start(utteranceId, overAmplificationEnabled);
         int result = speech.speak(
             text,
             TextToSpeech.QUEUE_FLUSH,
             null,
-            "mom-flashcard-" + System.nanoTime()
+            utteranceId
         );
         if (result == TextToSpeech.ERROR) {
+            volumeBoost.finish(utteranceId);
             call.reject("The card could not be spoken.");
             return;
         }
@@ -98,8 +125,16 @@ public class FlashcardSpeechPlugin extends Plugin {
     }
 
     @PluginMethod
+    public void setOverAmplification(PluginCall call) {
+        overAmplificationEnabled = Boolean.TRUE.equals(call.getBoolean("enabled", false));
+        volumeBoost.setEnabled(overAmplificationEnabled);
+        call.resolve();
+    }
+
+    @PluginMethod
     public void stopSpeaking(PluginCall call) {
         if (speech != null) speech.stop();
+        volumeBoost.stop();
         call.resolve();
     }
 
@@ -194,6 +229,7 @@ public class FlashcardSpeechPlugin extends Plugin {
             call.unavailable("Speech synthesis stopped before languages were loaded.");
         }
         pendingLanguageCalls.clear();
+        if (volumeBoost != null) volumeBoost.stop();
         if (speech != null) {
             speech.stop();
             speech.shutdown();

@@ -9,12 +9,14 @@ import FlashcardResponseText from '@/components/FlashcardResponseText.vue'
 import FlashcardReviewSettingsFields from '@/components/FlashcardReviewSettingsFields.vue'
 import {
   backgroundFlashcardReviewState,
+  flashcardSpeechOverAmplificationIsEnabled,
   loadFlashcardSpeechSupport,
   nativeFlashcardBackgroundIsAvailable,
   speakFlashcardText,
   stopBackgroundFlashcardReview,
   stopFlashcardSpeech,
   syncBackgroundFlashcardReview,
+  toggleFlashcardSpeechOverAmplification,
 } from '@/services/flashcardSpeech'
 import { playReviewCompleteCue } from '@/services/intervalCues'
 import { requestScreenWakeLock, type ScreenWakeLock } from '@/services/screenWakeLock'
@@ -65,6 +67,8 @@ const sessionSettingsError = ref('')
 const sessionSettingsOriginal = ref('')
 const sessionSpeechLoading = ref(false)
 const sessionSpeechSupport = ref<FlashcardSpeechSupport>({ available: false, languages: [] })
+const speechOverAmplified = ref(flashcardSpeechOverAmplificationIsEnabled())
+const speechOverAmplificationBusy = ref(false)
 const sessionSettingsDraft = reactive<FlashcardReviewSettings>({
   mode: 'manual',
   cardSides: 'both',
@@ -601,6 +605,19 @@ function replayCurrentSide() {
   return true
 }
 
+async function toggleSpeechOverAmplification() {
+  if (speechOverAmplificationBusy.value) return
+  speechOverAmplificationBusy.value = true
+  try {
+    speechOverAmplified.value = await toggleFlashcardSpeechOverAmplification()
+    if (session.value?.status === 'running') await syncNativeBackground()
+  } catch {
+    speechPlaybackWarning.value = 'TTS over-amplification could not be changed.'
+  } finally {
+    speechOverAmplificationBusy.value = false
+  }
+}
+
 function handleManualCardTap() {
   if (suppressManualCardTap) {
     suppressManualCardTap = false
@@ -947,13 +964,16 @@ async function leaveRunner() {
           <v-btn
             v-if="session.speechEnabled && currentCard"
             class="runner-header__speech-button"
-            icon="mdi-volume-high"
-            variant="text"
-            color="secondary"
-            aria-label="Replay current speech"
-            :disabled="session.status !== 'running' || isFinished || busy"
+            :icon="speechOverAmplified ? 'mdi-volume-plus' : 'mdi-volume-high'"
+            :variant="speechOverAmplified ? 'tonal' : 'text'"
+            :color="speechOverAmplified ? 'secondary' : undefined"
+            :aria-label="speechOverAmplified
+              ? 'Disable TTS over-amplification'
+              : 'Enable TTS over-amplification'"
+            :aria-pressed="speechOverAmplified"
+            :disabled="isFinished || busy || speechOverAmplificationBusy"
             @touchstart.stop
-            @click.stop="replayCurrentSide"
+            @click.stop="toggleSpeechOverAmplification"
           />
           <v-btn
             icon="mdi-stop-circle-outline"
