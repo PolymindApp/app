@@ -49,6 +49,10 @@ describe('auth sign-out', () => {
     apiMocks.authStore.hasLocalSession = true
     apiMocks.authStore.onChange.mockReset()
     apiMocks.authStore.clear.mockReset()
+    apiMocks.authStore.clear.mockImplementation(() => {
+      apiMocks.authStore.record = null
+      apiMocks.authStore.hasLocalSession = false
+    })
     databaseMocks.eraseLocalAccount.mockReset()
     syncMocks.clearBackgroundSyncStage.mockReset()
     syncMocks.clearOfflineMediaCache.mockReset()
@@ -78,5 +82,30 @@ describe('auth sign-out', () => {
     expect(databaseMocks.eraseLocalAccount).toHaveBeenCalledWith('account-1')
     expect(syncMocks.clearOfflineMediaCache).toHaveBeenCalledOnce()
     expect(apiMocks.authStore.clear).toHaveBeenCalledOnce()
+  })
+
+  it('offers confirmed sign-out when the pending-data check itself fails', async () => {
+    syncMocks.flushBeforeSignOut.mockRejectedValue(new Error('IndexedDB failed'))
+    const auth = useAuthStore()
+
+    await expect(auth.logout()).rejects.toEqual(expect.objectContaining({
+      changeCount: undefined,
+      name: 'UnsyncedChangesError',
+    } satisfies Partial<UnsyncedChangesError>))
+
+    expect(apiMocks.authStore.clear).not.toHaveBeenCalled()
+  })
+
+  it('clears the session even when every offline cleanup step fails', async () => {
+    syncMocks.clearBackgroundSyncStage.mockRejectedValue(new Error('Native stage failed'))
+    databaseMocks.eraseLocalAccount.mockRejectedValue(new Error('IndexedDB failed'))
+    syncMocks.clearOfflineMediaCache.mockRejectedValue(new Error('Cache failed'))
+    const auth = useAuthStore()
+
+    await expect(auth.logout({ discardUnsynced: true })).resolves.toBeUndefined()
+
+    expect(apiMocks.authStore.clear).toHaveBeenCalledOnce()
+    expect(auth.isAuthenticated).toBe(false)
+    expect(auth.error).toBe('You are signed out, but some offline data could not be removed from this device.')
   })
 })

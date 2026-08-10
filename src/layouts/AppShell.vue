@@ -42,7 +42,7 @@ const trackingStore = useTrackingStore()
 const journalStore = useJournalStore()
 const logoutDialog = ref(false)
 const discardLogoutDialog = ref(false)
-const unsyncedLogoutCount = ref(0)
+const unsyncedLogoutCount = ref<number>()
 const syncSheet = ref(false)
 const pageTransition = ref('page-level-forward')
 const isIos = Capacitor.getPlatform() === 'ios'
@@ -444,7 +444,9 @@ function releaseLeavingPage(element: Element) {
     <ConfirmDialog
       v-model="discardLogoutDialog"
       title="Discard unsynced changes?"
-      :message="`${unsyncedLogoutCount} local change${unsyncedLogoutCount === 1 ? '' : 's'} could not be synchronized. Signing out anyway permanently removes ${unsyncedLogoutCount === 1 ? 'it' : 'them'} from this device.`"
+      :message="unsyncedLogoutCount === undefined
+        ? 'Your local changes could not be checked. Signing out anyway permanently removes any unsynced data from this device.'
+        : `${unsyncedLogoutCount} local change${unsyncedLogoutCount === 1 ? '' : 's'} could not be synchronized. Signing out anyway permanently removes ${unsyncedLogoutCount === 1 ? 'it' : 'them'} from this device.`"
       confirm-text="Discard and sign out"
       confirm-color="error"
       icon="mdi-cloud-remove-outline"

@@ -14,8 +14,10 @@ import {
 } from '@/services/passkeys'
 
 export class UnsyncedChangesError extends Error {
-  constructor(readonly changeCount: number) {
-    super(`${changeCount} local change${changeCount === 1 ? '' : 's'} could not be synchronized.`)
+  constructor(readonly changeCount?: number) {
+    super(changeCount === undefined
+      ? 'Local changes could not be checked before sign-out.'
+      : `${changeCount} local change${changeCount === 1 ? '' : 's'} could not be synchronized.`)
     this.name = 'UnsyncedChangesError'
   }
 }
@@ -221,16 +223,28 @@ export const useAuthStore = defineStore('auth', () => {
     logoutLoading.value = true
     error.value = ''
     try {
-      if (accountId) {
-        if (!options.discardUnsynced) {
-          const pending = await flushBeforeSignOut(accountId)
-          if (pending > 0) throw new UnsyncedChangesError(pending)
+      if (accountId && !options.discardUnsynced) {
+        let pending: number
+        try {
+          pending = await flushBeforeSignOut(accountId)
+        } catch {
+          throw new UnsyncedChangesError()
         }
-        await clearBackgroundSyncStage()
-        await eraseLocalAccount(accountId)
-        await clearOfflineMediaCache()
+        if (pending > 0) throw new UnsyncedChangesError(pending)
       }
+
       api.authStore.clear()
+
+      if (accountId) {
+        const cleanup = await Promise.allSettled([
+          clearBackgroundSyncStage(),
+          eraseLocalAccount(accountId),
+          clearOfflineMediaCache(),
+        ])
+        if (cleanup.some(result => result.status === 'rejected')) {
+          error.value = 'You are signed out, but some offline data could not be removed from this device.'
+        }
+      }
     } catch (cause) {
       error.value = cause instanceof Error ? cause.message : 'Unable to safely sign out.'
       throw cause
