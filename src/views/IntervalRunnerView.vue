@@ -1404,26 +1404,34 @@ async function runAgain(repetitions?: number) {
                   <span>{{ flashcardPhase.cardIndex + 1 }}/{{ session.flashcardReview.cards.length }}</span>
                 </div>
               </div>
-              <strong
-                v-if="flashcardPhase.side === 'front'"
-                :style="{
-                  fontSize: flashcardTextFontSize(
-                    flashcardPhase.card.front,
-                    'face',
-                    'compact',
-                  ),
-                }"
-              >
-                {{ flashcardPhase.card.front }}
-              </strong>
-              <FlashcardResponseText
-                v-else
-                :back="flashcardPhase.card.back"
-                :note="flashcardPhase.card.note"
-                :note-before-back="session.flashcardReview.noteBeforeBack"
-                density="compact"
-                reserve-note-space
-              />
+              <div class="interval-review-card__faces">
+                <strong
+                  :class="{
+                    'interval-review-card__face--hidden': flashcardPhase.side !== 'front',
+                  }"
+                  :aria-hidden="flashcardPhase.side !== 'front' ? 'true' : undefined"
+                  :style="{
+                    fontSize: flashcardTextFontSize(
+                      flashcardPhase.card.front,
+                      'face',
+                      'compact',
+                    ),
+                  }"
+                >
+                  {{ flashcardPhase.card.front }}
+                </strong>
+                <FlashcardResponseText
+                  :class="{
+                    'interval-review-card__face--hidden': flashcardPhase.side !== 'back',
+                  }"
+                  :aria-hidden="flashcardPhase.side !== 'back' ? 'true' : undefined"
+                  :back="flashcardPhase.card.back"
+                  :note="flashcardPhase.card.note"
+                  :note-before-back="session.flashcardReview.noteBeforeBack"
+                  density="compact"
+                  reserve-note-space
+                />
+              </div>
             </div>
             <v-progress-linear
               :model-value="flashcardPhase.progress"
@@ -1792,6 +1800,9 @@ async function runAgain(repetitions?: number) {
 .interval-review-card__set { display: flex; min-width: 0; max-width: 75%; align-items: center; gap: .4rem; color: rgba(var(--v-theme-on-surface), .58); font-size: .62rem; font-weight: 900; letter-spacing: .1em; text-align: left; text-transform: uppercase; }
 .interval-review-card__set > .text-truncate { min-width: 0; }
 .interval-review-card__content small { color: rgba(var(--v-theme-on-surface), .58); font-size: .62rem; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
+.interval-review-card__faces { display: grid; width: 100%; place-items: center; }
+.interval-review-card__faces > * { grid-area: 1 / 1; max-width: 100%; }
+.interval-review-card__face--hidden { visibility: hidden; }
 .interval-review-card__content strong { overflow-wrap: anywhere; font-size: clamp(1.05rem, 4.5vw, 1.5rem); line-height: 1.3; white-space: pre-wrap; }
 .interval-review-card :deep(.v-progress-linear) { border-radius: 0; }
 .runner-progress {

@@ -269,11 +269,15 @@ describe('IntervalRunnerView flashcard area', () => {
     expect(portraitControls.nextElementSibling).toBe(wrapper.get('.interval-review-card').element)
     expect(wrapper.find('.restart-button').exists()).toBe(false)
     expect(wrapper.findAll('[aria-label="Interval actions"]')).toHaveLength(2)
+    expect(wrapper.get('.interval-review-card__faces strong').classes())
+      .not.toContain('interval-review-card__face--hidden')
+    expect(wrapper.getComponent({ name: 'FlashcardResponseText' }).classes())
+      .toContain('interval-review-card__face--hidden')
 
     wrapper.unmount()
   })
 
-  it('reserves the note slot on the back of the mini Review set card', async () => {
+  it('keeps the front and back with its note slot mounted to reserve their full height', async () => {
     const active = intervalSession('running')
     active.runtime.accumulatedMs = 6_000
     mocks.intervalStore.sessions = reactive([active])
@@ -281,7 +285,11 @@ describe('IntervalRunnerView flashcard area', () => {
     const wrapper = mountRunner()
     await flushPromises()
 
-    expect(wrapper.getComponent({ name: 'FlashcardResponseText' }).props('reserveNoteSpace')).toBe(true)
+    const response = wrapper.getComponent({ name: 'FlashcardResponseText' })
+    expect(wrapper.get('.interval-review-card__faces strong').classes())
+      .toContain('interval-review-card__face--hidden')
+    expect(response.classes()).not.toContain('interval-review-card__face--hidden')
+    expect(response.props('reserveNoteSpace')).toBe(true)
 
     wrapper.unmount()
   })
