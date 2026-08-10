@@ -360,7 +360,10 @@ describe('IntervalRunnerView flashcard area', () => {
     const wrapper = mountRunner()
     await flushPromises()
 
+    const activeCard = wrapper.get('.interval-review-card')
     expect(wrapper.get('.interval-review-card__meta small').text()).toBe('Front')
+    expect(activeCard.attributes('disabled')).toBeUndefined()
+    expect(activeCard.classes()).not.toContain('interval-review-card--playback-paused')
 
     const stored = mocks.intervalStore.sessions[0]!
     stored.runtime.stepIndex = 1
@@ -369,8 +372,20 @@ describe('IntervalRunnerView flashcard area', () => {
     await wrapper.vm.$nextTick()
     await flushPromises()
 
+    const pausedCard = wrapper.get('.interval-review-card')
     expect(wrapper.get('.interval-review-card__meta small').text()).toBe('Paused')
+    expect(pausedCard.attributes('disabled')).toBeDefined()
+    expect(pausedCard.classes()).toContain('interval-review-card--playback-paused')
+    expect(wrapper.get('.interval-review-card__meta small')
+      .getComponent({ name: 'VIcon' }).attributes('icon')).toBe('mdi-pause-circle-outline')
     expect(mocks.stopFlashcardSpeech).toHaveBeenCalled()
+
+    mocks.intervalStore.updateSession.mockClear()
+    await pausedCard.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.flashcard-context-actions').exists()).toBe(false)
+    expect(mocks.intervalStore.updateSession).not.toHaveBeenCalled()
 
     mocks.speakFlashcardText.mockClear()
     stored.runtime.stepIndex = 2
@@ -380,6 +395,8 @@ describe('IntervalRunnerView flashcard area', () => {
     await flushPromises()
 
     expect(wrapper.get('.interval-review-card__meta small').text()).toBe('Front')
+    expect(wrapper.get('.interval-review-card').attributes('disabled')).toBeUndefined()
+    expect(wrapper.get('.interval-review-card').classes()).not.toContain('interval-review-card--playback-paused')
     expect(mocks.speakFlashcardText).toHaveBeenCalledWith('House', 'en-US')
 
     wrapper.unmount()

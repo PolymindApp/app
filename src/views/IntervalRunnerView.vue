@@ -882,7 +882,13 @@ async function ensureIntervalFlashcardSource() {
 
 async function openFlashcardContext() {
   const item = session.value
-  if (!item || isTemplatePreview.value || syncing.value || openingFlashcardContext.value) return
+  if (
+    !item
+    || !flashcardReviewPlaybackEnabled.value
+    || isTemplatePreview.value
+    || syncing.value
+    || openingFlashcardContext.value
+  ) return
   resumeAfterFlashcardContext = item.status === 'running'
   openingFlashcardContext.value = true
   try {
@@ -1364,10 +1370,11 @@ async function runAgain(repetitions?: number) {
             v-ripple
             type="button"
             class="interval-review-card"
+            :class="{ 'interval-review-card--playback-paused': !flashcardReviewPlaybackEnabled }"
             :aria-label="flashcardReviewPlaybackEnabled
               ? `${session.flashcardReview.name}, ${flashcardPhase.side}, card ${flashcardPhase.cardIndex + 1} of ${session.flashcardReview.cards.length}`
               : `${session.flashcardReview.name} paused for this step, card ${flashcardPhase.cardIndex + 1} of ${session.flashcardReview.cards.length}`"
-            :disabled="isTemplatePreview || syncing || openingFlashcardContext"
+            :disabled="isTemplatePreview || !flashcardReviewPlaybackEnabled || syncing || openingFlashcardContext"
             @click="openFlashcardContext"
           >
             <div class="interval-review-card__content">
@@ -1377,7 +1384,14 @@ async function runAgain(repetitions?: number) {
                   <span class="text-truncate">{{ session.flashcardReview.name }}</span>
                 </span>
                 <div class="interval-review-card__meta">
-                  <small>{{ flashcardReviewPlaybackEnabled ? (flashcardPhase.side === 'front' ? 'Front' : 'Back') : 'Paused' }}</small>
+                  <small>
+                    <v-icon
+                      v-if="!flashcardReviewPlaybackEnabled"
+                      icon="mdi-pause-circle-outline"
+                      size="14"
+                    />
+                    {{ flashcardReviewPlaybackEnabled ? (flashcardPhase.side === 'front' ? 'Front' : 'Back') : 'Paused' }}
+                  </small>
                   <span>{{ flashcardPhase.cardIndex + 1 }}/{{ session.flashcardReview.cards.length }}</span>
                 </div>
               </div>
@@ -1758,10 +1772,12 @@ async function runAgain(repetitions?: number) {
 .interval-review-card { position: relative; width: min(100%, 34rem); padding: 0; overflow: hidden; border: 1px solid rgba(var(--v-theme-on-surface), .08); border-radius: .75rem; background: rgba(var(--v-theme-on-surface), .055); box-shadow: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .interval-review-card:focus-visible { outline: .1875rem solid rgba(var(--v-theme-secondary), .72); outline-offset: .25rem; }
 .interval-review-card:disabled { cursor: default; opacity: .72; }
+.interval-review-card.interval-review-card--playback-paused:disabled { border-style: dashed; background: rgba(var(--v-theme-on-surface), .025); cursor: not-allowed; }
 .interval-review-card :deep(.v-ripple__container) { z-index: 2; }
 .interval-review-card__content { display: flex; padding: 1rem; align-items: center; justify-content: center; flex-direction: column; gap: .65rem; text-align: center; }
 .interval-review-card__heading { display: flex; width: 100%; min-width: 0; align-items: center; justify-content: space-between; gap: .75rem; }
 .interval-review-card__meta { display: flex; flex: 0 0 auto; align-items: center; justify-content: flex-end; gap: .75rem; color: rgba(var(--v-theme-on-surface), .58); font-size: .62rem; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
+.interval-review-card__meta small { display: inline-flex; align-items: center; gap: .25rem; }
 .interval-review-card__meta > span:last-child { flex: 0 0 auto; font-variant-numeric: tabular-nums; }
 .interval-review-card__set { display: flex; min-width: 0; max-width: 75%; align-items: center; gap: .4rem; color: rgba(var(--v-theme-on-surface), .58); font-size: .62rem; font-weight: 900; letter-spacing: .1em; text-align: left; text-transform: uppercase; }
 .interval-review-card__set > .text-truncate { min-width: 0; }
