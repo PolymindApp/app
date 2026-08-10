@@ -1,5 +1,5 @@
 import { vi } from 'vitest'
-import { syncBackgroundInterval } from '@/services/backgroundInterval'
+import { playNativeIntervalCue, syncBackgroundInterval } from '@/services/backgroundInterval'
 import type { IntervalSession, IntervalStepNode } from '@/types/domain'
 
 const nativeMocks = vi.hoisted(() => ({
@@ -39,7 +39,19 @@ function session(): IntervalSession {
     status: 'running',
     name: 'Study intervals',
     definition: { version: 1, children: [read, silent] },
-    cues: { soundEnabled: true, vibrationEnabled: true },
+    cues: {
+      soundEnabled: true,
+      vibrationEnabled: true,
+      typeSounds: {
+        train: 'go',
+        work: 'count',
+        rest: 'none',
+        prepare: 'go',
+        meditation: 'go',
+        confirmation: 'complete',
+        custom: 'go',
+      },
+    },
     flashcardReview: {
       reviewSet: 'set-1',
       name: 'Vocabulary',
@@ -72,6 +84,7 @@ describe('background interval Review set playback', () => {
   beforeEach(() => {
     nativeMocks.platform.mockReturnValue('android')
     nativeMocks.plugin.start.mockClear()
+    nativeMocks.plugin.playCue.mockClear()
   })
 
   it('sends per-step playback settings and filtered Review set elapsed time', async () => {
@@ -82,10 +95,16 @@ describe('background interval Review set playback', () => {
       stepIndex: 1,
       remainingMs: 10_000,
       steps: [
-        expect.objectContaining({ name: 'Read', flashcardReviewEnabled: true }),
-        expect.objectContaining({ name: 'Silent', flashcardReviewEnabled: false }),
+        expect.objectContaining({ name: 'Read', flashcardReviewEnabled: true, cueSound: 'count' }),
+        expect.objectContaining({ name: 'Silent', flashcardReviewEnabled: false, cueSound: 'none' }),
       ],
       flashcardReview: expect.objectContaining({ overAmplified: false }),
     }))
+  })
+
+  it('marks an assigned Countdown cue as a transition signal', async () => {
+    await playNativeIntervalCue('count', true)
+
+    expect(nativeMocks.plugin.playCue).toHaveBeenCalledWith({ name: 'count', signal: true })
   })
 })

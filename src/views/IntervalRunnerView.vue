@@ -550,7 +550,12 @@ async function tick() {
       await completeSession(item, result.runtime, !suppressCues)
       return
     }
-    if (!suppressCues) playIntervalGoCue(item.cues)
+    if (!suppressCues) {
+      playIntervalGoCue(
+        item.cues,
+        resolveIntervalStep(item.definition, result.runtime.stepIndex)?.step.kind,
+      )
+    }
     const updated = await store.updateSession(item.id, {
       runtime: result.runtime,
       elapsedSeconds: Math.round(result.runtime.accumulatedMs / 1000),
@@ -832,7 +837,7 @@ async function advanceCurrent(item: IntervalSession) {
     displayRemainingMs.value = runtime.remainingMs
     lastCountCue = ''
     if (updated.status === 'running') await syncNativeTimer(updated)
-    playIntervalGoCue(item.cues)
+    playIntervalGoCue(item.cues, nextStep.step.kind)
   } finally {
     syncing.value = false
   }

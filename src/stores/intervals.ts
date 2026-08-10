@@ -10,6 +10,7 @@ import {
   normalizeQuickIntervalSettings,
   reconcileIntervalRuntime,
 } from '@/services/intervals'
+import { normalizeIntervalTypeSounds } from '@/services/intervalTypes'
 import type {
   IntervalCueSettings,
   IntervalDefinition,
@@ -71,6 +72,7 @@ function mapSession(record: Record<string, any>): IntervalSession {
     cues: {
       soundEnabled: record.cue_snapshot?.soundEnabled !== false,
       vibrationEnabled: record.cue_snapshot?.vibrationEnabled !== false,
+      typeSounds: normalizeIntervalTypeSounds(record.cue_snapshot?.typeSounds),
     },
     flashcardReview,
     startedAt: record.started_at,
@@ -268,6 +270,12 @@ export const useIntervalStore = defineStore('intervals', () => {
     }
     const startedAt = new Date()
     const runtime = createRuntimeState(input.definition, startedAt)
+    const cues: IntervalCueSettings = {
+      ...input.cues,
+      typeSounds: normalizeIntervalTypeSounds(
+        api.authStore.record?.settings?.intervalTypeSounds ?? input.cues.typeSounds,
+      ),
+    }
     const record = await api.collection('interval_sessions').create({
       owner: api.authStore.record!.id,
       template: input.template || '',
@@ -278,7 +286,7 @@ export const useIntervalStore = defineStore('intervals', () => {
       status: 'running',
       snapshot_name: input.name,
       definition_snapshot: input.definition,
-      cue_snapshot: input.cues,
+      cue_snapshot: cues,
       started_at: startedAt.toISOString(),
       planned_seconds: intervalDuration(input.definition),
       elapsed_seconds: 0,

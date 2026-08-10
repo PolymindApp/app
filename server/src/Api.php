@@ -21,6 +21,10 @@ final class Api
     private const EMAIL_VERIFICATION_TTL = 86400;
     private const PASSWORD_RESET_TTL = 3600;
     private const MAIN_MENU_ITEMS = ['tasks', 'intervals', 'flashcards', 'tracking', 'journal'];
+    private const INTERVAL_STEP_TYPES = [
+        'train', 'work', 'rest', 'prepare', 'meditation', 'confirmation', 'custom',
+    ];
+    private const INTERVAL_CUE_SOUNDS = ['go', 'complete', 'count', 'none'];
     private const FLASHCARD_REVIEW_SETTING_FIELDS = [
         'mode', 'card_sides', 'indefinite', 'max_cards', 'front_seconds', 'back_seconds',
         'back_speech_repeat_count', 'note_before_back',
@@ -1460,12 +1464,14 @@ final class Api
             && !array_key_exists('stepSource', $body)
             && !array_key_exists('mainMenuOrder', $body)
             && !array_key_exists('mainMenuHidden', $body)
+            && !array_key_exists('intervalTypeSounds', $body)
         ) {
             throw new ApiException(422, 'At least one supported setting is required.', [
                 'quickInterval' => 'required',
                 'stepSource' => 'required',
                 'mainMenuOrder' => 'required',
                 'mainMenuHidden' => 'required',
+                'intervalTypeSounds' => 'required',
             ]);
         }
         if (array_key_exists('quickInterval', $body)) {
@@ -1489,6 +1495,11 @@ final class Api
         if (array_key_exists('mainMenuHidden', $body)) {
             $settings['mainMenuHidden'] = $this->validateHiddenMainMenuItems(
                 $body['mainMenuHidden'],
+            );
+        }
+        if (array_key_exists('intervalTypeSounds', $body)) {
+            $settings['intervalTypeSounds'] = $this->validateIntervalTypeSounds(
+                $body['intervalTypeSounds'],
             );
         }
         $encoded = json_encode(
@@ -1570,6 +1581,38 @@ final class Api
         }
 
         return $hidden;
+    }
+
+    private function validateIntervalTypeSounds(mixed $value): array
+    {
+        if (!is_array($value) || array_is_list($value)) {
+            throw new ApiException(422, 'The interval type sound settings are invalid.', [
+                'intervalTypeSounds' => 'object',
+            ]);
+        }
+
+        $receivedTypes = array_keys($value);
+        sort($receivedTypes);
+        $expectedTypes = self::INTERVAL_STEP_TYPES;
+        sort($expectedTypes);
+        if ($receivedTypes !== $expectedTypes) {
+            throw new ApiException(422, 'The interval type sound settings are invalid.', [
+                'intervalTypeSounds' => 'all interval types required',
+            ]);
+        }
+
+        $sounds = [];
+        foreach (self::INTERVAL_STEP_TYPES as $type) {
+            $sound = $value[$type] ?? null;
+            if (!is_string($sound) || !in_array($sound, self::INTERVAL_CUE_SOUNDS, true)) {
+                throw new ApiException(422, 'An interval type sound is invalid.', [
+                    "intervalTypeSounds.{$type}" => implode('|', self::INTERVAL_CUE_SOUNDS),
+                ]);
+            }
+            $sounds[$type] = $sound;
+        }
+
+        return $sounds;
     }
 
     private function validateQuickIntervalSettings(mixed $value): array

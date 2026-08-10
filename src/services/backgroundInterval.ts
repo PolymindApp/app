@@ -1,5 +1,6 @@
 import { Capacitor, registerPlugin } from '@capacitor/core'
 import { flashcardSpeechOverAmplificationIsEnabled } from '@/services/flashcardSpeech'
+import { intervalTypeSound } from '@/services/intervalTypes'
 import {
   intervalFlashcardReviewElapsedMs,
   intervalStepCount,
@@ -8,13 +9,14 @@ import {
   reconcileIntervalRuntime,
   resolveIntervalStep,
 } from '@/services/intervals'
-import type { IntervalSession } from '@/types/domain'
+import type { IntervalCueSound, IntervalSession } from '@/types/domain'
 
 interface BackgroundIntervalStep {
   name: string
   durationMs: number
   requiresConfirmation: boolean
   flashcardReviewEnabled: boolean
+  cueSound: IntervalCueSound
 }
 
 interface BackgroundIntervalPlugin {
@@ -40,7 +42,7 @@ interface BackgroundIntervalPlugin {
       overAmplified: boolean
     }
   }): Promise<void>
-  playCue(options: { name: NativeIntervalCueName }): Promise<void>
+  playCue(options: { name: NativeIntervalCueName, signal?: boolean }): Promise<void>
   stop(): Promise<void>
 }
 
@@ -64,6 +66,7 @@ function nativeSteps(session: IntervalSession) {
       durationMs: Math.max(1, Math.round(intervalStepDurationSeconds(resolved.step) * 1000)),
       requiresConfirmation: resolved.step.kind === 'confirmation',
       flashcardReviewEnabled: intervalStepPlaysFlashcardReview(resolved.step),
+      cueSound: intervalTypeSound(session.cues.typeSounds, resolved.step.kind),
     })
   }
   return steps
@@ -122,9 +125,9 @@ export async function stopBackgroundInterval() {
   }
 }
 
-export async function playNativeIntervalCue(name: NativeIntervalCueName) {
+export async function playNativeIntervalCue(name: NativeIntervalCueName, signal = false) {
   if (Capacitor.getPlatform() !== 'android') return false
-  await BackgroundInterval.playCue({ name })
+  await BackgroundInterval.playCue({ name, ...(signal ? { signal: true } : {}) })
   return true
 }
 

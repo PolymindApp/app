@@ -103,17 +103,20 @@ public class BackgroundIntervalService extends Service {
         final long durationMs;
         final boolean requiresConfirmation;
         final boolean flashcardReviewEnabled;
+        final String cueSound;
 
         IntervalStep(
             String name,
             long durationMs,
             boolean requiresConfirmation,
-            boolean flashcardReviewEnabled
+            boolean flashcardReviewEnabled,
+            String cueSound
         ) {
             this.name = name;
             this.durationMs = durationMs;
             this.requiresConfirmation = requiresConfirmation;
             this.flashcardReviewEnabled = flashcardReviewEnabled;
+            this.cueSound = cueSound;
         }
     }
 
@@ -214,7 +217,8 @@ public class BackgroundIntervalService extends Service {
                 encoded.optString("name", "Interval " + (index + 1)),
                 Math.max(1L, encoded.optLong("durationMs", 1L)),
                 encoded.optBoolean("requiresConfirmation", false),
-                encoded.optBoolean("flashcardReviewEnabled", true)
+                encoded.optBoolean("flashcardReviewEnabled", true),
+                encoded.optString("cueSound", "go")
             ));
         }
         if (steps.isEmpty()) throw new IllegalArgumentException("Interval sequence is empty.");
@@ -417,7 +421,7 @@ public class BackgroundIntervalService extends Service {
                 return;
             }
             lastCountdownSecond = -1;
-            if (!MainActivity.isAppVisible()) playGoCue();
+            if (!MainActivity.isAppVisible()) playStepCue();
             if (steps.get(stepIndex).requiresConfirmation) {
                 deadlineElapsedMs = now;
                 return;
@@ -463,8 +467,8 @@ public class BackgroundIntervalService extends Service {
         }
     }
 
-    private void playGoCue() {
-        if (soundEnabled) IntervalCuePlayer.playGo(this);
+    private void playStepCue() {
+        if (soundEnabled) IntervalCuePlayer.playSignal(this, steps.get(stepIndex).cueSound);
         if (vibrationEnabled) vibrate();
     }
 

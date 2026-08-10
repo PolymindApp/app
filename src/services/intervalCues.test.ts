@@ -123,6 +123,78 @@ describe('interval cue audio', () => {
     expect(audioContexts).toHaveLength(0)
   })
 
+  it('plays the sound assigned to the interval type', async () => {
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const marker = String(input).includes('complete') ? 3 : String(input).includes('go') ? 2 : 1
+      return {
+        ok: true,
+        arrayBuffer: async () => new Uint8Array([marker]).buffer,
+      } as Response
+    })
+    const { playIntervalGoCue } = await import('./intervalCues')
+
+    playIntervalGoCue({
+      soundEnabled: true,
+      vibrationEnabled: false,
+      typeSounds: {
+        train: 'go',
+        work: 'go',
+        rest: 'complete',
+        prepare: 'go',
+        meditation: 'go',
+        confirmation: 'go',
+        custom: 'go',
+      },
+    }, 'rest')
+
+    await vi.waitFor(() => expect(audioContexts[0]?.sources[0]?.start).toHaveBeenCalledOnce())
+    expect(audioContexts[0].sources[0].buffer).toMatchObject({ marker: 3 })
+  })
+
+  it('treats an assigned Countdown cue as a transition signal on Android', async () => {
+    backgroundIntervalMocks.playNativeIntervalCue.mockResolvedValue(true)
+    const { playIntervalGoCue } = await import('./intervalCues')
+
+    playIntervalGoCue({
+      soundEnabled: true,
+      vibrationEnabled: false,
+      typeSounds: {
+        train: 'go',
+        work: 'count',
+        rest: 'go',
+        prepare: 'go',
+        meditation: 'go',
+        confirmation: 'go',
+        custom: 'go',
+      },
+    }, 'work')
+
+    await vi.waitFor(() => expect(backgroundIntervalMocks.playNativeIntervalCue)
+      .toHaveBeenCalledWith('count', true))
+  })
+
+  it('keeps a type silent when its assigned sound is None', async () => {
+    const { playIntervalGoCue } = await import('./intervalCues')
+
+    playIntervalGoCue({
+      soundEnabled: true,
+      vibrationEnabled: false,
+      typeSounds: {
+        train: 'go',
+        work: 'go',
+        rest: 'go',
+        prepare: 'go',
+        meditation: 'none',
+        confirmation: 'go',
+        custom: 'go',
+      },
+    }, 'meditation')
+    await Promise.resolve()
+
+    expect(backgroundIntervalMocks.playNativeIntervalCue).not.toHaveBeenCalled()
+    expect(audioContexts).toHaveLength(0)
+  })
+
   it('falls back to Web Audio when the Android cue bridge rejects the request', async () => {
     backgroundIntervalMocks.playNativeIntervalCue.mockRejectedValue(new Error('Bridge unavailable'))
     const { playIntervalCompleteCue } = await import('./intervalCues')

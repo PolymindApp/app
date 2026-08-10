@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import IntervalTypeSoundSettings from '@/components/IntervalTypeSoundSettings.vue'
 import type { LongPressDragResult } from '@/directives/longPressDrag'
 import { api } from '@/lib/api'
 import {
@@ -22,7 +23,17 @@ import {
   type MainNavItem,
   type MainNavItemId,
 } from '@/services/navigation'
-import type { ChatGPTConnectionStatus, StepSource } from '@/types/domain'
+import { previewIntervalCueSound } from '@/services/intervalCues'
+import {
+  defaultIntervalTypeSounds,
+  normalizeIntervalTypeSounds,
+} from '@/services/intervalTypes'
+import type {
+  ChatGPTConnectionStatus,
+  IntervalCueSound,
+  IntervalStepKind,
+  StepSource,
+} from '@/types/domain'
 
 const stepSource = ref<StepSource>(DEFAULT_STEP_SOURCE)
 const menuItems = ref<MainNavItem[]>(orderedMainNavItems(
@@ -31,6 +42,7 @@ const menuItems = ref<MainNavItem[]>(orderedMainNavItems(
 const hiddenMenuItems = ref<MainNavItemId[]>(normalizeHiddenMainMenuItems(
   readStoredHiddenMainMenuItems() ?? api.authStore.record?.settings?.mainMenuHidden,
 ))
+const intervalTypeSounds = ref(defaultIntervalTypeSounds())
 const loading = ref(true)
 const connecting = ref(false)
 const chatGPTConnecting = ref(false)
@@ -40,6 +52,8 @@ const disconnectChatGPTDialog = ref(false)
 const chatGPTStatus = ref<ChatGPTConnectionStatus>({ available: false, connected: false })
 const chatGPTError = ref('')
 const menuSaving = ref(false)
+const intervalSoundSaving = ref(false)
+const previewingIntervalType = ref<IntervalStepKind>()
 const error = ref('')
 const notice = ref(false)
 const noticeMessage = ref('')
@@ -121,6 +135,7 @@ onMounted(async () => {
     hiddenMenuItems.value = normalizeHiddenMainMenuItems(
       readStoredHiddenMainMenuItems() ?? settings.mainMenuHidden,
     )
+    intervalTypeSounds.value = normalizeIntervalTypeSounds(settings.intervalTypeSounds)
     stepSource.value = normalizeStepSource(settings.stepSource)
     if (settings.stepSource !== stepSource.value) {
       await api.updateUserSettings({ stepSource: stepSource.value })
@@ -313,6 +328,39 @@ async function setMainMenuItemVisibility(id: MainNavItemId, visible: boolean) {
     menuSaving.value = false
   }
 }
+
+async function setIntervalTypeSound(kind: IntervalStepKind, sound: IntervalCueSound) {
+  if (intervalSoundSaving.value || intervalTypeSounds.value[kind] === sound) return
+  const previous = intervalTypeSounds.value
+  const next = { ...previous, [kind]: sound }
+  intervalTypeSounds.value = next
+  intervalSoundSaving.value = true
+  error.value = ''
+  try {
+    const settings = await api.updateUserSettings({ intervalTypeSounds: next })
+    intervalTypeSounds.value = normalizeIntervalTypeSounds(settings.intervalTypeSounds)
+    noticeMessage.value = 'Interval sound saved.'
+    notice.value = true
+  } catch (cause) {
+    intervalTypeSounds.value = previous
+    error.value = cause instanceof Error ? cause.message : 'The interval sound could not be saved.'
+  } finally {
+    intervalSoundSaving.value = false
+  }
+}
+
+async function previewIntervalTypeSound(kind: IntervalStepKind, sound: IntervalCueSound) {
+  if (sound === 'none' || previewingIntervalType.value) return
+  previewingIntervalType.value = kind
+  error.value = ''
+  try {
+    await previewIntervalCueSound(sound)
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : 'The interval sound could not be previewed.'
+  } finally {
+    previewingIntervalType.value = undefined
+  }
+}
 </script>
 
 <template>
@@ -323,7 +371,7 @@ async function setMainMenuItemVisibility(id: MainNavItemId, visible: boolean) {
       </div>
       <div>
         <h1 class="text-h5 font-weight-black">Settings</h1>
-        <p>Customize Polymind's navigation and connected data.</p>
+        <p>Customize Polymind's navigation, interval sounds, and connected data.</p>
       </div>
     </header>
 
@@ -395,6 +443,40 @@ async function setMainMenuItemVisibility(id: MainNavItemId, visible: boolean) {
           </span>
         </div>
       </div>
+    </v-card>
+
+    <v-card class="surface-card pa-5 pa-sm-6">
+      <div class="settings-section-heading">
+        <div>
+          <h2>Interval sounds</h2>
+          <p>Choose the sound that plays when each interval type begins.</p>
+        </div>
+        <v-progress-circular
+          v-if="intervalSoundSaving"
+          color="secondary"
+          indeterminate
+          size="22"
+          width="2"
+        />
+        <v-icon v-else icon="mdi-music-note" />
+      </div>
+
+      <v-progress-linear
+        v-if="loading"
+        color="secondary"
+        indeterminate
+        rounded
+        class="mt-5"
+      />
+
+      <IntervalTypeSoundSettings
+        v-else
+        :model-value="intervalTypeSounds"
+        :disabled="intervalSoundSaving"
+        :previewing="previewingIntervalType"
+        @change="setIntervalTypeSound"
+        @preview="previewIntervalTypeSound"
+      />
     </v-card>
 
     <v-card class="surface-card pa-5 pa-sm-6">

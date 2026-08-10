@@ -515,6 +515,31 @@ invalid_settings_status="$(curl --silent --output /dev/null --write-out '%{http_
   exit 1
 }
 
+interval_sound_settings_response="$(curl --silent --show-error --fail \
+  -X PATCH -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"intervalTypeSounds":{"train":"go","work":"count","rest":"complete","prepare":"go","meditation":"none","confirmation":"complete","custom":"go"}}' \
+  "$api_url/auth/settings")"
+php -r '
+  $data = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+  $sounds = $data["settings"]["intervalTypeSounds"] ?? null;
+  if (($sounds["work"] ?? null) !== "count"
+      || ($sounds["rest"] ?? null) !== "complete"
+      || ($sounds["meditation"] ?? null) !== "none") {
+      fwrite(STDERR, "Interval type sounds were not persisted.\n");
+      exit(1);
+  }
+' <<<"$interval_sound_settings_response"
+invalid_interval_sound_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  -X PATCH -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"intervalTypeSounds":{"train":"go","work":"bell"}}' \
+  "$api_url/auth/settings")"
+[[ "$invalid_interval_sound_status" == 422 ]] || {
+  echo "Invalid interval type sounds were not rejected." >&2
+  exit 1
+}
+
 step_source_response="$(curl --silent --show-error --fail \
   -X PATCH -H "Content-Type: application/json" \
   -H "Authorization: Bearer $alice_token" \

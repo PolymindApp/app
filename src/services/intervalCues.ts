@@ -1,4 +1,9 @@
-import type { IntervalCueSettings } from '@/types/domain'
+import { intervalTypeSound } from '@/services/intervalTypes'
+import type {
+  IntervalCueSettings,
+  IntervalCueSound,
+  IntervalStepKind,
+} from '@/types/domain'
 import {
   nativeBackgroundIntervalOwnsCues,
   playNativeIntervalCue,
@@ -92,20 +97,23 @@ export async function prepareIntervalCues(cues: IntervalCueSettings) {
   }
 }
 
-function playCue(name: CueName, cues: IntervalCueSettings) {
+function playCue(name: CueName, cues: IntervalCueSettings, forceSignal = false) {
   if (!cues.soundEnabled || nativeBackgroundIntervalOwnsCues()) return
-  void playNativeIntervalCue(name)
+  const nativePlayback = forceSignal && name === 'count'
+    ? playNativeIntervalCue(name, true)
+    : playNativeIntervalCue(name)
+  void nativePlayback
     .then((playedNatively) => {
-      if (!playedNatively) playAudioCue(name)
+      if (!playedNatively) playAudioCue(name, forceSignal)
     })
     .catch(() => {
       // Fall back to Web Audio if the Android bridge cannot accept the cue.
-      playAudioCue(name)
+      playAudioCue(name, forceSignal)
     })
 }
 
-function playAudioCue(name: CueName) {
-  const isSignal = name !== 'count'
+function playAudioCue(name: CueName, forceSignal = false) {
+  const isSignal = forceSignal || name !== 'count'
   if (isSignal) signalGeneration += 1
   const requestedGeneration = signalGeneration
   const signalRequest = isSignal ? ++latestSignalRequest : latestSignalRequest
@@ -151,18 +159,27 @@ export function playIntervalCountCue(cues: IntervalCueSettings) {
   playCue('count', cues)
 }
 
-function playIntervalSignalCue(name: 'go' | 'complete', cues: IntervalCueSettings) {
+function playIntervalSignalCue(name: IntervalCueSound, cues: IntervalCueSettings) {
   if (nativeBackgroundIntervalOwnsCues()) return
-  playCue(name, cues)
+  if (name !== 'none') playCue(name, cues, true)
   if (cues.vibrationEnabled && 'vibrate' in navigator) navigator.vibrate([120, 60, 120])
 }
 
-export function playIntervalGoCue(cues: IntervalCueSettings) {
-  playIntervalSignalCue('go', cues)
+export function playIntervalGoCue(
+  cues: IntervalCueSettings,
+  kind?: IntervalStepKind | '',
+) {
+  playIntervalSignalCue(intervalTypeSound(cues.typeSounds, kind), cues)
 }
 
 export function playIntervalCompleteCue(cues: IntervalCueSettings) {
   playIntervalSignalCue('complete', cues)
+}
+
+export async function previewIntervalCueSound(sound: IntervalCueSound) {
+  if (sound === 'none') return
+  await prepareAudioCue(sound)
+  playCue(sound, { soundEnabled: true, vibrationEnabled: false }, true)
 }
 
 export function playReviewCompleteCue() {

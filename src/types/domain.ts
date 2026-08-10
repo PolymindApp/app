@@ -127,6 +127,8 @@ export interface TaskDraft extends Omit<Task, 'id'> {
 
 export type IntervalStepKind = 'train' | 'work' | 'rest' | 'prepare' | 'meditation' | 'confirmation' | 'custom'
 export type IntervalSessionStatus = 'running' | 'paused' | 'completed' | 'ended'
+export type IntervalCueSound = 'go' | 'complete' | 'count' | 'none'
+export type IntervalTypeSoundSettings = Record<IntervalStepKind, IntervalCueSound>
 
 export interface IntervalStepNode {
   id: string
@@ -163,6 +165,7 @@ export interface IntervalDefinition {
 export interface IntervalCueSettings {
   soundEnabled: boolean
   vibrationEnabled: boolean
+  typeSounds?: IntervalTypeSoundSettings
 }
 
 export interface IntervalFlashcardReviewSnapshot {

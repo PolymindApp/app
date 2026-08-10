@@ -1,4 +1,8 @@
-import type { IntervalStepKind } from '@/types/domain'
+import type {
+  IntervalCueSound,
+  IntervalStepKind,
+  IntervalTypeSoundSettings,
+} from '@/types/domain'
 
 export type IntervalTypeAnimation = 'pulse' | 'charge' | 'breathe' | 'turn' | 'focus' | 'confirm' | 'tune'
 
@@ -23,3 +27,44 @@ export const INTERVAL_STEP_TYPES: IntervalTypePresentation[] = [
 export const INTERVAL_TYPE_PRESENTATION = Object.fromEntries(
   INTERVAL_STEP_TYPES.map((type) => [type.value, type]),
 ) as Record<IntervalStepKind, IntervalTypePresentation>
+
+export const INTERVAL_CUE_SOUND_OPTIONS: Array<{
+  title: string
+  value: IntervalCueSound
+}> = [
+  { title: 'Go cue', value: 'go' },
+  { title: 'Complete cue', value: 'complete' },
+  { title: 'Countdown cue', value: 'count' },
+  { title: 'None', value: 'none' },
+]
+
+const INTERVAL_CUE_SOUNDS = new Set<IntervalCueSound>(
+  INTERVAL_CUE_SOUND_OPTIONS.map(option => option.value),
+)
+
+export function defaultIntervalTypeSounds(): IntervalTypeSoundSettings {
+  return Object.fromEntries(
+    INTERVAL_STEP_TYPES.map(type => [type.value, 'go']),
+  ) as IntervalTypeSoundSettings
+}
+
+export function normalizeIntervalTypeSounds(value: unknown): IntervalTypeSoundSettings {
+  const record = value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {}
+  return Object.fromEntries(
+    INTERVAL_STEP_TYPES.map((type) => {
+      const sound = record[type.value]
+      return [type.value, INTERVAL_CUE_SOUNDS.has(sound as IntervalCueSound) ? sound : 'go']
+    }),
+  ) as IntervalTypeSoundSettings
+}
+
+export function intervalTypeSound(
+  settings: IntervalTypeSoundSettings | undefined,
+  kind: IntervalStepKind | '' | undefined,
+): IntervalCueSound {
+  if (!kind) return 'go'
+  const sound = settings?.[kind]
+  return INTERVAL_CUE_SOUNDS.has(sound as IntervalCueSound) ? sound as IntervalCueSound : 'go'
+}

@@ -97,6 +97,19 @@ final class IntervalCuePlayer {
         player.play(player.completeSound, SIGNAL_PRIORITY);
     }
 
+    static void playSignal(Context context, String name) {
+        IntervalCuePlayer player = get(context);
+        int soundId = player.soundId(name);
+        if (soundId != 0) player.play(soundId, SIGNAL_PRIORITY);
+    }
+
+    private int soundId(String name) {
+        if ("count".equals(name)) return countSound;
+        if ("go".equals(name)) return goSound;
+        if ("complete".equals(name)) return completeSound;
+        return 0;
+    }
+
     private static IntervalCuePlayer get(Context context) {
         IntervalCuePlayer player = instance;
         if (player != null) return player;

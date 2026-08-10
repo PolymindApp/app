@@ -3,6 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import type { IntervalFlashcardReviewSnapshot, IntervalTemplate } from '@/types/domain'
 
 const apiMocks = vi.hoisted(() => ({
+  authRecord: { id: 'user-1', settings: {} as Record<string, unknown> },
   createIntervalSession: vi.fn(),
   getIntervalSessions: vi.fn(),
   updateTemplate: vi.fn(),
@@ -14,7 +15,7 @@ const apiMocks = vi.hoisted(() => ({
 vi.mock('@/lib/api', () => ({
   apiAssetUrl: (value: string) => value,
   api: {
-    authStore: { record: { id: 'user-1' } },
+    authStore: { record: apiMocks.authRecord },
     completeIntervalSession: apiMocks.completeIntervalSession,
     updateIntervalSessionFlashcards: apiMocks.updateIntervalSessionFlashcards,
     collection: (name: string) => {
@@ -93,6 +94,7 @@ describe('interval task attribution', () => {
     apiMocks.updateIntervalSession.mockReset()
     apiMocks.updateIntervalSessionFlashcards.mockReset()
     apiMocks.completeIntervalSession.mockReset()
+    apiMocks.authRecord.settings = {}
     apiMocks.getIntervalSessions.mockResolvedValue({ items: [] })
   })
 
@@ -164,6 +166,39 @@ describe('interval task attribution', () => {
     }))
     expect(session.flashcardReview).toEqual(flashcardReview)
     expect(session.flashcardReview?.cards[0]?.image).toBe('/api/flashcard-images/card-1.jpg')
+  })
+
+  it('snapshots the current interval type sounds when starting a session', async () => {
+    apiMocks.authRecord.settings = {
+      intervalTypeSounds: {
+        train: 'go',
+        work: 'count',
+        rest: 'complete',
+        prepare: 'go',
+        meditation: 'none',
+        confirmation: 'complete',
+        custom: 'go',
+      },
+    }
+    apiMocks.createIntervalSession.mockImplementation(async payload => ({
+      id: 'session-1',
+      ...payload,
+      updated: payload.started_at,
+    }))
+
+    const session = await useIntervalStore().startSession({
+      name: 'Custom sounds',
+      source: 'template',
+      definition: { version: 1, children: [] },
+      cues: { soundEnabled: true, vibrationEnabled: false },
+    })
+
+    expect(apiMocks.createIntervalSession).toHaveBeenCalledWith(expect.objectContaining({
+      cue_snapshot: expect.objectContaining({
+        typeSounds: expect.objectContaining({ work: 'count', rest: 'complete', meditation: 'none' }),
+      }),
+    }))
+    expect(session.cues.typeSounds).toMatchObject({ work: 'count', rest: 'complete', meditation: 'none' })
   })
 
   it('merges the occurrence returned by atomic session completion', async () => {
