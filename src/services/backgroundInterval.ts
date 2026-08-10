@@ -1,7 +1,10 @@
 import { Capacitor, registerPlugin } from '@capacitor/core'
 import {
+  intervalFlashcardReviewElapsedMs,
   intervalStepCount,
   intervalStepDurationSeconds,
+  intervalStepPlaysFlashcardReview,
+  reconcileIntervalRuntime,
   resolveIntervalStep,
 } from '@/services/intervals'
 import type { IntervalSession } from '@/types/domain'
@@ -10,6 +13,7 @@ interface BackgroundIntervalStep {
   name: string
   durationMs: number
   requiresConfirmation: boolean
+  flashcardReviewEnabled: boolean
 }
 
 interface BackgroundIntervalPlugin {
@@ -57,6 +61,7 @@ function nativeSteps(session: IntervalSession) {
       name: resolved.step.name || `Interval ${index + 1}`,
       durationMs: Math.max(1, Math.round(intervalStepDurationSeconds(resolved.step) * 1000)),
       requiresConfirmation: resolved.step.kind === 'confirmation',
+      flashcardReviewEnabled: intervalStepPlaysFlashcardReview(resolved.step),
     })
   }
   return steps
@@ -65,18 +70,18 @@ function nativeSteps(session: IntervalSession) {
 export async function syncBackgroundInterval(session: IntervalSession) {
   if (Capacitor.getPlatform() !== 'android' || session.status !== 'running') return
   try {
+    const runtime = reconcileIntervalRuntime(session.definition, session.runtime).runtime
     await BackgroundInterval.start({
       sessionId: session.id,
       sessionName: session.name,
       steps: nativeSteps(session),
-      stepIndex: session.runtime.stepIndex,
-      remainingMs: Math.max(1, Math.round(session.runtime.remainingMs)),
-      elapsedMs: Math.max(0, Math.round(
-        session.runtime.accumulatedMs
-        + (session.runtime.stepStartedAt
-          ? Math.max(0, Date.now() - new Date(session.runtime.stepStartedAt).getTime())
-          : 0),
-      )),
+      stepIndex: runtime.stepIndex,
+      remainingMs: Math.max(1, Math.round(runtime.remainingMs)),
+      elapsedMs: Math.max(0, Math.round(intervalFlashcardReviewElapsedMs(
+        session.definition,
+        runtime.stepIndex,
+        runtime.remainingMs,
+      ))),
       soundEnabled: session.cues.soundEnabled,
       vibrationEnabled: session.cues.vibrationEnabled,
       ...(session.flashcardReview?.speechEnabled

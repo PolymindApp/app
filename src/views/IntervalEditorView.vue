@@ -487,6 +487,7 @@ async function removeTemplate() {
             :can-indent="index > 0 && draft.definition.children[index - 1]?.type === 'group'"
             :can-outdent="false"
             :can-skip-on-last-round="index === draft.definition.children.length - 1 && node.type === 'step'"
+            :review-set-speech-enabled="selectedReviewSet?.speechEnabled === true"
             :expanded-node-id="expandedNodeId"
             :actions="actions"
           />

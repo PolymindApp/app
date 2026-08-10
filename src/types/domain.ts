@@ -136,6 +136,7 @@ export interface IntervalStepNode {
   durationSeconds: number
   color?: string
   skipOnLastRound?: boolean
+  flashcardReviewEnabled?: boolean
 }
 
 export interface IntervalGroupNode {

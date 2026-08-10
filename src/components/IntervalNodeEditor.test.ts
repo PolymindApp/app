@@ -20,6 +20,7 @@ const VListItemStub = defineComponent({
 
 const VCheckboxStub = defineComponent({
   props: { label: String, modelValue: Boolean },
+  emits: ['update:modelValue'],
   template: '<label class="stub-checkbox">{{ label }}</label>',
 })
 
@@ -174,5 +175,43 @@ describe('IntervalNodeEditor interval type select', () => {
 
     await wrapper.setProps({ canSkipOnLastRound: false })
     expect(wrapper.find('.stub-checkbox').exists()).toBe(false)
+  })
+
+  it('controls Review set playback when the attached set reads cards aloud', async () => {
+    const node: IntervalStepNode = {
+      id: 'step-review',
+      type: 'step',
+      name: 'Study',
+      kind: 'work',
+      durationSeconds: 30,
+    }
+    const wrapper = mount(IntervalNodeEditor, {
+      props: editorProps(node, { reviewSetSpeechEnabled: true }),
+      global: {
+        directives: { longPressDrag: {}, longPressDrop: {} },
+        stubs: {
+          ExpandTransition: { template: '<div><slot /></div>' },
+          VBtn: true,
+          VCard: { template: '<div><slot /></div>' },
+          VCheckbox: VCheckboxStub,
+          VIcon: VIconStub,
+          VListItem: VListItemStub,
+          VSelect: VSelectStub,
+          VTextField: true,
+          TimerWheelPicker: true,
+        },
+      },
+    })
+
+    const playback = wrapper.findAllComponents(VCheckboxStub)
+      .find(checkbox => checkbox.props('label') === 'Play Review set during this step')
+    expect(playback?.props('modelValue')).toBe(true)
+
+    playback?.vm.$emit('update:modelValue', false)
+    await wrapper.vm.$nextTick()
+    expect(node.flashcardReviewEnabled).toBe(false)
+
+    await wrapper.setProps({ reviewSetSpeechEnabled: false })
+    expect(wrapper.text()).not.toContain('Play Review set during this step')
   })
 })

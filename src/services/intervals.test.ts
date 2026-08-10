@@ -8,6 +8,7 @@ import {
   duplicateIntervalNode,
   intervalDefinitionWithRepetitions,
   intervalDuration,
+  intervalFlashcardReviewElapsedMs,
   intervalGlobalRepetitionSettings,
   intervalRunProgress,
   intervalStepCount,
@@ -353,6 +354,29 @@ describe('interval definitions', () => {
       roundIteration: 2,
       roundTotal: 2,
     })
+  })
+
+  it('pauses Review set elapsed time during disabled interval steps', () => {
+    const first = createIntervalStep('Read', 'work', 10)
+    const paused = createIntervalStep('Silent', 'rest', 20)
+    paused.flashcardReviewEnabled = false
+    const last = createIntervalStep('Read again', 'work', 30)
+    const definition: IntervalDefinition = { version: 1, children: [first, paused, last] }
+
+    expect(intervalFlashcardReviewElapsedMs(definition, 0, 5_000)).toBe(5_000)
+    expect(intervalFlashcardReviewElapsedMs(definition, 1, 10_000)).toBe(10_000)
+    expect(intervalFlashcardReviewElapsedMs(definition, 2, 15_000)).toBe(25_000)
+  })
+
+  it('preserves Review set timing across repeated groups', () => {
+    const rounds = createIntervalGroup('Rounds', 2)
+    const read = createIntervalStep('Read', 'work', 10)
+    const paused = createIntervalStep('Silent', 'rest', 5)
+    paused.flashcardReviewEnabled = false
+    rounds.children = [read, paused]
+    const definition: IntervalDefinition = { version: 1, children: [rounds] }
+
+    expect(intervalFlashcardReviewElapsedMs(definition, 2, 5_000)).toBe(15_000)
   })
 
   it('uses the shortened final round when its last interval is skipped', () => {

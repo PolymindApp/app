@@ -19,6 +19,7 @@ const props = defineProps<{
   canIndent: boolean
   canOutdent: boolean
   canSkipOnLastRound: boolean
+  reviewSetSpeechEnabled?: boolean
   parentId?: string
   expandedNodeId?: string
   actions: {
@@ -67,6 +68,13 @@ const durationSeconds = computed({
   get: () => props.node.type === 'step' ? props.node.durationSeconds : 0,
   set: (value: number) => {
     if (props.node.type === 'step') props.node.durationSeconds = value
+  },
+})
+
+const flashcardReviewEnabled = computed({
+  get: () => props.node.type === 'step' && props.node.flashcardReviewEnabled !== false,
+  set: (enabled: boolean) => {
+    if (props.node.type === 'step') props.node.flashcardReviewEnabled = enabled
   },
 })
 
@@ -168,6 +176,14 @@ function selectKind(kind: IntervalStepKind | null) {
           <TimerWheelPicker v-model="durationSeconds" />
         </fieldset>
         <v-checkbox
+          v-if="reviewSetSpeechEnabled"
+          v-model="flashcardReviewEnabled"
+          label="Play Review set during this step"
+          color="secondary"
+          density="comfortable"
+          hide-details="auto"
+        />
+        <v-checkbox
           v-if="canSkipOnLastRound"
           v-model="node.skipOnLastRound"
           label="Skip this step on the final round"
@@ -214,6 +230,7 @@ function selectKind(kind: IntervalStepKind | null) {
             :can-indent="childIndex > 0 && node.children[childIndex - 1]?.type === 'group'"
             :can-outdent="true"
             :can-skip-on-last-round="node.repeatCount > 1 && childIndex === node.children.length - 1 && child.type === 'step'"
+            :review-set-speech-enabled="reviewSetSpeechEnabled"
             :parent-id="node.id"
             :expanded-node-id="expandedNodeId"
             :actions="actions"

@@ -99,11 +99,18 @@ public class BackgroundIntervalService extends Service {
         final String name;
         final long durationMs;
         final boolean requiresConfirmation;
+        final boolean flashcardReviewEnabled;
 
-        IntervalStep(String name, long durationMs, boolean requiresConfirmation) {
+        IntervalStep(
+            String name,
+            long durationMs,
+            boolean requiresConfirmation,
+            boolean flashcardReviewEnabled
+        ) {
             this.name = name;
             this.durationMs = durationMs;
             this.requiresConfirmation = requiresConfirmation;
+            this.flashcardReviewEnabled = flashcardReviewEnabled;
         }
     }
 
@@ -183,7 +190,8 @@ public class BackgroundIntervalService extends Service {
             steps.add(new IntervalStep(
                 encoded.optString("name", "Interval " + (index + 1)),
                 Math.max(1L, encoded.optLong("durationMs", 1L)),
-                encoded.optBoolean("requiresConfirmation", false)
+                encoded.optBoolean("requiresConfirmation", false),
+                encoded.optBoolean("flashcardReviewEnabled", true)
             ));
         }
         if (steps.isEmpty()) throw new IllegalArgumentException("Interval sequence is empty.");
@@ -248,6 +256,36 @@ public class BackgroundIntervalService extends Service {
         reviewFrontLanguage = review.optString("frontLanguage", "").trim();
         reviewBackLanguage = review.optString("backLanguage", "").trim();
         if (!previousSessionId.equals(sessionId)) lastReviewSpeechKey = "";
+        if (!currentStepPlaysFlashcardReview()) pauseReviewSpeech();
+    }
+
+    private boolean currentStepPlaysFlashcardReview() {
+        return !steps.isEmpty()
+            && stepIndex >= 0
+            && stepIndex < steps.size()
+            && steps.get(stepIndex).flashcardReviewEnabled;
+    }
+
+    private void pauseReviewSpeech() {
+        lastReviewSpeechKey = "";
+        pendingReviewSpeechText = "";
+        pendingReviewSpeechLanguage = "";
+        if (speech != null) speech.stop();
+    }
+
+    private long currentReviewElapsedMs(long now) {
+        return reviewBaseElapsedMs + (
+            currentStepPlaysFlashcardReview()
+                ? Math.max(0L, now - reviewConfiguredElapsedMs)
+                : 0L
+        );
+    }
+
+    private void settleReviewClock(long now) {
+        if (currentStepPlaysFlashcardReview()) {
+            reviewBaseElapsedMs += Math.max(0L, now - reviewConfiguredElapsedMs);
+        }
+        reviewConfiguredElapsedMs = now;
     }
 
     private ReviewPhase currentReviewPhase(long now) {
@@ -256,7 +294,7 @@ public class BackgroundIntervalService extends Service {
         boolean showsBack = !"front".equals(reviewCardSides);
         long cardDurationMs = (showsFront ? reviewFrontDurationMs : 0L)
             + (showsBack ? reviewBackDurationMs : 0L);
-        long elapsedMs = reviewBaseElapsedMs + Math.max(0L, now - reviewConfiguredElapsedMs);
+        long elapsedMs = currentReviewElapsedMs(now);
         long absoluteCardIndex = elapsedMs / cardDurationMs;
         int cardIndex = (int) (absoluteCardIndex % reviewCards.size());
         long elapsedInCard = elapsedMs % cardDurationMs;
@@ -277,6 +315,11 @@ public class BackgroundIntervalService extends Service {
 
     private void updateReviewSpeech(long now) {
         boolean appVisible = MainActivity.isAppVisible();
+        if (!currentStepPlaysFlashcardReview()) {
+            pauseReviewSpeech();
+            appWasVisible = appVisible;
+            return;
+        }
         if (appVisible) {
             if (!appWasVisible && speech != null) speech.stop();
             lastReviewSpeechKey = "";
@@ -307,6 +350,7 @@ public class BackgroundIntervalService extends Service {
             || pendingReviewSpeechText.isEmpty()
             || pendingReviewSpeechLanguage.isEmpty()
             || MainActivity.isAppVisible()
+            || !currentStepPlaysFlashcardReview()
         ) return;
         int availability = speech.setLanguage(Locale.forLanguageTag(pendingReviewSpeechLanguage));
         if (
@@ -335,6 +379,7 @@ public class BackgroundIntervalService extends Service {
     private void advance(long now) {
         if (steps.get(stepIndex).requiresConfirmation) return;
         while (running && now >= deadlineElapsedMs) {
+            settleReviewClock(deadlineElapsedMs);
             stepIndex += 1;
             if (stepIndex >= steps.size()) {
                 finishTimer();

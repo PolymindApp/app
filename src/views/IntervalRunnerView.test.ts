@@ -39,6 +39,8 @@ const mocks = vi.hoisted(() => ({
     makeProgress: vi.fn(),
     setStatus: vi.fn(),
   },
+  speakFlashcardText: vi.fn(),
+  stopFlashcardSpeech: vi.fn(),
 }))
 
 vi.mock('vue-router', () => ({
@@ -55,8 +57,8 @@ vi.mock('@/services/backgroundInterval', () => ({
 }))
 vi.mock('@/services/flashcardSpeech', () => ({
   loadFlashcardSpeechSupport: vi.fn().mockResolvedValue({ available: false, languages: [] }),
-  speakFlashcardText: vi.fn().mockResolvedValue(undefined),
-  stopFlashcardSpeech: vi.fn().mockResolvedValue(undefined),
+  speakFlashcardText: mocks.speakFlashcardText,
+  stopFlashcardSpeech: mocks.stopFlashcardSpeech,
 }))
 vi.mock('@/services/intervalCues', () => ({
   notifyIntervalTransition: vi.fn().mockResolvedValue(undefined),
@@ -190,6 +192,8 @@ describe('IntervalRunnerView flashcard area', () => {
     mocks.intervalStore.load.mockReset().mockResolvedValue(undefined)
     mocks.flashcardStore.load.mockReset().mockResolvedValue(undefined)
     mocks.taskStore.load.mockReset().mockResolvedValue(undefined)
+    mocks.speakFlashcardText.mockReset().mockResolvedValue(undefined)
+    mocks.stopFlashcardSpeech.mockReset().mockResolvedValue(undefined)
   })
 
   it('replays the current TTS from the header button before Stop', async () => {
@@ -299,4 +303,66 @@ describe('IntervalRunnerView flashcard area', () => {
 
     wrapper.unmount()
   })
+
+  it('pauses and resumes an aloud Review set with the current interval step', async () => {
+    const active = intervalSession('running')
+    if (!active.flashcardReview) throw new Error('Expected a Review set snapshot')
+    active.flashcardReview.speechEnabled = true
+    active.flashcardReview.frontLanguage = 'en-US'
+    active.flashcardReview.backLanguage = 'fr-FR'
+    active.definition.children = [
+      {
+        id: 'read-first',
+        type: 'step',
+        name: 'Read first',
+        kind: 'work',
+        durationSeconds: 10,
+      },
+      {
+        id: 'silent',
+        type: 'step',
+        name: 'Silent',
+        kind: 'rest',
+        durationSeconds: 20,
+        flashcardReviewEnabled: false,
+      },
+      {
+        id: 'read-again',
+        type: 'step',
+        name: 'Read again',
+        kind: 'work',
+        durationSeconds: 10,
+      },
+    ]
+    active.runtime.remainingMs = 10_000
+    mocks.intervalStore.sessions = reactive([active])
+
+    const wrapper = mountRunner()
+    await flushPromises()
+
+    expect(wrapper.get('.interval-review-card__meta small').text()).toBe('Front')
+
+    const stored = mocks.intervalStore.sessions[0]!
+    stored.runtime.stepIndex = 1
+    stored.runtime.accumulatedMs = 10_000
+    stored.runtime.remainingMs = 20_000
+    await wrapper.vm.$nextTick()
+    await flushPromises()
+
+    expect(wrapper.get('.interval-review-card__meta small').text()).toBe('Paused')
+    expect(mocks.stopFlashcardSpeech).toHaveBeenCalled()
+
+    mocks.speakFlashcardText.mockClear()
+    stored.runtime.stepIndex = 2
+    stored.runtime.accumulatedMs = 30_000
+    stored.runtime.remainingMs = 10_000
+    await wrapper.vm.$nextTick()
+    await flushPromises()
+
+    expect(wrapper.get('.interval-review-card__meta small').text()).toBe('Front')
+    expect(mocks.speakFlashcardText).toHaveBeenCalledWith('House', 'en-US')
+
+    wrapper.unmount()
+  })
+
 })

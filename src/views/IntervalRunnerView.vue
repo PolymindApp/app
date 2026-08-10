@@ -39,11 +39,13 @@ import {
   formatIntervalDuration,
   intervalDefinitionWithRepetitions,
   intervalDuration,
+  intervalFlashcardReviewElapsedMs,
   intervalGlobalRepetitionSettings,
   intervalRunProgress,
   reconcileIntervalRuntime,
   resolveIntervalStep,
   intervalStepDurationSeconds,
+  intervalStepPlaysFlashcardReview,
   MAX_GLOBAL_REPETITIONS,
   MIN_GLOBAL_REPETITIONS,
 } from '@/services/intervals'
@@ -153,8 +155,28 @@ const sessionElapsedMs = computed(() => {
   return item.runtime.accumulatedMs
     + Math.max(0, Date.now() - new Date(item.runtime.stepStartedAt).getTime())
 })
+const flashcardReviewPlaybackEnabled = computed(() => {
+  const review = session.value?.flashcardReview
+  const step = current.value?.step
+  return Boolean(
+    review
+    && step
+    && (!review.speechEnabled || intervalStepPlaysFlashcardReview(step)),
+  )
+})
+const flashcardReviewElapsedMs = computed(() => {
+  const item = session.value
+  const review = item?.flashcardReview
+  if (!item || !review) return 0
+  if (!review.speechEnabled) return sessionElapsedMs.value
+  return intervalFlashcardReviewElapsedMs(
+    item.definition,
+    item.runtime.stepIndex,
+    displayRemainingMs.value,
+  )
+})
 const flashcardPhase = computed(() => session.value?.flashcardReview
-  ? intervalFlashcardPhase(session.value.flashcardReview, sessionElapsedMs.value)
+  ? intervalFlashcardPhase(session.value.flashcardReview, flashcardReviewElapsedMs.value)
   : undefined)
 const flashcardReviewSet = computed(() => flashcardStore.reviewSets
   .find(item => item.id === session.value?.flashcardReview?.reviewSet))
@@ -266,6 +288,7 @@ const selectedRepetitionDuration = computed(() => repetitionDefinition.value
 watch([
   () => session.value?.status,
   () => session.value?.flashcardReview?.speechEnabled,
+  () => flashcardReviewPlaybackEnabled.value,
   () => flashcardPhase.value?.key,
 ], () => {
   void speakCurrentFlashcardSide()
@@ -349,6 +372,7 @@ onMounted(async () => {
     if (active?.status === 'running') {
       void prepareIntervalCues(active.cues)
       void syncNativeTimer(active)
+      void speakCurrentFlashcardSide()
       void requestIntervalWakeLock().then(async (lock) => {
         if (!runnerMounted || session.value?.id !== active.id || session.value.status !== 'running') {
           await lock?.release()
@@ -381,10 +405,13 @@ async function speakCurrentFlashcardSide() {
     document.visibilityState !== 'visible'
     || item?.status !== 'running'
     || !review?.speechEnabled
+    || !flashcardReviewPlaybackEnabled.value
     || !phase
     || !key
   ) {
-    if (!key || item?.status !== 'running') lastSpokenFlashcardKey = ''
+    if (!key || item?.status !== 'running' || !flashcardReviewPlaybackEnabled.value) {
+      lastSpokenFlashcardKey = ''
+    }
     await stopFlashcardSpeech()
     return
   }
@@ -1318,7 +1345,9 @@ async function runAgain(repetitions?: number) {
                 v-ripple
                 type="button"
                 class="interval-review-card"
-                :aria-label="`${session.flashcardReview.name}, ${flashcardPhase.side}, card ${flashcardPhase.cardIndex + 1} of ${session.flashcardReview.cards.length}`"
+                :aria-label="flashcardReviewPlaybackEnabled
+                  ? `${session.flashcardReview.name}, ${flashcardPhase.side}, card ${flashcardPhase.cardIndex + 1} of ${session.flashcardReview.cards.length}`
+                  : `${session.flashcardReview.name} paused for this step, card ${flashcardPhase.cardIndex + 1} of ${session.flashcardReview.cards.length}`"
                 :disabled="isTemplatePreview || syncing || openingFlashcardContext"
                 @click="openFlashcardContext"
               >
@@ -1329,7 +1358,7 @@ async function runAgain(repetitions?: number) {
                       <span class="text-truncate">{{ session.flashcardReview.name }}</span>
                     </span>
                     <div class="interval-review-card__meta">
-                      <small>{{ flashcardPhase.side === 'front' ? 'Front' : 'Back' }}</small>
+                      <small>{{ flashcardReviewPlaybackEnabled ? (flashcardPhase.side === 'front' ? 'Front' : 'Back') : 'Paused' }}</small>
                       <span>{{ flashcardPhase.cardIndex + 1 }}/{{ session.flashcardReview.cards.length }}</span>
                     </div>
                   </div>
@@ -1359,7 +1388,9 @@ async function runAgain(repetitions?: number) {
                   bg-color="background"
                   height="5"
                   rounded
-                  :aria-label="`${Math.round(flashcardPhase.progress)}% through the ${flashcardPhase.side}`"
+                  :aria-label="flashcardReviewPlaybackEnabled
+                    ? `${Math.round(flashcardPhase.progress)}% through the ${flashcardPhase.side}`
+                    : `Review set paused at ${Math.round(flashcardPhase.progress)}% through the ${flashcardPhase.side}`"
                 />
               </button>
             </div>

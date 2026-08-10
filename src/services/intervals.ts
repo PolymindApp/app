@@ -64,6 +64,10 @@ export function intervalStepDurationSeconds(step: IntervalStepNode) {
   return Number.isFinite(step.durationSeconds) ? Math.max(0, step.durationSeconds) : 0
 }
 
+export function intervalStepPlaysFlashcardReview(step: IntervalStepNode) {
+  return step.flashcardReviewEnabled !== false
+}
+
 export function normalizeQuickIntervalSettings(value: unknown): QuickIntervalSettings | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
   const settings = value as Record<string, unknown>
@@ -256,9 +260,100 @@ export function intervalNodeDuration(node: IntervalNode): number {
   return skippedStep ? Math.max(0, total - intervalStepDurationSeconds(skippedStep)) : total
 }
 
+function intervalNodeFlashcardReviewDuration(node: IntervalNode): number {
+  if (node.type === 'step') {
+    return intervalStepPlaysFlashcardReview(node) ? intervalStepDurationSeconds(node) : 0
+  }
+  const childDuration = node.children.reduce(
+    (sum, child) => safeAdd(sum, intervalNodeFlashcardReviewDuration(child)),
+    0,
+  )
+  const total = safeMultiply(childDuration, Math.max(0, Math.floor(node.repeatCount)))
+  const skippedStep = skippedLastRoundStep(node)
+  return skippedStep
+    ? Math.max(0, total - intervalNodeFlashcardReviewDuration(skippedStep))
+    : total
+}
+
 export function intervalDuration(definition: IntervalDefinition): number {
   return intervalRootNodes(definition)
     .reduce((sum, node) => safeAdd(sum, intervalNodeDuration(node)), 0)
+}
+
+interface IntervalFlashcardReviewContext {
+  step: IntervalStepNode
+  elapsedBeforeSeconds: number
+}
+
+function resolveIntervalFlashcardReviewContext(
+  nodes: IntervalNode[],
+  requestedIndex: number,
+  elapsedBeforeSeconds: number,
+): IntervalFlashcardReviewContext | undefined {
+  let index = requestedIndex
+  let elapsed = elapsedBeforeSeconds
+
+  for (const node of nodes) {
+    const count = intervalNodeStepCount(node)
+    if (index >= count) {
+      index -= count
+      elapsed = safeAdd(elapsed, intervalNodeFlashcardReviewDuration(node))
+      continue
+    }
+    if (node.type === 'step') return { step: node, elapsedBeforeSeconds: elapsed }
+
+    const childCount = node.children.reduce(
+      (sum, child) => safeAdd(sum, intervalNodeStepCount(child)),
+      0,
+    )
+    if (!childCount) return undefined
+
+    const repeatCount = Math.max(0, Math.floor(node.repeatCount))
+    const skippedStep = skippedLastRoundStep(node)
+    const fullIterationsCount = skippedStep
+      ? safeMultiply(childCount, Math.max(0, repeatCount - 1))
+      : 0
+    const iteration = skippedStep && index >= fullIterationsCount
+      ? repeatCount - 1
+      : Math.floor(index / childCount)
+    const childIndex = skippedStep && index >= fullIterationsCount
+      ? index - fullIterationsCount
+      : index % childCount
+    const childDuration = node.children.reduce(
+      (sum, child) => safeAdd(sum, intervalNodeFlashcardReviewDuration(child)),
+      0,
+    )
+
+    return resolveIntervalFlashcardReviewContext(
+      node.children,
+      childIndex,
+      safeAdd(elapsed, safeMultiply(childDuration, iteration)),
+    )
+  }
+
+  return undefined
+}
+
+export function intervalFlashcardReviewElapsedMs(
+  definition: IntervalDefinition,
+  stepIndex: number,
+  remainingMs: number,
+) {
+  const roots = intervalRootNodes(definition)
+  const context = resolveIntervalFlashcardReviewContext(roots, stepIndex, 0)
+  if (!context) {
+    if (stepIndex < intervalStepCount(definition)) return 0
+    return roots.reduce(
+      (sum, node) => safeAdd(sum, intervalNodeFlashcardReviewDuration(node) * 1000),
+      0,
+    )
+  }
+
+  const elapsedBeforeMs = context.elapsedBeforeSeconds * 1000
+  if (!intervalStepPlaysFlashcardReview(context.step)) return elapsedBeforeMs
+  const durationMs = intervalStepDurationSeconds(context.step) * 1000
+  const elapsedInStep = Math.min(durationMs, Math.max(0, durationMs - remainingMs))
+  return safeAdd(elapsedBeforeMs, elapsedInStep)
 }
 
 function resolveInNodes(
