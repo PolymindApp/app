@@ -44,4 +44,33 @@ describe('FlashcardResponseText', () => {
     expect((back.element as HTMLElement).style.fontSize)
       .toBe(flashcardTextFontSize('Answer', 'note'))
   })
+
+  it('can reserve the note slot when the note is empty', () => {
+    const wrapper = mount(FlashcardResponseText, {
+      props: {
+        back: 'Answer',
+        reserveNoteSpace: true,
+      },
+    })
+    const parts = wrapper.findAll('[data-response-part]')
+
+    expect(parts.map(part => part.attributes('data-response-part'))).toEqual(['back', 'note'])
+    expect(parts[1]?.classes()).toContain('flashcard-response-text__placeholder')
+    expect(parts[1]?.attributes('aria-hidden')).toBe('true')
+  })
+
+  it('reserves the empty note in its inverted position and presentation', () => {
+    const wrapper = mount(FlashcardResponseText, {
+      props: {
+        back: 'Answer',
+        noteBeforeBack: true,
+        reserveNoteSpace: true,
+      },
+    })
+    const parts = wrapper.findAll('[data-response-part]')
+
+    expect(parts.map(part => part.attributes('data-response-part'))).toEqual(['note', 'back'])
+    expect(parts[0]?.attributes('data-response-presentation')).toBe('primary')
+    expect(parts[1]?.attributes('data-response-presentation')).toBe('supporting')
+  })
 })

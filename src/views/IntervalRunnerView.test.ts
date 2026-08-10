@@ -273,6 +273,19 @@ describe('IntervalRunnerView flashcard area', () => {
     wrapper.unmount()
   })
 
+  it('reserves the note slot on the back of the mini Review set card', async () => {
+    const active = intervalSession('running')
+    active.runtime.accumulatedMs = 6_000
+    mocks.intervalStore.sessions = reactive([active])
+
+    const wrapper = mountRunner()
+    await flushPromises()
+
+    expect(wrapper.getComponent({ name: 'FlashcardResponseText' }).props('reserveNoteSpace')).toBe(true)
+
+    wrapper.unmount()
+  })
+
   it('resumes after closing the context menu when the interval was playing', async () => {
     const wrapper = mountRunner()
     await flushPromises()

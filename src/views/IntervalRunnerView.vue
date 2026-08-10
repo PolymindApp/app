@@ -1423,6 +1423,7 @@ async function runAgain(repetitions?: number) {
                 :note="flashcardPhase.card.note"
                 :note-before-back="session.flashcardReview.noteBeforeBack"
                 density="compact"
+                reserve-note-space
               />
             </div>
             <v-progress-linear
