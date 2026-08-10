@@ -631,7 +631,7 @@ export async function applyExchangeResults(
     },
   )
   for (const resource of changedResources) notifyDataChanged(accountId, resource)
-  notifyOutboxChanged(accountId)
+  if (acknowledgements.length || changes.length) notifyOutboxChanged(accountId)
 }
 
 async function mergeRemoteResource(accountId: string, remote: SyncResource) {

@@ -1,5 +1,5 @@
 import 'fake-indexeddb/auto'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { reactive } from 'vue'
 import {
   applyExchangeResults,
@@ -8,6 +8,7 @@ import {
   hasLocalBootstrap,
   listLocalRecords,
   localDatabase,
+  localOutboxChangedEvent,
   markOperationsSending,
   pendingOperationCount,
   pendingOperations,
@@ -94,6 +95,19 @@ describe('offline local database', () => {
         nextAttemptAt: 0,
       }),
     ])
+  })
+
+  it('does not announce an outbox mutation after an empty remote pull', async () => {
+    await completeLocalBootstrap(accountId, 0, [])
+    const listener = vi.fn()
+    window.addEventListener(localOutboxChangedEvent, listener)
+
+    try {
+      await applyExchangeResults(accountId, 0, '2026-08-10T12:00:00.000Z', [], [])
+      expect(listener).not.toHaveBeenCalled()
+    } finally {
+      window.removeEventListener(localOutboxChangedEvent, listener)
+    }
   })
 
   it('reconciles acknowledgements, aliases, and remote delete-wins changes', async () => {

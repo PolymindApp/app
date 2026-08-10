@@ -29,9 +29,12 @@ import type {
   SyncPhase,
   SyncStatusSnapshot,
 } from '@/types/sync'
+import {
+  ACTIVE_SYNC_PULL_INTERVAL_MS,
+  nextSyncPullDelay,
+} from '@/services/syncPolling'
 
 const baseUrl = (import.meta.env.VITE_API_URL || '/api').replace(/\/+$/, '')
-const ACTIVE_PULL_INTERVAL_MS = 15_000
 const STATUS_EVENT = 'mom-sync-status-changed'
 
 export const offlineSyncStatus = reactive<SyncStatusSnapshot>({
@@ -48,6 +51,8 @@ let syncPromise: Promise<boolean> | undefined
 let retryTimer: number | undefined
 let pullTimer: number | undefined
 let retryAttempt = 0
+let pullDelay = ACTIVE_SYNC_PULL_INTERVAL_MS
+let lastSyncHadActivity = false
 let removeAuthListener: (() => void) | undefined
 let removeNetworkListener: Awaited<ReturnType<typeof Network.addListener>> | undefined
 let removeAppListener: Awaited<ReturnType<typeof App.addListener>> | undefined
@@ -85,6 +90,8 @@ export async function startOfflineSync() {
   window.addEventListener(localOutboxChangedEvent, handleOutboxChanged)
   window.addEventListener('online', handleReconnect)
   window.addEventListener('focus', handleReconnect)
+  window.addEventListener('pointerdown', handleUserActivity, { passive: true })
+  window.addEventListener('keydown', handleUserActivity)
   document.addEventListener('visibilitychange', handleVisibilityChange)
 
   if (Capacitor.isNativePlatform()) {
@@ -107,9 +114,11 @@ export async function stopOfflineSync() {
   window.removeEventListener(localOutboxChangedEvent, handleOutboxChanged)
   window.removeEventListener('online', handleReconnect)
   window.removeEventListener('focus', handleReconnect)
+  window.removeEventListener('pointerdown', handleUserActivity)
+  window.removeEventListener('keydown', handleUserActivity)
   document.removeEventListener('visibilitychange', handleVisibilityChange)
   if (retryTimer !== undefined) window.clearTimeout(retryTimer)
-  if (pullTimer !== undefined) window.clearInterval(pullTimer)
+  if (pullTimer !== undefined) window.clearTimeout(pullTimer)
 }
 
 async function switchAccount(accountId: string) {
@@ -142,13 +151,30 @@ function handleVisibilityChange() {
 }
 
 function scheduleActivePull() {
-  if (pullTimer !== undefined) window.clearInterval(pullTimer)
-  pullTimer = window.setInterval(() => {
-    if (document.visibilityState === 'visible') void syncNow('poll')
-  }, ACTIVE_PULL_INTERVAL_MS)
+  if (pullTimer !== undefined) window.clearTimeout(pullTimer)
+  if (!started) return
+  pullTimer = window.setTimeout(async () => {
+    pullTimer = undefined
+    if (document.visibilityState === 'visible') {
+      await syncNow('poll')
+      pullDelay = nextSyncPullDelay(pullDelay, lastSyncHadActivity)
+    }
+    scheduleActivePull()
+  }, pullDelay)
 }
 
-export function syncNow(_reason = 'manual') {
+function handleUserActivity() {
+  if (pullDelay === ACTIVE_SYNC_PULL_INTERVAL_MS) return
+  resetPullCadence()
+}
+
+function resetPullCadence() {
+  pullDelay = ACTIVE_SYNC_PULL_INTERVAL_MS
+  scheduleActivePull()
+}
+
+export function syncNow(reason = 'manual') {
+  if (reason !== 'poll' && reason !== 'retry') resetPullCadence()
   if (syncPromise) return syncPromise
   syncPromise = performSync().finally(() => {
     syncPromise = undefined
@@ -182,6 +208,7 @@ export async function clearOfflineMediaCache() {
 
 async function performSync() {
   const accountId = currentAccountId || api.authStore.record?.id || ''
+  lastSyncHadActivity = false
   if (!accountId) return false
   currentAccountId = accountId
   await initializeLocalMetadata(accountId)
@@ -213,7 +240,9 @@ async function performSync() {
     let hasMore = true
     let loops = 0
     while (hasMore && loops < 20) {
-      hasMore = await exchange(accountId)
+      const result = await exchange(accountId)
+      hasMore = result.hasMore
+      lastSyncHadActivity ||= result.hadActivity
       loops += 1
     }
     retryAttempt = 0
@@ -300,7 +329,7 @@ async function exchange(accountId: string) {
     })
     if (response.resetRequired) {
       await bootstrap(accountId)
-      return true
+      return { hasMore: true, hadActivity: true }
     }
     await applyExchangeResults(
       accountId,
@@ -310,7 +339,12 @@ async function exchange(accountId: string) {
       response.changes,
     )
     await stageNativeBackgroundBatch(accountId)
-    return response.hasMore
+    return {
+      hasMore: response.hasMore,
+      hadActivity: operations.length > 0
+        || response.acknowledgements.length > 0
+        || response.changes.length > 0,
+    }
   } catch (cause) {
     if (operationIds.length) {
       const attempt = Math.max(1, ...operations.map(operation => operation.attempts + 1))
