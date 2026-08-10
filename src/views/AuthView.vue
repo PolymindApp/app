@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Capacitor } from '@capacitor/core'
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppForm from '@/components/AppForm.vue'
 import { isAndroidPasskeyAvailable } from '@/services/passkeys'
@@ -15,40 +15,141 @@ const mode = ref<'login' | 'register'>('login')
 const name = ref('')
 const email = ref('')
 const password = ref('')
+const passwordConfirm = ref('')
 const visible = ref(false)
+const confirmVisible = ref(false)
 const form = ref()
 const backendOffline = ref(false)
 const emailField = ref<{ focus: () => void }>()
 const nameField = ref<{ focus: () => void }>()
 const passkeyAvailable = ref(false)
+const success = ref('')
+const pageError = ref('')
+const registrationEmail = ref('')
+const handledVerificationToken = ref('')
+
+const pageFlow = computed(() => {
+  if (route.name === 'forgot-password') return 'forgot'
+  if (route.name === 'reset-password') return 'reset'
+  if (route.name === 'verify-email') return 'verify'
+  return 'auth'
+})
+const resetToken = computed(() => typeof route.query.token === 'string' ? route.query.token : '')
+const cardTitle = computed(() => {
+  if (pageFlow.value === 'forgot') return 'Reset your password'
+  if (pageFlow.value === 'reset') return success.value ? 'Password reset' : 'Choose a new password'
+  if (pageFlow.value === 'verify') {
+    if (auth.loading) return 'Confirming your email'
+    return success.value ? 'Email confirmed' : 'Confirm your email'
+  }
+  return mode.value === 'login' ? 'Welcome back' : 'Create your space'
+})
+const cardCopy = computed(() => {
+  if (pageFlow.value === 'forgot') return 'Enter your email and we’ll send you a reset link.'
+  if (pageFlow.value === 'reset') return success.value
+    ? 'Your new password is ready.'
+    : 'Use at least 8 characters for your new password.'
+  if (pageFlow.value === 'verify') return success.value
+    ? 'Your account is ready to use.'
+    : 'This will only take a moment.'
+  if (reauthenticating.value) return 'Sign in again to resume background synchronization.'
+  return mode.value === 'login' ? 'Pick up where you left off.' : 'Create a private, synced workspace.'
+})
 
 const required = (value: string) => Boolean(value) || 'Required'
 const validEmail = (value: string) => /.+@.+\..+/.test(value) || 'Enter a valid email'
 const strongPassword = (value: string) => value.length >= 8 || 'Use at least 8 characters'
+const matchingPassword = (value: string) => value === password.value || 'Passwords must match'
 
-onMounted(async () => {
-  if (reauthenticating.value) email.value = auth.user?.email || ''
-  passkeyAvailable.value = await isAndroidPasskeyAvailable()
+async function focusCurrentField() {
   if (!allowAutomaticFocus) return
   await nextTick()
-  emailField.value?.focus()
-})
+  if (pageFlow.value === 'auth' && mode.value === 'register') nameField.value?.focus()
+  else emailField.value?.focus()
+}
 
 watch(mode, async (nextMode) => {
-  if (!allowAutomaticFocus) return
-  await nextTick()
-  if (nextMode === 'register') nameField.value?.focus()
-  else emailField.value?.focus()
+  auth.clearError()
+  pageError.value = ''
+  success.value = ''
+  password.value = ''
+  passwordConfirm.value = ''
+  if (nextMode === 'register') registrationEmail.value = ''
+  await focusCurrentField()
 })
+
+watch(
+  () => [route.name, route.query.token],
+  async () => {
+    auth.clearError()
+    pageError.value = ''
+    success.value = ''
+    backendOffline.value = false
+    registrationEmail.value = ''
+    password.value = ''
+    passwordConfirm.value = ''
+    if (reauthenticating.value) email.value = auth.user?.email || ''
+    passkeyAvailable.value = await isAndroidPasskeyAvailable()
+    if (pageFlow.value === 'verify') await confirmEmail()
+    else await focusCurrentField()
+  },
+  { immediate: true },
+)
 
 async function submit() {
   const result = await form.value?.validate()
   if (!result?.valid) return
   backendOffline.value = false
+  pageError.value = ''
   try {
-    if (mode.value === 'login') await auth.login(email.value, password.value)
-    else await auth.register(name.value, email.value, password.value)
-    await router.replace(reauthenticating.value ? String(route.query.redirect || '/tasks') : '/tasks')
+    if (pageFlow.value === 'forgot') {
+      const response = await auth.requestPasswordReset(email.value)
+      success.value = response.message
+      return
+    }
+    if (pageFlow.value === 'reset') {
+      const response = await auth.resetPassword(resetToken.value, password.value)
+      success.value = response.message
+      password.value = ''
+      passwordConfirm.value = ''
+      return
+    }
+    if (mode.value === 'login') {
+      await auth.login(email.value, password.value)
+      await router.replace(reauthenticating.value ? String(route.query.redirect || '/tasks') : '/tasks')
+      return
+    }
+    const response = await auth.register(name.value, email.value, password.value)
+    registrationEmail.value = response.email || email.value
+    success.value = response.message
+    password.value = ''
+    passwordConfirm.value = ''
+  } catch (error) {
+    backendOffline.value = error instanceof TypeError || (error instanceof Error && /fetch|network/i.test(error.message))
+  }
+}
+
+async function confirmEmail() {
+  const token = resetToken.value
+  if (!token) {
+    pageError.value = 'This confirmation link is invalid or expired.'
+    return
+  }
+  if (handledVerificationToken.value === token) return
+  handledVerificationToken.value = token
+  try {
+    const response = await auth.verifyEmail(token)
+    success.value = response.message
+  } catch (error) {
+    backendOffline.value = error instanceof TypeError || (error instanceof Error && /fetch|network/i.test(error.message))
+  }
+}
+
+async function resendConfirmation() {
+  backendOffline.value = false
+  try {
+    const response = await auth.resendEmailVerification(registrationEmail.value)
+    success.value = response.message
   } catch (error) {
     backendOffline.value = error instanceof TypeError || (error instanceof Error && /fetch|network/i.test(error.message))
   }
@@ -83,7 +184,7 @@ async function signInWithPasskey() {
         </section>
 
         <v-card class="auth-card pa-5 pa-sm-7" color="surface">
-          <div v-if="!reauthenticating" class="d-flex ga-2 mb-6">
+          <div v-if="pageFlow === 'auth' && !reauthenticating && !registrationEmail" class="d-flex ga-2 mb-6">
             <v-btn
               class="flex-grow-1"
               :variant="mode === 'login' ? 'flat' : 'text'"
@@ -103,49 +204,111 @@ async function signInWithPasskey() {
           </div>
 
           <h2 class="text-h5 font-weight-black mb-1">
-            {{ mode === 'login' ? 'Welcome back' : 'Create your space' }}
+            {{ registrationEmail ? 'Check your email' : cardTitle }}
           </h2>
           <p class="text-body-2 muted mb-6">
-            {{ reauthenticating ? 'Sign in again to resume background synchronization.' : mode === 'login' ? 'Pick up where you left off.' : 'Create a private, synced workspace.' }}
+            {{ registrationEmail ? `We sent a confirmation link to ${registrationEmail}.` : cardCopy }}
           </p>
 
           <v-alert v-if="backendOffline" type="warning" variant="tonal" class="mb-4" density="compact">
             The API is offline. Run <code>pnpm api:serve</code> and try again.
           </v-alert>
-          <v-alert v-else-if="auth.error" type="error" variant="tonal" class="mb-4" density="compact">
-            {{ auth.error }}
+          <v-alert v-else-if="pageError || auth.error" type="error" variant="tonal" class="mb-4" density="compact">
+            {{ pageError || auth.error }}
           </v-alert>
 
-          <AppForm ref="form" validate-on="submit" autocomplete="off" @submit.prevent="submit">
+          <div v-if="registrationEmail" class="text-center">
+            <v-icon icon="mdi-email-check-outline" color="secondary" size="3rem" class="mb-4" />
+            <v-alert v-if="success" type="success" variant="tonal" class="mb-5 text-left" density="compact">
+              {{ success }}
+            </v-alert>
+            <v-btn block color="secondary" size="large" :to="{ name: 'auth' }">
+              Back to sign in
+            </v-btn>
+            <v-btn
+              class="mt-2"
+              variant="text"
+              size="small"
+              :loading="auth.loading"
+              @click="resendConfirmation"
+            >
+              Resend confirmation email
+            </v-btn>
+          </div>
+
+          <div v-else-if="pageFlow === 'verify'" class="text-center" aria-live="polite">
+            <v-progress-circular v-if="auth.loading" indeterminate color="secondary" size="3rem" class="mb-5" />
+            <v-icon v-else :icon="success ? 'mdi-check-circle-outline' : 'mdi-link-off'" :color="success ? 'success' : 'error'" size="3rem" class="mb-5" />
+            <v-alert v-if="success" type="success" variant="tonal" class="mb-5 text-left" density="compact">
+              {{ success }}
+            </v-alert>
+            <v-btn v-if="!auth.loading" block color="secondary" size="large" :to="{ name: 'auth' }">
+              Continue to sign in
+            </v-btn>
+          </div>
+
+          <div v-else-if="success" class="text-center" aria-live="polite">
+            <v-icon icon="mdi-email-check-outline" color="success" size="3rem" class="mb-4" />
+            <v-alert type="success" variant="tonal" class="mb-5 text-left" density="compact">
+              {{ success }}
+            </v-alert>
+            <v-btn block color="secondary" size="large" :to="{ name: 'auth' }">
+              Back to sign in
+            </v-btn>
+          </div>
+
+          <AppForm v-else ref="form" validate-on="submit" autocomplete="off" @submit.prevent="submit">
             <div class="auth-fields">
               <v-text-field
-                v-if="mode === 'register'"
+                v-if="pageFlow === 'auth' && mode === 'register'"
                 ref="nameField"
                 v-model="name"
-                label="Your name"
                 autocomplete="off"
                 prepend-inner-icon="mdi-account-outline"
                 :rules="[required]"
-              />
+              >
+                <template #label>Your name <span class="required-marker">*</span></template>
+              </v-text-field>
               <v-text-field
+                v-if="pageFlow !== 'reset'"
                 ref="emailField"
                 v-model="email"
-                label="Email"
                 type="email"
-                autocomplete="off"
+                autocomplete="email"
                 prepend-inner-icon="mdi-email-outline"
                 :rules="[required, validEmail]"
-              />
+              >
+                <template #label>Email <span class="required-marker">*</span></template>
+              </v-text-field>
               <v-text-field
+                v-if="pageFlow !== 'forgot'"
                 v-model="password"
-                label="Password"
                 :type="visible ? 'text' : 'password'"
                 autocomplete="off"
                 prepend-inner-icon="mdi-lock-outline"
                 :append-inner-icon="visible ? 'mdi-eye-off' : 'mdi-eye'"
-                :rules="[required, strongPassword]"
+                :rules="pageFlow === 'reset' || mode === 'register' ? [required, strongPassword] : [required]"
                 @click:append-inner="visible = !visible"
-              />
+              >
+                <template #label>{{ pageFlow === 'reset' ? 'New password' : 'Password' }} <span class="required-marker">*</span></template>
+              </v-text-field>
+              <v-text-field
+                v-if="pageFlow === 'reset' || (pageFlow === 'auth' && mode === 'register')"
+                v-model="passwordConfirm"
+                :type="confirmVisible ? 'text' : 'password'"
+                autocomplete="off"
+                prepend-inner-icon="mdi-lock-check-outline"
+                :append-inner-icon="confirmVisible ? 'mdi-eye-off' : 'mdi-eye'"
+                :rules="[required, matchingPassword]"
+                @click:append-inner="confirmVisible = !confirmVisible"
+              >
+                <template #label>Confirm password <span class="required-marker">*</span></template>
+              </v-text-field>
+            </div>
+            <div v-if="pageFlow === 'auth' && mode === 'login' && !reauthenticating" class="d-flex justify-end mt-1">
+              <v-btn variant="text" size="small" :to="{ name: 'forgot-password' }">
+                Forgot your password?
+              </v-btn>
             </div>
             <v-btn
               type="submit"
@@ -156,11 +319,20 @@ async function signInWithPasskey() {
               :loading="auth.loading"
               append-icon="mdi-arrow-right"
             >
-              {{ mode === 'login' ? 'Open your day' : 'Create account' }}
+              {{ pageFlow === 'forgot' ? 'Send reset link' : pageFlow === 'reset' ? 'Reset password' : mode === 'login' ? 'Open your day' : 'Create account' }}
+            </v-btn>
+            <v-btn
+              v-if="pageFlow === 'forgot' || pageFlow === 'reset'"
+              block
+              variant="text"
+              class="mt-2"
+              :to="{ name: 'auth' }"
+            >
+              Back to sign in
             </v-btn>
           </AppForm>
 
-          <template v-if="mode === 'login' && passkeyAvailable">
+          <template v-if="pageFlow === 'auth' && mode === 'login' && passkeyAvailable && !registrationEmail">
             <div class="auth-separator my-5" aria-hidden="true">
               <v-divider />
               <span>or</span>
@@ -272,6 +444,10 @@ async function signInWithPasskey() {
 .auth-fields {
   display: grid;
   gap: 1rem;
+}
+
+.required-marker {
+  color: rgb(var(--v-theme-error));
 }
 
 .auth-separator {

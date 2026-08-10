@@ -114,6 +114,9 @@ final class Database
                 'tracker_snapshot', 'created_at', 'updated_at',
             ],
             'mom_rate_limits' => ['rate_key', 'window_start', 'hits'],
+            'mom_auth_tokens' => [
+                'token_hash', 'user_id', 'purpose', 'expires_at', 'created_at',
+            ],
             'mom_passkey_challenges' => [
                 'id', 'purpose', 'user_id', 'user_handle', 'challenge',
                 'expires_at', 'created_at',

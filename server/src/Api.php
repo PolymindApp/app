@@ -18,6 +18,8 @@ final class Api
     private const MAX_PAGE_SIZE = 200;
     private const MAX_FLASHCARD_IMPORT_ROWS = 500;
     private const PASSKEY_CHALLENGE_TTL = 300;
+    private const EMAIL_VERIFICATION_TTL = 86400;
+    private const PASSWORD_RESET_TTL = 3600;
     private const MAIN_MENU_ITEMS = ['tasks', 'intervals', 'flashcards', 'tracking', 'journal'];
     private const FLASHCARD_REVIEW_SETTING_FIELDS = [
         'mode', 'card_sides', 'indefinite', 'max_cards', 'front_seconds', 'back_seconds',
@@ -26,6 +28,7 @@ final class Api
         'sort_mode',
     ];
     private readonly CodexBridgeClient $codexBridge;
+    private readonly Mailer $mailer;
     private readonly SyncService $syncService;
 
     public function __construct(
@@ -37,6 +40,7 @@ final class Api
             $config->codexBridgeToken,
             $config->secret,
         );
+        $this->mailer = new Mailer($config);
         $this->syncService = new SyncService($database, $config);
     }
 
@@ -60,6 +64,18 @@ final class Api
             }
             if ($method === 'POST' && $path === '/auth/register') {
                 $this->register();
+            }
+            if ($method === 'POST' && $path === '/auth/email-verification') {
+                $this->verifyEmail();
+            }
+            if ($method === 'POST' && $path === '/auth/email-verification/resend') {
+                $this->resendEmailVerification();
+            }
+            if ($method === 'POST' && $path === '/auth/password/forgot') {
+                $this->forgotPassword();
+            }
+            if ($method === 'POST' && $path === '/auth/password/reset') {
+                $this->resetPassword();
             }
             if (($method === 'GET' || $method === 'PATCH') && $path === '/auth/account') {
                 $this->account($method);
@@ -488,6 +504,9 @@ final class Api
         if (!$valid || !is_array($user)) {
             throw new ApiException(401, 'The email or password is incorrect.');
         }
+        if (!(bool) $user['verified']) {
+            throw new ApiException(403, 'Confirm your email before signing in.');
+        }
 
         if (password_needs_rehash((string) $user['password'], PASSWORD_DEFAULT)) {
             $newHash = password_hash($password, PASSWORD_DEFAULT);
@@ -548,7 +567,11 @@ final class Api
             'timezone' => $timezone,
         ];
 
+        $pdo = $this->database->pdo;
+        $transactionOpen = false;
         try {
+            $pdo->exec('BEGIN IMMEDIATE');
+            $transactionOpen = true;
             $statement = $this->database->pdo->prepare(
                 'INSERT INTO users (
                     id, avatar, created, email, email_visibility, name,
@@ -559,14 +582,174 @@ final class Api
                 )',
             );
             $statement->execute($user);
+            $token = $this->issueAuthToken(
+                $id,
+                'email_verification',
+                self::EMAIL_VERIFICATION_TTL,
+            );
+            $this->mailer->sendEmailConfirmation($email, $token);
+            $pdo->exec('COMMIT');
+            $transactionOpen = false;
         } catch (PDOException $exception) {
+            if ($transactionOpen) {
+                $pdo->exec('ROLLBACK');
+            }
             if ($this->isConstraintViolation($exception)) {
                 throw new ApiException(409, 'An account with that email already exists.');
             }
             throw $exception;
+        } catch (Throwable $exception) {
+            if ($transactionOpen) {
+                $pdo->exec('ROLLBACK');
+            }
+            throw $exception;
         }
 
-        $this->respond($this->publicUser($user), 201);
+        $this->respond([
+            'message' => 'Check your email to confirm your account.',
+            'email' => $email,
+        ], 201);
+    }
+
+    private function verifyEmail(): never
+    {
+        $this->rateLimit('verify-email:' . $this->clientIp(), 20, 3600);
+        $body = $this->jsonBody();
+        $token = $this->validateAuthToken($body['token'] ?? null);
+        $pdo = $this->database->pdo;
+        $transactionOpen = false;
+
+        try {
+            $pdo->exec('BEGIN IMMEDIATE');
+            $transactionOpen = true;
+            $authToken = $this->requireAuthToken($token, 'email_verification');
+            $statement = $pdo->prepare(
+                'UPDATE users SET verified = TRUE, updated = :updated WHERE id = :id',
+            );
+            $statement->execute([
+                'updated' => $this->now(),
+                'id' => $authToken['user_id'],
+            ]);
+            $this->deleteAuthToken($token, 'email_verification');
+            $pdo->exec('COMMIT');
+            $transactionOpen = false;
+        } catch (Throwable $exception) {
+            if ($transactionOpen) {
+                $pdo->exec('ROLLBACK');
+            }
+            throw $exception;
+        }
+
+        $this->respond(['message' => 'Your email is confirmed. You can now sign in.']);
+    }
+
+    private function resendEmailVerification(): never
+    {
+        $this->rateLimit('verify-email-resend-ip:' . $this->clientIp(), 5, 3600);
+        $body = $this->jsonBody();
+        $email = $this->normalizeEmail($body['email'] ?? null);
+        $this->rateLimit('verify-email-resend:' . hash('sha256', $email), 3, 3600);
+
+        $statement = $this->database->pdo->prepare(
+            'SELECT id, email FROM users
+             WHERE email = :email COLLATE NOCASE AND verified = FALSE
+             LIMIT 1',
+        );
+        $statement->execute(['email' => $email]);
+        $user = $statement->fetch();
+        if (is_array($user)) {
+            $token = $this->issueAuthToken(
+                (string) $user['id'],
+                'email_verification',
+                self::EMAIL_VERIFICATION_TTL,
+            );
+            try {
+                $this->mailer->sendEmailConfirmation((string) $user['email'], $token);
+            } catch (ApiException) {
+                // Keep this response identical for unknown and known addresses.
+            }
+        }
+
+        $this->respond([
+            'message' => 'If that account still needs confirmation, a new email is on its way.',
+        ], 202);
+    }
+
+    private function forgotPassword(): never
+    {
+        $this->rateLimit('password-forgot-ip:' . $this->clientIp(), 5, 3600);
+        $body = $this->jsonBody();
+        $email = $this->normalizeEmail($body['email'] ?? null);
+        $this->rateLimit('password-forgot:' . hash('sha256', $email), 3, 3600);
+
+        $statement = $this->database->pdo->prepare(
+            'SELECT id, email FROM users WHERE email = :email COLLATE NOCASE LIMIT 1',
+        );
+        $statement->execute(['email' => $email]);
+        $user = $statement->fetch();
+        if (is_array($user)) {
+            $token = $this->issueAuthToken(
+                (string) $user['id'],
+                'password_reset',
+                self::PASSWORD_RESET_TTL,
+            );
+            try {
+                $this->mailer->sendPasswordReset((string) $user['email'], $token);
+            } catch (ApiException) {
+                // Keep this response identical for unknown and known addresses.
+            }
+        }
+
+        $this->respond([
+            'message' => 'If an account uses that email, a password reset link is on its way.',
+        ], 202);
+    }
+
+    private function resetPassword(): never
+    {
+        $this->rateLimit('password-reset:' . $this->clientIp(), 10, 3600);
+        $body = $this->jsonBody();
+        $token = $this->validateAuthToken($body['token'] ?? null);
+        $password = $this->validatePassword($body['password'] ?? null, true);
+        $passwordConfirm = $body['passwordConfirm'] ?? null;
+        if (!is_string($passwordConfirm) || !hash_equals($password, $passwordConfirm)) {
+            throw new ApiException(422, 'The password confirmation does not match.', [
+                'passwordConfirm' => 'Passwords must match.',
+            ]);
+        }
+
+        $pdo = $this->database->pdo;
+        $transactionOpen = false;
+        try {
+            $pdo->exec('BEGIN IMMEDIATE');
+            $transactionOpen = true;
+            $authToken = $this->requireAuthToken($token, 'password_reset');
+            $statement = $pdo->prepare(
+                'UPDATE users
+                 SET password = :password,
+                     token_key = :token_key,
+                     verified = TRUE,
+                     updated = :updated
+                 WHERE id = :id',
+            );
+            $statement->execute([
+                'password' => password_hash($password, PASSWORD_DEFAULT),
+                'token_key' => $this->randomTokenVersionKey(),
+                'updated' => $this->now(),
+                'id' => $authToken['user_id'],
+            ]);
+            $statement = $pdo->prepare('DELETE FROM mom_auth_tokens WHERE user_id = :user_id');
+            $statement->execute(['user_id' => $authToken['user_id']]);
+            $pdo->exec('COMMIT');
+            $transactionOpen = false;
+        } catch (Throwable $exception) {
+            if ($transactionOpen) {
+                $pdo->exec('ROLLBACK');
+            }
+            throw $exception;
+        }
+
+        $this->respond(['message' => 'Your password has been reset. You can now sign in.']);
     }
 
     private function account(string $method): never
@@ -1725,6 +1908,9 @@ final class Api
         if (!is_array($user)) {
             throw new ApiException(401, 'Biometric sign-in could not be verified.');
         }
+        if (!(bool) $user['verified']) {
+            throw new ApiException(403, 'Confirm your email before signing in.');
+        }
 
         $providedUserHandle = $credential['response']['userHandle'] ?? null;
         if (
@@ -2012,6 +2198,9 @@ final class Api
             || !hash_equals($this->tokenVersion((string) $user['token_key']), $payload['ver'])
         ) {
             throw new ApiException(401, 'The authentication token is no longer valid.');
+        }
+        if (!(bool) $user['verified']) {
+            throw new ApiException(403, 'Confirm your email before continuing.');
         }
 
         $this->claimPendingFlashcardReviewSetShares($user);
@@ -6181,6 +6370,79 @@ final class Api
             throw new ApiException(422, 'A valid email address is required.', ['email' => 'email']);
         }
         return $email;
+    }
+
+    private function issueAuthToken(string $userId, string $purpose, int $ttl): string
+    {
+        $token = bin2hex(random_bytes(32));
+        $now = time();
+        $this->database->pdo->prepare(
+            'DELETE FROM mom_auth_tokens WHERE expires_at < :now',
+        )->execute(['now' => $now]);
+        $statement = $this->database->pdo->prepare(
+            'INSERT INTO mom_auth_tokens (
+                token_hash, user_id, purpose, expires_at, created_at
+             ) VALUES (
+                :token_hash, :user_id, :purpose, :expires_at, :created_at
+             )
+             ON CONFLICT(user_id, purpose) DO UPDATE SET
+                token_hash = excluded.token_hash,
+                expires_at = excluded.expires_at,
+                created_at = excluded.created_at',
+        );
+        $statement->execute([
+            'token_hash' => $this->authTokenHash($token),
+            'user_id' => $userId,
+            'purpose' => $purpose,
+            'expires_at' => $now + $ttl,
+            'created_at' => $now,
+        ]);
+        return $token;
+    }
+
+    private function validateAuthToken(mixed $value): string
+    {
+        if (!is_string($value) || preg_match('/^[a-f0-9]{64}$/D', $value) !== 1) {
+            throw new ApiException(422, 'This link is invalid or expired.');
+        }
+        return $value;
+    }
+
+    private function requireAuthToken(string $token, string $purpose): array
+    {
+        $statement = $this->database->pdo->prepare(
+            'SELECT user_id FROM mom_auth_tokens
+             WHERE token_hash = :token_hash
+               AND purpose = :purpose
+               AND expires_at >= :now
+             LIMIT 1',
+        );
+        $statement->execute([
+            'token_hash' => $this->authTokenHash($token),
+            'purpose' => $purpose,
+            'now' => time(),
+        ]);
+        $record = $statement->fetch();
+        if (!is_array($record)) {
+            throw new ApiException(422, 'This link is invalid or expired.');
+        }
+        return $record;
+    }
+
+    private function deleteAuthToken(string $token, string $purpose): void
+    {
+        $statement = $this->database->pdo->prepare(
+            'DELETE FROM mom_auth_tokens WHERE token_hash = :token_hash AND purpose = :purpose',
+        );
+        $statement->execute([
+            'token_hash' => $this->authTokenHash($token),
+            'purpose' => $purpose,
+        ]);
+    }
+
+    private function authTokenHash(string $token): string
+    {
+        return hash_hmac('sha256', $token, $this->config->secret);
     }
 
     private function validatePassword(mixed $value, bool $enforceMinimum): string

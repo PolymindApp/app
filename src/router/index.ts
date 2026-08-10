@@ -15,6 +15,9 @@ const router = createRouter({
       meta: { webOnly: true, title: 'Polymind — Make life programmable.' },
     },
     { path: '/auth', name: 'auth', component: () => import('@/views/AuthView.vue'), meta: { guest: true } },
+    { path: '/forgot-password', name: 'forgot-password', component: () => import('@/views/AuthView.vue'), meta: { guest: true, title: 'Forgot password' } },
+    { path: '/reset-password', name: 'reset-password', component: () => import('@/views/AuthView.vue'), meta: { title: 'Reset password' } },
+    { path: '/verify-email', name: 'verify-email', component: () => import('@/views/AuthView.vue'), meta: { title: 'Confirm email' } },
     {
       path: '/',
       component: () => import('@/layouts/AppShell.vue'),

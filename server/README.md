@@ -31,6 +31,14 @@ Configuration may be supplied through the root `.env`, process environment varia
 | `MOM_ALLOWED_ORIGINS` | Comma-separated exact browser/Capacitor origins | Same-origin only |
 | `MOM_TOKEN_TTL` | Token lifetime in seconds, 5 minutes–30 days | 604800 |
 | `MOM_MAX_BODY_BYTES` | Maximum JSON request size | 2500000 |
+| `MOM_APP_URL` | Public browser URL used in account email links | Required for account email |
+| `MOM_MAIL_HOST` | SMTP host used by PHPMailer | Required for account email |
+| `MOM_MAIL_PORT` | SMTP port | 587 |
+| `MOM_MAIL_USERNAME` | SMTP username; configure with the password | No authentication |
+| `MOM_MAIL_PASSWORD` | SMTP password; configure with the username | No authentication |
+| `MOM_MAIL_ENCRYPTION` | `tls`, `ssl`, or `none` for trusted local development | `tls` |
+| `MOM_MAIL_FROM_ADDRESS` | Sender email address | Required for account email |
+| `MOM_MAIL_FROM_NAME` | Sender display name | Polymind |
 | `MOM_PEXELS_API_KEY` | Server-side Pexels API key used by batch and on-demand cache fills | Disabled |
 | `MOM_CODEX_BRIDGE_URL` | HTTPS URL of the separately hosted Codex bridge | Disabled |
 | `MOM_CODEX_BRIDGE_TOKEN` | Shared bridge bearer token, at least 32 characters | Disabled |
@@ -49,6 +57,8 @@ Generate separate values for `MOM_API_SECRET` and `MOM_MIGRATION_KEY`. Never com
 Only `VITE_API_URL` is exposed to the browser build. Variables beginning with `MOM_` remain PHP-only.
 
 For a native Android client, the allowed origins normally include `http://localhost`. For iOS Capacitor, include `capacitor://localhost`. Include the exact HTTPS origin of every browser client.
+
+Registration and password recovery require SMTP delivery. `MOM_APP_URL` must point to the deployed browser application rather than the API, so confirmation links open `/verify-email` and reset links open `/reset-password`. Use authenticated TLS in production. `none` is intended only for a trusted loopback development SMTP server.
 
 ## Database placement
 
@@ -105,6 +115,7 @@ The reconstructed PHP-era history is:
 | `202608080003` | Review set note-before-answer display preference |
 | `202608080004` | Remove legacy API keys in favor of hosted ChatGPT authentication |
 | `202608090001` | Offline synchronization versions, change log, idempotency receipts, client cursors, and per-device active sessions |
+| `202608100001` | Hashed email-confirmation and password-reset tokens; existing accounts are grandfathered as verified |
 
 Existing PHP databases are advanced without recreating application data. Migration `202608080004` is the explicit exception for deletion: it removes credentials from the superseded API-key connection. The schema is validated after migration, including required columns.
 
@@ -215,6 +226,9 @@ Use the PHP-FPM socket configured by the host.
 
 - HS256 bearer tokens are signed with `MOM_API_SECRET`, expire automatically, and are bound to each user’s `token_key`.
 - Passwords use PHP’s password hashing API and are rehashed after a successful login when PHP recommends it.
+- New password accounts cannot sign in until their emailed address is confirmed.
+- Email confirmation and password reset tokens are stored only as HMAC hashes, expire after 24 hours and 1 hour respectively, and are consumed once.
+- A password reset rotates the account token key to revoke existing bearer sessions.
 - Authentication attempts are throttled by IP and normalized email.
 - CORS uses an exact allowlist and never returns a wildcard origin.
 - SQL table names, columns, filters, and sorts come from server-side allowlists.

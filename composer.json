@@ -5,13 +5,14 @@
     "license": "proprietary",
     "require": {
         "php": ">=8.1",
-        "ext-json": "*",
         "ext-curl": "*",
         "ext-gd": "*",
+        "ext-json": "*",
         "ext-openssl": "*",
         "ext-pdo": "*",
         "ext-pdo_sqlite": "*",
-        "lbuchs/webauthn": "^2.2"
+        "lbuchs/webauthn": "^2.2",
+        "phpmailer/phpmailer": "^7.0"
     },
     "config": {
         "sort-packages": true

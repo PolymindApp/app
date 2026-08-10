@@ -19,6 +19,14 @@ final class Config
         public readonly string $pexelsApiKey,
         public readonly string $codexBridgeUrl,
         public readonly string $codexBridgeToken,
+        public readonly string $appUrl,
+        public readonly string $mailHost,
+        public readonly int $mailPort,
+        public readonly string $mailUsername,
+        public readonly string $mailPassword,
+        public readonly string $mailEncryption,
+        public readonly string $mailFromAddress,
+        public readonly string $mailFromName,
         public readonly bool $debug,
     ) {
     }
@@ -78,6 +86,17 @@ final class Config
         }
         $codexBridgeUrl = rtrim(trim((string) $value('MOM_CODEX_BRIDGE_URL', '')), '/');
         $codexBridgeToken = trim((string) $value('MOM_CODEX_BRIDGE_TOKEN', ''));
+        $appUrl = rtrim(trim((string) $value('MOM_APP_URL', '')), '/');
+        $mailHost = trim((string) $value('MOM_MAIL_HOST', ''));
+        $mailPort = (int) $value('MOM_MAIL_PORT', 587);
+        $mailUsername = trim((string) $value('MOM_MAIL_USERNAME', ''));
+        $mailPassword = (string) $value('MOM_MAIL_PASSWORD', '');
+        $mailEncryption = strtolower(trim((string) $value('MOM_MAIL_ENCRYPTION', 'tls')));
+        if ($mailEncryption === 'none') {
+            $mailEncryption = '';
+        }
+        $mailFromAddress = strtolower(trim((string) $value('MOM_MAIL_FROM_ADDRESS', '')));
+        $mailFromName = trim((string) $value('MOM_MAIL_FROM_NAME', 'Polymind'));
         $debug = strtolower(trim((string) $value('DEBUG', ''))) === 'dev';
 
         if ($secret === '' || strlen($secret) < 32) {
@@ -173,6 +192,51 @@ final class Config
                 'MOM_CODEX_BRIDGE_TOKEN must contain at least 32 printable characters.',
             );
         }
+        if ($appUrl !== '') {
+            $appUrlParts = parse_url($appUrl);
+            $appUrlHost = is_array($appUrlParts)
+                ? strtolower((string) ($appUrlParts['host'] ?? ''))
+                : '';
+            $appUrlScheme = is_array($appUrlParts)
+                ? strtolower((string) ($appUrlParts['scheme'] ?? ''))
+                : '';
+            if (
+                !is_array($appUrlParts)
+                || $appUrlHost === ''
+                || !in_array($appUrlScheme, ['http', 'https'], true)
+                || (
+                    $appUrlScheme !== 'https'
+                    && !in_array($appUrlHost, ['127.0.0.1', 'localhost'], true)
+                )
+                || isset($appUrlParts['user'])
+                || isset($appUrlParts['pass'])
+                || isset($appUrlParts['query'])
+                || isset($appUrlParts['fragment'])
+            ) {
+                throw new ApiException(500, 'MOM_APP_URL must be an HTTPS application URL.');
+            }
+        }
+        if ($mailPort < 1 || $mailPort > 65535) {
+            throw new ApiException(500, 'MOM_MAIL_PORT must be between 1 and 65535.');
+        }
+        if (!in_array($mailEncryption, ['', 'tls', 'ssl'], true)) {
+            throw new ApiException(500, 'MOM_MAIL_ENCRYPTION must be tls, ssl, or none.');
+        }
+        if (($mailUsername === '') !== ($mailPassword === '')) {
+            throw new ApiException(
+                500,
+                'MOM_MAIL_USERNAME and MOM_MAIL_PASSWORD must be configured together.',
+            );
+        }
+        if (
+            $mailFromAddress !== ''
+            && filter_var($mailFromAddress, FILTER_VALIDATE_EMAIL) === false
+        ) {
+            throw new ApiException(500, 'MOM_MAIL_FROM_ADDRESS must be a valid email address.');
+        }
+        if (strlen($mailFromName) > 160) {
+            throw new ApiException(500, 'MOM_MAIL_FROM_NAME is too long.');
+        }
 
         return new self(
             $databasePath,
@@ -187,6 +251,14 @@ final class Config
             $pexelsApiKey,
             $codexBridgeUrl,
             $codexBridgeToken,
+            $appUrl,
+            $mailHost,
+            $mailPort,
+            $mailUsername,
+            $mailPassword,
+            $mailEncryption,
+            $mailFromAddress,
+            $mailFromName,
             $debug,
         );
     }

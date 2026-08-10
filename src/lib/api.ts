@@ -7,6 +7,7 @@ import type {
   FlashcardReviewSettings,
   ChatGPTConnectionStatus,
 } from '@/types/domain'
+import type { AuthActionResponse } from '@/types/auth'
 import {
   createLocalRecordId,
   getLocalRecord,
@@ -431,6 +432,51 @@ class ApiClient {
 
   autoCancellation(_enabled: boolean) {
     // Kept as a no-op so existing store initialization remains compatible.
+  }
+
+  registerAccount(name: string, email: string, password: string, timezone: string) {
+    return request<AuthActionResponse>(
+      '/auth/register',
+      {
+        method: 'POST',
+        body: { name, email, password, passwordConfirm: password, timezone },
+      },
+      this.authStore,
+    )
+  }
+
+  verifyEmail(token: string) {
+    return request<AuthActionResponse>(
+      '/auth/email-verification',
+      { method: 'POST', body: { token } },
+      this.authStore,
+    )
+  }
+
+  resendEmailVerification(email: string) {
+    return request<AuthActionResponse>(
+      '/auth/email-verification/resend',
+      { method: 'POST', body: { email } },
+      this.authStore,
+    )
+  }
+
+  requestPasswordReset(email: string) {
+    return request<AuthActionResponse>(
+      '/auth/password/forgot',
+      { method: 'POST', body: { email } },
+      this.authStore,
+    )
+  }
+
+  async resetPassword(token: string, password: string) {
+    const response = await request<AuthActionResponse>(
+      '/auth/password/reset',
+      { method: 'POST', body: { token, password, passwordConfirm: password } },
+      this.authStore,
+    )
+    this.authStore.clear()
+    return response
   }
 
   beginPasskeyRegistration() {

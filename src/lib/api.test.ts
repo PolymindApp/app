@@ -52,6 +52,59 @@ describe('Polymind API client adapter', () => {
     expect(localStorage.getItem('mom-api-auth')).toContain(token)
   })
 
+  it('runs the email confirmation and password recovery requests', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({
+        message: 'Check your email to confirm your account.',
+        email: 'person@example.com',
+      }, 201))
+      .mockResolvedValueOnce(jsonResponse({ message: 'Your email is confirmed.' }))
+      .mockResolvedValueOnce(jsonResponse({ message: 'A new confirmation is on its way.' }, 202))
+      .mockResolvedValueOnce(jsonResponse({ message: 'A reset link is on its way.' }, 202))
+      .mockResolvedValueOnce(jsonResponse({ message: 'Your password has been reset.' }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { api } = await import('./api')
+    await api.registerAccount('Person', 'person@example.com', 'password123', 'America/Toronto')
+    await api.verifyEmail('a'.repeat(64))
+    await api.resendEmailVerification('person@example.com')
+    await api.requestPasswordReset('person@example.com')
+    api.authStore.save(futureToken(), {
+      id: 'user-1',
+      email: 'person@example.com',
+    })
+    await api.resetPassword('b'.repeat(64), 'new-password123')
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/auth/register', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({
+        name: 'Person',
+        email: 'person@example.com',
+        password: 'password123',
+        passwordConfirm: 'password123',
+        timezone: 'America/Toronto',
+      }),
+    }))
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/auth/email-verification', expect.objectContaining({
+      body: JSON.stringify({ token: 'a'.repeat(64) }),
+    }))
+    expect(fetchMock).toHaveBeenNthCalledWith(3, '/api/auth/email-verification/resend', expect.objectContaining({
+      body: JSON.stringify({ email: 'person@example.com' }),
+    }))
+    expect(fetchMock).toHaveBeenNthCalledWith(4, '/api/auth/password/forgot', expect.objectContaining({
+      body: JSON.stringify({ email: 'person@example.com' }),
+    }))
+    expect(fetchMock).toHaveBeenNthCalledWith(5, '/api/auth/password/reset', expect.objectContaining({
+      body: JSON.stringify({
+        token: 'b'.repeat(64),
+        password: 'new-password123',
+        passwordConfirm: 'new-password123',
+      }),
+    }))
+    expect(api.authStore.record).toBeNull()
+    expect(localStorage.getItem('mom-api-auth')).toBeNull()
+  })
+
   it('completes a passkey login and persists the returned session', async () => {
     const token = futureToken()
     const fetchMock = vi.fn()

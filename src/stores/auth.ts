@@ -46,20 +46,74 @@ export const useAuthStore = defineStore('auth', () => {
     loading.value = true
     error.value = ''
     try {
-      await api.collection('users').create({
+      return await api.registerAccount(
         name,
         email,
         password,
-        passwordConfirm: password,
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Toronto',
-      })
-      await login(email, password)
+        Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Toronto',
+      )
     } catch (cause) {
       error.value = cause instanceof Error ? cause.message : 'Unable to create your account.'
       throw cause
     } finally {
       loading.value = false
     }
+  }
+
+  async function verifyEmail(token: string) {
+    loading.value = true
+    error.value = ''
+    try {
+      return await api.verifyEmail(token)
+    } catch (cause) {
+      error.value = cause instanceof Error ? cause.message : 'Unable to confirm your email.'
+      throw cause
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function resendEmailVerification(email: string) {
+    loading.value = true
+    error.value = ''
+    try {
+      return await api.resendEmailVerification(email)
+    } catch (cause) {
+      error.value = cause instanceof Error ? cause.message : 'Unable to resend the confirmation email.'
+      throw cause
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function requestPasswordReset(email: string) {
+    loading.value = true
+    error.value = ''
+    try {
+      return await api.requestPasswordReset(email)
+    } catch (cause) {
+      error.value = cause instanceof Error ? cause.message : 'Unable to request a password reset.'
+      throw cause
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function resetPassword(token: string, password: string) {
+    loading.value = true
+    error.value = ''
+    try {
+      return await api.resetPassword(token, password)
+    } catch (cause) {
+      error.value = cause instanceof Error ? cause.message : 'Unable to reset your password.'
+      throw cause
+    } finally {
+      loading.value = false
+    }
+  }
+
+  function clearError() {
+    error.value = ''
   }
 
   async function loginWithPasskey() {
@@ -192,6 +246,11 @@ export const useAuthStore = defineStore('auth', () => {
     login,
     loginWithPasskey,
     register,
+    verifyEmail,
+    resendEmailVerification,
+    requestPasswordReset,
+    resetPassword,
+    clearError,
     registerPasskey,
     disconnectPasskeys,
     updateName,

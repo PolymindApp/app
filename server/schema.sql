@@ -540,6 +540,19 @@ CREATE TABLE mom_rate_limits (
     hits INTEGER NOT NULL
 );
 
+CREATE TABLE mom_auth_tokens (
+    token_hash TEXT PRIMARY KEY NOT NULL,
+    user_id TEXT NOT NULL,
+    purpose TEXT NOT NULL CHECK (purpose IN ('email_verification', 'password_reset')),
+    expires_at INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    UNIQUE (user_id, purpose)
+);
+
+CREATE INDEX idx_mom_auth_tokens_expiry
+    ON mom_auth_tokens (expires_at);
+
 CREATE TABLE mom_passkey_challenges (
     id TEXT PRIMARY KEY NOT NULL,
     purpose TEXT NOT NULL CHECK (purpose IN ('register', 'login')),

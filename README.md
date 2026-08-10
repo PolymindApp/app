@@ -17,6 +17,7 @@ An expired bearer token pauses remote exchange without locking the user out of c
 - PHP 8.1+ with cURL, GD, PDO_SQLITE, and SQLite FTS5
 - Composer 2
 - A writable Polymind SQLite database
+- An SMTP account for registration confirmation and password recovery
 - Android Studio 2025.2.1+ and an Android SDK for Android builds
 
 ## Start locally
@@ -57,6 +58,7 @@ For a separate API subdomain or a native app build, set an absolute HTTPS URL:
 ```dotenv
 VITE_API_URL=https://api.your-domain.example
 MOM_ALLOWED_ORIGINS=https://your-domain.example,http://localhost,capacitor://localhost
+MOM_APP_URL=https://your-domain.example
 ```
 
 Generate a different `MOM_API_SECRET` for each production installation:
@@ -148,6 +150,10 @@ The API serves these routes:
 GET    /health
 POST   /auth/register
 POST   /auth/login
+POST   /auth/email-verification
+POST   /auth/email-verification/resend
+POST   /auth/password/forgot
+POST   /auth/password/reset
 POST   /sync/bootstrap
 POST   /sync/exchange
 POST   /auth/passkeys/register/options

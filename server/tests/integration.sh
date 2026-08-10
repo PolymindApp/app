@@ -5,6 +5,7 @@ source_db="${MOM_TEST_SOURCE_DB:-private/data.db}"
 test_port="${MOM_TEST_PORT:-$((18100 + RANDOM % 800))}"
 pexels_port="$((test_port + 1000))"
 codex_bridge_port="$((test_port + 2000))"
+smtp_port="$((test_port + 3000))"
 test_secret="mom-api-integration-secret-at-least-32-characters"
 codex_bridge_token="mom-codex-bridge-test-token-at-least-32-characters"
 test_root="${TMPDIR:-/tmp}"
@@ -14,9 +15,12 @@ test_log="$test_dir/server.log"
 pexels_log="$test_dir/pexels.log"
 codex_bridge_log="$test_dir/codex-bridge.log"
 codex_bridge_state="$test_dir/codex-bridge-state.json"
+smtp_log="$test_dir/smtp.log"
+smtp_mailbox="$test_dir/mailbox.txt"
 server_pid=""
 pexels_pid=""
 codex_bridge_pid=""
+smtp_pid=""
 
 cleanup() {
   if [[ -n "$server_pid" ]]; then
@@ -30,6 +34,10 @@ cleanup() {
   if [[ -n "$codex_bridge_pid" ]]; then
     kill "$codex_bridge_pid" >/dev/null 2>&1 || true
     wait "$codex_bridge_pid" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "$smtp_pid" ]]; then
+    kill "$smtp_pid" >/dev/null 2>&1 || true
+    wait "$smtp_pid" >/dev/null 2>&1 || true
   fi
   case "$test_dir" in
     "$test_root"/mom-api-test.*) rm -rf -- "$test_dir" ;;
@@ -56,6 +64,8 @@ MOM_TEST_CODEX_BRIDGE_TOKEN="$codex_bridge_token" \
 MOM_TEST_CODEX_BRIDGE_STATE="$codex_bridge_state" \
   php -S "127.0.0.1:$codex_bridge_port" server/tests/fixtures/codex-bridge-router.php >"$codex_bridge_log" 2>&1 &
 codex_bridge_pid=$!
+php server/tests/fixtures/smtp-server.php "$smtp_port" "$smtp_mailbox" >"$smtp_log" 2>&1 &
+smtp_pid=$!
 
 for _attempt in {1..50}; do
   curl --silent --fail \
@@ -64,6 +74,19 @@ for _attempt in {1..50}; do
     >/dev/null && break
   kill -0 "$pexels_pid" >/dev/null 2>&1 || {
     sed -n '1,200p' "$pexels_log" >&2
+    exit 1
+  }
+  sleep .1
+done
+
+for _attempt in {1..50}; do
+  php -r '
+    $socket = @fsockopen("127.0.0.1", (int) $argv[1], $errorCode, $errorMessage, .1);
+    if ($socket === false) exit(1);
+    fclose($socket);
+  ' "$smtp_port" && break
+  kill -0 "$smtp_pid" >/dev/null 2>&1 || {
+    sed -n '1,200p' "$smtp_log" >&2
     exit 1
   }
   sleep .1
@@ -85,6 +108,12 @@ MOM_PEXELS_API_KEY="test-pexels-key" \
 MOM_PEXELS_API_BASE_URL="http://127.0.0.1:$pexels_port/v1/search" \
 MOM_CODEX_BRIDGE_URL="http://127.0.0.1:$codex_bridge_port" \
 MOM_CODEX_BRIDGE_TOKEN="$codex_bridge_token" \
+MOM_APP_URL="http://127.0.0.1:$test_port" \
+MOM_MAIL_HOST="127.0.0.1" \
+MOM_MAIL_PORT="$smtp_port" \
+MOM_MAIL_ENCRYPTION="none" \
+MOM_MAIL_FROM_ADDRESS="polymind@example.test" \
+MOM_MAIL_FROM_NAME="Polymind" \
 MOM_PASSKEY_RP_ID="mom.example.test" \
 MOM_PASSKEY_ANDROID_PACKAGE="dev.coulombe.mom" \
 MOM_PASSKEY_ANDROID_KEY_HASHES="q9nLBq6siknwb9S8EaFfsZ-C1d5y_mHhbfaYSRnGE0k" \
@@ -105,7 +134,7 @@ suffix="$(php -r 'echo bin2hex(random_bytes(5));')"
 password="correct-horse-battery"
 
 migration_count="$(sqlite3 "$test_db" 'SELECT COUNT(*) FROM mom_schema_migrations;')"
-[[ "$migration_count" == 31 ]] || {
+[[ "$migration_count" == 32 ]] || {
   echo "The API did not apply the complete database migration sequence." >&2
   exit 1
 }
@@ -143,6 +172,29 @@ login() {
     "$api_url/auth/login"
 }
 
+mail_token() {
+  local purpose="$1"
+  php -r '
+    $mail = file_get_contents($argv[1]);
+    $purpose = preg_quote($argv[2], "~");
+    preg_match_all("~/{$purpose}\\?token(?:=3D|=)([a-f0-9]{64})~", $mail, $matches);
+    echo $matches[1] === [] ? "" : end($matches[1]);
+  ' "$smtp_mailbox" "$purpose"
+}
+
+confirm_latest_email() {
+  local verification_token
+  verification_token="$(mail_token verify-email)"
+  [[ "$verification_token" =~ ^[a-f0-9]{64}$ ]] || {
+    echo "A registration confirmation email was not delivered." >&2
+    exit 1
+  }
+  curl --silent --show-error --fail \
+    -H "Content-Type: application/json" \
+    --data "{\"token\":\"$verification_token\"}" \
+    "$api_url/auth/email-verification" >/dev/null
+}
+
 json_field() {
   local field="$1"
   php -r '$data=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); echo $data[$argv[1]];' "$field"
@@ -151,9 +203,87 @@ json_field() {
 alice_email="alice-$suffix@example.test"
 bob_email="bob-$suffix@example.test"
 register "Alice API" "$alice_email" >/dev/null
+unverified_login_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  -H "Content-Type: application/json" \
+  --data "{\"email\":\"$alice_email\",\"password\":\"$password\"}" \
+  "$api_url/auth/login")"
+[[ "$unverified_login_status" == 403 ]] || {
+  echo "An unverified account was allowed to sign in." >&2
+  exit 1
+}
+alice_verification_token="$(mail_token verify-email)"
+[[ "$alice_verification_token" =~ ^[a-f0-9]{64}$ ]] || {
+  echo "Registration did not send an email confirmation link." >&2
+  exit 1
+}
+raw_verification_tokens="$(sqlite3 "$test_db" \
+  "SELECT COUNT(*) FROM mom_auth_tokens WHERE token_hash = '$alice_verification_token';")"
+[[ "$raw_verification_tokens" == 0 ]] || {
+  echo "The raw email verification token was stored in the database." >&2
+  exit 1
+}
+curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  --data "{\"token\":\"$alice_verification_token\"}" \
+  "$api_url/auth/email-verification" >/dev/null
+reused_verification_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  -H "Content-Type: application/json" \
+  --data "{\"token\":\"$alice_verification_token\"}" \
+  "$api_url/auth/email-verification")"
+[[ "$reused_verification_status" == 422 ]] || {
+  echo "A used email verification token was accepted again." >&2
+  exit 1
+}
 alice_login="$(login "$alice_email")"
 alice_token="$(json_field token <<<"$alice_login")"
 alice_id="$(php -r '$data=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); echo $data["record"]["id"];' <<<"$alice_login")"
+
+forgot_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  --data "{\"email\":\"$alice_email\"}" \
+  "$api_url/auth/password/forgot")"
+reset_token="$(mail_token reset-password)"
+[[ "$reset_token" =~ ^[a-f0-9]{64}$ ]] || {
+  echo "The forgot-password request did not send a reset link." >&2
+  exit 1
+}
+raw_reset_tokens="$(sqlite3 "$test_db" \
+  "SELECT COUNT(*) FROM mom_auth_tokens WHERE token_hash = '$reset_token';")"
+[[ "$raw_reset_tokens" == 0 ]] || {
+  echo "The raw password reset token was stored in the database." >&2
+  exit 1
+}
+old_password="$password"
+password="new-correct-horse-battery"
+curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  --data "{\"token\":\"$reset_token\",\"password\":\"$password\",\"passwordConfirm\":\"$password\"}" \
+  "$api_url/auth/password/reset" >/dev/null
+revoked_session_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  -H "Authorization: Bearer $alice_token" \
+  "$api_url/auth/account")"
+old_password_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  -H "Content-Type: application/json" \
+  --data "{\"email\":\"$alice_email\",\"password\":\"$old_password\"}" \
+  "$api_url/auth/login")"
+reused_reset_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  -H "Content-Type: application/json" \
+  --data "{\"token\":\"$reset_token\",\"password\":\"$password\",\"passwordConfirm\":\"$password\"}" \
+  "$api_url/auth/password/reset")"
+[[ "$revoked_session_status" == 401 && "$old_password_status" == 401 && "$reused_reset_status" == 422 ]] || {
+  echo "Password reset did not revoke old credentials and consume its token." >&2
+  exit 1
+}
+unknown_forgot_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  --data "{\"email\":\"unknown-$suffix@example.test\"}" \
+  "$api_url/auth/password/forgot")"
+[[ "$(json_field message <<<"$forgot_response")" == "$(json_field message <<<"$unknown_forgot_response")" ]] || {
+  echo "The forgot-password endpoint disclosed whether an email exists." >&2
+  exit 1
+}
+alice_login="$(login "$alice_email")"
+alice_token="$(json_field token <<<"$alice_login")"
 
 sync_bootstrap="$(curl --silent --show-error --fail \
   -H "Content-Type: application/json" \
@@ -1944,6 +2074,7 @@ curl --silent --show-error --fail \
   "$api_url/collections/interval_templates/records/$interval_template_id" >/dev/null
 
 register "Bob API" "$bob_email" >/dev/null
+confirm_latest_email
 bob_login="$(login "$bob_email")"
 bob_token="$(json_field token <<<"$bob_login")"
 cross_user_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
@@ -2026,6 +2157,7 @@ pending_share_list_shape="$(php -r '
 }
 
 register "Future API" "$future_email" >/dev/null
+confirm_latest_email
 future_login="$(login "$future_email")"
 future_token="$(json_field token <<<"$future_login")"
 future_id="$(php -r '$data=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); echo $data["record"]["id"];' <<<"$future_login")"
