@@ -1401,7 +1401,6 @@ async function runAgain(repetitions?: number) {
                     />
                     {{ flashcardReviewPlaybackEnabled ? (flashcardPhase.side === 'front' ? 'Front' : 'Back') : 'Paused' }}
                   </small>
-                  <span>{{ flashcardPhase.cardIndex + 1 }}/{{ session.flashcardReview.cards.length }}</span>
                 </div>
               </div>
               <div class="interval-review-card__faces">
@@ -1796,7 +1795,6 @@ async function runAgain(repetitions?: number) {
 .interval-review-card__heading { display: flex; width: 100%; min-width: 0; align-items: center; justify-content: space-between; gap: .75rem; }
 .interval-review-card__meta { display: flex; flex: 0 0 auto; align-items: center; justify-content: flex-end; gap: .75rem; color: rgba(var(--v-theme-on-surface), .58); font-size: .62rem; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
 .interval-review-card__meta small { display: inline-flex; align-items: center; gap: .25rem; }
-.interval-review-card__meta > span:last-child { flex: 0 0 auto; font-variant-numeric: tabular-nums; }
 .interval-review-card__set { display: flex; min-width: 0; max-width: 75%; align-items: center; gap: .4rem; color: rgba(var(--v-theme-on-surface), .58); font-size: .62rem; font-weight: 900; letter-spacing: .1em; text-align: left; text-transform: uppercase; }
 .interval-review-card__set > .text-truncate { min-width: 0; }
 .interval-review-card__content small { color: rgba(var(--v-theme-on-surface), .58); font-size: .62rem; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }

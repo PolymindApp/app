@@ -269,6 +269,8 @@ describe('IntervalRunnerView flashcard area', () => {
     expect(portraitControls.nextElementSibling).toBe(wrapper.get('.interval-review-card').element)
     expect(wrapper.find('.restart-button').exists()).toBe(false)
     expect(wrapper.findAll('[aria-label="Interval actions"]')).toHaveLength(2)
+    expect(wrapper.get('.interval-review-card__meta').text()).toBe('Front')
+    expect(wrapper.get('.interval-review-card').text()).not.toContain('1/1')
     expect(wrapper.get('.interval-review-card__faces strong').classes())
       .not.toContain('interval-review-card__face--hidden')
     expect(wrapper.getComponent({ name: 'FlashcardResponseText' }).classes())
