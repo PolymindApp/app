@@ -1,4 +1,4 @@
-export const ACTIVE_SYNC_PULL_INTERVAL_MS = 15_000
+export const ACTIVE_SYNC_PULL_INTERVAL_MS = 120_000
 export const MAX_IDLE_SYNC_PULL_INTERVAL_MS = 300_000
 
 export function nextSyncPullDelay(currentDelay: number, hadActivity: boolean) {
