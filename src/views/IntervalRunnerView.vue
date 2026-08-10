@@ -901,7 +901,6 @@ async function openFlashcardContext() {
   const item = session.value
   if (
     !item
-    || !flashcardReviewPlaybackEnabled.value
     || isTemplatePreview.value
     || syncing.value
     || openingFlashcardContext.value
@@ -1384,7 +1383,7 @@ async function runAgain(repetitions?: number) {
             :aria-label="flashcardReviewPlaybackEnabled
               ? `${session.flashcardReview.name}, ${flashcardPhase.side}, card ${flashcardPhase.cardIndex + 1} of ${session.flashcardReview.cards.length}`
               : `${session.flashcardReview.name} paused for this step, card ${flashcardPhase.cardIndex + 1} of ${session.flashcardReview.cards.length}`"
-            :disabled="isTemplatePreview || !flashcardReviewPlaybackEnabled || syncing || openingFlashcardContext"
+            :disabled="isTemplatePreview || syncing || openingFlashcardContext"
             @click="openFlashcardContext"
           >
             <div class="interval-review-card__content">
@@ -1783,7 +1782,7 @@ async function runAgain(repetitions?: number) {
 .interval-review-card { position: relative; width: min(100%, 34rem); padding: 0; overflow: hidden; border: 1px solid rgba(var(--v-theme-on-surface), .08); border-radius: .75rem; background: rgba(var(--v-theme-on-surface), .055); box-shadow: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .interval-review-card:focus-visible { outline: .1875rem solid rgba(var(--v-theme-secondary), .72); outline-offset: .25rem; }
 .interval-review-card:disabled { cursor: default; opacity: .72; }
-.interval-review-card.interval-review-card--playback-paused:disabled { border-style: dashed; background: rgba(var(--v-theme-on-surface), .025); cursor: not-allowed; }
+.interval-review-card--playback-paused { border-style: dashed; background: rgba(var(--v-theme-on-surface), .025); opacity: .72; }
 .interval-review-card :deep(.v-ripple__container) { z-index: 2; }
 .interval-review-card__content { display: flex; padding: 1rem; align-items: center; justify-content: center; flex-direction: column; gap: .65rem; text-align: center; }
 .interval-review-card__heading { display: flex; width: 100%; min-width: 0; align-items: center; justify-content: space-between; gap: .75rem; }

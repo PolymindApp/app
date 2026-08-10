@@ -369,7 +369,7 @@ describe('IntervalRunnerView flashcard area', () => {
     wrapper.unmount()
   })
 
-  it('pauses and resumes an aloud Review set with the current interval step', async () => {
+  it('pauses an aloud Review set with the current step while keeping its context menu available', async () => {
     const active = intervalSession('running')
     if (!active.flashcardReview) throw new Error('Expected a Review set snapshot')
     active.flashcardReview.speechEnabled = true
@@ -419,7 +419,7 @@ describe('IntervalRunnerView flashcard area', () => {
 
     const pausedCard = wrapper.get('.interval-review-card')
     expect(wrapper.get('.interval-review-card__meta small').text()).toBe('Paused')
-    expect(pausedCard.attributes('disabled')).toBeDefined()
+    expect(pausedCard.attributes('disabled')).toBeUndefined()
     expect(pausedCard.classes()).toContain('interval-review-card--playback-paused')
     expect(wrapper.get('.interval-review-card__meta small')
       .getComponent({ name: 'VIcon' }).attributes('icon')).toBe('mdi-pause-circle-outline')
@@ -429,8 +429,13 @@ describe('IntervalRunnerView flashcard area', () => {
     await pausedCard.trigger('click')
     await flushPromises()
 
-    expect(wrapper.find('.flashcard-context-actions').exists()).toBe(false)
-    expect(mocks.intervalStore.updateSession).not.toHaveBeenCalled()
+    expect(wrapper.get('.flashcard-context-actions').exists()).toBe(true)
+    expect(mocks.intervalStore.sessions[0]?.status).toBe('paused')
+
+    await wrapper.get('.flashcard-context-actions button').trigger('click')
+    await flushPromises()
+
+    expect(mocks.intervalStore.sessions[0]?.status).toBe('running')
 
     mocks.speakFlashcardText.mockClear()
     stored.runtime.stepIndex = 2
