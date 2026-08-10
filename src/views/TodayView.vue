@@ -1213,11 +1213,13 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
   display: grid;
   min-width: 0;
   margin-bottom: .7rem;
+  border-radius: 1.5rem;
   grid-template-rows: 1fr;
   transition: margin-bottom .22s cubic-bezier(.22, 1, .36, 1);
 }
 .task-masonry-item:last-child { margin-bottom: 0; }
 .task-masonry-item > * { min-height: 0; }
+.task-masonry-item.long-press-drag-ghost { overflow: hidden; }
 .task-masonry-item--draggable :deep([data-task-drag-handle]) { cursor: grab; }
 .task-list-enter-active,
 .task-list-leave-active {
