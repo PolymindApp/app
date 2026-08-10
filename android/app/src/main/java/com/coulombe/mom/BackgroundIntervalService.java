@@ -160,7 +160,7 @@ public class BackgroundIntervalService extends Service {
 
                     @Override
                     public void onDone(String utteranceId) {
-                        volumeBoost.finish(utteranceId);
+                        volumeBoost.playSynthesized(utteranceId);
                     }
 
                     @Override
@@ -382,12 +382,11 @@ public class BackgroundIntervalService extends Service {
             || availability == TextToSpeech.LANG_NOT_SUPPORTED
         ) return;
         String utteranceId = "mom-background-interval-flashcard-" + System.nanoTime();
-        volumeBoost.start(utteranceId, reviewSpeechOverAmplified);
-        int result = speech.speak(
+        int result = volumeBoost.speak(
+            speech,
             pendingReviewSpeechText,
-            TextToSpeech.QUEUE_FLUSH,
-            null,
-            utteranceId
+            utteranceId,
+            reviewSpeechOverAmplified
         );
         if (result == TextToSpeech.ERROR) volumeBoost.finish(utteranceId);
         pendingReviewSpeechText = "";

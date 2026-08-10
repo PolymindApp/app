@@ -126,7 +126,7 @@ public class BackgroundFlashcardService extends Service {
 
                     @Override
                     public void onDone(String utteranceId) {
-                        volumeBoost.finish(utteranceId);
+                        volumeBoost.playSynthesized(utteranceId);
                     }
 
                     @Override
@@ -272,12 +272,11 @@ public class BackgroundFlashcardService extends Service {
             || availability == TextToSpeech.LANG_NOT_SUPPORTED
         ) return;
         String utteranceId = "mom-background-flashcard-" + System.nanoTime();
-        volumeBoost.start(utteranceId, speechOverAmplified);
-        int result = speech.speak(
+        int result = volumeBoost.speak(
+            speech,
             pendingSpeechText,
-            TextToSpeech.QUEUE_FLUSH,
-            null,
-            utteranceId
+            utteranceId,
+            speechOverAmplified
         );
         if (result == TextToSpeech.ERROR) volumeBoost.finish(utteranceId);
         pendingSpeechText = "";

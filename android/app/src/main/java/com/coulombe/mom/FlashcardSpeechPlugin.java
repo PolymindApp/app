@@ -60,7 +60,7 @@ public class FlashcardSpeechPlugin extends Plugin {
 
                     @Override
                     public void onDone(String utteranceId) {
-                        volumeBoost.finish(utteranceId);
+                        volumeBoost.playSynthesized(utteranceId);
                     }
 
                     @Override
@@ -123,12 +123,11 @@ public class FlashcardSpeechPlugin extends Plugin {
         }
         overAmplificationEnabled = Boolean.TRUE.equals(call.getBoolean("overAmplified", false));
         String utteranceId = "mom-flashcard-" + System.nanoTime();
-        volumeBoost.start(utteranceId, overAmplificationEnabled);
-        int result = speech.speak(
+        int result = volumeBoost.speak(
+            speech,
             text,
-            TextToSpeech.QUEUE_FLUSH,
-            null,
-            utteranceId
+            utteranceId,
+            overAmplificationEnabled
         );
         if (result == TextToSpeech.ERROR) {
             volumeBoost.finish(utteranceId);
