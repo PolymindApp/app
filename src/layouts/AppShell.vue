@@ -305,15 +305,7 @@ function releaseLeavingPage(element: Element) {
       </v-list>
 
       <template #append>
-        <div class="pa-4 d-grid ga-1">
-          <v-btn
-            variant="text"
-            :prepend-icon="syncIcon"
-            :color="syncColor"
-            @click="syncSheet = true"
-          >
-            {{ syncLabel }}
-          </v-btn>
+        <div class="pa-4">
           <v-btn block variant="text" prepend-icon="mdi-logout" @click="logoutDialog = true">Sign out</v-btn>
         </div>
       </template>
