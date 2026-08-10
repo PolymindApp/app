@@ -13,6 +13,13 @@ import {
   PasskeyCancelledError,
 } from '@/services/passkeys'
 
+export class UnsyncedChangesError extends Error {
+  constructor(readonly changeCount: number) {
+    super(`${changeCount} local change${changeCount === 1 ? '' : 's'} could not be synchronized.`)
+    this.name = 'UnsyncedChangesError'
+  }
+}
+
 export const useAuthStore = defineStore('auth', () => {
   const user = ref(api.authStore.record)
   const loading = ref(false)
@@ -209,15 +216,15 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  async function logout() {
+  async function logout(options: { discardUnsynced?: boolean } = {}) {
     const accountId = api.authStore.record?.id || ''
     logoutLoading.value = true
     error.value = ''
     try {
       if (accountId) {
-        const pending = await flushBeforeSignOut(accountId)
-        if (pending > 0) {
-          throw new Error('Your unsynchronized changes are still saved on this device. Connect before signing out so they are not lost.')
+        if (!options.discardUnsynced) {
+          const pending = await flushBeforeSignOut(accountId)
+          if (pending > 0) throw new UnsyncedChangesError(pending)
         }
         await clearBackgroundSyncStage()
         await eraseLocalAccount(accountId)

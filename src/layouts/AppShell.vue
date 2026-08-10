@@ -21,7 +21,7 @@ import {
   formatRunningSessionTitle,
   RUNNING_SESSION_TITLE_INTERVAL_MS,
 } from '@/services/runningSessionTitle'
-import { useAuthStore } from '@/stores/auth'
+import { UnsyncedChangesError, useAuthStore } from '@/stores/auth'
 import { useFlashcardStore } from '@/stores/flashcards'
 import { useIntervalStore } from '@/stores/intervals'
 import { useJournalStore } from '@/stores/journal'
@@ -41,6 +41,8 @@ const taskStore = useTaskStore()
 const trackingStore = useTrackingStore()
 const journalStore = useJournalStore()
 const logoutDialog = ref(false)
+const discardLogoutDialog = ref(false)
+const unsyncedLogoutCount = ref(0)
 const syncSheet = ref(false)
 const pageTransition = ref('page-level-forward')
 const isIos = Capacitor.getPlatform() === 'ios'
@@ -247,8 +249,25 @@ async function logout() {
     await auth.logout()
     logoutDialog.value = false
     await router.replace('/auth')
-  } catch {
+  } catch (cause) {
     logoutDialog.value = false
+    if (cause instanceof UnsyncedChangesError) {
+      unsyncedLogoutCount.value = cause.changeCount
+      auth.clearError()
+      discardLogoutDialog.value = true
+      return
+    }
+    syncSheet.value = true
+  }
+}
+
+async function discardUnsyncedAndLogout() {
+  try {
+    await auth.logout({ discardUnsynced: true })
+    discardLogoutDialog.value = false
+    await router.replace('/auth')
+  } catch {
+    discardLogoutDialog.value = false
     syncSheet.value = true
   }
 }
@@ -420,6 +439,17 @@ function releaseLeavingPage(element: Element) {
       icon="mdi-logout"
       :loading="auth.logoutLoading"
       @confirm="logout"
+    />
+
+    <ConfirmDialog
+      v-model="discardLogoutDialog"
+      title="Discard unsynced changes?"
+      :message="`${unsyncedLogoutCount} local change${unsyncedLogoutCount === 1 ? '' : 's'} could not be synchronized. Signing out anyway permanently removes ${unsyncedLogoutCount === 1 ? 'it' : 'them'} from this device.`"
+      confirm-text="Discard and sign out"
+      confirm-color="error"
+      icon="mdi-cloud-remove-outline"
+      :loading="auth.logoutLoading"
+      @confirm="discardUnsyncedAndLogout"
     />
 
     <ActionBottomSheet

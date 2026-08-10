@@ -528,6 +528,16 @@ export async function recoverInterruptedOperations(accountId: string) {
     })
 }
 
+export async function retryPendingOperationsNow(accountId: string) {
+  return localDatabase.outbox
+    .where('[accountId+status]')
+    .equals([accountId, 'pending'])
+    .modify(operation => {
+      operation.nextAttemptAt = 0
+      delete operation.error
+    })
+}
+
 export async function markOperationsForRetry(operationIds: string[], delayMs: number, message: string) {
   await localDatabase.outbox.where('operationId').anyOf(operationIds).modify(operation => {
     operation.status = 'pending'

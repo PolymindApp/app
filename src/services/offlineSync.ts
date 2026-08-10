@@ -20,6 +20,7 @@ import {
   pendingOperations,
   readLocalMetadata,
   recoverInterruptedOperations,
+  retryPendingOperationsNow,
   syncClientId,
   updateLocalAuthToken,
 } from '@/lib/localDatabase'
@@ -183,6 +184,8 @@ export function syncNow(reason = 'manual') {
 }
 
 export async function flushBeforeSignOut(accountId: string) {
+  await recoverInterruptedOperations(accountId)
+  await retryPendingOperationsNow(accountId)
   await syncNow('sign-out')
   await refreshCounts()
   const [pending, issues] = await Promise.all([

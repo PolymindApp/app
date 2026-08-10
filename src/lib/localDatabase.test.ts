@@ -15,6 +15,7 @@ import {
   putLocalCreate,
   putLocalPatch,
   recoverInterruptedOperations,
+  retryPendingOperationsNow,
   resolveLocalAlias,
 } from './localDatabase'
 
@@ -95,6 +96,30 @@ describe('offline local database', () => {
         nextAttemptAt: 0,
       }),
     ])
+  })
+
+  it('makes deferred operations immediately eligible for a sign-out sync', async () => {
+    await completeLocalBootstrap(accountId, 0, [])
+    await putLocalCreate(accountId, 'journal_entries', { title: 'Deferred upload' })
+    const operation = (await pendingOperations(accountId))[0]!
+
+    await localDatabase.outbox.update(operation.operationId, {
+      nextAttemptAt: Date.now() + 60_000,
+      error: 'Previous request failed.',
+    })
+
+    expect(await pendingOperationCount(accountId)).toBe(1)
+    expect(await pendingOperations(accountId)).toEqual([])
+
+    expect(await retryPendingOperationsNow(accountId)).toBe(1)
+    const eligibleOperations = await pendingOperations(accountId)
+    expect(eligibleOperations).toEqual([
+      expect.objectContaining({
+        operationId: operation.operationId,
+        nextAttemptAt: 0,
+      }),
+    ])
+    expect(eligibleOperations[0]).not.toHaveProperty('error')
   })
 
   it('does not announce an outbox mutation after an empty remote pull', async () => {

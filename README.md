@@ -8,7 +8,7 @@ After the first authenticated bootstrap, the app reads and writes its core data 
 
 Synchronization is idempotent per client operation. Additive activity records are retained, mutable records merge by field clock, and server-observed deletion wins over pending edits. Duplicate tag and occurrence creates resolve to the existing server ID and rewrite later queued relations. Rejected operations remain visible in the app’s synchronization panel until a corrected edit succeeds or the local change is discarded.
 
-An expired bearer token pauses remote exchange without locking the user out of cached data. Signing in again resumes synchronization. Sign-out first flushes the outbox and then erases that account’s IndexedDB data; it refuses to erase while unsynchronized or rejected changes remain.
+An expired bearer token pauses remote exchange without locking the user out of cached data. Signing in again resumes synchronization. Sign-out first flushes the outbox and then erases that account’s IndexedDB data. If unsynchronized or rejected changes remain, the app warns that they will be permanently removed and requires a second confirmation before signing out.
 
 ## Requirements
 
