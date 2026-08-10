@@ -943,14 +943,27 @@ async function leaveRunner() {
           <span v-if="session.indefinite">{{ session.viewedCount }} viewed · looping</span>
           <span v-else>{{ completedCards }} of {{ session.totalCards }}</span>
         </div>
-        <v-btn
-          icon="mdi-stop-circle-outline"
-          variant="text"
-          color="error"
-          aria-label="End review"
-          :disabled="isReviewSetPreview || isFinished || busy"
-          @click="endDialog = true"
-        />
+        <div class="runner-header__actions">
+          <v-btn
+            v-if="session.speechEnabled && currentCard"
+            class="runner-header__speech-button"
+            icon="mdi-volume-high"
+            variant="text"
+            color="secondary"
+            aria-label="Replay current speech"
+            :disabled="session.status !== 'running' || isFinished || busy"
+            @touchstart.stop
+            @click.stop="replayCurrentSide"
+          />
+          <v-btn
+            icon="mdi-stop-circle-outline"
+            variant="text"
+            color="error"
+            aria-label="End review"
+            :disabled="isReviewSetPreview || isFinished || busy"
+            @click="endDialog = true"
+          />
+        </div>
       </header>
 
       <v-progress-linear
@@ -1337,10 +1350,12 @@ async function leaveRunner() {
 
 <style scoped>
 .review-runner { position: fixed; z-index: 1003; inset: 0; display: flex; width: 100%; max-width: 100vw; height: 100dvh; min-height: 0; flex-direction: column; overflow: hidden; background: radial-gradient(circle at 50% 26%, rgba(var(--v-theme-secondary), .08), transparent 34rem), rgb(var(--v-theme-background)); color: rgb(var(--v-theme-on-background)); }
-.runner-header { display: grid; min-height: calc(4rem + max(env(safe-area-inset-top), var(--safe-area-inset-top, 0rem))); padding: max(env(safe-area-inset-top), var(--safe-area-inset-top, 0rem)) 1rem 0; grid-template-columns: 2.75rem minmax(0, 1fr) 2.75rem; align-items: center; gap: .75rem; }
+.runner-header { display: grid; min-height: calc(4rem + max(env(safe-area-inset-top), var(--safe-area-inset-top, 0rem))); padding: max(env(safe-area-inset-top), var(--safe-area-inset-top, 0rem)) 1rem 0; grid-template-columns: 2.75rem minmax(0, 1fr) auto; align-items: center; gap: .75rem; }
 .runner-header__title { display: flex; flex-direction: column; align-items: center; }
 .runner-header__title strong { max-width: 100%; font-size: .88rem; }
 .runner-header__title span { color: rgba(var(--v-theme-on-surface), .52); font-size: .68rem; font-weight: 800; }
+.runner-header__actions { display: flex; align-items: center; justify-content: flex-end; gap: .125rem; }
+.runner-header__speech-button { min-width: 2.75rem; min-height: 2.75rem; }
 .runner-state { display: flex; min-height: 100dvh; align-items: center; justify-content: center; flex-direction: column; gap: 1rem; }
 .runner-alert { width: min(44rem, calc(100% - 2rem)); flex: 0 0 auto; margin: 1rem auto 0; }
 .runner-alert--speech { width: fit-content; max-width: calc(100% - 2rem); margin-top: .5rem; padding: .25rem .5rem !important; font-size: .7rem; line-height: 1.35; }

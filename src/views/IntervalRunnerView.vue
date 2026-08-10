@@ -401,6 +401,28 @@ async function speakCurrentFlashcardSide() {
   }
 }
 
+function replayCurrentFlashcardSide() {
+  const item = session.value
+  const review = item?.flashcardReview
+  const phase = flashcardPhase.value
+  if (
+    document.visibilityState !== 'visible'
+    || item?.status !== 'running'
+    || !review?.speechEnabled
+    || !phase
+    || syncing.value
+    || starting.value
+  ) return
+
+  lastSpokenFlashcardKey = ''
+  void speakFlashcardText(
+    phase.side === 'front' ? phase.card.front : phase.card.back,
+    phase.side === 'front' ? review.frontLanguage : review.backLanguage,
+  ).catch(() => {
+    // Manual speech replay is optional; interval playback remains uninterrupted.
+  })
+}
+
 function pulseTimer(effect: 'count') {
   if (timerEffectTimeout) window.clearTimeout(timerEffectTimeout)
   timerEffect.value = effect
@@ -1187,7 +1209,20 @@ async function runAgain(repetitions?: number) {
             <p class="runner-label">Interval {{ current.index + 1 }} of {{ current.totalSteps }}</p>
             <strong class="text-truncate d-block">{{ session.name }}</strong>
           </div>
-          <v-btn icon="mdi-stop-circle-outline" variant="text" color="error" aria-label="End session" :disabled="isTemplatePreview" @click="endDialog = true" />
+          <div class="runner-header__actions">
+            <v-btn
+              v-if="session.flashcardReview?.speechEnabled && flashcardPhase"
+              class="runner-header__speech-button"
+              icon="mdi-volume-high"
+              variant="text"
+              color="secondary"
+              aria-label="Replay current speech"
+              :disabled="isTemplatePreview || session.status !== 'running' || syncing || starting"
+              @touchstart.stop
+              @click.stop="replayCurrentFlashcardSide"
+            />
+            <v-btn icon="mdi-stop-circle-outline" variant="text" color="error" aria-label="End session" :disabled="isTemplatePreview" @click="endDialog = true" />
+          </div>
         </header>
 
         <div class="runner-stage">
@@ -1653,7 +1688,9 @@ async function runAgain(repetitions?: number) {
   opacity: 0;
   transform: translateY(-1rem);
 }
-.runner-header { display: grid; grid-template-columns: 48px minmax(0, 1fr) 48px; align-items: center; }
+.runner-header { display: grid; grid-template-columns: 3rem minmax(0, 1fr) auto; align-items: center; }
+.runner-header__actions { display: flex; align-items: center; justify-content: flex-end; gap: .125rem; }
+.runner-header__speech-button { min-width: 2.75rem; min-height: 2.75rem; }
 .runner-label { color: rgb(var(--v-theme-on-surface) / .52); font-size: .68rem; font-weight: 850; letter-spacing: .1em; text-transform: uppercase; }
 .runner-stage { position: relative; display: flex; min-height: 0; flex: 1; flex-direction: column; isolation: isolate; }
 .runner-type-backdrop {

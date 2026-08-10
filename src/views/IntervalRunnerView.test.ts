@@ -1,5 +1,6 @@
 import { defineComponent, reactive } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
+import { speakFlashcardText } from '@/services/flashcardSpeech'
 import IntervalRunnerView from '@/views/IntervalRunnerView.vue'
 import type { IntervalSession } from '@/types/domain'
 
@@ -189,6 +190,31 @@ describe('IntervalRunnerView flashcard area', () => {
     mocks.intervalStore.load.mockReset().mockResolvedValue(undefined)
     mocks.flashcardStore.load.mockReset().mockResolvedValue(undefined)
     mocks.taskStore.load.mockReset().mockResolvedValue(undefined)
+  })
+
+  it('replays the current TTS from the header button before Stop', async () => {
+    const active = intervalSession('running')
+    if (!active.flashcardReview) throw new Error('Expected a Review set snapshot')
+    active.flashcardReview.speechEnabled = true
+    active.flashcardReview.frontLanguage = 'en-CA'
+    mocks.intervalStore.sessions = reactive([active])
+
+    const wrapper = mountRunner()
+    await flushPromises()
+    vi.mocked(speakFlashcardText).mockClear()
+
+    const actions = wrapper.get('.runner-header__actions').findAllComponents({ name: 'VBtn' })
+    expect(actions.map(button => button.attributes('aria-label'))).toEqual([
+      'Replay current speech',
+      'End session',
+    ])
+
+    await actions[0]!.trigger('click')
+    await flushPromises()
+
+    expect(speakFlashcardText).toHaveBeenCalledWith('House', 'en-CA')
+
+    wrapper.unmount()
   })
 
   it('resumes after closing the context menu when the interval was playing', async () => {

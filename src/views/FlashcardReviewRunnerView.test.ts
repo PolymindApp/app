@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
     query: {} as Record<string, string>,
   },
   router: { replace: vi.fn() },
+  speakFlashcardText: vi.fn(),
   store: {
     loaded: true,
     reviewSets: [] as FlashcardReviewSet[],
@@ -33,7 +34,7 @@ vi.mock('@/services/flashcardSpeech', () => ({
   backgroundFlashcardReviewState: vi.fn().mockResolvedValue(undefined),
   loadFlashcardSpeechSupport: vi.fn().mockResolvedValue({ available: false, languages: [] }),
   nativeFlashcardBackgroundIsAvailable: vi.fn().mockReturnValue(false),
-  speakFlashcardText: vi.fn().mockResolvedValue(undefined),
+  speakFlashcardText: mocks.speakFlashcardText,
   stopBackgroundFlashcardReview: vi.fn().mockResolvedValue(undefined),
   stopFlashcardSpeech: vi.fn().mockResolvedValue(undefined),
   syncBackgroundFlashcardReview: vi.fn().mockResolvedValue(false),
@@ -162,6 +163,7 @@ describe('FlashcardReviewRunnerView Review set preview', () => {
     mocks.route.params = { reviewSetId: 'set-1' }
     mocks.route.query = {}
     mocks.router.replace.mockReset().mockResolvedValue(undefined)
+    mocks.speakFlashcardText.mockReset().mockResolvedValue(undefined)
     mocks.store.reviewSets = [reviewSet]
     mocks.store.cards = [card]
     mocks.store.sessions = reactive<FlashcardReviewSession[]>([])
@@ -199,6 +201,34 @@ describe('FlashcardReviewRunnerView Review set preview', () => {
     })
     expect(wrapper.find('[aria-label="Pause review"]').exists()).toBe(true)
     expect(wrapper.find('[aria-label="Eject current card"]').exists()).toBe(true)
+
+    wrapper.unmount()
+  })
+
+  it('replays the current TTS from the header button before Stop', async () => {
+    const active = {
+      ...runningSession(),
+      speechEnabled: true,
+      frontLanguage: 'en-CA',
+    }
+    mocks.route.params = { sessionId: active.id }
+    mocks.store.sessions = reactive([active])
+    mocks.store.loadSession.mockResolvedValue(active)
+
+    const wrapper = mountRunner()
+    await flushPromises()
+    mocks.speakFlashcardText.mockClear()
+
+    const actions = wrapper.get('.runner-header__actions').findAll('button')
+    expect(actions.map(button => button.attributes('aria-label'))).toEqual([
+      'Replay current speech',
+      'End review',
+    ])
+
+    await actions[0]!.trigger('click')
+    await flushPromises()
+
+    expect(mocks.speakFlashcardText).toHaveBeenCalledWith('House', 'en-CA')
 
     wrapper.unmount()
   })
