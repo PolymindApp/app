@@ -8,10 +8,12 @@ import {
   hasLocalBootstrap,
   listLocalRecords,
   localDatabase,
+  markOperationsSending,
   pendingOperationCount,
   pendingOperations,
   putLocalCreate,
   putLocalPatch,
+  recoverInterruptedOperations,
   resolveLocalAlias,
 } from './localDatabase'
 
@@ -72,6 +74,26 @@ describe('offline local database', () => {
       tracker: ['tracker-1'],
       tracker_snapshot: { 'tracker-1': 'Mood' },
     })
+  })
+
+  it('recovers operations interrupted while sending so they can retry', async () => {
+    await completeLocalBootstrap(accountId, 0, [])
+    await putLocalCreate(accountId, 'journal_entries', { title: 'Interrupted upload' })
+    const operation = (await pendingOperations(accountId))[0]!
+
+    await markOperationsSending([operation.operationId])
+
+    expect(await pendingOperationCount(accountId)).toBe(1)
+    expect(await pendingOperations(accountId)).toEqual([])
+
+    expect(await recoverInterruptedOperations(accountId)).toBe(1)
+    expect(await pendingOperations(accountId)).toEqual([
+      expect.objectContaining({
+        operationId: operation.operationId,
+        status: 'pending',
+        nextAttemptAt: 0,
+      }),
+    ])
   })
 
   it('reconciles acknowledgements, aliases, and remote delete-wins changes', async () => {

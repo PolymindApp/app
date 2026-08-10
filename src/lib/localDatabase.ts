@@ -517,6 +517,17 @@ export async function markOperationsSending(operationIds: string[]) {
   await localDatabase.outbox.where('operationId').anyOf(operationIds).modify({ status: 'sending' })
 }
 
+export async function recoverInterruptedOperations(accountId: string) {
+  return localDatabase.outbox
+    .where('[accountId+status]')
+    .equals([accountId, 'sending'])
+    .modify(operation => {
+      operation.status = 'pending'
+      operation.nextAttemptAt = 0
+      delete operation.error
+    })
+}
+
 export async function markOperationsForRetry(operationIds: string[], delayMs: number, message: string) {
   await localDatabase.outbox.where('operationId').anyOf(operationIds).modify(operation => {
     operation.status = 'pending'

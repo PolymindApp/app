@@ -16,6 +16,7 @@ import {
   pendingOperationCount,
   pendingOperations,
   readLocalMetadata,
+  recoverInterruptedOperations,
   syncClientId,
   updateLocalAuthToken,
 } from '@/lib/localDatabase'
@@ -185,6 +186,7 @@ async function performSync() {
   if (!accountId) return false
   currentAccountId = accountId
   await initializeLocalMetadata(accountId)
+  await recoverInterruptedOperations(accountId)
   await refreshCounts()
 
   if (!api.authStore.token || !api.authStore.isValid) {
