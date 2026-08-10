@@ -1340,59 +1340,6 @@ async function runAgain(repetitions?: number) {
                   </div>
                 </div>
               </div>
-              <button
-                v-if="flashcardPhase && session.flashcardReview"
-                v-ripple
-                type="button"
-                class="interval-review-card"
-                :aria-label="flashcardReviewPlaybackEnabled
-                  ? `${session.flashcardReview.name}, ${flashcardPhase.side}, card ${flashcardPhase.cardIndex + 1} of ${session.flashcardReview.cards.length}`
-                  : `${session.flashcardReview.name} paused for this step, card ${flashcardPhase.cardIndex + 1} of ${session.flashcardReview.cards.length}`"
-                :disabled="isTemplatePreview || syncing || openingFlashcardContext"
-                @click="openFlashcardContext"
-              >
-                <div class="interval-review-card__content">
-                  <div class="interval-review-card__heading">
-                    <span class="interval-review-card__set">
-                      <v-icon icon="mdi-cards-outline" size="17" />
-                      <span class="text-truncate">{{ session.flashcardReview.name }}</span>
-                    </span>
-                    <div class="interval-review-card__meta">
-                      <small>{{ flashcardReviewPlaybackEnabled ? (flashcardPhase.side === 'front' ? 'Front' : 'Back') : 'Paused' }}</small>
-                      <span>{{ flashcardPhase.cardIndex + 1 }}/{{ session.flashcardReview.cards.length }}</span>
-                    </div>
-                  </div>
-                  <strong
-                    v-if="flashcardPhase.side === 'front'"
-                    :style="{
-                      fontSize: flashcardTextFontSize(
-                        flashcardPhase.card.front,
-                        'face',
-                        'compact',
-                      ),
-                    }"
-                  >
-                    {{ flashcardPhase.card.front }}
-                  </strong>
-                  <FlashcardResponseText
-                    v-else
-                    :back="flashcardPhase.card.back"
-                    :note="flashcardPhase.card.note"
-                    :note-before-back="session.flashcardReview.noteBeforeBack"
-                    density="compact"
-                  />
-                </div>
-                <v-progress-linear
-                  :model-value="flashcardPhase.progress"
-                  color="surface-variant"
-                  bg-color="background"
-                  height="5"
-                  rounded
-                  :aria-label="flashcardReviewPlaybackEnabled
-                    ? `${Math.round(flashcardPhase.progress)}% through the ${flashcardPhase.side}`
-                    : `Review set paused at ${Math.round(flashcardPhase.progress)}% through the ${flashcardPhase.side}`"
-                />
-              </button>
             </div>
             <p class="next-copy">{{ next ? `Next: ${next.step.name}` : 'Final interval' }}</p>
           </section>
@@ -1411,6 +1358,60 @@ async function runAgain(repetitions?: number) {
             <v-btn icon="mdi-skip-next" variant="tonal" size="large" aria-label="Skip interval" :disabled="isTemplatePreview || currentConfirmation" @click="skip" />
             <v-btn prepend-icon="mdi-restart" variant="text" class="restart-button" :disabled="isTemplatePreview" @click="restart">Restart</v-btn>
           </footer>
+
+          <button
+            v-if="flashcardPhase && session.flashcardReview"
+            v-ripple
+            type="button"
+            class="interval-review-card"
+            :aria-label="flashcardReviewPlaybackEnabled
+              ? `${session.flashcardReview.name}, ${flashcardPhase.side}, card ${flashcardPhase.cardIndex + 1} of ${session.flashcardReview.cards.length}`
+              : `${session.flashcardReview.name} paused for this step, card ${flashcardPhase.cardIndex + 1} of ${session.flashcardReview.cards.length}`"
+            :disabled="isTemplatePreview || syncing || openingFlashcardContext"
+            @click="openFlashcardContext"
+          >
+            <div class="interval-review-card__content">
+              <div class="interval-review-card__heading">
+                <span class="interval-review-card__set">
+                  <v-icon icon="mdi-cards-outline" size="17" />
+                  <span class="text-truncate">{{ session.flashcardReview.name }}</span>
+                </span>
+                <div class="interval-review-card__meta">
+                  <small>{{ flashcardReviewPlaybackEnabled ? (flashcardPhase.side === 'front' ? 'Front' : 'Back') : 'Paused' }}</small>
+                  <span>{{ flashcardPhase.cardIndex + 1 }}/{{ session.flashcardReview.cards.length }}</span>
+                </div>
+              </div>
+              <strong
+                v-if="flashcardPhase.side === 'front'"
+                :style="{
+                  fontSize: flashcardTextFontSize(
+                    flashcardPhase.card.front,
+                    'face',
+                    'compact',
+                  ),
+                }"
+              >
+                {{ flashcardPhase.card.front }}
+              </strong>
+              <FlashcardResponseText
+                v-else
+                :back="flashcardPhase.card.back"
+                :note="flashcardPhase.card.note"
+                :note-before-back="session.flashcardReview.noteBeforeBack"
+                density="compact"
+              />
+            </div>
+            <v-progress-linear
+              :model-value="flashcardPhase.progress"
+              color="surface-variant"
+              bg-color="background"
+              height="5"
+              rounded
+              :aria-label="flashcardReviewPlaybackEnabled
+                ? `${Math.round(flashcardPhase.progress)}% through the ${flashcardPhase.side}`
+                : `Review set paused at ${Math.round(flashcardPhase.progress)}% through the ${flashcardPhase.side}`"
+            />
+          </button>
 
           <footer class="runner-controls runner-controls--landscape">
             <v-btn
@@ -1775,7 +1776,7 @@ async function runAgain(repetitions?: number) {
   align-items: center;
 }
 .runner-main--with-review .runner-progress { margin: 1.25rem 0 1rem; }
-.runner-main--with-review .interval-review-card { margin-bottom: 1.25rem; }
+.runner-stage > .interval-review-card { z-index: 1; margin-top: 1rem; align-self: center; }
 .runner-main--with-review .progress-rings { width: min(13.5rem, calc(100vw - 3rem)); }
 .runner-main--with-review .timer-value { font-size: 3.25rem; }
 .progress-rings {
@@ -1945,7 +1946,7 @@ async function runAgain(repetitions?: number) {
     min-width: 0;
     min-height: 0;
     grid-template-columns: minmax(0, 1.15fr) minmax(14rem, .85fr);
-    grid-template-rows: minmax(0, 1fr) auto auto;
+    grid-template-rows: minmax(0, 1fr) auto auto auto;
     gap: .5rem 1rem;
   }
 
@@ -1978,7 +1979,7 @@ async function runAgain(repetitions?: number) {
     min-width: 0;
     min-height: 0;
     grid-column: 1;
-    grid-row: 1 / 4;
+    grid-row: 1 / 5;
     flex-direction: column;
     align-items: center;
     justify-content: center;
@@ -2068,9 +2069,11 @@ async function runAgain(repetitions?: number) {
     width: min(12rem, 50dvh, calc(100% - 1rem));
   }
 
-  .runner-main--with-review .interval-review-card {
+  .runner-stage > .interval-review-card {
     width: min(100%, 30rem);
     margin: 0;
+    grid-column: 2;
+    grid-row: 4;
   }
 
   .progress-rings {

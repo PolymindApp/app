@@ -221,6 +221,16 @@ describe('IntervalRunnerView flashcard area', () => {
     wrapper.unmount()
   })
 
+  it('places the mini Review set card below the portrait Restart control', async () => {
+    const wrapper = mountRunner()
+    await flushPromises()
+
+    const portraitControls = wrapper.get('.runner-controls--portrait').element
+    expect(portraitControls.nextElementSibling).toBe(wrapper.get('.interval-review-card').element)
+
+    wrapper.unmount()
+  })
+
   it('resumes after closing the context menu when the interval was playing', async () => {
     const wrapper = mountRunner()
     await flushPromises()
