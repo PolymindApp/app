@@ -74,19 +74,46 @@ describe('interval cue audio', () => {
 
   it('preloads and decodes each cue once, including concurrent requests', async () => {
     const { preloadIntervalCueAudio } = await import('./intervalCues')
+    const sounds = [
+      'cash',
+      'celestial',
+      'chime',
+      'cine-boom',
+      'cine-hit',
+      'confirm',
+      'gong',
+      'harp',
+      'magic',
+      'notification',
+      'terror',
+      'go',
+      'complete',
+      'count',
+    ] as const
 
-    await Promise.all([preloadIntervalCueAudio(), preloadIntervalCueAudio()])
-    await preloadIntervalCueAudio()
+    await Promise.all([preloadIntervalCueAudio(sounds), preloadIntervalCueAudio(sounds)])
+    await preloadIntervalCueAudio(sounds)
 
-    expect(fetch).toHaveBeenCalledTimes(3)
+    expect(fetch).toHaveBeenCalledTimes(14)
+    expect(fetch).toHaveBeenCalledWith('/sounds/cash.mp3')
+    expect(fetch).toHaveBeenCalledWith('/sounds/celestial.mp3')
+    expect(fetch).toHaveBeenCalledWith('/sounds/chime.mp3')
+    expect(fetch).toHaveBeenCalledWith('/sounds/cine-boom.mp3')
+    expect(fetch).toHaveBeenCalledWith('/sounds/cine-hit.mp3')
+    expect(fetch).toHaveBeenCalledWith('/sounds/confirm.mp3')
+    expect(fetch).toHaveBeenCalledWith('/sounds/gong.mp3')
+    expect(fetch).toHaveBeenCalledWith('/sounds/harp.mp3')
+    expect(fetch).toHaveBeenCalledWith('/sounds/magic.mp3')
+    expect(fetch).toHaveBeenCalledWith('/sounds/notification.mp3')
+    expect(fetch).toHaveBeenCalledWith('/sounds/terror.mp3')
     expect(fetch).toHaveBeenCalledWith('/sounds/count.mp3')
     expect(fetch).toHaveBeenCalledWith('/sounds/go.mp3')
     expect(fetch).toHaveBeenCalledWith('/sounds/complete.mp3')
     expect(audioContexts).toHaveLength(1)
-    expect(audioContexts[0].decodeAudioData).toHaveBeenCalledTimes(3)
+    expect(audioContexts[0].decodeAudioData).toHaveBeenCalledTimes(14)
   })
 
-  it('resumes the preloaded audio context when interval cues are prepared', async () => {
+  it('preloads the configured sounds and resumes the audio context when cues are prepared', async () => {
     const { preloadIntervalCueAudio, prepareIntervalCues } = await import('./intervalCues')
 
     await preloadIntervalCueAudio()
@@ -94,7 +121,15 @@ describe('interval cue audio', () => {
 
     expect(audioContexts).toHaveLength(1)
     expect(audioContexts[0].resume).toHaveBeenCalledOnce()
-    expect(fetch).toHaveBeenCalledTimes(3)
+    expect(fetch).toHaveBeenCalledTimes(8)
+    expect(fetch).toHaveBeenCalledWith('/sounds/cine-hit.mp3')
+    expect(fetch).toHaveBeenCalledWith('/sounds/cash.mp3')
+    expect(fetch).toHaveBeenCalledWith('/sounds/harp.mp3')
+    expect(fetch).toHaveBeenCalledWith('/sounds/gong.mp3')
+    expect(fetch).toHaveBeenCalledWith('/sounds/confirm.mp3')
+    expect(fetch).toHaveBeenCalledWith('/sounds/go.mp3')
+    expect(fetch).toHaveBeenCalledWith('/sounds/count.mp3')
+    expect(fetch).toHaveBeenCalledWith('/sounds/complete.mp3')
   })
 
   it('plays the completion sound for the terminal interval cue', async () => {
@@ -119,13 +154,13 @@ describe('interval cue audio', () => {
 
     playIntervalGoCue({ soundEnabled: true, vibrationEnabled: false })
 
-    await vi.waitFor(() => expect(backgroundIntervalMocks.playNativeIntervalCue).toHaveBeenCalledWith('go'))
+    await vi.waitFor(() => expect(backgroundIntervalMocks.playNativeIntervalCue).toHaveBeenCalledWith('go', true))
     expect(audioContexts).toHaveLength(0)
   })
 
   it('plays the sound assigned to the interval type', async () => {
     vi.mocked(fetch).mockImplementation(async (input) => {
-      const marker = String(input).includes('complete') ? 3 : String(input).includes('go') ? 2 : 1
+      const marker = String(input).includes('cash') ? 4 : 1
       return {
         ok: true,
         arrayBuffer: async () => new Uint8Array([marker]).buffer,
@@ -137,21 +172,22 @@ describe('interval cue audio', () => {
       soundEnabled: true,
       vibrationEnabled: false,
       typeSounds: {
-        train: 'go',
-        work: 'go',
-        rest: 'complete',
+        train: 'cine-hit',
+        work: 'cash',
+        rest: 'harp',
         prepare: 'go',
-        meditation: 'go',
-        confirmation: 'go',
+        meditation: 'gong',
+        confirmation: 'confirm',
         custom: 'go',
       },
-    }, 'rest')
+    }, 'work')
 
     await vi.waitFor(() => expect(audioContexts[0]?.sources[0]?.start).toHaveBeenCalledOnce())
-    expect(audioContexts[0].sources[0].buffer).toMatchObject({ marker: 3 })
+    expect(fetch).toHaveBeenCalledWith('/sounds/cash.mp3')
+    expect(audioContexts[0].sources[0].buffer).toMatchObject({ marker: 4 })
   })
 
-  it('treats an assigned Countdown cue as a transition signal on Android', async () => {
+  it('treats an assigned sound-pack cue as a transition signal on Android', async () => {
     backgroundIntervalMocks.playNativeIntervalCue.mockResolvedValue(true)
     const { playIntervalGoCue } = await import('./intervalCues')
 
@@ -159,18 +195,18 @@ describe('interval cue audio', () => {
       soundEnabled: true,
       vibrationEnabled: false,
       typeSounds: {
-        train: 'go',
-        work: 'count',
-        rest: 'go',
+        train: 'cine-hit',
+        work: 'cash',
+        rest: 'harp',
         prepare: 'go',
-        meditation: 'go',
-        confirmation: 'go',
+        meditation: 'gong',
+        confirmation: 'confirm',
         custom: 'go',
       },
     }, 'work')
 
     await vi.waitFor(() => expect(backgroundIntervalMocks.playNativeIntervalCue)
-      .toHaveBeenCalledWith('count', true))
+      .toHaveBeenCalledWith('cash', true))
   })
 
   it('keeps a type silent when its assigned sound is None', async () => {
@@ -180,12 +216,12 @@ describe('interval cue audio', () => {
       soundEnabled: true,
       vibrationEnabled: false,
       typeSounds: {
-        train: 'go',
-        work: 'go',
-        rest: 'go',
+        train: 'cine-hit',
+        work: 'cash',
+        rest: 'harp',
         prepare: 'go',
         meditation: 'none',
-        confirmation: 'go',
+        confirmation: 'confirm',
         custom: 'go',
       },
     }, 'meditation')

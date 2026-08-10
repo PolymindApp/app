@@ -1,7 +1,11 @@
 import { defineComponent } from 'vue'
 import { mount } from '@vue/test-utils'
 import IntervalTypeSoundSettings from '@/components/IntervalTypeSoundSettings.vue'
-import { defaultIntervalTypeSounds, INTERVAL_STEP_TYPES } from '@/services/intervalTypes'
+import {
+  defaultIntervalTypeSounds,
+  INTERVAL_CUE_SOUND_OPTIONS,
+  INTERVAL_STEP_TYPES,
+} from '@/services/intervalTypes'
 
 const VSelectStub = defineComponent({
   name: 'VSelect',
@@ -41,6 +45,12 @@ describe('IntervalTypeSoundSettings', () => {
     expect(wrapper.findAllComponents(VSelectStub)).toHaveLength(INTERVAL_STEP_TYPES.length)
     expect(wrapper.findAllComponents(VSelectStub).map(select => select.props('label')))
       .toEqual(INTERVAL_STEP_TYPES.map(type => `${type.title} sound`))
+    expect(wrapper.findComponent(VSelectStub).props('items')).toEqual(INTERVAL_CUE_SOUND_OPTIONS)
+    expect(INTERVAL_CUE_SOUND_OPTIONS).toEqual(expect.arrayContaining([
+      { title: 'Cash Register', value: 'cash' },
+      { title: 'Cinematic Hit', value: 'cine-hit' },
+      { title: 'Meditation Gong', value: 'gong' },
+    ]))
   })
 
   it('emits changed assignments and preview requests', async () => {
@@ -51,6 +61,6 @@ describe('IntervalTypeSoundSettings', () => {
     expect(wrapper.emitted('change')?.[0]).toEqual(['work', 'complete'])
 
     await wrapper.findAllComponents(VBtnStub)[workIndex]!.trigger('click')
-    expect(wrapper.emitted('preview')?.[0]).toEqual(['work', 'go'])
+    expect(wrapper.emitted('preview')?.[0]).toEqual(['work', 'cash'])
   })
 })

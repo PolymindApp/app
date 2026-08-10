@@ -72,7 +72,7 @@ public class BackgroundIntervalPlugin extends Plugin {
         String name = call.getString("name", "");
         Boolean signal = call.getBoolean("signal", false);
         if (Boolean.TRUE.equals(signal)) {
-            if (!"count".equals(name) && !"go".equals(name) && !"complete".equals(name)) {
+            if (!IntervalCuePlayer.supportsSound(name)) {
                 call.reject("A valid interval cue name is required.");
                 return;
             }

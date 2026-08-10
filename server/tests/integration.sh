@@ -518,14 +518,15 @@ invalid_settings_status="$(curl --silent --output /dev/null --write-out '%{http_
 interval_sound_settings_response="$(curl --silent --show-error --fail \
   -X PATCH -H "Content-Type: application/json" \
   -H "Authorization: Bearer $alice_token" \
-  --data '{"intervalTypeSounds":{"train":"go","work":"count","rest":"complete","prepare":"go","meditation":"none","confirmation":"complete","custom":"go"}}' \
+  --data '{"intervalTypeSounds":{"train":"cine-hit","work":"cash","rest":"harp","prepare":"go","meditation":"gong","confirmation":"confirm","custom":"magic"}}' \
   "$api_url/auth/settings")"
 php -r '
   $data = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
   $sounds = $data["settings"]["intervalTypeSounds"] ?? null;
-  if (($sounds["work"] ?? null) !== "count"
-      || ($sounds["rest"] ?? null) !== "complete"
-      || ($sounds["meditation"] ?? null) !== "none") {
+  if (($sounds["work"] ?? null) !== "cash"
+      || ($sounds["rest"] ?? null) !== "harp"
+      || ($sounds["meditation"] ?? null) !== "gong"
+      || ($sounds["custom"] ?? null) !== "magic") {
       fwrite(STDERR, "Interval type sounds were not persisted.\n");
       exit(1);
   }
@@ -533,7 +534,7 @@ php -r '
 invalid_interval_sound_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
   -X PATCH -H "Content-Type: application/json" \
   -H "Authorization: Bearer $alice_token" \
-  --data '{"intervalTypeSounds":{"train":"go","work":"bell"}}' \
+  --data '{"intervalTypeSounds":{"train":"cine-hit","work":"bell","rest":"harp","prepare":"go","meditation":"gong","confirmation":"confirm","custom":"go"}}' \
   "$api_url/auth/settings")"
 [[ "$invalid_interval_sound_status" == 422 ]] || {
   echo "Invalid interval type sounds were not rejected." >&2

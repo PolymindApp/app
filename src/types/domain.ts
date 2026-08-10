@@ -127,7 +127,22 @@ export interface TaskDraft extends Omit<Task, 'id'> {
 
 export type IntervalStepKind = 'train' | 'work' | 'rest' | 'prepare' | 'meditation' | 'confirmation' | 'custom'
 export type IntervalSessionStatus = 'running' | 'paused' | 'completed' | 'ended'
-export type IntervalCueSound = 'go' | 'complete' | 'count' | 'none'
+export type IntervalCueSound =
+  | 'cash'
+  | 'celestial'
+  | 'chime'
+  | 'cine-boom'
+  | 'cine-hit'
+  | 'confirm'
+  | 'gong'
+  | 'harp'
+  | 'magic'
+  | 'notification'
+  | 'terror'
+  | 'go'
+  | 'complete'
+  | 'count'
+  | 'none'
 export type IntervalTypeSoundSettings = Record<IntervalStepKind, IntervalCueSound>
 
 export interface IntervalStepNode {

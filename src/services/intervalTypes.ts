@@ -32,9 +32,20 @@ export const INTERVAL_CUE_SOUND_OPTIONS: Array<{
   title: string
   value: IntervalCueSound
 }> = [
-  { title: 'Go cue', value: 'go' },
-  { title: 'Complete cue', value: 'complete' },
-  { title: 'Countdown cue', value: 'count' },
+  { title: 'Cash Register', value: 'cash' },
+  { title: 'Celestial Tone', value: 'celestial' },
+  { title: 'Classic Chime', value: 'chime' },
+  { title: 'Cinematic Boom', value: 'cine-boom' },
+  { title: 'Cinematic Hit', value: 'cine-hit' },
+  { title: 'Gentle Confirmation', value: 'confirm' },
+  { title: 'Meditation Gong', value: 'gong' },
+  { title: 'Harp Flourish', value: 'harp' },
+  { title: 'Magic Sparkle', value: 'magic' },
+  { title: 'Soft Notification', value: 'notification' },
+  { title: 'Terror Sting', value: 'terror' },
+  { title: 'Go Signal', value: 'go' },
+  { title: 'Completion Signal', value: 'complete' },
+  { title: 'Countdown Tick', value: 'count' },
   { title: 'None', value: 'none' },
 ]
 
@@ -43,19 +54,26 @@ const INTERVAL_CUE_SOUNDS = new Set<IntervalCueSound>(
 )
 
 export function defaultIntervalTypeSounds(): IntervalTypeSoundSettings {
-  return Object.fromEntries(
-    INTERVAL_STEP_TYPES.map(type => [type.value, 'go']),
-  ) as IntervalTypeSoundSettings
+  return {
+    train: 'cine-hit',
+    work: 'cash',
+    rest: 'harp',
+    prepare: 'go',
+    meditation: 'gong',
+    confirmation: 'confirm',
+    custom: 'go',
+  }
 }
 
 export function normalizeIntervalTypeSounds(value: unknown): IntervalTypeSoundSettings {
   const record = value && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown>
     : {}
+  const defaults = defaultIntervalTypeSounds()
   return Object.fromEntries(
     INTERVAL_STEP_TYPES.map((type) => {
       const sound = record[type.value]
-      return [type.value, INTERVAL_CUE_SOUNDS.has(sound as IntervalCueSound) ? sound : 'go']
+      return [type.value, INTERVAL_CUE_SOUNDS.has(sound as IntervalCueSound) ? sound : defaults[type.value]]
     }),
   ) as IntervalTypeSoundSettings
 }
@@ -66,5 +84,7 @@ export function intervalTypeSound(
 ): IntervalCueSound {
   if (!kind) return 'go'
   const sound = settings?.[kind]
-  return INTERVAL_CUE_SOUNDS.has(sound as IntervalCueSound) ? sound as IntervalCueSound : 'go'
+  return INTERVAL_CUE_SOUNDS.has(sound as IntervalCueSound)
+    ? sound as IntervalCueSound
+    : defaultIntervalTypeSounds()[kind]
 }

@@ -171,12 +171,12 @@ describe('interval task attribution', () => {
   it('snapshots the current interval type sounds when starting a session', async () => {
     apiMocks.authRecord.settings = {
       intervalTypeSounds: {
-        train: 'go',
-        work: 'count',
-        rest: 'complete',
+        train: 'cine-hit',
+        work: 'cash',
+        rest: 'harp',
         prepare: 'go',
-        meditation: 'none',
-        confirmation: 'complete',
+        meditation: 'gong',
+        confirmation: 'confirm',
         custom: 'go',
       },
     }
@@ -195,10 +195,10 @@ describe('interval task attribution', () => {
 
     expect(apiMocks.createIntervalSession).toHaveBeenCalledWith(expect.objectContaining({
       cue_snapshot: expect.objectContaining({
-        typeSounds: expect.objectContaining({ work: 'count', rest: 'complete', meditation: 'none' }),
+        typeSounds: expect.objectContaining({ work: 'cash', rest: 'harp', meditation: 'gong' }),
       }),
     }))
-    expect(session.cues.typeSounds).toMatchObject({ work: 'count', rest: 'complete', meditation: 'none' })
+    expect(session.cues.typeSounds).toMatchObject({ work: 'cash', rest: 'harp', meditation: 'gong' })
   })
 
   it('merges the occurrence returned by atomic session completion', async () => {

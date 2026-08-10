@@ -43,12 +43,12 @@ function session(): IntervalSession {
       soundEnabled: true,
       vibrationEnabled: true,
       typeSounds: {
-        train: 'go',
-        work: 'count',
+        train: 'cine-hit',
+        work: 'cash',
         rest: 'none',
         prepare: 'go',
-        meditation: 'go',
-        confirmation: 'complete',
+        meditation: 'gong',
+        confirmation: 'confirm',
         custom: 'go',
       },
     },
@@ -95,16 +95,16 @@ describe('background interval Review set playback', () => {
       stepIndex: 1,
       remainingMs: 10_000,
       steps: [
-        expect.objectContaining({ name: 'Read', flashcardReviewEnabled: true, cueSound: 'count' }),
+        expect.objectContaining({ name: 'Read', flashcardReviewEnabled: true, cueSound: 'cash' }),
         expect.objectContaining({ name: 'Silent', flashcardReviewEnabled: false, cueSound: 'none' }),
       ],
       flashcardReview: expect.objectContaining({ overAmplified: false }),
     }))
   })
 
-  it('marks an assigned Countdown cue as a transition signal', async () => {
-    await playNativeIntervalCue('count', true)
+  it('marks an assigned sound-pack cue as a transition signal', async () => {
+    await playNativeIntervalCue('cine-hit', true)
 
-    expect(nativeMocks.plugin.playCue).toHaveBeenCalledWith({ name: 'count', signal: true })
+    expect(nativeMocks.plugin.playCue).toHaveBeenCalledWith({ name: 'cine-hit', signal: true })
   })
 })

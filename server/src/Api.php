@@ -24,7 +24,23 @@ final class Api
     private const INTERVAL_STEP_TYPES = [
         'train', 'work', 'rest', 'prepare', 'meditation', 'confirmation', 'custom',
     ];
-    private const INTERVAL_CUE_SOUNDS = ['go', 'complete', 'count', 'none'];
+    private const INTERVAL_CUE_SOUNDS = [
+        'cash',
+        'celestial',
+        'chime',
+        'cine-boom',
+        'cine-hit',
+        'confirm',
+        'gong',
+        'harp',
+        'magic',
+        'notification',
+        'terror',
+        'go',
+        'complete',
+        'count',
+        'none',
+    ];
     private const FLASHCARD_REVIEW_SETTING_FIELDS = [
         'mode', 'card_sides', 'indefinite', 'max_cards', 'front_seconds', 'back_seconds',
         'back_speech_repeat_count', 'note_before_back',

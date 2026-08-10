@@ -1,4 +1,8 @@
-import { intervalTypeSound } from '@/services/intervalTypes'
+import {
+  defaultIntervalTypeSounds,
+  intervalTypeSound,
+  normalizeIntervalTypeSounds,
+} from '@/services/intervalTypes'
 import type {
   IntervalCueSettings,
   IntervalCueSound,
@@ -11,12 +15,24 @@ import {
 export { requestScreenWakeLock as requestIntervalWakeLock } from '@/services/screenWakeLock'
 
 let audioContext: AudioContext | undefined
+type PlayableIntervalCueSound = Exclude<IntervalCueSound, 'none'>
 const cueUrls = {
+  cash: '/sounds/cash.mp3',
+  celestial: '/sounds/celestial.mp3',
+  chime: '/sounds/chime.mp3',
+  'cine-boom': '/sounds/cine-boom.mp3',
+  'cine-hit': '/sounds/cine-hit.mp3',
+  confirm: '/sounds/confirm.mp3',
+  gong: '/sounds/gong.mp3',
+  harp: '/sounds/harp.mp3',
+  magic: '/sounds/magic.mp3',
+  notification: '/sounds/notification.mp3',
+  terror: '/sounds/terror.mp3',
   count: '/sounds/count.mp3',
   go: '/sounds/go.mp3',
   complete: '/sounds/complete.mp3',
-} as const
-type CueName = keyof typeof cueUrls
+} as const satisfies Record<PlayableIntervalCueSound, string>
+type CueName = PlayableIntervalCueSound
 
 const cueData: Partial<Record<CueName, ArrayBuffer>> = {}
 const cueDataLoads: Partial<Record<CueName, Promise<ArrayBuffer>>> = {}
@@ -67,12 +83,18 @@ function loadCue(name: CueName) {
   return load
 }
 
-export async function preloadIntervalCueAudio() {
-  await Promise.all([loadCue('count'), loadCue('go'), loadCue('complete')])
+export async function preloadIntervalCueAudio(
+  sounds: readonly IntervalCueSound[] = Object.values(defaultIntervalTypeSounds()),
+) {
+  const names = new Set<CueName>(['count', 'complete'])
+  for (const sound of sounds) {
+    if (sound !== 'none') names.add(sound)
+  }
+  await Promise.all([...names].map(loadCue))
 }
 
-async function prepareIntervalAudio() {
-  await preloadIntervalCueAudio()
+async function prepareIntervalAudio(cues: IntervalCueSettings) {
+  await preloadIntervalCueAudio(Object.values(normalizeIntervalTypeSounds(cues.typeSounds)))
   if (audioContext?.state === 'suspended') await audioContext.resume()
 }
 
@@ -84,7 +106,7 @@ async function prepareAudioCue(name: CueName) {
 
 export async function prepareIntervalCues(cues: IntervalCueSettings) {
   try {
-    if (cues.soundEnabled) await prepareIntervalAudio()
+    if (cues.soundEnabled) await prepareIntervalAudio(cues)
   } catch {
     // Audio remains best-effort when the browser requires another user gesture.
   }
@@ -99,9 +121,7 @@ export async function prepareIntervalCues(cues: IntervalCueSettings) {
 
 function playCue(name: CueName, cues: IntervalCueSettings, forceSignal = false) {
   if (!cues.soundEnabled || nativeBackgroundIntervalOwnsCues()) return
-  const nativePlayback = forceSignal && name === 'count'
-    ? playNativeIntervalCue(name, true)
-    : playNativeIntervalCue(name)
+  const nativePlayback = playNativeIntervalCue(name, forceSignal)
   void nativePlayback
     .then((playedNatively) => {
       if (!playedNatively) playAudioCue(name, forceSignal)
