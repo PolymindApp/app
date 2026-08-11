@@ -18,8 +18,6 @@ return [
     'MOM_MAIL_FROM_ADDRESS' => 'polymind@example.com',
     'MOM_MAIL_FROM_NAME' => 'Polymind',
     'MOM_PEXELS_API_KEY' => 'CHANGE_ME',
-    'MOM_CODEX_BRIDGE_URL' => 'https://codex-bridge.example.com',
-    'MOM_CODEX_BRIDGE_TOKEN' => 'CHANGE_ME_WITH_AT_LEAST_32_CHARACTERS',
     'MOM_PASSKEY_RP_ID' => 'mom.example.com',
     'MOM_PASSKEY_ANDROID_PACKAGE' => 'dev.example.mom',
     'MOM_PASSKEY_ANDROID_KEY_HASHES' => 'BASE64URL_SHA256_OF_ANDROID_SIGNING_CERTIFICATE',

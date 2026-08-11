@@ -9,6 +9,18 @@ use Throwable;
 
 final class MigrationRunner
 {
+    /** @var array<string, array{nameHash: string, checksum: string}> */
+    private const RETIRED_MIGRATIONS = [
+        '202608080002' => [
+            'nameHash' => '0e54961221f7d9f01e1804d9663ebab4165070412ac100e6843f0d839c37d31b',
+            'checksum' => 'f660c92d2c2f17bf3fa3356a7476a43cc83e9f690b300f76d1dd46c145af860c',
+        ],
+        '202608080004' => [
+            'nameHash' => '83b98131967a2faca3ac177272e0172d48cc70636892ec23ef4e11a5db31d167',
+            'checksum' => 'bce1f8a527b66b15457f54eefb06859db00f0f332bfd3078163a1bfcaeb51af4',
+        ],
+    ];
+
     public function __construct(
         private readonly PDO $pdo,
         private readonly string $directory,
@@ -177,6 +189,14 @@ final class MigrationRunner
     {
         foreach ($applied as $version => $migration) {
             if (!isset($available[$version])) {
+                $retired = self::RETIRED_MIGRATIONS[$version] ?? null;
+                if (
+                    $retired !== null
+                    && hash_equals($retired['nameHash'], hash('sha256', $migration['name']))
+                    && hash_equals($retired['checksum'], $migration['checksum'])
+                ) {
+                    continue;
+                }
                 throw new ApiException(
                     500,
                     "Applied database migration {$version} is missing from this deployment.",

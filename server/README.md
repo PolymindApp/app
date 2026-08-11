@@ -40,8 +40,6 @@ Configuration may be supplied through the root `.env`, process environment varia
 | `MOM_MAIL_FROM_ADDRESS` | Sender email address | Required for account email |
 | `MOM_MAIL_FROM_NAME` | Sender display name | Polymind |
 | `MOM_PEXELS_API_KEY` | Server-side Pexels API key used by batch and on-demand cache fills | Disabled |
-| `MOM_CODEX_BRIDGE_URL` | HTTPS URL of the separately hosted Codex bridge | Disabled |
-| `MOM_CODEX_BRIDGE_TOKEN` | Shared bridge bearer token, at least 32 characters | Disabled |
 | `MOM_PASSKEY_RP_ID` | Android passkey relying-party domain | Disabled |
 | `MOM_PASSKEY_ANDROID_PACKAGE` | Trusted Android application ID | Disabled |
 | `MOM_PASSKEY_ANDROID_KEY_HASHES` | Comma-separated base64url SHA-256 signing-certificate hashes | Disabled |
@@ -111,15 +109,13 @@ The reconstructed PHP-era history is:
 | `202608070005` | Multilingual image concepts, full-text search, Pexels cache metadata, and flashcard library image attribution |
 | `202608070006` | Live Review set sharing, recipient preferences, reviewer-specific card statistics, and source-owner session attribution |
 | `202608080001` | Privacy-preserving Review set invitations for registered and future email addresses |
-| `202608080002` | Legacy encrypted per-user OpenAI API connections |
 | `202608080003` | Review set note-before-answer display preference |
-| `202608080004` | Remove legacy API keys in favor of hosted ChatGPT authentication |
 | `202608090001` | Offline synchronization versions, change log, idempotency receipts, client cursors, and per-device active sessions |
 | `202608100001` | Hashed email-confirmation and password-reset tokens; existing accounts are grandfathered as verified |
 
-Existing PHP databases are advanced without recreating application data. Migration `202608080004` is the explicit exception for deletion: it removes credentials from the superseded API-key connection. The schema is validated after migration, including required columns.
+Existing PHP databases are advanced without recreating application data. The schema is validated after migration, including required columns.
 
-Migration files in `server/migrations` are immutable after deployment. Any later schema or data change must be a new file named with the next 12-digit version and a descriptive suffix. Editing or removing an applied migration causes startup to fail instead of silently accepting schema drift.
+Migration files in `server/migrations` are immutable after deployment. Any later schema or data change must be a new file named with the next 12-digit version and a descriptive suffix. Editing or removing an applied migration causes startup to fail instead of silently accepting schema drift. A fully reversed historical migration pair may be retired only by recording its exact version, name hash, and file checksum in `MigrationRunner`; new databases then skip the pair while existing histories remain verifiable.
 
 ## Offline synchronization
 
@@ -172,16 +168,6 @@ Owners manage access through `/flashcard-review-sets/{id}/shares` and `/flashcar
 Review preferences and card statistics are keyed by account, so one recipient’s timing, speech, sorting, success, and error history do not alter another account’s experience. Sessions retain both the reviewer and source owner. Recipients may attach accessible sets to their tasks, program steps, and interval templates. Removing a share detaches those references transactionally while keeping immutable review events and session snapshots.
 
 `POST /flashcard-review-sets/{id}/copies` creates a recipient-owned set and copies every card currently matching the shared filter. Copied cards, tags, settings, and non-library image files are independent; the original live share remains in place.
-
-## ChatGPT connection through Codex
-
-Authenticated users manage their connection through `GET`, `POST`, and `DELETE /auth/chatgpt`. `POST` starts OpenAI’s ChatGPT device-code flow through the separately hosted Codex bridge. `GET` returns availability, pending verification details, or the connected account email and plan. `DELETE` cancels a pending login or logs the account out.
-
-The PHP API authenticates to the bridge with `MOM_CODEX_BRIDGE_TOKEN` and sends an HMAC subject derived from the Mom user ID and `MOM_API_SECRET`; raw user IDs and ChatGPT credentials do not cross that boundary. Both bridge settings must be present together. Remote bridge URLs require HTTPS, while loopback HTTP is accepted for local development.
-
-Deploy the Node service documented in [`codex-bridge/README.md`](../codex-bridge/README.md) on a host that can run the Codex CLI and persist its credential volume. It uses App Server’s stdio JSON-RPC transport internally rather than exposing the experimental WebSocket transport. This connection is for Codex-powered commands and does not expose the user’s ordinary ChatGPT conversation history.
-
-Migration `202608080004` drops the legacy `mom_openai_connections` table. Any API keys stored by the superseded implementation are permanently deleted and users must connect with ChatGPT again.
 
 ## Apache/shared hosting
 
@@ -240,8 +226,6 @@ Use the PHP-FPM socket configured by the host.
 - Android passkey challenges are random, expire after five minutes, and are consumed once.
 - Passkey registration and login require the configured Android package and signing-certificate origin, RP-ID hash, user-presence/user-verification flags, and a valid authenticator signature.
 - Disconnecting biometric sign-in deletes every registered credential for the authenticated account and invalidates its pending registration challenges.
-- The PHP API never receives ChatGPT passwords or OAuth tokens; only the isolated Codex bridge stores refreshable credentials.
-- Bridge requests use a dedicated bearer token and privacy-preserving HMAC account subjects. Remote connections require HTTPS.
 
 ## Android passkey deployment
 

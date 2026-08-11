@@ -5,7 +5,6 @@ import type {
   FlashcardReviewAction,
   FlashcardReviewSetAccessRole,
   FlashcardReviewSettings,
-  ChatGPTConnectionStatus,
 } from '@/types/domain'
 import type { AuthActionResponse } from '@/types/auth'
 import {
@@ -653,30 +652,6 @@ class ApiClient {
     )
     this.saveUserSettings(response)
     return response.settings
-  }
-
-  getChatGPTConnection() {
-    return request<ChatGPTConnectionStatus>(
-      '/auth/chatgpt',
-      {},
-      this.authStore,
-    )
-  }
-
-  startChatGPTConnection() {
-    return request<ChatGPTConnectionStatus>(
-      '/auth/chatgpt',
-      { method: 'POST' },
-      this.authStore,
-    )
-  }
-
-  disconnectChatGPT() {
-    return request<ChatGPTConnectionStatus>(
-      '/auth/chatgpt',
-      { method: 'DELETE' },
-      this.authStore,
-    )
   }
 
   async completeIntervalSession(

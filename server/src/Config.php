@@ -17,8 +17,6 @@ final class Config
         public readonly string $passkeyAndroidPackage,
         public readonly array $passkeyAndroidKeyHashes,
         public readonly string $pexelsApiKey,
-        public readonly string $codexBridgeUrl,
-        public readonly string $codexBridgeToken,
         public readonly string $appUrl,
         public readonly string $mailHost,
         public readonly int $mailPort,
@@ -47,7 +45,7 @@ final class Config
 
         $value = static function (string $name, mixed $default = null) use ($dotenv, $local): mixed {
             $environment = getenv($name);
-            if ($environment !== false && $environment !== '') {
+            if ($environment !== false) {
                 return $environment;
             }
 
@@ -84,8 +82,6 @@ final class Config
             $productionDotenv = self::readDotenv($projectRoot . '/.env.prod');
             $pexelsApiKey = trim((string) ($productionDotenv['MOM_PEXELS_API_KEY'] ?? ''));
         }
-        $codexBridgeUrl = rtrim(trim((string) $value('MOM_CODEX_BRIDGE_URL', '')), '/');
-        $codexBridgeToken = trim((string) $value('MOM_CODEX_BRIDGE_TOKEN', ''));
         $appUrl = rtrim(trim((string) $value('MOM_APP_URL', '')), '/');
         $mailHost = trim((string) $value('MOM_MAIL_HOST', ''));
         $mailPort = (int) $value('MOM_MAIL_PORT', 587);
@@ -149,49 +145,6 @@ final class Config
                 );
             }
         }
-        $codexBridgeParts = $codexBridgeUrl !== '' ? parse_url($codexBridgeUrl) : [];
-        $codexBridgeHost = is_array($codexBridgeParts)
-            ? strtolower((string) ($codexBridgeParts['host'] ?? ''))
-            : '';
-        $codexBridgeScheme = is_array($codexBridgeParts)
-            ? strtolower((string) ($codexBridgeParts['scheme'] ?? ''))
-            : '';
-        if (
-            ($codexBridgeUrl === '') !== ($codexBridgeToken === '')
-            || (
-                $codexBridgeUrl !== ''
-                && (
-                    !is_array($codexBridgeParts)
-                    || $codexBridgeHost === ''
-                    || !in_array($codexBridgeScheme, ['http', 'https'], true)
-                    || (
-                        $codexBridgeScheme !== 'https'
-                        && !in_array($codexBridgeHost, ['127.0.0.1', 'localhost'], true)
-                    )
-                    || isset($codexBridgeParts['user'])
-                    || isset($codexBridgeParts['pass'])
-                    || isset($codexBridgeParts['query'])
-                    || isset($codexBridgeParts['fragment'])
-                )
-            )
-        ) {
-            throw new ApiException(
-                500,
-                'MOM_CODEX_BRIDGE_URL and MOM_CODEX_BRIDGE_TOKEN must be configured together using HTTPS.',
-            );
-        }
-        if (
-            $codexBridgeToken !== ''
-            && (
-                strlen($codexBridgeToken) < 32
-                || preg_match('/^[\x21-\x7E]+$/D', $codexBridgeToken) !== 1
-            )
-        ) {
-            throw new ApiException(
-                500,
-                'MOM_CODEX_BRIDGE_TOKEN must contain at least 32 printable characters.',
-            );
-        }
         if ($appUrl !== '') {
             $appUrlParts = parse_url($appUrl);
             $appUrlHost = is_array($appUrlParts)
@@ -249,8 +202,6 @@ final class Config
             $passkeyAndroidPackage,
             $passkeyAndroidKeyHashes,
             $pexelsApiKey,
-            $codexBridgeUrl,
-            $codexBridgeToken,
             $appUrl,
             $mailHost,
             $mailPort,

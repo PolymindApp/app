@@ -52,7 +52,6 @@ final class Api
         'speech_enabled', 'front_language', 'back_language',
         'sort_mode', 'excluded_cards',
     ];
-    private readonly CodexBridgeClient $codexBridge;
     private readonly Mailer $mailer;
     private readonly SyncService $syncService;
 
@@ -60,11 +59,6 @@ final class Api
         private readonly Config $config,
         private readonly Database $database,
     ) {
-        $this->codexBridge = new CodexBridgeClient(
-            $config->codexBridgeUrl,
-            $config->codexBridgeToken,
-            $config->secret,
-        );
         $this->mailer = new Mailer($config);
         $this->syncService = new SyncService($database, $config);
     }
@@ -171,12 +165,6 @@ final class Api
             }
             if ($method === 'POST' && $path === '/task-session-progress/reconcile') {
                 $this->reconcileSessionTaskProgress($this->authenticate());
-            }
-            if (
-                in_array($method, ['GET', 'POST', 'DELETE'], true)
-                && $path === '/auth/chatgpt'
-            ) {
-                $this->chatGPTConnection($method);
             }
             if ($method === 'POST' && $path === '/auth/passkeys/register/options') {
                 $this->passkeyRegistrationOptions();
@@ -1550,20 +1538,6 @@ final class Api
             'id' => $user['id'],
         ]);
         $this->respond(['settings' => $settings, 'updated' => $updated]);
-    }
-
-    private function chatGPTConnection(string $method): never
-    {
-        $user = $this->authenticate();
-        if ($method === 'GET') {
-            $this->respond($this->codexBridge->status((string) $user['id']));
-        }
-        if ($method === 'DELETE') {
-            $this->respond($this->codexBridge->disconnect((string) $user['id']));
-        }
-
-        $this->rateLimit('chatgpt-connect:' . $user['id'], 10, 900);
-        $this->respond($this->codexBridge->startLogin((string) $user['id']));
     }
 
     private function validateMainMenuOrder(mixed $value): array

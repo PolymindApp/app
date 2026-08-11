@@ -4,25 +4,21 @@ set -euo pipefail
 source_db="${MOM_TEST_SOURCE_DB:-private/data.db}"
 test_port="${MOM_TEST_PORT:-$((18100 + RANDOM % 800))}"
 pexels_port="$((test_port + 1000))"
-codex_bridge_port="$((test_port + 2000))"
 smtp_port="$((test_port + 3000))"
 test_secret="mom-api-integration-secret-at-least-32-characters"
-codex_bridge_token="mom-codex-bridge-test-token-at-least-32-characters"
 test_root="${TMPDIR:-/tmp}"
 test_dir="$(mktemp -d "$test_root/mom-api-test.XXXXXX")"
 test_db="$test_dir/data.db"
 test_log="$test_dir/server.log"
 pexels_log="$test_dir/pexels.log"
-codex_bridge_log="$test_dir/codex-bridge.log"
-codex_bridge_state="$test_dir/codex-bridge-state.json"
 smtp_log="$test_dir/smtp.log"
 smtp_mailbox="$test_dir/mailbox.txt"
 server_pid=""
 pexels_pid=""
-codex_bridge_pid=""
 smtp_pid=""
 
 cleanup() {
+  cleanup_status=$?
   if [[ -n "$server_pid" ]]; then
     kill "$server_pid" >/dev/null 2>&1 || true
     wait "$server_pid" >/dev/null 2>&1 || true
@@ -31,13 +27,12 @@ cleanup() {
     kill "$pexels_pid" >/dev/null 2>&1 || true
     wait "$pexels_pid" >/dev/null 2>&1 || true
   fi
-  if [[ -n "$codex_bridge_pid" ]]; then
-    kill "$codex_bridge_pid" >/dev/null 2>&1 || true
-    wait "$codex_bridge_pid" >/dev/null 2>&1 || true
-  fi
   if [[ -n "$smtp_pid" ]]; then
     kill "$smtp_pid" >/dev/null 2>&1 || true
     wait "$smtp_pid" >/dev/null 2>&1 || true
+  fi
+  if [[ "$cleanup_status" -ne 0 && -f "$test_log" ]]; then
+    sed -n '1,240p' "$test_log" >&2
   fi
   case "$test_dir" in
     "$test_root"/mom-api-test.*) rm -rf -- "$test_dir" ;;
@@ -60,10 +55,6 @@ done
 sqlite3 "$source_db" ".backup $test_db"
 php -S "127.0.0.1:$pexels_port" server/tests/fixtures/pexels-router.php >"$pexels_log" 2>&1 &
 pexels_pid=$!
-MOM_TEST_CODEX_BRIDGE_TOKEN="$codex_bridge_token" \
-MOM_TEST_CODEX_BRIDGE_STATE="$codex_bridge_state" \
-  php -S "127.0.0.1:$codex_bridge_port" server/tests/fixtures/codex-bridge-router.php >"$codex_bridge_log" 2>&1 &
-codex_bridge_pid=$!
 php server/tests/fixtures/smtp-server.php "$smtp_port" "$smtp_mailbox" >"$smtp_log" 2>&1 &
 smtp_pid=$!
 
@@ -92,25 +83,16 @@ for _attempt in {1..50}; do
   sleep .1
 done
 
-for _attempt in {1..50}; do
-  curl --silent --fail "http://127.0.0.1:$codex_bridge_port/health" >/dev/null && break
-  kill -0 "$codex_bridge_pid" >/dev/null 2>&1 || {
-    sed -n '1,200p' "$codex_bridge_log" >&2
-    exit 1
-  }
-  sleep .1
-done
-
 MOM_DB_PATH="$test_db" \
 MOM_API_SECRET="$test_secret" \
 MOM_ALLOWED_ORIGINS="http://localhost:5173" \
 MOM_PEXELS_API_KEY="test-pexels-key" \
 MOM_PEXELS_API_BASE_URL="http://127.0.0.1:$pexels_port/v1/search" \
-MOM_CODEX_BRIDGE_URL="http://127.0.0.1:$codex_bridge_port" \
-MOM_CODEX_BRIDGE_TOKEN="$codex_bridge_token" \
 MOM_APP_URL="http://127.0.0.1:$test_port" \
 MOM_MAIL_HOST="127.0.0.1" \
 MOM_MAIL_PORT="$smtp_port" \
+MOM_MAIL_USERNAME="" \
+MOM_MAIL_PASSWORD="" \
 MOM_MAIL_ENCRYPTION="none" \
 MOM_MAIL_FROM_ADDRESS="polymind@example.test" \
 MOM_MAIL_FROM_NAME="Polymind" \
@@ -598,70 +580,6 @@ invalid_hidden_menu_status="$(curl --silent --output /dev/null --write-out '%{ht
   "$api_url/auth/settings")"
 [[ "$invalid_hidden_menu_status" == 422 ]] || {
   echo "The API allowed every main menu item to be hidden." >&2
-  exit 1
-}
-
-chatgpt_status_response="$(curl --silent --show-error --fail \
-  -H "Authorization: Bearer $alice_token" \
-  "$api_url/auth/chatgpt")"
-chatgpt_available="$(json_field available <<<"$chatgpt_status_response")"
-chatgpt_connected="$(json_field connected <<<"$chatgpt_status_response")"
-[[ "$chatgpt_available" == 1 && -z "$chatgpt_connected" ]] || {
-  echo "A new account received an invalid ChatGPT connection status." >&2
-  exit 1
-}
-
-chatgpt_login_response="$(curl --silent --show-error --fail \
-  -X POST \
-  -H "Authorization: Bearer $alice_token" \
-  "$api_url/auth/chatgpt")"
-chatgpt_pending="$(json_field pending <<<"$chatgpt_login_response")"
-chatgpt_code="$(json_field userCode <<<"$chatgpt_login_response")"
-chatgpt_verification_url="$(json_field verificationUrl <<<"$chatgpt_login_response")"
-[[ "$chatgpt_pending" == 1 && "$chatgpt_code" == "MOM-TEST" && "$chatgpt_verification_url" == "https://auth.openai.com/codex/device" ]] || {
-  echo "ChatGPT device sign-in did not return the bridge login details." >&2
-  exit 1
-}
-
-chatgpt_connection_response="$(curl --silent --show-error --fail \
-  -H "Authorization: Bearer $alice_token" \
-  "$api_url/auth/chatgpt")"
-chatgpt_connected="$(json_field connected <<<"$chatgpt_connection_response")"
-chatgpt_email="$(json_field email <<<"$chatgpt_connection_response")"
-chatgpt_plan="$(json_field planType <<<"$chatgpt_connection_response")"
-[[ "$chatgpt_connected" == 1 && "$chatgpt_email" == "alice@example.test" && "$chatgpt_plan" == "plus" ]] || {
-  echo "A completed ChatGPT sign-in was not reported as connected." >&2
-  exit 1
-}
-
-codex_bridge_subject="$(php -r '
-  $state = json_decode(file_get_contents($argv[1]), true, 512, JSON_THROW_ON_ERROR);
-  echo array_key_first($state);
-' "$codex_bridge_state")"
-expected_codex_bridge_subject="$(php -r 'echo hash_hmac("sha256", $argv[1], $argv[2]);' "$alice_id" "$test_secret")"
-[[ "$codex_bridge_subject" == "$expected_codex_bridge_subject" && "$codex_bridge_subject" != "$alice_id" ]] || {
-  echo "The Codex bridge did not receive the privacy-preserving account subject." >&2
-  exit 1
-}
-
-legacy_openai_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
-  -H "Authorization: Bearer $alice_token" \
-  "$api_url/auth/openai")"
-[[ "$legacy_openai_status" == 404 ]] || {
-  echo "The legacy API-key connection endpoint is still available." >&2
-  exit 1
-}
-
-chatgpt_disconnect_response="$(curl --silent --show-error --fail \
-  -X DELETE -H "Authorization: Bearer $alice_token" \
-  "$api_url/auth/chatgpt")"
-chatgpt_connected="$(json_field connected <<<"$chatgpt_disconnect_response")"
-remaining_bridge_connections="$(php -r '
-  $state = json_decode(file_get_contents($argv[1]), true, 512, JSON_THROW_ON_ERROR);
-  echo count($state);
-' "$codex_bridge_state")"
-[[ -z "$chatgpt_connected" && "$remaining_bridge_connections" == 0 ]] || {
-  echo "Disconnecting ChatGPT did not revoke the hosted Codex session." >&2
   exit 1
 }
 

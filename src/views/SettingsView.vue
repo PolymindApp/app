@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import { computed, onMounted, ref } from 'vue'
 import IntervalTypeSoundSettings from '@/components/IntervalTypeSoundSettings.vue'
 import type { LongPressDragResult } from '@/directives/longPressDrag'
 import { api } from '@/lib/api'
@@ -29,7 +28,6 @@ import {
   normalizeIntervalTypeSounds,
 } from '@/services/intervalTypes'
 import type {
-  ChatGPTConnectionStatus,
   IntervalCueSound,
   IntervalStepKind,
   StepSource,
@@ -45,12 +43,6 @@ const hiddenMenuItems = ref<MainNavItemId[]>(normalizeHiddenMainMenuItems(
 const intervalTypeSounds = ref(defaultIntervalTypeSounds())
 const loading = ref(true)
 const connecting = ref(false)
-const chatGPTConnecting = ref(false)
-const chatGPTDisconnecting = ref(false)
-const chatGPTConnectionDialog = ref(false)
-const disconnectChatGPTDialog = ref(false)
-const chatGPTStatus = ref<ChatGPTConnectionStatus>({ available: false, connected: false })
-const chatGPTError = ref('')
 const menuSaving = ref(false)
 const intervalSoundSaving = ref(false)
 const previewingIntervalType = ref<IntervalStepKind>()
@@ -65,7 +57,6 @@ const isAndroidApp = isNativeHealthConnectSupported()
 const stepSources = [
   { title: 'Health Connect', value: 'health_connect' },
 ]
-let chatGPTPollTimer: ReturnType<typeof setTimeout> | undefined
 
 const connectionTitle = computed(() => {
   if (!isAndroidApp) return 'Android app required'
@@ -94,37 +85,6 @@ const connectionIcon = computed(() => healthStatus.value.authorized
   : 'mdi-heart-pulse',
 )
 const visibleMenuItemCount = computed(() => menuItems.value.length - hiddenMenuItems.value.length)
-const chatGPTConnectionTitle = computed(() => {
-  if (!chatGPTStatus.value.available) return 'Connection unavailable'
-  if (chatGPTStatus.value.connected) return 'ChatGPT connected'
-  if (chatGPTStatus.value.pending) return 'Finish signing in'
-  return 'ChatGPT sign-in required'
-})
-const chatGPTConnectionCopy = computed(() => {
-  if (!chatGPTStatus.value.available) {
-    return 'The hosted Codex bridge must be configured before ChatGPT accounts can connect.'
-  }
-  if (chatGPTStatus.value.connected) {
-    const account = chatGPTStatus.value.email || 'Your ChatGPT account'
-    const plan = chatGPTStatus.value.planType
-      ? ` · ${chatGPTStatus.value.planType.toUpperCase()} plan`
-      : ''
-    return `${account}${plan} is ready for supported Codex commands.`
-  }
-  if (chatGPTStatus.value.pending) {
-    return 'Open the secure OpenAI sign-in page and enter the one-time code to finish connecting.'
-  }
-  return 'Connect your ChatGPT account through OpenAI’s secure device sign-in.'
-})
-const chatGPTConnectionColor = computed(() => {
-  if (!chatGPTStatus.value.available) return 'warning'
-  return chatGPTStatus.value.connected ? 'success' : 'info'
-})
-const chatGPTConnectionIcon = computed(() => {
-  if (!chatGPTStatus.value.available) return 'mdi-server-off'
-  if (chatGPTStatus.value.connected) return 'mdi-check-circle-outline'
-  return 'mdi-robot-outline'
-})
 
 onMounted(async () => {
   try {
@@ -144,11 +104,9 @@ onMounted(async () => {
     error.value = cause instanceof Error ? cause.message : 'Your settings could not be loaded.'
   }
 
-  await Promise.all([refreshHealthStatus(), refreshChatGPTStatus()])
+  await refreshHealthStatus()
   loading.value = false
 })
-
-onBeforeUnmount(stopChatGPTPolling)
 
 async function refreshHealthStatus() {
   try {
@@ -172,99 +130,6 @@ async function connectHealthConnect() {
     error.value = cause instanceof Error ? cause.message : 'Health Connect could not be connected.'
   } finally {
     connecting.value = false
-  }
-}
-
-async function refreshChatGPTStatus() {
-  try {
-    chatGPTStatus.value = await api.getChatGPTConnection()
-    chatGPTError.value = chatGPTStatus.value.loginError || ''
-  } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : 'ChatGPT status could not be checked.'
-  }
-}
-
-function stopChatGPTPolling() {
-  if (chatGPTPollTimer !== undefined) {
-    clearTimeout(chatGPTPollTimer)
-    chatGPTPollTimer = undefined
-  }
-}
-
-function scheduleChatGPTPoll() {
-  stopChatGPTPolling()
-  if (!chatGPTConnectionDialog.value || !chatGPTStatus.value.pending) return
-  chatGPTPollTimer = setTimeout(pollChatGPTConnection, 2000)
-}
-
-async function pollChatGPTConnection() {
-  try {
-    chatGPTStatus.value = await api.getChatGPTConnection()
-    if (chatGPTStatus.value.connected) {
-      chatGPTConnectionDialog.value = false
-      chatGPTError.value = ''
-      noticeMessage.value = 'ChatGPT connected.'
-      notice.value = true
-      stopChatGPTPolling()
-      return
-    }
-    chatGPTError.value = chatGPTStatus.value.loginError || ''
-  } catch (cause) {
-    chatGPTError.value = cause instanceof Error ? cause.message : 'ChatGPT status could not be checked.'
-  }
-  scheduleChatGPTPoll()
-}
-
-async function startChatGPTConnection() {
-  if (!chatGPTStatus.value.available || chatGPTConnecting.value) return
-  chatGPTConnecting.value = true
-  chatGPTError.value = ''
-  try {
-    chatGPTStatus.value = chatGPTStatus.value.pending
-      ? chatGPTStatus.value
-      : await api.startChatGPTConnection()
-    if (chatGPTStatus.value.connected) {
-      noticeMessage.value = 'ChatGPT connected.'
-      notice.value = true
-      return
-    }
-    chatGPTConnectionDialog.value = true
-    scheduleChatGPTPoll()
-  } catch (cause) {
-    chatGPTError.value = cause instanceof Error ? cause.message : 'ChatGPT sign-in could not start.'
-  } finally {
-    chatGPTConnecting.value = false
-  }
-}
-
-async function cancelChatGPTConnection() {
-  if (chatGPTConnecting.value) return
-  chatGPTConnecting.value = true
-  chatGPTError.value = ''
-  stopChatGPTPolling()
-  try {
-    chatGPTStatus.value = await api.disconnectChatGPT()
-    chatGPTConnectionDialog.value = false
-  } catch (cause) {
-    chatGPTError.value = cause instanceof Error ? cause.message : 'ChatGPT sign-in could not be cancelled.'
-    scheduleChatGPTPoll()
-  } finally {
-    chatGPTConnecting.value = false
-  }
-}
-
-async function disconnectChatGPT() {
-  chatGPTDisconnecting.value = true
-  error.value = ''
-  try {
-    chatGPTStatus.value = await api.disconnectChatGPT()
-    disconnectChatGPTDialog.value = false
-    noticeMessage.value = 'ChatGPT disconnected.'
-    notice.value = true
-  } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : 'ChatGPT could not be disconnected.'
-  } finally {
-    chatGPTDisconnecting.value = false
   }
 }
 
@@ -537,123 +402,6 @@ async function previewIntervalTypeSound(kind: IntervalStepKind, sound: IntervalC
       </template>
     </v-card>
 
-    <v-card class="surface-card pa-5 pa-sm-6">
-      <div class="settings-section-heading">
-        <div>
-          <h2>ChatGPT</h2>
-          <p>Connect your ChatGPT account for Codex-powered commands in Polymind.</p>
-        </div>
-        <v-icon icon="mdi-creation-outline" />
-      </div>
-
-      <v-progress-linear
-        v-if="loading"
-        color="secondary"
-        indeterminate
-        rounded
-        class="mt-5"
-      />
-
-      <template v-else>
-        <v-alert
-          :type="chatGPTConnectionColor"
-          variant="tonal"
-          :icon="chatGPTConnectionIcon"
-          class="mt-5"
-        >
-          <strong>{{ chatGPTConnectionTitle }}</strong>
-          <p class="mt-1">{{ chatGPTConnectionCopy }}</p>
-        </v-alert>
-
-        <div class="settings-actions mt-4">
-          <v-btn
-            v-if="chatGPTStatus.connected"
-            color="error"
-            variant="outlined"
-            prepend-icon="mdi-link-variant-off"
-            @click="disconnectChatGPTDialog = true"
-          >
-            Disconnect ChatGPT
-          </v-btn>
-          <v-btn
-            v-else
-            color="secondary"
-            prepend-icon="mdi-link-variant"
-            :loading="chatGPTConnecting"
-            :disabled="!chatGPTStatus.available"
-            @click="startChatGPTConnection"
-          >
-            {{ chatGPTStatus.pending ? 'Resume sign-in' : 'Connect ChatGPT' }}
-          </v-btn>
-        </div>
-      </template>
-    </v-card>
-
-    <v-dialog
-      :model-value="chatGPTConnectionDialog"
-      max-width="32rem"
-      persistent
-    >
-      <v-card class="pa-5 pa-sm-6">
-        <div class="settings-dialog-heading">
-          <span class="settings-dialog-heading__icon">
-            <v-icon icon="mdi-creation-outline" size="24" />
-          </span>
-          <div>
-            <h2 class="text-h6 font-weight-black">Connect ChatGPT</h2>
-            <p>Your password stays with OpenAI. Codex App Server stores and refreshes the connected session.</p>
-          </div>
-        </div>
-
-        <v-alert v-if="chatGPTError" type="error" variant="tonal" density="compact" class="mt-5">
-          {{ chatGPTError }}
-        </v-alert>
-
-        <div v-if="chatGPTStatus.userCode" class="chatgpt-device-code mt-5">
-          <span>One-time code</span>
-          <strong>{{ chatGPTStatus.userCode }}</strong>
-          <small>Enter this code on the OpenAI page. It expires automatically.</small>
-        </div>
-        <v-progress-linear
-          v-else
-          color="secondary"
-          indeterminate
-          rounded
-          class="mt-5"
-        />
-
-        <v-card-actions class="settings-dialog-actions pa-0 mt-6 ga-2">
-          <v-btn
-            variant="text"
-            :disabled="chatGPTConnecting"
-            @click="cancelChatGPTConnection"
-          >
-            Cancel
-          </v-btn>
-          <v-btn
-            v-if="chatGPTStatus.verificationUrl"
-            :href="chatGPTStatus.verificationUrl"
-            target="_blank"
-            rel="noopener noreferrer"
-            color="secondary"
-            append-icon="mdi-open-in-new"
-          >
-            Continue with ChatGPT
-          </v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
-
-    <ConfirmDialog
-      v-model="disconnectChatGPTDialog"
-      title="Disconnect ChatGPT?"
-      message="Polymind will revoke its stored ChatGPT session. Codex commands will stop working until you sign in again."
-      confirm-text="Disconnect"
-      icon="mdi-link-variant-off"
-      :loading="chatGPTDisconnecting"
-      @confirm="disconnectChatGPT"
-    />
-
     <v-snackbar v-model="notice" color="success" location="bottom" :timeout="4000">
       {{ noticeMessage }}
     </v-snackbar>
@@ -779,78 +527,8 @@ async function previewIntervalTypeSound(kind: IntervalStepKind, sound: IntervalC
   justify-content: flex-end;
 }
 
-.settings-dialog-heading {
-  display: flex;
-  align-items: flex-start;
-  gap: 1rem;
-}
-
-.settings-dialog-heading p {
-  margin-top: .2rem;
-  color: rgb(var(--v-theme-on-surface) / .56);
-  font-size: .78rem;
-  line-height: 1.45;
-}
-
-.settings-dialog-heading__icon {
-  display: grid;
-  width: 3rem;
-  height: 3rem;
-  flex: 0 0 auto;
-  place-items: center;
-  border-radius: 1rem;
-  background: rgb(var(--v-theme-secondary) / .12);
-  color: rgb(var(--v-theme-secondary));
-}
-
-.chatgpt-device-code {
-  display: grid;
-  gap: .45rem;
-  padding: 1.25rem;
-  border: .0625rem solid rgb(var(--v-theme-secondary) / .24);
-  border-radius: 1rem;
-  background: rgb(var(--v-theme-secondary) / .08);
-  text-align: center;
-}
-
-.chatgpt-device-code span,
-.chatgpt-device-code small {
-  color: rgb(var(--v-theme-on-surface) / .58);
-}
-
-.chatgpt-device-code span {
-  font-size: .72rem;
-  font-weight: 900;
-  letter-spacing: .08em;
-  text-transform: uppercase;
-}
-
-.chatgpt-device-code strong {
-  color: rgb(var(--v-theme-secondary));
-  font-size: 1.65rem;
-  letter-spacing: .08em;
-}
-
-.chatgpt-device-code small {
-  font-size: .72rem;
-  line-height: 1.4;
-}
-
 @media (max-width: 440px) {
   .settings-actions .v-btn {
-    width: 100%;
-  }
-
-  .settings-dialog-actions {
-    display: grid;
-    grid-template-columns: 1fr;
-  }
-
-  .settings-dialog-actions .v-spacer {
-    display: none;
-  }
-
-  .settings-dialog-actions .v-btn {
     width: 100%;
   }
 }

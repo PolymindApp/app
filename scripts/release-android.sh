@@ -23,7 +23,6 @@ command -v git >/dev/null 2>&1 || fail "git is required."
 command -v node >/dev/null 2>&1 || fail "Node.js is required."
 command -v pnpm >/dev/null 2>&1 || fail "pnpm is required."
 command -v perl >/dev/null 2>&1 || fail "Perl is required to update the native app versions."
-command -v codex >/dev/null 2>&1 || fail "Codex CLI is required to generate the release notes."
 
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 \
   || fail "run this command from the repository."
@@ -140,48 +139,18 @@ trap cleanup_release_files EXIT
 
 if [[ -n "$previous_release_tag" ]]; then
   release_range="$previous_release_tag..HEAD"
-  diff_base="$previous_release_tag"
-  range_description="$previous_release_tag through HEAD"
 else
   release_range="HEAD"
-  diff_base="$(git hash-object -t tree /dev/null)"
-  range_description="the repository's first commit through HEAD"
 fi
 
-release_notes_prompt="Write only the Markdown body for an annotated Git release tag.
-
-Repository context:
-- Work only from committed changes in the Git range $release_range.
-- Compare $diff_base to HEAD when inspecting the complete release diff.
-- Do not include unrelated working-tree changes.
-
-Inspection requirements:
-- Inspect the commit history, diff statistics, and relevant source diffs yourself from the current repository.
-- Inspect changes incrementally instead of loading the complete release diff in one command.
-- Do not read large generated datasets or binary assets in full. Determine their purpose from paths, statistics, commit context, and related source changes.
-- Do not modify repository files, create commits or tags, or run the release workflow.
-
-Requirements:
-- Cover every material user-facing, server, Android, deployment, and developer-workflow change in the supplied range.
-- Group related changes under concise Markdown headings and use clear bullet points.
-- Prioritize behavior and outcomes over filenames or implementation mechanics.
-- Do not include a release title, version heading, preamble, conclusion, or fenced code block.
-- Do not mention changes outside the supplied committed range or infer unsupported behavior.
-- Omit release-only version bumps and generated artifacts."
-
-echo "Asking Codex to summarize changes from $range_description..."
-if ! codex exec \
-  --sandbox read-only \
-  --ephemeral \
-  --color never \
-  --output-last-message "$release_notes_file" \
-  --cd "$repository_root" \
-  "$release_notes_prompt" >/dev/null; then
-  fail "Codex could not generate the release notes. No release files were changed."
+echo "Building release notes from committed changes..."
+git log --reverse --no-merges --format='- %s' "$release_range" > "$release_notes_file"
+if ! grep -q '[^[:space:]]' "$release_notes_file"; then
+  git log --reverse --format='- %s' "$release_range" > "$release_notes_file"
 fi
 
 grep -q '[^[:space:]]' "$release_notes_file" \
-  || fail "Codex returned an empty release note. No release files were changed."
+  || fail "the release range produced no release notes. No release files were changed."
 
 {
   printf 'Release %s\n\n' "$release_tag"

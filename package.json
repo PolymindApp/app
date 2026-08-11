@@ -7,7 +7,6 @@
     "dev": "bash scripts/dev.sh",
     "dev:all": "concurrently -k -n WEB,API -c green,magenta \"pnpm dev\" \"pnpm api:serve\"",
     "api:serve": "bash scripts/run-php-api.sh",
-    "codex-bridge": "node codex-bridge/server.mjs",
     "api:migrate": "php server/migrate.php",
     "audio:normalize": "node scripts/normalize-mp3.mjs",
     "pexels:fetch": "set -a && . ./.env.prod && set +a && php scripts/fetch-pexels-images.php",
@@ -32,8 +31,7 @@
     "preview": "vite preview",
     "typecheck": "vue-tsc --noEmit",
     "test": "vitest run",
-    "test:api": "bash server/tests/migrations.sh && bash server/tests/image-library.sh && bash server/tests/integration.sh",
-    "test:codex-bridge": "node --test codex-bridge/*.node-test.mjs"
+    "test:api": "bash server/tests/migrations.sh && bash server/tests/image-library.sh && bash server/tests/integration.sh"
   },
   "dependencies": {
     "@capacitor/android": "8.4.2",

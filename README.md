@@ -88,9 +88,7 @@ On the host, place a copy of `.env.prod` named `.env` at the project root becaus
 - `pnpm dev` — run the Vue client
 - `pnpm api:serve` — run the PHP API
 - `pnpm api:migrate` — apply pending SQLite migrations and report the current version
-- `pnpm codex-bridge` — run the separately hosted ChatGPT/Codex authentication bridge
 - `pnpm pexels:fetch` — load `.env.prod` and cache images for the next 100 unsearched concepts
-- `pnpm test:codex-bridge` — test the bridge process and authenticated HTTP contract
 - `php scripts/seed-image-concepts.php` — idempotently load the multilingual image concept catalog
 - `php scripts/fetch-pexels-images.php --limit=100` — cache up to 30 Pexels photos for each pending concept
 - `pnpm dev:all` — run the Vue client and PHP API
@@ -112,7 +110,7 @@ On the host, place a copy of `.env.prod` named `.env` at the project root becaus
 - `pnpm ios:open` — open the native project in Xcode
 - `pnpm ios:run` — sync and run on an iOS simulator or device
 - `pnpm ios:build:release` — create a signed release IPA using the configured Apple signing identity
-- `pnpm release:android [X.X.X]` — update Android and iOS versions, then create and push a release commit and annotated tag using an authenticated Codex CLI to summarize every committed change since the previous release
+- `pnpm release:android [X.X.X]` — update Android and iOS versions, then create and push a release commit and annotated tag summarizing committed changes since the previous release
 
 ## iOS release builds
 
@@ -160,9 +158,6 @@ POST   /auth/passkeys/register/options
 POST   /auth/passkeys/register/verify
 POST   /auth/passkeys/login/options
 POST   /auth/passkeys/login/verify
-GET    /auth/chatgpt
-POST   /auth/chatgpt
-DELETE /auth/chatgpt
 GET    /image-library/search?query={word}
 POST   /flashcards/{id}/library-image
 GET    /flashcard-review-sets
@@ -192,10 +187,6 @@ Only the application’s known collections, fields, sorts, and filters are accep
 Passwords are stored as bcrypt hashes. Signed tokens are bound to a per-user `token_key`, and `mom_rate_limits` provides login and registration throttling.
 
 Passkeys are exposed only by the native Android client. A signed-in user creates one from the account menu, then can use “Sign in with passkey” without entering an email. The PHP API stores only the credential public key, requires Android user verification, and issues the same bearer session used by password login.
-
-Settings connects a real ChatGPT account through the managed OAuth flow provided by [Codex App Server](https://learn.chatgpt.com/docs/app-server). The browser receives only a short-lived device code and OpenAI verification URL. A separately hosted bridge owns isolated App Server processes and refreshable credentials; the PHP API identifies accounts to it with one-way HMAC subjects and never receives a ChatGPT token or password.
-
-This integration powers supported Codex commands. It does not read or write the user’s ordinary ChatGPT conversation history. Deploy the service in [`codex-bridge`](codex-bridge/README.md), then configure `MOM_CODEX_BRIDGE_URL` and `MOM_CODEX_BRIDGE_TOKEN` on the PHP host. The legacy API-key connection is removed, and migration `202608080004` permanently deletes credentials stored by that earlier implementation.
 
 The web build publishes `/.well-known/assetlinks.json`, which binds `mom.coulombe.dev` to the Android package and the configured release/debug signing certificates. It must remain reachable over HTTPS with status `200`, no redirect, and an `application/json` content type. If the signing key changes, update both that file’s SHA-256 fingerprint and `MOM_PASSKEY_ANDROID_KEY_HASHES` in `.env.prod` before installing the newly signed app.
 
