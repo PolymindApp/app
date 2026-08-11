@@ -61,6 +61,24 @@ const canSave = computed(() => (
   && squareImageSourceIsValid(cardImage.value)
 ))
 
+function focusFrontWithoutScrolling() {
+  if (!allowAutomaticFocus) return
+  const fieldElement = frontField.value?.$el
+  const textarea = fieldElement instanceof HTMLTextAreaElement
+    ? fieldElement
+    : fieldElement?.querySelector?.('textarea')
+  textarea?.focus({ preventScroll: true })
+}
+
+function scrollToFormTop() {
+  const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
+  window.scrollTo({
+    top: 0,
+    left: 0,
+    behavior: reduceMotion ? 'auto' : 'smooth',
+  })
+}
+
 onMounted(async () => {
   error.value = ''
   try {
@@ -140,7 +158,8 @@ async function save() {
     savedNotice.value = true
     await nextTick()
     form.value?.resetValidation()
-    if (allowAutomaticFocus) frontField.value?.focus()
+    focusFrontWithoutScrolling()
+    scrollToFormTop()
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Could not save this flashcard.'
   } finally {
