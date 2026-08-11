@@ -283,12 +283,14 @@ onBeforeUnmount(() => {
         </p>
       </div>
     </div>
-    <div v-if="$slots.content" class="action-bottom-sheet__content px-4 pt-2 pb-4">
-      <slot name="content" />
+    <div class="action-bottom-sheet__scroll">
+      <div v-if="$slots.content" class="action-bottom-sheet__content px-4 pt-2 pb-4">
+        <slot name="content" />
+      </div>
+      <v-list v-if="$slots.default" class="action-bottom-sheet__content px-2 pb-4">
+        <slot />
+      </v-list>
     </div>
-    <v-list v-if="$slots.default" class="action-bottom-sheet__content px-2 pb-4">
-      <slot />
-    </v-list>
   </v-navigation-drawer>
 </template>
 
@@ -318,6 +320,19 @@ onBeforeUnmount(() => {
   isolation: isolate;
 }
 
+.action-bottom-sheet :deep(.v-navigation-drawer__content) {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Vuetify hides bottom drawers using the numeric drawer width (430px). The
+   sheet itself can be taller, so use its rendered height when it is closed. */
+.action-bottom-sheet:not(.v-navigation-drawer--active) {
+  transform: translateY(100%) !important;
+}
+
 .action-bottom-sheet__header {
   position: sticky;
   z-index: 1;
@@ -326,6 +341,15 @@ onBeforeUnmount(() => {
   cursor: grab;
   touch-action: none;
   padding-top: 10px;
+}
+
+.action-bottom-sheet__scroll {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 .action-bottom-sheet__content {

@@ -21,7 +21,7 @@ const NavigationDrawerStub = defineComponent({
       h('aside', {
         ...attrs,
         style: { transform: props.modelValue ? 'translateY(0px)' : 'translateY(100%)' },
-      }, slots.default?.()),
+      }, h('div', { class: 'v-navigation-drawer__content' }, slots.default?.())),
       h('div', {
         class: [
           'drawer-scrim',
@@ -118,6 +118,30 @@ describe('ActionBottomSheet', () => {
     const leavingScrim = document.querySelector<HTMLElement>('.drawer-scrim')!
     expect(leavingScrim.classList.contains('fade-transition-leave-active')).toBe(true)
     expect(getComputedStyle(leavingScrim).pointerEvents).toBe('none')
+    wrapper.unmount()
+  })
+
+  it('keeps oversized mobile content inside a dedicated scroll region', async () => {
+    const wrapper = mount(ActionBottomSheet, {
+      attachTo: document.body,
+      props: {
+        modelValue: true,
+        title: 'Actions',
+      },
+      slots: {
+        content: '<div class="oversized-content">Content</div>',
+      },
+      global: {
+        stubs: {
+          VNavigationDrawer: NavigationDrawerStub,
+        },
+      },
+    })
+
+    const scroll = wrapper.get('.action-bottom-sheet__scroll')
+
+    expect(scroll.element.parentElement?.classList.contains('v-navigation-drawer__content')).toBe(true)
+    expect(scroll.find('.oversized-content').exists()).toBe(true)
     wrapper.unmount()
   })
 
