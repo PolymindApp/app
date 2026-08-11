@@ -55,6 +55,12 @@ export const FLASHCARD_REVIEW_SESSION_MENU_ITEMS = [
     permission: 'eject',
   },
   {
+    action: 'undo_eject',
+    title: 'Undo last eject',
+    icon: 'mdi-undo-variant',
+    permission: 'undo_eject',
+  },
+  {
     action: 'remove',
     title: 'Remove card',
     icon: 'mdi-delete-outline',

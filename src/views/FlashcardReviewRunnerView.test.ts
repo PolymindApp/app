@@ -63,8 +63,23 @@ const ButtonStub = defineComponent({
 })
 
 const FlashcardContextActionsStub = defineComponent({
-  props: { modelValue: Boolean },
-  template: '<div v-if="modelValue" class="flashcard-context-actions" />',
+  props: {
+    modelValue: Boolean,
+    showUndoEject: Boolean,
+    canUndoEject: Boolean,
+  },
+  emits: ['update:modelValue', 'action'],
+  template: `
+    <div v-if="modelValue" class="flashcard-context-actions">
+      <button
+        v-if="showUndoEject"
+        type="button"
+        data-context-action="undo_eject"
+        :disabled="!canUndoEject"
+        @click="$emit('update:modelValue', false); $emit('action', 'undo_eject')"
+      >Undo last eject</button>
+    </div>
+  `,
 })
 
 const RunnerSessionActionsStub = defineComponent({
@@ -364,6 +379,63 @@ describe('FlashcardReviewRunnerView Review set preview', () => {
     expect(mocks.store.act).toHaveBeenCalledWith('session-1', 'restart', expect.any(Number))
     expect(active.elapsedSeconds).toBe(0)
     expect(active.viewedCount).toBe(0)
+
+    wrapper.unmount()
+  })
+
+  it('ejects immediately and can undo the most recent eject from Options', async () => {
+    const active = runningSession()
+    const secondCard = {
+      id: 'card-2',
+      front: 'Tree',
+      back: 'Arbre',
+      note: '',
+      image: '',
+      tags: [],
+    }
+    active.queue.push(secondCard)
+    active.totalCards = 2
+    const ejectedCard = active.queue[0]!
+    mocks.route.params = { sessionId: active.id }
+    mocks.store.sessions = reactive([active])
+    mocks.store.loadSession.mockResolvedValue(active)
+    mocks.store.act.mockImplementation(async (_id, action) => {
+      if (action === 'eject') {
+        active.queue.shift()
+        active.ejectedCount += 1
+      } else if (action === 'undo_eject') {
+        active.queue.unshift(ejectedCard)
+        active.ejectedCount -= 1
+      }
+      return active
+    })
+
+    const wrapper = mountRunner()
+    await flushPromises()
+
+    await wrapper.findAll('button').find(button => button.text() === 'Options')!.trigger('click')
+    expect(wrapper.get('[data-context-action="undo_eject"]').attributes('disabled')).toBeDefined()
+    wrapper.getComponent(FlashcardContextActionsStub).vm.$emit('update:modelValue', false)
+    await wrapper.vm.$nextTick()
+
+    await wrapper.get('[aria-label="Eject current card"]').trigger('click')
+    await flushPromises()
+
+    expect(mocks.store.act).toHaveBeenCalledWith('session-1', 'eject', expect.any(Number))
+    expect(active.ejectedCount).toBe(1)
+    expect(active.queue[0]?.id).toBe(secondCard.id)
+
+    await wrapper.findAll('button').find(button => button.text() === 'Options')!.trigger('click')
+    expect(wrapper.get('[data-context-action="undo_eject"]').attributes('disabled')).toBeUndefined()
+    await wrapper.get('[data-context-action="undo_eject"]').trigger('click')
+    await flushPromises()
+
+    expect(mocks.store.act).toHaveBeenCalledWith('session-1', 'undo_eject', expect.any(Number))
+    expect(active.ejectedCount).toBe(0)
+    expect(active.queue[0]?.id).toBe(ejectedCard.id)
+
+    await wrapper.findAll('button').find(button => button.text() === 'Options')!.trigger('click')
+    expect(wrapper.get('[data-context-action="undo_eject"]').attributes('disabled')).toBeDefined()
 
     wrapper.unmount()
   })

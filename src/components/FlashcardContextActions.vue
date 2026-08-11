@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import { FLASHCARD_REVIEW_SESSION_MENU_ITEMS } from '@/services/flashcards'
 import type { FlashcardContextAction } from '@/types/domain'
@@ -9,11 +10,15 @@ const props = withDefaults(defineProps<{
   canManageCard?: boolean
   canAddCard?: boolean
   canEjectCard?: boolean
+  showUndoEject?: boolean
+  canUndoEject?: boolean
 }>(), {
   busy: false,
   canManageCard: true,
   canAddCard: true,
   canEjectCard: true,
+  showUndoEject: false,
+  canUndoEject: false,
 })
 
 const emit = defineEmits<{
@@ -26,11 +31,16 @@ function select(action: FlashcardContextAction) {
   emit('action', action)
 }
 
-function itemDisabled(permission?: 'add' | 'manage' | 'eject') {
+const items = computed(() => FLASHCARD_REVIEW_SESSION_MENU_ITEMS.filter(item => (
+  item.action !== 'undo_eject' || props.showUndoEject
+)))
+
+function itemDisabled(permission?: 'add' | 'manage' | 'eject' | 'undo_eject') {
   if (props.busy) return true
   if (permission === 'add') return !props.canAddCard
   if (permission === 'manage') return !props.canManageCard
   if (permission === 'eject') return !props.canEjectCard
+  if (permission === 'undo_eject') return !props.canUndoEject
   return false
 }
 </script>
@@ -42,7 +52,7 @@ function itemDisabled(permission?: 'add' | 'manage' | 'eject') {
     aria-label="Current flashcard actions"
     @update:model-value="emit('update:modelValue', $event)"
   >
-    <template v-for="item in FLASHCARD_REVIEW_SESSION_MENU_ITEMS" :key="item.action">
+    <template v-for="item in items" :key="item.action">
       <v-divider v-if="'divider' in item && item.divider" class="my-1" />
       <v-list-item
         :title="item.title"

@@ -1833,6 +1833,38 @@ navigation_restored_front="$(php -r '
   echo "Whole-card Review set navigation did not rotate the queue without grading it." >&2
   exit 1
 }
+navigation_eject_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"action":"eject","elapsed_seconds":0}' \
+  "$api_url/flashcard-review-sessions/$navigation_session_id/actions")"
+navigation_eject_summary="$(php -r '
+  $session = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR)["session"];
+  echo count($session["queue_state"]) . ":" . $session["ejected_count"];
+' <<<"$navigation_eject_response")"
+navigation_eject_event_count="$(sqlite3 "$test_db" \
+  "SELECT COUNT(*) FROM flashcard_review_events WHERE session = '$navigation_session_id' AND outcome = 'ejected';")"
+[[ "$navigation_eject_summary" == "1:1" && "$navigation_eject_event_count" == "1" ]] || {
+  echo "Ejecting a Review set card did not update its queue, counter, and review event." >&2
+  exit 1
+}
+navigation_undo_eject_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"action":"undo_eject","elapsed_seconds":0}' \
+  "$api_url/flashcard-review-sessions/$navigation_session_id/actions")"
+navigation_undo_eject_summary="$(php -r '
+  $session = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR)["session"];
+  echo $session["queue_state"][0]["id"] . ":"
+    . count($session["queue_state"]) . ":" . $session["ejected_count"];
+' <<<"$navigation_undo_eject_response")"
+navigation_eject_event_count="$(sqlite3 "$test_db" \
+  "SELECT COUNT(*) FROM flashcard_review_events WHERE session = '$navigation_session_id' AND outcome = 'ejected';")"
+[[ "$navigation_undo_eject_summary" == "$navigation_initial_front:2:0" \
+  && "$navigation_eject_event_count" == "0" ]] || {
+  echo "Undoing the last Review set eject did not restore the card and remove its event." >&2
+  exit 1
+}
 curl --silent --show-error --fail \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $alice_token" \

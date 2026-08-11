@@ -61,7 +61,6 @@ const cardMenuOpen = ref(false)
 const cardEditorDialog = ref(false)
 const cardEditorCard = ref<Flashcard>()
 const deleteCardDialog = ref(false)
-const ejectCardDialog = ref(false)
 const deleteCardId = ref('')
 const deletingCard = ref(false)
 const sessionSettingsDialog = ref(false)
@@ -451,7 +450,7 @@ async function performAction(
     const updated = await store.act(session.value.id, action, elapsedSeconds.value)
     localElapsedMs.value = updated.elapsedSeconds * 1000
     lastTickAt = Date.now()
-    if (['success', 'error', 'view', 'previous', 'next', 'push', 'eject', 'restart'].includes(action)) resetCurrentCardPhase()
+    if (['success', 'error', 'view', 'previous', 'next', 'push', 'eject', 'undo_eject', 'restart'].includes(action)) resetCurrentCardPhase()
     if (
       previousStatus === 'running'
       && updated.status === 'completed'
@@ -906,11 +905,6 @@ function requestCurrentCardDeletion() {
   deleteCardDialog.value = Boolean(deleteCardId.value)
 }
 
-function requestCurrentCardEjection() {
-  cardMenuOpen.value = false
-  ejectCardDialog.value = Boolean(currentCard.value)
-}
-
 async function deleteCurrentCard() {
   const cardId = deleteCardId.value
   if (!cardId || !session.value || deletingCard.value) return
@@ -943,25 +937,35 @@ function handleSessionMenuAction(action: FlashcardContextAction) {
   } else if (action === 'remove') {
     requestCurrentCardDeletion()
   } else if (action === 'eject') {
-    requestCurrentCardEjection()
+    void ejectCurrentCard()
+  } else if (action === 'undo_eject') {
+    void undoLastEject()
   }
 }
 
 function handleRunnerSessionAction(action: RunnerSessionAction) {
   if (action === 'options') cardMenuOpen.value = true
   else if (action === 'amplification') void toggleSpeechOverAmplification()
-  else if (action === 'eject') requestCurrentCardEjection()
+  else if (action === 'eject') void ejectCurrentCard()
   else if (action === 'restart') void restartReview()
   else if (action === 'end') endDialog.value = true
 }
 
 async function ejectCurrentCard() {
+  cardMenuOpen.value = false
   if (!session.value || busy.value) return
   const restorePaused = session.value.status === 'paused'
   if (restorePaused) await resumeReview()
-  const ejected = await performAction('eject')
-  if (!ejected) return
-  ejectCardDialog.value = false
+  await performAction('eject')
+  if (restorePaused && session.value?.status === 'running') await pauseReview(false)
+}
+
+async function undoLastEject() {
+  cardMenuOpen.value = false
+  if (!session.value || session.value.ejectedCount <= 0 || busy.value) return
+  const restorePaused = session.value.status === 'paused'
+  if (restorePaused) await resumeReview()
+  await performAction('undo_eject')
   if (restorePaused && session.value?.status === 'running') await pauseReview(false)
 }
 
@@ -1279,7 +1283,7 @@ async function leaveRunner() {
             prepend-icon="mdi-eject-outline"
             aria-label="Eject current card"
             :disabled="busy || !currentCard"
-            @click="requestCurrentCardEjection"
+            @click="ejectCurrentCard"
           >
             Eject card
           </v-btn>
@@ -1313,6 +1317,8 @@ async function leaveRunner() {
       :can-manage-card="canManageCurrentCard && Boolean(currentCard)"
       :can-add-card="canManageCurrentCard"
       :can-eject-card="Boolean(currentCard)"
+      show-undo-eject
+      :can-undo-eject="Boolean(session?.ejectedCount)"
       @action="handleSessionMenuAction"
     />
 
@@ -1384,16 +1390,6 @@ async function leaveRunner() {
       icon="mdi-stop-circle-outline"
       :loading="busy"
       @confirm="finishEarly"
-    />
-    <ConfirmDialog
-      v-model="ejectCardDialog"
-      title="Eject this flashcard?"
-      message="The card will leave this review only. It will remain available in the Review set and future sessions."
-      confirm-text="Eject card"
-      confirm-color="warning"
-      icon="mdi-eject-outline"
-      :loading="busy"
-      @confirm="ejectCurrentCard"
     />
     <ConfirmDialog
       v-model="deleteCardDialog"

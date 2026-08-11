@@ -75,8 +75,38 @@ describe('FlashcardContextActions', () => {
     expect(wrapper.text()).not.toContain('Previous')
     expect(wrapper.text()).not.toContain('Pause')
     expect(wrapper.text()).not.toContain('Next')
+    expect(wrapper.text()).not.toContain('Undo last eject')
     expect(wrapper.findAll('button').find(button => button.text() === 'Add card')!.attributes('disabled')).toBeDefined()
     expect(wrapper.findAll('button').find(button => button.text() === 'Eject card')!.attributes('disabled')).toBeDefined()
     expect(wrapper.findAll('button').find(button => button.text() === 'Remove card')!.attributes('disabled')).toBeDefined()
+  })
+
+  it('shows Undo last eject only when requested and enables it when an eject is available', async () => {
+    const wrapper = mount(FlashcardContextActions, {
+      props: {
+        modelValue: true,
+        showUndoEject: true,
+        canUndoEject: false,
+      },
+      global: {
+        stubs: {
+          ActionBottomSheet: BottomSheetStub,
+          VBtn: ButtonStub,
+          VDivider: true,
+          VListItem: ListItemStub,
+        },
+      },
+    })
+
+    const undoButton = () => wrapper.findAll('button')
+      .find(button => button.text() === 'Undo last eject')!
+    expect(undoButton().attributes('disabled')).toBeDefined()
+
+    await wrapper.setProps({ canUndoEject: true })
+    expect(undoButton().attributes('disabled')).toBeUndefined()
+    await undoButton().trigger('click')
+
+    expect(wrapper.emitted('update:modelValue')).toEqual([[false]])
+    expect(wrapper.emitted('action')).toEqual([['undo_eject']])
   })
 })

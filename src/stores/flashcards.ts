@@ -779,6 +779,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     let ejectedCount = current.ejectedCount
     let totalCards = current.totalCards
     let event: Record<string, unknown> | undefined
+    let undoneEjectEventId = ''
 
     if (action === 'restart') {
       const reviewSet = reviewSets.value.find(item => item.id === current.reviewSet)
@@ -809,8 +810,35 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       endedAt = now
     } else {
       if (status !== 'running') throw new Error('Resume this flashcard review before continuing.')
-      if (!queue.length) throw new Error('This flashcard review has no remaining cards.')
-      if (action === 'previous') {
+      if (action === 'undo_eject') {
+        if (ejectedCount <= 0) throw new Error('There is no ejected flashcard to restore.')
+        const ejectedEvents = await api.collection('flashcard_review_events').getFullList({
+          filter: `session = "${sessionId}" && outcome = "ejected"`,
+          sort: '-reviewed_at,-id',
+        })
+        const lastEject = ejectedEvents[0]
+        if (!lastEject) throw new Error('There is no ejected flashcard to restore.')
+        const reviewSet = reviewSets.value.find(item => item.id === current.reviewSet)
+        if (!reviewSet) throw new Error('The Review set for this session is no longer available.')
+        let availableCards = reviewSet.accessRole === 'owner'
+          ? cards.value
+          : reviewSetCards.value[reviewSet.id]
+        if (!availableCards) availableCards = await loadReviewSetCards(reviewSet.id)
+        const card = availableCards.find(item => item.id === lastEject.card)
+        if (!card) throw new Error('The last ejected flashcard is no longer available.')
+        queue.unshift({
+          id: card.id,
+          front: card.front,
+          back: card.back,
+          note: card.note,
+          image: card.image,
+          tags: [...card.tags],
+        })
+        ejectedCount -= 1
+        undoneEjectEventId = lastEject.id
+      } else if (!queue.length) {
+        throw new Error('This flashcard review has no remaining cards.')
+      } else if (action === 'previous') {
         if (queue.length > 1) queue.unshift(queue.pop()!)
       } else if (action === 'next' || action === 'push') {
         if (queue.length > 1) queue.push(queue.shift()!)
@@ -842,6 +870,9 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     if (current.indefinite) totalCards = queue.length
 
     if (event) await api.collection('flashcard_review_events').create(event)
+    if (undoneEjectEventId) {
+      await api.collection('flashcard_review_events').delete(undoneEjectEventId)
+    }
     const session = await api.collection('flashcard_review_sessions').update(sessionId, {
       status,
       queue_state: queue,

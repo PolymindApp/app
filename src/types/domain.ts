@@ -276,8 +276,8 @@ export type FlashcardReviewCardSides = 'both' | FlashcardReviewSide
 export type FlashcardReviewSort = 'difficult' | 'never_reviewed' | 'least_recent' | 'recently_added' | 'random'
 export type FlashcardReviewStatus = 'running' | 'paused' | 'completed' | 'ended'
 export type FlashcardReviewOutcome = 'success' | 'error' | 'passive' | 'ejected'
-export type FlashcardReviewAction = 'success' | 'error' | 'view' | 'previous' | 'next' | 'push' | 'eject' | 'pause' | 'resume' | 'restart' | 'end'
-export type FlashcardContextAction = 'add' | 'edit' | 'eject' | 'remove' | 'settings'
+export type FlashcardReviewAction = 'success' | 'error' | 'view' | 'previous' | 'next' | 'push' | 'eject' | 'undo_eject' | 'pause' | 'resume' | 'restart' | 'end'
+export type FlashcardContextAction = 'add' | 'edit' | 'eject' | 'undo_eject' | 'remove' | 'settings'
 export type RunnerSessionAction = 'options' | 'amplification' | 'eject' | 'restart' | 'end'
 
 export interface RunnerSessionMenuItem {

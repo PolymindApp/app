@@ -2,6 +2,8 @@ import { createPinia, setActivePinia } from 'pinia'
 import type { FlashcardReviewSession } from '@/types/domain'
 
 const mocks = vi.hoisted(() => ({
+  deleteEvent: vi.fn(),
+  listEvents: vi.fn(),
   updateSession: vi.fn(),
 }))
 
@@ -18,6 +20,9 @@ vi.mock('@/lib/api', () => ({
     authStore: { record: { id: 'user-1', name: 'Mom User', avatar: '' } },
     collection: (name: string) => {
       if (name === 'flashcard_review_sessions') return { update: mocks.updateSession }
+      if (name === 'flashcard_review_events') {
+        return { delete: mocks.deleteEvent, getFullList: mocks.listEvents }
+      }
       throw new Error(`Unexpected collection: ${name}`)
     },
   },
@@ -64,6 +69,8 @@ function sessionRecord(updates: Record<string, unknown> = {}) {
 describe('flashcard Review set restart', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    mocks.deleteEvent.mockReset().mockResolvedValue(true)
+    mocks.listEvents.mockReset()
     mocks.updateSession.mockReset().mockImplementation(async (_id, updates) => (
       sessionRecord(updates)
     ))
@@ -158,5 +165,54 @@ describe('flashcard Review set restart', () => {
       successCount: 0,
       totalCards: 2,
     })
+  })
+
+  it('restores the most recently ejected card in a local review session', async () => {
+    const store = useFlashcardStore()
+    store.reviewSets = [{
+      id: 'set-1', name: 'Vocabulary', tags: [], tagDetails: [], owner: 'user-1',
+      ownerName: 'Mom User', ownerAvatar: '', accessRole: 'owner', matchingCardCount: 2,
+      mode: 'manual', cardSides: 'both', indefinite: false, maxCards: 2,
+      frontSeconds: 5, backSeconds: 5, backSpeechRepeatCount: 1, noteBeforeBack: false,
+      speechEnabled: false, frontLanguage: '', backLanguage: '', sortMode: 'recently_added',
+      sortOrder: 0, createdAt: '2026-08-10T12:00:00Z', updatedAt: '2026-08-10T12:00:00Z',
+    }]
+    store.cards = [{
+      id: 'card-1', front: 'One', back: 'Un', note: 'First', image: '',
+      imageSource: 'none', tags: ['tag-1'], createdAt: '2026-08-10T12:00:00Z',
+      updatedAt: '2026-08-10T12:00:00Z', passiveViews: 0, successCount: 0, errorCount: 0,
+    }]
+    store.sessions = [{
+      id: 'session-1', reviewSet: 'set-1', status: 'running', name: 'Vocabulary',
+      mode: 'manual', cardSides: 'both', indefinite: false, maxCards: 2,
+      sortMode: 'recently_added', tags: [], frontSeconds: 5, backSeconds: 5,
+      backSpeechRepeatCount: 1, noteBeforeBack: false, speechEnabled: false,
+      frontLanguage: '', backLanguage: '', queue: [{
+        id: 'card-2', front: 'Two', back: 'Deux', note: '', image: '', tags: [],
+      }], startedAt: '2026-08-10T12:00:00Z', updatedAt: '2026-08-10T12:00:42Z',
+      elapsedSeconds: 42, totalCards: 2, viewedCount: 0, successCount: 0,
+      errorCount: 0, ejectedCount: 1,
+    }]
+    mocks.listEvents.mockResolvedValue([{
+      id: 'event-eject-1', session: 'session-1', card: 'card-1', outcome: 'ejected',
+      reviewed_at: '2026-08-10T12:00:40Z',
+    }])
+
+    const restored = await store.act('session-1', 'undo_eject', 42)
+
+    expect(mocks.listEvents).toHaveBeenCalledWith({
+      filter: 'session = "session-1" && outcome = "ejected"',
+      sort: '-reviewed_at,-id',
+    })
+    expect(mocks.deleteEvent).toHaveBeenCalledWith('event-eject-1')
+    expect(mocks.updateSession).toHaveBeenCalledWith('session-1', expect.objectContaining({
+      ejected_count: 0,
+      queue_state: [
+        expect.objectContaining({ id: 'card-1', note: 'First', tags: ['tag-1'] }),
+        expect.objectContaining({ id: 'card-2' }),
+      ],
+    }))
+    expect(restored).toMatchObject({ ejectedCount: 0 })
+    expect(restored.queue.map(card => card.id)).toEqual(['card-1', 'card-2'])
   })
 })

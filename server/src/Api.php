@@ -3944,8 +3944,8 @@ final class Api
         }
         $action = $body['action'];
         $validActions = [
-            'success', 'error', 'view', 'previous', 'next', 'push', 'eject', 'pause', 'resume',
-            'restart', 'end',
+            'success', 'error', 'view', 'previous', 'next', 'push', 'eject', 'undo_eject',
+            'pause', 'resume', 'restart', 'end',
         ];
         if (!in_array($action, $validActions, true)) {
             throw new ApiException(422, 'The review action is invalid.');
@@ -4029,11 +4029,44 @@ final class Api
                 if ($status !== 'running') {
                     throw new ApiException(409, 'Resume this flashcard review before continuing.');
                 }
-                if ($queue === []) {
+                if ($action === 'undo_eject') {
+                    if ($ejectedCount <= 0) {
+                        throw new ApiException(409, 'There is no ejected flashcard to restore.');
+                    }
+                    $eventStatement = $pdo->prepare(
+                        "SELECT id, card FROM flashcard_review_events
+                         WHERE owner = :owner AND session = :session AND outcome = 'ejected'
+                         ORDER BY reviewed_at DESC, id DESC LIMIT 1",
+                    );
+                    $eventStatement->execute(['owner' => $owner, 'session' => $id]);
+                    $event = $eventStatement->fetch();
+                    if (!is_array($event)) {
+                        throw new ApiException(409, 'There is no ejected flashcard to restore.');
+                    }
+                    $sourceOwner = (string) ($session['source_owner'] ?: $owner);
+                    $card = $this->ownedRecord('flashcards', (string) $event['card'], $sourceOwner);
+                    $tags = $this->decodeJsonColumn($card['tags'] ?? '[]');
+                    array_unshift($queue, [
+                        'id' => (string) $card['id'],
+                        'front' => (string) $card['front'],
+                        'back' => (string) $card['back'],
+                        'note' => (string) ($card['note'] ?? ''),
+                        'image' => $this->flashcardImagePath($card),
+                        'tags' => is_array($tags) ? array_values($tags) : [],
+                    ]);
+                    $ejectedCount--;
+                    $deleteEvent = $pdo->prepare(
+                        "DELETE FROM flashcard_review_events
+                         WHERE id = :id AND owner = :owner AND session = :session AND outcome = 'ejected'",
+                    );
+                    $deleteEvent->execute([
+                        'id' => (string) $event['id'],
+                        'owner' => $owner,
+                        'session' => $id,
+                    ]);
+                } elseif ($queue === []) {
                     throw new ApiException(409, 'This flashcard review has no remaining cards.');
-                }
-
-                if ($action === 'previous') {
+                } elseif ($action === 'previous') {
                     if (count($queue) > 1) {
                         $previous = array_pop($queue);
                         array_unshift($queue, $previous);
