@@ -198,7 +198,6 @@ export async function speakFlashcardText(text: string, language: string) {
   const content = text.trim()
   if (!content || !language) return
   if (isNativeAndroid()) {
-    await stopFlashcardSpeech()
     await NativeFlashcardSpeech.speak({
       text: content,
       language,

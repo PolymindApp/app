@@ -96,6 +96,10 @@ public class FlashcardSpeechPlugin extends Plugin {
             call.reject("Text and a valid language are required.");
             return;
         }
+        if (!MainActivity.isAppVisible()) {
+            call.resolve();
+            return;
+        }
         if (!speechReady && !speechFailed) {
             if (pendingSpeechCall != null) pendingSpeechCall.resolve();
             pendingSpeechCall = call;
@@ -110,6 +114,10 @@ public class FlashcardSpeechPlugin extends Plugin {
     }
 
     private void speakReady(PluginCall call) {
+        if (!MainActivity.isAppVisible()) {
+            call.resolve();
+            return;
+        }
         String text = call.getString("text", "").trim();
         String language = call.getString("language", "").trim();
 
@@ -146,13 +154,17 @@ public class FlashcardSpeechPlugin extends Plugin {
 
     @PluginMethod
     public void stopSpeaking(PluginCall call) {
+        stopForegroundSpeech();
+        call.resolve();
+    }
+
+    private void stopForegroundSpeech() {
         if (pendingSpeechCall != null) {
             pendingSpeechCall.resolve();
             pendingSpeechCall = null;
         }
         if (speech != null) speech.stop();
-        volumeBoost.stop();
-        call.resolve();
+        if (volumeBoost != null) volumeBoost.stop();
     }
 
     @PluginMethod
@@ -246,6 +258,14 @@ public class FlashcardSpeechPlugin extends Plugin {
         }
         result.put("languages", new JSArray(tags));
         call.resolve(result);
+    }
+
+    @Override
+    protected void handleOnPause() {
+        // The background Review set service owns all speech after the Activity is hidden.
+        // Cancel foreground synthesis and playback so the just-spoken face cannot restart
+        // during the lifecycle handoff; the service will still speak subsequent faces.
+        stopForegroundSpeech();
     }
 
     @Override
