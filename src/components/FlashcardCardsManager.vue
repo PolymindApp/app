@@ -17,6 +17,7 @@ import type {
 } from '@/types/domain'
 
 type FlashcardBulkTagAction = Extract<FlashcardBulkAction, 'add_tags' | 'set_tags' | 'remove_tags'>
+type FlashcardBulkSwapAction = Extract<FlashcardBulkAction, 'swap_front_back' | 'swap_note_back'>
 
 const props = withDefaults(defineProps<{
   cards: Flashcard[]
@@ -72,6 +73,8 @@ const bulkImageDialogOpen = ref(false)
 const bulkTagSheetOpen = ref(false)
 const bulkTagAction = ref<FlashcardBulkTagAction>('add_tags')
 const bulkTagIds = ref<string[]>([])
+const bulkSwapAction = ref<FlashcardBulkSwapAction>('swap_front_back')
+const swapCardsDialog = ref(false)
 const clearTagsDialog = ref(false)
 const deleteCardsDialog = ref(false)
 
@@ -99,6 +102,9 @@ const selectedCards = computed(() => {
   return props.cards.filter(card => selected.has(card.id))
 })
 const selectedCardsHaveTags = computed(() => selectedCards.value.some(card => card.tags.length > 0))
+const selectedCardsCanSwapNoteBack = computed(() => selectedCards.value.every(card => (
+  Boolean(card.note.trim()) && [...card.back.trim()].length <= 2000
+)))
 const bulkRemovableTags = computed(() => {
   const assigned = new Set(selectedCards.value.flatMap(card => card.tags))
   return props.tags.filter(tag => assigned.has(tag.id))
@@ -120,6 +126,18 @@ const bulkTagCopy = computed(() => ({
     confirm: 'Remove tags',
   },
 }[bulkTagAction.value]))
+const bulkSwapCopy = computed(() => ({
+  swap_front_back: {
+    title: `Swap front and back on ${selectedCardIds.value.length} ${selectedCardIds.value.length === 1 ? 'card' : 'cards'}?`,
+    message: 'Each front becomes its back, and each back becomes its front. Notes and review history stay unchanged. Run this action again to undo it.',
+    confirm: 'Swap front and back',
+  },
+  swap_note_back: {
+    title: `Swap note and back on ${selectedCardIds.value.length} ${selectedCardIds.value.length === 1 ? 'card' : 'cards'}?`,
+    message: 'Each note becomes its back, and each back becomes its note. Fronts and review history stay unchanged. Run this action again to undo it.',
+    confirm: 'Swap note and back',
+  },
+}[bulkSwapAction.value]))
 
 watch(filteredCards, cards => {
   emit('update:filteredCount', cards.length)
@@ -176,8 +194,15 @@ function chooseBulkAction(action: FlashcardBulkAction) {
     openBulkTagAction(action)
     return
   }
+  if (action === 'swap_front_back' || action === 'swap_note_back') {
+    if (action === 'swap_note_back' && !selectedCardsCanSwapNoteBack.value) return
+    bulkSwapAction.value = action
+    bulkError.value = ''
+    swapCardsDialog.value = true
+    return
+  }
   if (action === 'clear_tags') clearTagsDialog.value = true
-  else deleteCardsDialog.value = true
+  else if (action === 'delete') deleteCardsDialog.value = true
 }
 
 function completeBulkImageAssignment() {
@@ -214,6 +239,10 @@ async function applyBulkTags() {
 async function clearSelectedCardTags() {
   await runBulkAction('clear_tags')
   clearTagsDialog.value = false
+}
+
+async function swapSelectedCardFields() {
+  if (await runBulkAction(bulkSwapAction.value)) swapCardsDialog.value = false
 }
 
 async function deleteSelectedCards() {
@@ -316,8 +345,13 @@ async function deleteSelectedCards() {
               <v-list-item
                 :prepend-icon="item.icon"
                 :title="item.title"
+                :subtitle="item.action === 'swap_note_back' && !selectedCardsCanSwapNoteBack
+                  ? 'Every selected card needs a note and a back under 2,000 characters'
+                  : undefined"
                 :base-color="item.color"
-                :disabled="bulkSaving || ('requiresTags' in item && item.requiresTags && !selectedCardsHaveTags)"
+                :disabled="bulkSaving
+                  || ('requiresTags' in item && item.requiresTags && !selectedCardsHaveTags)
+                  || (item.action === 'swap_note_back' && !selectedCardsCanSwapNoteBack)"
                 @click="chooseBulkAction(item.action)"
               />
             </template>
@@ -423,6 +457,17 @@ async function deleteSelectedCards() {
         :cards="selectedCards"
         :assign-image="assignImageHandler"
         @complete="completeBulkImageAssignment"
+      />
+
+      <ConfirmDialog
+        v-model="swapCardsDialog"
+        :title="bulkSwapCopy.title"
+        :message="bulkSwapCopy.message"
+        :confirm-text="bulkSwapCopy.confirm"
+        confirm-color="warning"
+        icon="mdi-swap-horizontal"
+        :loading="bulkSaving"
+        @confirm="swapSelectedCardFields"
       />
 
       <ConfirmDialog

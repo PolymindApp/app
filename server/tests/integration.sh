@@ -1553,6 +1553,46 @@ flashcard_import_tag_id="$(php -r '
   echo $data["tags"][0]["id"];
 ' <<<"$flashcard_import_response")"
 
+flashcard_bulk_swap_front_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "{\"action\":\"swap_front_back\",\"card_ids\":[\"$flashcard_import_first_id\"]}" \
+  "$api_url/flashcards/bulk")"
+flashcard_bulk_swap_front_summary="$(php -r '
+  $data = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+  echo $data["cards"][0]["front"] . ":" . $data["cards"][0]["back"]
+    . ":" . $data["cards"][0]["note"];
+' <<<"$flashcard_bulk_swap_front_response")"
+[[ "$flashcard_bulk_swap_front_summary" == "formón:Imported chisel:Carving tool" ]] || {
+  echo "Bulk flashcard front and back swapping did not preserve the card fields." >&2
+  exit 1
+}
+
+flashcard_bulk_swap_note_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "{\"action\":\"swap_note_back\",\"card_ids\":[\"$flashcard_import_first_id\"]}" \
+  "$api_url/flashcards/bulk")"
+flashcard_bulk_swap_note_summary="$(php -r '
+  $data = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+  echo $data["cards"][0]["front"] . ":" . $data["cards"][0]["back"]
+    . ":" . $data["cards"][0]["note"];
+' <<<"$flashcard_bulk_swap_note_response")"
+[[ "$flashcard_bulk_swap_note_summary" == "formón:Carving tool:Imported chisel" ]] || {
+  echo "Bulk flashcard note and back swapping did not preserve the card fields." >&2
+  exit 1
+}
+
+flashcard_bulk_empty_note_swap_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "{\"action\":\"swap_note_back\",\"card_ids\":[\"$flashcard_import_second_id\"]}" \
+  "$api_url/flashcards/bulk")"
+[[ "$flashcard_bulk_empty_note_swap_status" == 422 ]] || {
+  echo "Bulk flashcard note and back swapping accepted an empty note as the required back." >&2
+  exit 1
+}
+
 flashcard_bulk_add_payload="$(php -r '
   echo json_encode([
     "action" => "add_tags",

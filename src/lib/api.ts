@@ -215,6 +215,23 @@ export class ApiError extends Error {
   }
 }
 
+function localFlashcardSwapPatch(
+  record: RecordModel,
+  action: Extract<FlashcardBulkRecordAction, 'swap_front_back' | 'swap_note_back'>,
+) {
+  const front = String(record.front || '').trim()
+  const back = String(record.back || '').trim()
+  const note = String(record.note || '').trim()
+  if (action === 'swap_note_back') {
+    if (!note) throw new ApiError(422, 'Every selected card needs a note before swapping note and back.')
+    if ([...back].length > 2000) {
+      throw new ApiError(422, 'A selected back is too long to become a note.')
+    }
+    return { back: note, note: back }
+  }
+  return { front: back, back: front }
+}
+
 class AuthStore {
   token = ''
   record: AuthRecord | null = null
@@ -762,6 +779,13 @@ class ApiClient {
       for (const id of cardIds) {
         const current = await getLocalRecord(accountId, 'flashcards', id)
         if (!current) continue
+        if (action === 'swap_front_back' || action === 'swap_note_back') {
+          cards.push(await putLocalPatch(accountId, 'flashcards', id, {
+            ...localFlashcardSwapPatch(current as RecordModel, action),
+            updated_at: new Date().toISOString(),
+          }) as RecordModel)
+          continue
+        }
         const currentTags = Array.isArray(current.tags) ? current.tags : []
         const tags = action === 'add_tags'
           ? [...new Set([...currentTags, ...tagIds])]

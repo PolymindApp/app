@@ -397,6 +397,24 @@ describe('flashcard store', () => {
     expect(store.cards[0].tags).toEqual(['tag-new'])
     expect(store.cards[1].id).toBe('card-2')
 
+    apiMocks.bulkUpdateCards.mockResolvedValueOnce({
+      cards: [{
+        id: 'card-1', front: 'Answer', back: 'Question', note: '', tags: ['tag-new'],
+        created_at: '2026-08-05T10:00:00Z', updated_at: '2026-08-05T10:06:00Z',
+        last_reviewed_at: '', passive_views: 0, success_count: 0, error_count: 0,
+      }],
+      deleted_ids: [],
+    })
+    await store.bulkUpdateCards('swap_front_back', ['card-1'])
+
+    expect(apiMocks.bulkUpdateCards).toHaveBeenNthCalledWith(
+      2,
+      'swap_front_back',
+      ['card-1'],
+      [],
+    )
+    expect(store.cards[0]).toMatchObject({ front: 'Answer', back: 'Question' })
+
     apiMocks.bulkUpdateCards.mockResolvedValueOnce({ cards: [], deleted_ids: ['card-1'] })
     await store.bulkUpdateCards('delete', ['card-1'])
 

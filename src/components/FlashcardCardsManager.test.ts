@@ -57,6 +57,11 @@ const TableStub = defineComponent({
       :data-interactive="interactive"
     >
       <button
+        v-if="selectable"
+        class="select-all-cards"
+        @click="$emit('update:modelValue', cards.map(card => card.id))"
+      >Select all</button>
+      <button
         v-for="card in cards"
         :key="card.id"
         class="open-card"
@@ -64,6 +69,16 @@ const TableStub = defineComponent({
       >
         {{ card.front }}
       </button>
+    </div>
+  `,
+})
+
+const ConfirmDialogStub = defineComponent({
+  props: { modelValue: Boolean, title: String },
+  emits: ['confirm', 'update:modelValue'],
+  template: `
+    <div v-if="modelValue" class="confirm-dialog" :data-title="title">
+      <button class="confirm-action" @click="$emit('confirm')">Confirm</button>
     </div>
   `,
 })
@@ -99,7 +114,7 @@ function mountManager(props: Record<string, unknown> = {}, attachTo?: Element) {
     global: {
       stubs: {
         ActionBottomSheet: true,
-        ConfirmDialog: true,
+        ConfirmDialog: ConfirmDialogStub,
         FlashcardBulkImageAssignmentDialog: true,
         FlashcardCardsTable: TableStub,
         FlashcardTagCombobox: true,
@@ -112,8 +127,9 @@ function mountManager(props: Record<string, unknown> = {}, attachTo?: Element) {
         VIcon: true,
         VList: { template: '<div><slot /></div>' },
         VListItem: {
-          props: ['title'],
-          template: '<div class="bulk-item">{{ title }}</div>',
+          props: ['disabled', 'title'],
+          emits: ['click'],
+          template: '<button class="bulk-item" :disabled="disabled" @click="$emit(\'click\')">{{ title }}</button>',
         },
         VListSubheader: { template: '<div><slot /></div>' },
         VMenu: { template: '<div><slot name="activator" :props="{}" /><slot /></div>' },
@@ -169,6 +185,38 @@ describe('FlashcardCardsManager', () => {
     expect(wrapper.get('[aria-label="Import flashcards"]').exists()).toBe(true)
     expect(wrapper.get('[aria-label="Add a new flashcard"]').exists()).toBe(true)
     expect(wrapper.get('.table-stub').attributes('data-selectable')).toBe('true')
+    expect(wrapper.findAll('.bulk-item').map(item => item.text())).toContain('Swap front and back')
+    expect(wrapper.findAll('.bulk-item').map(item => item.text())).toContain('Swap note and back')
+  })
+
+  it.each([
+    { title: 'Swap front and back', action: 'swap_front_back' },
+    { title: 'Swap note and back', action: 'swap_note_back' },
+  ] as const)('confirms and runs the $title bulk action', async ({ title, action }) => {
+    const bulkActionHandler = vi.fn().mockResolvedValue(undefined)
+    const cards = [
+      { ...card('card-1', 'First', []), note: 'First note' },
+      { ...card('card-2', 'Second', []), note: 'Second note' },
+    ]
+    const wrapper = mountManager({ cards, libraryActions: true, selectable: true, bulkActionHandler })
+
+    await wrapper.get('.select-all-cards').trigger('click')
+    await wrapper.findAll('.bulk-item').find(item => item.text() === title)!.trigger('click')
+
+    expect(wrapper.get('.confirm-dialog').attributes('data-title')).toContain(title)
+    await wrapper.get('.confirm-action').trigger('click')
+
+    expect(bulkActionHandler).toHaveBeenCalledWith(action, ['card-1', 'card-2'], [])
+  })
+
+  it('disables note and back swapping when a selected card has no note', async () => {
+    const wrapper = mountManager({ libraryActions: true, selectable: true })
+
+    await wrapper.get('.select-all-cards').trigger('click')
+
+    const swapNoteAndBack = wrapper.findAll('.bulk-item')
+      .find(item => item.text() === 'Swap note and back')
+    expect(swapNoteAndBack?.attributes('disabled')).toBeDefined()
   })
 
   it('opens the mobile tag menu before allowing its input to focus', async () => {

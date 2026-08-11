@@ -383,8 +383,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     }
 
     const updatedCards = response.cards.map(mapCard)
-    const updates = new Map(updatedCards.map(card => [card.id, card]))
-    cards.value = cards.value.map(card => updates.get(card.id) || card)
+    updatedCards.forEach(card => cacheCard(card))
     return updatedCards
   }
 

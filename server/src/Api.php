@@ -2904,7 +2904,10 @@ final class Api
         $body = $this->jsonBody();
         $this->allowOnlyFields($body, ['action', 'card_ids', 'tag_ids']);
         $action = $body['action'] ?? null;
-        $allowedActions = ['add_tags', 'set_tags', 'remove_tags', 'clear_tags', 'delete'];
+        $allowedActions = [
+            'swap_front_back', 'swap_note_back',
+            'add_tags', 'set_tags', 'remove_tags', 'clear_tags', 'delete',
+        ];
         if (!is_string($action) || !in_array($action, $allowedActions, true)) {
             throw new ApiException(422, 'Select a valid flashcard bulk action.', [
                 'action' => 'choice',
@@ -2950,6 +2953,24 @@ final class Api
                     $this->deleteFlashcard($cardId, $owner);
                     $deletedIds[] = $cardId;
                 }
+            } elseif (in_array($action, ['swap_front_back', 'swap_note_back'], true)) {
+                $update = $pdo->prepare(
+                    'UPDATE flashcards
+                     SET front = :front, back = :back, note = :note, updated_at = :updated_at
+                     WHERE id = :id AND owner = :owner',
+                );
+                $updatedAt = (new DateTimeImmutable('now'))->format('Y-m-d\TH:i:s.v\Z');
+                foreach ($cardIds as $cardId) {
+                    $card = $this->ownedRecord('flashcards', $cardId, $owner);
+                    $values = $this->swappedFlashcardTextFields($card, $action);
+                    $update->execute([
+                        ...$values,
+                        'updated_at' => $updatedAt,
+                        'id' => $cardId,
+                        'owner' => $owner,
+                    ]);
+                    $updatedCards[] = $this->ownedRecord('flashcards', $cardId, $owner);
+                }
             } else {
                 $update = $pdo->prepare(
                     'UPDATE flashcards
@@ -2993,6 +3014,12 @@ final class Api
             throw $exception;
         }
 
+        if (in_array($action, ['swap_front_back', 'swap_note_back'], true)) {
+            foreach ($updatedCards as $card) {
+                $this->syncFlashcardWithActiveReviewQueues($card, $owner, false);
+            }
+        }
+
         $this->respond([
             'cards' => array_map(
                 fn (array $card): array => $this->normalizeRecord($cardCollection, $card),
@@ -3000,6 +3027,28 @@ final class Api
             ),
             'deleted_ids' => $deletedIds,
         ]);
+    }
+
+    private function swappedFlashcardTextFields(array $card, string $action): array
+    {
+        $values = match ($action) {
+            'swap_front_back' => [
+                'front' => $card['back'] ?? '',
+                'back' => $card['front'] ?? '',
+                'note' => $card['note'] ?? '',
+            ],
+            'swap_note_back' => [
+                'front' => $card['front'] ?? '',
+                'back' => $card['note'] ?? '',
+                'note' => $card['back'] ?? '',
+            ],
+            default => throw new ApiException(422, 'Select a valid flashcard swap action.'),
+        };
+        $fields = $this->requireCollection('flashcards')['config']['fields'];
+        foreach ($values as $field => $value) {
+            $values[$field] = $this->validateField($field, $value, $fields[$field]);
+        }
+        return $values;
     }
 
     private function validateFlashcardBulkIds(mixed $value, string $field, bool $allowEmpty): array

@@ -285,7 +285,15 @@ export interface RunnerSessionMenuItem {
   toggle?: boolean
 }
 
-export type FlashcardBulkAction = 'assign_images' | 'add_tags' | 'set_tags' | 'remove_tags' | 'clear_tags' | 'delete'
+export type FlashcardBulkAction =
+  | 'assign_images'
+  | 'swap_front_back'
+  | 'swap_note_back'
+  | 'add_tags'
+  | 'set_tags'
+  | 'remove_tags'
+  | 'clear_tags'
+  | 'delete'
 export type FlashcardBulkRecordAction = Exclude<FlashcardBulkAction, 'assign_images'>
 export type FlashcardReviewSetAccessRole = 'owner' | 'readonly' | 'editor'
 export type SquareImageSource = 'none' | 'url' | 'upload' | 'library'
