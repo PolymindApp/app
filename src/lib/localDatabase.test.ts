@@ -4,9 +4,12 @@ import { reactive } from 'vue'
 import {
   applyExchangeResults,
   completeLocalBootstrap,
+  discardAllSyncIssues,
   getLocalRecord,
   hasLocalBootstrap,
+  issueCount,
   listLocalRecords,
+  listSyncIssues,
   localDatabase,
   localOutboxChangedEvent,
   markOperationsSending,
@@ -133,6 +136,47 @@ describe('offline local database', () => {
     } finally {
       window.removeEventListener(localOutboxChangedEvent, listener)
     }
+  })
+
+  it('lists newest issues first and discards all rejected local changes together', async () => {
+    await completeLocalBootstrap(accountId, 0, [])
+    for (let index = 0; index < 6; index += 1) {
+      await putLocalCreate(accountId, 'journal_entries', { title: `Rejected ${index}` })
+    }
+    const operations = await pendingOperations(accountId)
+    await applyExchangeResults(
+      accountId,
+      1,
+      '2026-08-11T12:00:00.000Z',
+      operations.map(operation => ({
+        operationId: operation.operationId,
+        status: 'rejected',
+        error: { message: `Issue ${operation.payload.title}` },
+      })),
+      [],
+    )
+    await Promise.all(operations.map((operation, index) => localDatabase.issues.update(
+      `issue-${operation.operationId}`,
+      { createdAt: `2026-08-11T12:00:0${index}.000Z` },
+    )))
+
+    const issues = await listSyncIssues(accountId)
+    expect(issues.map(issue => issue.createdAt)).toEqual([
+      '2026-08-11T12:00:05.000Z',
+      '2026-08-11T12:00:04.000Z',
+      '2026-08-11T12:00:03.000Z',
+      '2026-08-11T12:00:02.000Z',
+      '2026-08-11T12:00:01.000Z',
+      '2026-08-11T12:00:00.000Z',
+    ])
+
+    expect(await discardAllSyncIssues(accountId)).toBe(6)
+    expect(await issueCount(accountId)).toBe(0)
+    expect(await localDatabase.outbox.where('accountId').equals(accountId).count()).toBe(0)
+    expect((await localDatabase.metadata.get(accountId))?.bootstrapped).toBe(false)
+    await Promise.all(operations.map(async operation => {
+      expect(await getLocalRecord(accountId, operation.resource, operation.recordId!)).toBeUndefined()
+    }))
   })
 
   it('reconciles acknowledgements, aliases, and remote delete-wins changes', async () => {

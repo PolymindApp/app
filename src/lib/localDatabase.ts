@@ -510,7 +510,14 @@ export async function issueCount(accountId: string) {
 }
 
 export async function listSyncIssues(accountId: string) {
-  return localDatabase.issues.where('[accountId+resolved]').equals([accountId, 0]).reverse().sortBy('createdAt')
+  const issues = await localDatabase.issues
+    .where('[accountId+resolved]')
+    .equals([accountId, 0])
+    .toArray()
+  return issues.sort((left, right) => (
+    right.createdAt.localeCompare(left.createdAt)
+    || right.id.localeCompare(left.id)
+  ))
 }
 
 export async function markOperationsSending(operationIds: string[]) {
@@ -786,6 +793,37 @@ export async function discardSyncIssue(issueId: string) {
   )
   notifyDataChanged(issue.accountId, issue.resource)
   notifyOutboxChanged(issue.accountId)
+}
+
+export async function discardAllSyncIssues(accountId: string) {
+  const issues = await localDatabase.issues
+    .where('[accountId+resolved]')
+    .equals([accountId, 0])
+    .toArray()
+  if (!issues.length) return 0
+
+  await localDatabase.transaction(
+    'rw',
+    localDatabase.resources,
+    localDatabase.outbox,
+    localDatabase.metadata,
+    localDatabase.issues,
+    async () => {
+      await localDatabase.outbox.bulkDelete(issues.map(issue => issue.operationId))
+      await localDatabase.issues.bulkDelete(issues.map(issue => issue.id))
+      await localDatabase.resources.bulkDelete([...new Set(issues.flatMap(issue => (
+        issue.recordId ? [resourceKey(accountId, issue.resource, issue.recordId)] : []
+      )))])
+      const metadata = await localDatabase.metadata.get(accountId)
+      if (metadata) await localDatabase.metadata.put({ ...metadata, bootstrapped: false })
+    },
+  )
+
+  for (const resource of new Set(issues.map(issue => issue.resource))) {
+    notifyDataChanged(accountId, resource)
+  }
+  notifyOutboxChanged(accountId)
+  return issues.length
 }
 
 export async function updateLocalAuthToken(accountId: string, authToken: string, syncUrl: string) {

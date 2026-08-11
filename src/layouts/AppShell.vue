@@ -43,6 +43,8 @@ const journalStore = useJournalStore()
 const logoutDialog = ref(false)
 const discardLogoutDialog = ref(false)
 const unsyncedLogoutCount = ref<number>()
+const discardAllIssuesDialog = ref(false)
+const discardingAllIssues = ref(false)
 const syncSheet = ref(false)
 const pageTransition = ref('page-level-forward')
 const isIos = Capacitor.getPlatform() === 'ios'
@@ -101,6 +103,7 @@ const lastSyncedLabel = computed(() => {
     ? 'Not synchronized yet'
     : `Last synchronized ${date.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}`
 })
+const visibleSyncIssues = computed(() => syncStore.issues.slice(0, 5))
 
 const immersive = computed(() => Boolean(router.currentRoute.value.meta.immersive))
 const pageTitle = computed(() => String(router.currentRoute.value.meta.title || 'Polymind'))
@@ -269,6 +272,17 @@ async function discardUnsyncedAndLogout() {
   } catch {
     discardLogoutDialog.value = false
     syncSheet.value = true
+  }
+}
+
+async function discardAllIssues() {
+  discardingAllIssues.value = true
+  try {
+    const discarded = await syncStore.discardAllIssues()
+    discardAllIssuesDialog.value = false
+    if (discarded) snackbar.showDeletion(`${discarded} synchronization issue${discarded === 1 ? '' : 's'}`)
+  } finally {
+    discardingAllIssues.value = false
   }
 }
 
@@ -454,6 +468,17 @@ function releaseLeavingPage(element: Element) {
       @confirm="discardUnsyncedAndLogout"
     />
 
+    <ConfirmDialog
+      v-model="discardAllIssuesDialog"
+      title="Discard all sync issues?"
+      :message="`This permanently removes the local changes associated with all ${syncStore.issues.length} synchronization issues from this device.`"
+      confirm-text="Discard all"
+      confirm-color="error"
+      icon="mdi-delete-sweep-outline"
+      :loading="discardingAllIssues"
+      @confirm="discardAllIssues"
+    />
+
     <ActionBottomSheet
       v-model="syncSheet"
       title="Synchronization"
@@ -474,9 +499,15 @@ function releaseLeavingPage(element: Element) {
           <p v-if="syncStore.status.message || auth.error" class="text-body-2 text-medium-emphasis mb-0">
             {{ auth.error || syncStore.status.message }}
           </p>
-          <v-list v-if="syncStore.issues.length" bg-color="transparent" class="pa-0">
+          <p
+            v-if="syncStore.issues.length > visibleSyncIssues.length"
+            class="text-caption text-medium-emphasis mb-0"
+          >
+            Showing the 5 most recent of {{ syncStore.issues.length }} issues.
+          </p>
+          <v-list v-if="visibleSyncIssues.length" bg-color="transparent" class="pa-0">
             <v-list-item
-              v-for="issue in syncStore.issues"
+              v-for="issue in visibleSyncIssues"
               :key="issue.id"
               prepend-icon="mdi-alert-outline"
               :title="issue.message"
@@ -494,6 +525,16 @@ function releaseLeavingPage(element: Element) {
               </template>
             </v-list-item>
           </v-list>
+          <v-btn
+            v-if="syncStore.issues.length > 1"
+            block
+            color="error"
+            variant="outlined"
+            prepend-icon="mdi-delete-sweep-outline"
+            @click="discardAllIssuesDialog = true"
+          >
+            Discard all
+          </v-btn>
           <v-btn
             v-if="syncStore.status.phase === 'auth-required'"
             block

@@ -1,6 +1,10 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
-import { discardSyncIssue, listSyncIssues } from '@/lib/localDatabase'
+import {
+  discardAllSyncIssues,
+  discardSyncIssue,
+  listSyncIssues,
+} from '@/lib/localDatabase'
 import {
   offlineSyncStatus,
   syncNow,
@@ -30,6 +34,15 @@ export const useSyncStore = defineStore('sync', () => {
     return syncNow('discard-issue')
   }
 
+  async function discardAllIssues() {
+    const accountId = api.authStore.record?.id
+    if (!accountId) return 0
+    const discarded = await discardAllSyncIssues(accountId)
+    await refresh()
+    void syncNow('discard-issues')
+    return discarded
+  }
+
   window.addEventListener(syncStatusChangedEvent, handleStatus)
 
   return {
@@ -38,5 +51,6 @@ export const useSyncStore = defineStore('sync', () => {
     refresh,
     syncNow,
     discardIssue,
+    discardAllIssues,
   }
 })
