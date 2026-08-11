@@ -131,6 +131,21 @@ describe('FlashcardCardsTable', () => {
     expect(wrapper.get('[aria-label="No image"]').exists()).toBe(true)
   })
 
+  it('provides a focusable horizontal scroll region for every table column', () => {
+    const wrapper = mountTable([card(1)])
+    const scrollRegion = wrapper.get('.card-library-scroll')
+
+    expect(scrollRegion.attributes('role')).toBe('region')
+    expect(scrollRegion.attributes('aria-label')).toBe('Flashcard table')
+    expect(scrollRegion.attributes('tabindex')).toBe('0')
+    expect(scrollRegion.findAll('thead th').map(heading => heading.text())).toEqual([
+      '',
+      'Image',
+      'Faces',
+      'Tags',
+    ])
+  })
+
   it('allows the final column to represent Review set inclusion instead of tags', () => {
     const wrapper = mountTable([card(1), card(2)], {
       'last-column-heading': 'Included?',

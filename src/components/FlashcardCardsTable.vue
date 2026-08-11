@@ -106,95 +106,102 @@ function cardTagNames(card: Flashcard) {
 <template>
   <div class="flashcard-cards-table">
     <div class="card-library" :class="{ 'surface-card': surface }">
-      <v-table density="compact" class="card-library-table">
-        <thead>
-          <tr>
-            <th v-if="selectable" scope="col" class="card-library-table__select">
-              <v-checkbox-btn
-                :model-value="allCardsSelected"
-                :indeterminate="someCardsSelected"
-                color="secondary"
-                density="compact"
-                hide-details="auto"
-                :aria-label="`Select all ${cards.length} cards`"
-                @update:model-value="toggleAllSelection(Boolean($event))"
-              />
-            </th>
-            <th scope="col" class="card-library-table__image-heading">Image</th>
-            <th scope="col" class="card-library-table__faces-heading">Faces</th>
-            <th scope="col" class="card-library-table__tags-heading">
-              <slot name="last-column-heading">Tags</slot>
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr
-            v-for="card in displayedCards"
-            :key="card.id"
-            :tabindex="interactive ? 0 : undefined"
-            :class="{
-              'card-library-table__row--selected': selectedCardIds.includes(card.id),
-              'card-library-table__row--interactive': interactive,
-            }"
-            :aria-label="interactive ? `Edit card: ${card.front}` : undefined"
-            @click="interactive && emit('open-card', card)"
-            @keydown.enter="interactive && emit('open-card', card)"
-            @keydown.space.prevent="interactive && emit('open-card', card)"
-          >
-            <td
-              v-if="selectable"
-              class="card-library-table__select"
-              @touchstart.stop
-              @click.stop="toggleCardSelection(card.id, !selectedCardIds.includes(card.id))"
-              @keydown.stop
+      <div
+        class="card-library-scroll"
+        role="region"
+        aria-label="Flashcard table"
+        tabindex="0"
+      >
+        <v-table density="compact" class="card-library-table">
+          <thead>
+            <tr>
+              <th v-if="selectable" scope="col" class="card-library-table__select">
+                <v-checkbox-btn
+                  :model-value="allCardsSelected"
+                  :indeterminate="someCardsSelected"
+                  color="secondary"
+                  density="compact"
+                  hide-details="auto"
+                  :aria-label="`Select all ${cards.length} cards`"
+                  @update:model-value="toggleAllSelection(Boolean($event))"
+                />
+              </th>
+              <th scope="col" class="card-library-table__image-heading">Image</th>
+              <th scope="col" class="card-library-table__faces-heading">Faces</th>
+              <th scope="col" class="card-library-table__tags-heading">
+                <slot name="last-column-heading">Tags</slot>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="card in displayedCards"
+              :key="card.id"
+              :tabindex="interactive ? 0 : undefined"
+              :class="{
+                'card-library-table__row--selected': selectedCardIds.includes(card.id),
+                'card-library-table__row--interactive': interactive,
+              }"
+              :aria-label="interactive ? `Edit card: ${card.front}` : undefined"
+              @click="interactive && emit('open-card', card)"
+              @keydown.enter="interactive && emit('open-card', card)"
+              @keydown.space.prevent="interactive && emit('open-card', card)"
             >
-              <v-checkbox-btn
-                :model-value="selectedCardIds.includes(card.id)"
-                color="secondary"
-                density="compact"
-                hide-details="auto"
-                :aria-label="`Select card: ${card.front}`"
-                @click.stop
-                @update:model-value="toggleCardSelection(card.id, Boolean($event))"
-              />
-            </td>
-            <td class="card-library-table__image-cell">
-              <div class="flashcard-table__image-frame">
-                <v-img
-                  v-if="card.image"
-                  :src="card.image"
-                  alt=""
-                  cover
-                  class="flashcard-table__image"
-                >
-                  <template #error>
-                    <div class="flashcard-table__image-placeholder" aria-label="Image unavailable">
-                      <v-icon icon="mdi-image-off-outline" size="18" aria-hidden="true" />
-                    </div>
-                  </template>
-                </v-img>
-                <div v-else class="flashcard-table__image-placeholder" aria-label="No image">
-                  <v-icon icon="mdi-image-outline" size="18" aria-hidden="true" />
+              <td
+                v-if="selectable"
+                class="card-library-table__select"
+                @touchstart.stop
+                @click.stop="toggleCardSelection(card.id, !selectedCardIds.includes(card.id))"
+                @keydown.stop
+              >
+                <v-checkbox-btn
+                  :model-value="selectedCardIds.includes(card.id)"
+                  color="secondary"
+                  density="compact"
+                  hide-details="auto"
+                  :aria-label="`Select card: ${card.front}`"
+                  @click.stop
+                  @update:model-value="toggleCardSelection(card.id, Boolean($event))"
+                />
+              </td>
+              <td class="card-library-table__image-cell">
+                <div class="flashcard-table__image-frame">
+                  <v-img
+                    v-if="card.image"
+                    :src="card.image"
+                    alt=""
+                    cover
+                    class="flashcard-table__image"
+                  >
+                    <template #error>
+                      <div class="flashcard-table__image-placeholder" aria-label="Image unavailable">
+                        <v-icon icon="mdi-image-off-outline" size="18" aria-hidden="true" />
+                      </div>
+                    </template>
+                  </v-img>
+                  <div v-else class="flashcard-table__image-placeholder" aria-label="No image">
+                    <v-icon icon="mdi-image-outline" size="18" aria-hidden="true" />
+                  </div>
                 </div>
-              </div>
-            </td>
-            <td class="card-library-table__faces-cell">
-              <span v-ripple class="card-library-table__row-ripple" aria-hidden="true" />
-              <div class="flashcard-table__faces">
-                <strong class="flashcard-table__text flashcard-table__front">{{ card.front }}</strong>
-                <span class="flashcard-table__text flashcard-table__back">{{ card.back }}</span>
-              </div>
-            </td>
-            <td class="card-library-table__tags-cell">
-              <slot name="last-column" :card="card">
-                <span class="flashcard-table__text flashcard-table__tags" :title="cardTagNames(card)">
-                  {{ cardTagNames(card) }}
-                </span>
-              </slot>
-            </td>
-          </tr>
-        </tbody>
-      </v-table>
+              </td>
+              <td class="card-library-table__faces-cell">
+                <span v-ripple class="card-library-table__row-ripple" aria-hidden="true" />
+                <div class="flashcard-table__faces">
+                  <strong class="flashcard-table__text flashcard-table__front">{{ card.front }}</strong>
+                  <span class="flashcard-table__text flashcard-table__back">{{ card.back }}</span>
+                </div>
+              </td>
+              <td class="card-library-table__tags-cell">
+                <slot name="last-column" :card="card">
+                  <span class="flashcard-table__text flashcard-table__tags" :title="cardTagNames(card)">
+                    {{ cardTagNames(card) }}
+                  </span>
+                </slot>
+              </td>
+            </tr>
+          </tbody>
+        </v-table>
+      </div>
 
       <div
         v-if="hasMoreCards"
@@ -224,9 +231,11 @@ function cardTagNames(card: Flashcard) {
 
 <style scoped>
 .card-library { overflow: clip; }
-.card-library-table { background: transparent; }
+.card-library-scroll { max-width: 100%; overflow-x: auto; overscroll-behavior-inline: contain; }
+.card-library-scroll:focus-visible { outline: .125rem solid rgba(var(--v-theme-secondary), .72); outline-offset: -.125rem; }
+.card-library-table { min-width: 42rem; max-width: none; background: transparent; }
 .card-library-table :deep(.v-table__wrapper) { overflow: visible; }
-.card-library-table :deep(table) { table-layout: fixed; }
+.card-library-table :deep(table) { width: 100%; table-layout: fixed; }
 .card-library-table th { position: sticky; z-index: 3; top: calc(3.75rem + max(env(safe-area-inset-top, 0rem), var(--safe-area-inset-top, 0rem))); height: 2.25rem !important; padding: 0 .75rem !important; background: rgb(var(--v-theme-surface)); box-shadow: 0 .0625rem 0 rgba(var(--v-theme-on-surface), .1); color: rgba(var(--v-theme-on-surface), .52); font-size: .64rem !important; font-weight: 900 !important; letter-spacing: .08em; text-transform: uppercase; }
 .card-library-table th.card-library-table__select { width: 3rem; }
 .card-library-table th.card-library-table__image-heading { width: 3rem; }
