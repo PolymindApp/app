@@ -64,7 +64,7 @@ const CardStub = defineComponent({
 
 const ButtonStub = defineComponent({
   inheritAttrs: false,
-  props: { ariaLabel: String, disabled: Boolean, to: [Object, String] },
+  props: { ariaLabel: String, disabled: Boolean, size: String, to: [Object, String] },
   emits: ['click'],
   setup(props, { attrs, emit, slots }) {
     return () => h('button', {
@@ -143,6 +143,8 @@ describe('Flashcards Review set cards', () => {
 
     const actions = summary.findAllComponents(ButtonStub)
     expect(actions.map(action => action.text())).toEqual(['Add card', 'Manage cards'])
+    expect(actions[0].props('size')).toBe('large')
+    expect(actions[1].props('size')).toBeUndefined()
     expect(actions[0].props('to')).toEqual({ name: 'flashcard-new' })
     expect(actions[1].props('to')).toEqual({ name: 'flashcard-cards' })
   })
