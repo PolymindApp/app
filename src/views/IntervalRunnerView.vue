@@ -1154,6 +1154,7 @@ function handleFlashcardContextAction(action: FlashcardContextAction) {
 async function endEarly() {
   const item = session.value
   if (!item) return
+  endDialog.value = false
   const result = reconciled(item)
   const runtime = { ...result.runtime, stepStartedAt: undefined, updatedAt: new Date().toISOString() }
   await store.endSession(item.id, {
@@ -1161,7 +1162,6 @@ async function endEarly() {
     elapsedSeconds: Math.round(runtime.accumulatedMs / 1000),
     endedAt: new Date().toISOString(),
   })
-  endDialog.value = false
   await stopBackgroundInterval()
   await stopFlashcardSpeech()
   await wakeLock?.release()

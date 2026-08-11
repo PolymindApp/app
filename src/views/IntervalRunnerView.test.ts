@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
     updateSession: vi.fn(),
     updateSessionFlashcardReview: vi.fn(),
     completeSession: vi.fn(),
+    endSession: vi.fn(),
     startSession: vi.fn(),
     mirrorRuntime: vi.fn(),
   },
@@ -91,9 +92,10 @@ const FlashcardContextActionsStub = defineComponent({
 
 const ConfirmDialogStub = defineComponent({
   props: { modelValue: Boolean, title: String },
-  emits: ['update:modelValue'],
+  emits: ['update:modelValue', 'confirm'],
   template: `
     <div v-if="modelValue" class="confirm-dialog" :data-title="title">
+      <button class="confirm-action" type="button" @click="$emit('confirm')">Confirm</button>
       <button type="button" @click="$emit('update:modelValue', false)">Cancel</button>
     </div>
   `,
@@ -219,6 +221,7 @@ describe('IntervalRunnerView flashcard area', () => {
       return session
     })
     mocks.intervalStore.load.mockReset().mockResolvedValue(undefined)
+    mocks.intervalStore.endSession.mockReset().mockResolvedValue(undefined)
     mocks.flashcardStore.load.mockReset().mockResolvedValue(undefined)
     mocks.taskStore.load.mockReset().mockResolvedValue(undefined)
     mocks.speechOverAmplificationIsEnabled.mockReset().mockReturnValue(false)
@@ -260,6 +263,29 @@ describe('IntervalRunnerView flashcard area', () => {
     expect(wrapper.get('[data-action="amplification"]').text()).toBe('Disable TTS amplification')
     expect(wrapper.get('[data-action="amplification"]').attributes('aria-pressed')).toBe('true')
 
+    wrapper.unmount()
+  })
+
+  it('dismisses the end confirmation after one press while the request is pending', async () => {
+    let finishEnd: (() => void) | undefined
+    mocks.intervalStore.endSession.mockImplementation(() => new Promise<void>((resolve) => {
+      finishEnd = resolve
+    }))
+    const wrapper = mountRunner()
+    await flushPromises()
+
+    await wrapper.get('.runner-actions-button').trigger('click')
+    await wrapper.get('[data-action="end"]').trigger('click')
+    expect(wrapper.get('.confirm-dialog').attributes('data-title')).toBe('End this session?')
+
+    await wrapper.get('.confirm-action').trigger('click')
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('.confirm-dialog').exists()).toBe(false)
+    expect(mocks.intervalStore.endSession).toHaveBeenCalledOnce()
+
+    finishEnd?.()
+    await flushPromises()
     wrapper.unmount()
   })
 
