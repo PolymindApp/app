@@ -4,6 +4,7 @@ import { format, subDays } from 'date-fns'
 import { api } from '@/lib/api'
 import { aggregateTrackingEntries } from '@/services/tracking'
 import { useSnackbarStore } from '@/stores/snackbar'
+import { useTaskStore } from '@/stores/tasks'
 import type {
   TrackingEntry,
   TrackingEntryDraft,
@@ -70,6 +71,7 @@ export const useTrackingStore = defineStore('tracking', () => {
       trackers.value = trackerRecords.map(mapTrackingTracker)
       entries.value = entryRecords.map(mapTrackingEntry)
       loaded.value = true
+      await useTaskStore().syncTaskReminders()
     } catch (cause) {
       error.value = cause instanceof Error ? cause.message : 'Could not load tracking.'
       throw cause
@@ -86,6 +88,7 @@ export const useTrackingStore = defineStore('tracking', () => {
     const merged = new Map(entries.value.map((entry) => [entry.id, entry]))
     records.map(mapTrackingEntry).forEach((entry) => merged.set(entry.id, entry))
     entries.value = [...merged.values()].sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
+    await useTaskStore().syncTaskReminders()
   }
 
   function entriesFor(trackerId: string, date?: string) {
@@ -139,6 +142,7 @@ export const useTrackingStore = defineStore('tracking', () => {
     })
     const entry = mapTrackingEntry(record)
     entries.value.unshift(entry)
+    await useTaskStore().syncTaskReminders()
     return entry
   }
 
@@ -154,12 +158,14 @@ export const useTrackingStore = defineStore('tracking', () => {
     const entry = mapTrackingEntry(record)
     const index = entries.value.findIndex((item) => item.id === entry.id)
     if (index >= 0) entries.value.splice(index, 1, entry)
+    await useTaskStore().syncTaskReminders()
     return entry
   }
 
   async function deleteEntry(id: string) {
     await api.collection('tracking_entries').delete(id)
     entries.value = entries.value.filter((entry) => entry.id !== id)
+    await useTaskStore().syncTaskReminders()
     useSnackbarStore().showDeletion('Log')
   }
 
@@ -174,6 +180,7 @@ export const useTrackingStore = defineStore('tracking', () => {
     await api.collection('tracking_trackers').delete(id)
     trackers.value = trackers.value.filter((tracker) => tracker.id !== id)
     entries.value = entries.value.filter((entry) => entry.tracker !== id)
+    await useTaskStore().syncTaskReminders()
     useSnackbarStore().showDeletion('Tracker')
   }
 
