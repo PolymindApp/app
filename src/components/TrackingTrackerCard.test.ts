@@ -3,6 +3,8 @@ import { vi } from 'vitest'
 import TrackingTrackerCard from '@/components/TrackingTrackerCard.vue'
 import type { TrackingEntry, TrackingTracker } from '@/types/domain'
 
+vi.mock('vuetify/directives', () => ({ Ripple: {} }))
+
 const tracker: TrackingTracker = {
   id: 'meditation',
   name: 'Meditation',
