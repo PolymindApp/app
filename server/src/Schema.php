@@ -121,6 +121,9 @@ final class Schema
                     'color' => self::text(20),
                     'interval_template' => self::relation(false, true),
                     'flashcard_review_set' => self::relation(false, true),
+                    'session_count_mode' => self::choice(['task', 'linked']),
+                    'session_goal_type' => self::choice(['complete', 'duration']),
+                    'session_target_seconds' => self::integer(0, 86400),
                     'tracking_trackers' => self::jsonArray(5000),
                     'reminder_enabled' => self::boolean(),
                     'reminder_times' => self::jsonArray(5000),
@@ -182,10 +185,15 @@ final class Schema
                     'kind' => self::choice(['duration', 'quantity', 'adjustment'], true),
                     'unit' => self::text(30),
                     'note' => self::text(255),
+                    'source_type' => self::choice(['interval', 'flashcards'], false, true),
+                    'source_session' => self::text(64),
                 ],
                 'required' => ['task', 'entry_date', 'kind'],
                 'sort' => ['entry_date', 'created_at', 'value'],
-                'filter' => ['task', 'occurrence', 'program_step', 'entry_date', 'kind'],
+                'filter' => [
+                    'task', 'occurrence', 'program_step', 'entry_date', 'kind',
+                    'source_type', 'source_session',
+                ],
             ],
             'interval_templates' => [
                 'fields' => [

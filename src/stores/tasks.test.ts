@@ -848,6 +848,53 @@ describe('interval task completion', () => {
     })
   })
 
+  it('accumulates elapsed seconds for a linked-session duration objective', () => {
+    const store = useTaskStore()
+    const intervalTask: Task = {
+      ...task,
+      id: 'timed-interval-task',
+      name: 'Conditioning time',
+      type: 'interval',
+      intervalTemplate: 'template-1',
+      sessionCountMode: 'linked',
+      sessionGoalType: 'duration',
+      sessionTargetSeconds: 20 * 60,
+    }
+    store.entries = [
+      {
+        ...entry('interval-session-entry', 12 * 60),
+        task: intervalTask.id,
+        kind: 'duration',
+        unit: 'seconds',
+        sourceType: 'interval',
+        sourceSession: 'session-1',
+      },
+    ]
+
+    expect(store.makeProgress(intervalTask, selectedDate)).toMatchObject({
+      value: 12 * 60,
+      percent: 60,
+      complete: false,
+      status: 'pending',
+    })
+
+    store.entries.push({
+      ...entry('interval-session-entry-2', 8 * 60),
+      task: intervalTask.id,
+      kind: 'duration',
+      unit: 'seconds',
+      sourceType: 'interval',
+      sourceSession: 'session-2',
+    })
+
+    expect(store.makeProgress(intervalTask, selectedDate)).toMatchObject({
+      value: 20 * 60,
+      percent: 100,
+      complete: true,
+      status: 'completed',
+    })
+  })
+
   it('uses the program-step occurrence for an attached interval', () => {
     const store = useTaskStore()
     const programTask: Task = {

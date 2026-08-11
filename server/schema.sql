@@ -285,6 +285,9 @@ CREATE TABLE tasks (
     color TEXT NOT NULL DEFAULT '',
     interval_template TEXT NOT NULL DEFAULT '',
     flashcard_review_set TEXT NOT NULL DEFAULT '',
+    session_count_mode TEXT NOT NULL DEFAULT 'task',
+    session_goal_type TEXT NOT NULL DEFAULT 'complete',
+    session_target_seconds NUMERIC NOT NULL DEFAULT 0,
     tracking_trackers JSON NOT NULL DEFAULT '[]',
     reminder_enabled BOOLEAN NOT NULL DEFAULT FALSE,
     reminder_times JSON NOT NULL DEFAULT '[]'
@@ -352,11 +355,16 @@ CREATE TABLE entries (
     kind TEXT NOT NULL DEFAULT '',
     unit TEXT NOT NULL DEFAULT '',
     note VARCHAR(255) NOT NULL DEFAULT ''
-        CHECK (length(note) <= 255 AND instr(note, char(10)) = 0 AND instr(note, char(13)) = 0)
+        CHECK (length(note) <= 255 AND instr(note, char(10)) = 0 AND instr(note, char(13)) = 0),
+    source_type TEXT NOT NULL DEFAULT '',
+    source_session TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX idx_entries_owner_date ON entries (owner, entry_date);
 CREATE INDEX idx_entries_task_created ON entries (task, created_at DESC);
+CREATE UNIQUE INDEX idx_entries_task_source_session
+    ON entries (owner, task, program_step, source_type, source_session)
+    WHERE source_session != '';
 
 CREATE TABLE interval_templates (
     id TEXT PRIMARY KEY NOT NULL DEFAULT ('r' || lower(hex(randomblob(7)))),

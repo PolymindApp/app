@@ -16,6 +16,8 @@ export type RecurrenceType = 'daily' | 'weekdays' | 'interval_weeks'
 export type GoalPeriod = 'occurrence' | 'week'
 export type TargetOperator = 'gte' | 'lte' | 'eq'
 export type OccurrenceStatus = 'pending' | 'completed' | 'missed' | 'carried' | 'rescheduled'
+export type SessionCountMode = 'task' | 'linked'
+export type SessionGoalType = 'complete' | 'duration'
 
 export interface WeekDateMarker {
   date: string
@@ -55,6 +57,9 @@ export interface Task {
   sortOrder: number
   intervalTemplate?: string
   flashcardReviewSet?: string
+  sessionCountMode?: SessionCountMode
+  sessionGoalType?: SessionGoalType
+  sessionTargetSeconds?: number
   trackingTrackers?: string[]
   reminderEnabled: boolean
   reminderTimes: string[]
@@ -101,6 +106,8 @@ export interface Entry {
   kind: 'duration' | 'quantity' | 'adjustment'
   unit: string
   note?: string
+  sourceType?: 'interval' | 'flashcards'
+  sourceSession?: string
 }
 
 export interface TaskProgress {

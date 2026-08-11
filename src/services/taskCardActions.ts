@@ -44,9 +44,15 @@ export function taskNeedsReview(progress: TaskProgress, currentDate: string) {
   const isQuantitative = progress.programStep
     ? progress.programStep.completionType === 'quantity'
     : ['duration', 'daily_total', 'step_counter'].includes(progress.task.type)
+      || (['interval', 'flashcards'].includes(progress.task.type)
+        && progress.task.sessionGoalType === 'duration')
   const targetMet = isQuantitative && meetsTarget(
     progress.value,
-    progress.programStep?.targetValue ?? progress.task.targetValue ?? 0,
+    progress.programStep?.targetValue
+      ?? (progress.task.sessionGoalType === 'duration'
+        ? progress.task.sessionTargetSeconds
+        : progress.task.targetValue)
+      ?? 0,
     progress.programStep?.targetOperator ?? progress.task.targetOperator ?? 'gte',
   )
 

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, useId, watch } from 'vue'
+import { formatIntervalDuration } from '@/services/intervals'
 import { goalState } from '@/services/schedule'
 import { taskCanLogAmounts } from '@/services/taskCardActions'
 import { TASK_TYPE_PRESENTATION } from '@/services/taskTypes'
@@ -82,6 +83,11 @@ const isInterval = computed(() =>
 const isFlashcards = computed(() =>
   (!step.value && task.value.type === 'flashcards') || step.value?.completionType === 'flashcards',
 )
+const isSessionDuration = computed(() =>
+  !step.value
+  && (isInterval.value || isFlashcards.value)
+  && task.value.sessionGoalType === 'duration',
+)
 const isTracking = computed(() => !step.value && task.value.type === 'tracking')
 const isJournal = computed(() => !step.value && task.value.type === 'journal')
 const isDailyTotal = computed(() => !step.value && task.value.type === 'daily_total')
@@ -94,13 +100,27 @@ const canToggleCheck = computed(() =>
 )
 const target = computed(() => isTracking.value
   ? task.value.trackingTrackers?.length ?? 0
-  : step.value?.targetValue ?? task.value.targetValue ?? 0)
+  : isSessionDuration.value
+    ? task.value.sessionTargetSeconds ?? 0
+    : step.value?.targetValue ?? task.value.targetValue ?? 0)
 const unit = computed(() => step.value?.customUnit || step.value?.unit || task.value.customUnit || task.value.unit || '')
 const operator = computed(() => ({ gte: 'at least', lte: 'at most', eq: 'exactly' })[step.value?.targetOperator || task.value.targetOperator || 'gte'])
 const targetOperator = computed(() => step.value?.targetOperator || task.value.targetOperator || 'gte')
-const currentGoalState = computed(() => isCheck.value || isInterval.value || isFlashcards.value || isTracking.value || isJournal.value ? 'neutral' : goalState(props.progress.value, target.value, targetOperator.value))
+const currentGoalState = computed(() => isCheck.value
+  || (isInterval.value && !isSessionDuration.value)
+  || (isFlashcards.value && !isSessionDuration.value)
+  || isTracking.value
+  || isJournal.value
+    ? 'neutral'
+    : goalState(props.progress.value, target.value, targetOperator.value))
 const numericGoalStatus = computed(() => {
-  if (isCheck.value || isInterval.value || isFlashcards.value || isTracking.value || isJournal.value) return undefined
+  if (
+    isCheck.value
+    || (isInterval.value && !isSessionDuration.value)
+    || (isFlashcards.value && !isSessionDuration.value)
+    || isTracking.value
+    || isJournal.value
+  ) return undefined
   const difference = target.value - props.progress.value
   if (targetOperator.value === 'gte' && currentGoalState.value === 'not_enough' && difference > 0) {
     return {
@@ -192,6 +212,7 @@ const subtitle = computed(() => {
 })
 
 function formatValue(value: number) {
+  if (isSessionDuration.value) return formatIntervalDuration(value)
   if (task.value.type === 'duration' && !step.value) return `${value % 1 === 0 ? value : value.toFixed(2)}h`
   if (isStepCounter.value) return `${Math.round(value).toLocaleString()} steps`
   return `${Number(value.toFixed(2))}${unit.value ? ` ${unit.value}` : ''}`
@@ -330,6 +351,25 @@ watch(() => props.valuePulse, async (pulse, previousPulse) => {
 
         <div v-if="!isCheck" class="task-card-details">
         <template v-if="isInterval">
+            <div v-if="isSessionDuration" class="metric-row mt-4">
+              <div>
+                <span
+                  class="metric-value"
+                  :class="{ 'metric-value--updated': valueAnimating }"
+                  @animationend="valueAnimating = false"
+                >{{ formatValue(progress.value) }}</span>
+                <span class="metric-target"> / {{ formatValue(target) }}</span>
+              </div>
+            </div>
+            <v-progress-linear
+              v-if="isSessionDuration"
+              :model-value="progress.percent"
+              :color="stateColor"
+              bg-color="surface-variant"
+              rounded
+              height="7"
+              class="mt-2"
+            />
             <v-btn
               v-if="!displayedComplete && canStartInterval"
               block
@@ -348,6 +388,25 @@ watch(() => props.valuePulse, async (pulse, previousPulse) => {
         </template>
 
         <template v-else-if="isFlashcards">
+          <div v-if="isSessionDuration" class="metric-row mt-4">
+            <div>
+              <span
+                class="metric-value"
+                :class="{ 'metric-value--updated': valueAnimating }"
+                @animationend="valueAnimating = false"
+              >{{ formatValue(progress.value) }}</span>
+              <span class="metric-target"> / {{ formatValue(target) }}</span>
+            </div>
+          </div>
+          <v-progress-linear
+            v-if="isSessionDuration"
+            :model-value="progress.percent"
+            :color="stateColor"
+            bg-color="surface-variant"
+            rounded
+            height="7"
+            class="mt-2"
+          />
           <v-btn
             v-if="!displayedComplete && canStartReview"
             block

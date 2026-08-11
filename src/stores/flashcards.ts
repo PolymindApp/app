@@ -689,7 +689,8 @@ export const useFlashcardStore = defineStore('flashcards', () => {
   async function act(sessionId: string, action: FlashcardReviewAction, elapsedSeconds: number) {
     const current = sessions.value.find(session => session.id === sessionId)?.queue[0]
     const accountId = api.authStore.record?.id || ''
-    const response = accountId && await hasLocalBootstrap(accountId)
+    const usingLocalDatabase = Boolean(accountId && await hasLocalBootstrap(accountId))
+    const response = usingLocalDatabase
       ? await actOnLocalSession(sessionId, action, elapsedSeconds)
       : await api.actOnFlashcardReviewSession(sessionId, action, elapsedSeconds)
     const session = mapSession(response.session)
@@ -706,7 +707,28 @@ export const useFlashcardStore = defineStore('flashcards', () => {
         else card.passiveViews += 1
       }
     }
-    if (response.occurrence) useTaskStore().upsertOccurrenceRecord(response.occurrence)
+    const taskStore = useTaskStore()
+    const progressOccurrences = response.occurrences || []
+    progressOccurrences.forEach(record => taskStore.upsertOccurrenceRecord(record))
+    if (response.occurrence && !progressOccurrences.some(record => record.id === response.occurrence?.id)) {
+      taskStore.upsertOccurrenceRecord(response.occurrence)
+    }
+    const progressEntries = response.entries || []
+    progressEntries.forEach(record => taskStore.upsertEntryRecord(record))
+    if (usingLocalDatabase && ['completed', 'ended'].includes(session.status)) {
+      await taskStore.applyLocalSessionProgress({
+        id: session.id,
+        sourceType: 'flashcards',
+        sourceId: session.reviewSet,
+        taskId: session.task,
+        programStepId: session.programStep,
+        taskDate: session.taskDate,
+        startedAt: session.startedAt,
+        status: session.status === 'completed' ? 'completed' : 'ended',
+        elapsedSeconds: session.elapsedSeconds,
+        completedAt: session.endedAt || new Date().toISOString(),
+      })
+    }
     return session
   }
 
@@ -834,29 +856,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       ejected_count: ejectedCount,
       total_cards: totalCards,
     })
-    let occurrence: Record<string, any> | null = null
-    if (status === 'completed' && current.task && current.taskDate) {
-      const taskStore = useTaskStore()
-      const progress = taskStore.progressForDate(new Date(`${current.taskDate}T12:00:00`))
-        .find(item => item.task.id === current.task
-          && (item.programStep?.id || '') === (current.programStep || ''))
-      if (progress && !progress.complete) {
-        await taskStore.toggleComplete(progress, true)
-        occurrence = progress.occurrence ? {
-          id: progress.occurrence.id,
-          task: progress.occurrence.task,
-          program_step: progress.occurrence.programStep || '',
-          scheduled_date: progress.occurrence.scheduledDate,
-          status: 'completed',
-          sealed: progress.occurrence.sealed,
-          completed_at: now,
-          snapshot_name: progress.occurrence.snapshotName,
-          snapshot_target: progress.occurrence.snapshotTarget || 0,
-          snapshot_unit: progress.occurrence.snapshotUnit || '',
-        } : null
-      }
-    }
-    return { session, occurrence }
+    return { session, occurrence: null, occurrences: [], entries: [] }
   }
 
   return {

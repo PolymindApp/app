@@ -9,6 +9,7 @@ import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import DatePickerField from '@/components/DatePickerField.vue'
 import FormActionBar from '@/components/FormActionBar.vue'
 import TaskReminderSettings from '@/components/TaskReminderSettings.vue'
+import TimerWheelPicker from '@/components/TimerWheelPicker.vue'
 import type { LongPressDragResult } from '@/directives/longPressDrag'
 import { reviewSetCardCount } from '@/services/flashcards'
 import { formatIntervalDuration, intervalDuration, intervalStepCount } from '@/services/intervals'
@@ -77,6 +78,9 @@ const draft = reactive<TaskDraft>({
   sortOrder: 0,
   intervalTemplate: undefined,
   flashcardReviewSet: undefined,
+  sessionCountMode: 'task',
+  sessionGoalType: 'complete',
+  sessionTargetSeconds: 20 * 60,
   trackingTrackers: [],
   reminderEnabled: false,
   reminderTimes: ['20:00'],
@@ -99,6 +103,18 @@ const intervalItems = computed(() => intervalStore.templates.map((item) => ({
   },
 })))
 const selectedReviewSet = computed(() => flashcardStore.reviewSets.find(item => item.id === draft.flashcardReviewSet))
+const isSessionTask = computed(() => draft.type === 'interval' || draft.type === 'flashcards')
+const sessionSourceLabel = computed(() => draft.type === 'interval' ? 'interval' : 'Review set')
+const sessionCountItems = computed(() => [
+  {
+    title: 'Only sessions started from this task',
+    value: 'task',
+  },
+  {
+    title: `Any session of this ${sessionSourceLabel.value}`,
+    value: 'linked',
+  },
+])
 const reviewSetItems = computed(() => flashcardStore.reviewSets.map(item => ({
   title: item.name,
   value: item.id,
@@ -274,6 +290,10 @@ async function save() {
     error.value = 'Select at least one tracker for this task.'
     return
   }
+  if (isSessionTask.value && draft.sessionGoalType === 'duration' && !draft.sessionTargetSeconds) {
+    error.value = 'Choose a duration greater than zero.'
+    return
+  }
   if (draft.reminderEnabled && !draft.reminderTimes.length) {
     error.value = 'Add at least one notification time.'
     return
@@ -446,6 +466,40 @@ async function removeTask() {
           <p class="text-body-2 muted mt-2 mb-4">Review set tasks need a saved Review set to run.</p>
           <v-btn color="secondary" variant="tonal" to="/flashcards/review-sets/new">Create Review set</v-btn>
         </div>
+      </v-card>
+
+      <v-card v-if="isSessionTask" class="surface-card field-stack pa-5 mb-4">
+        <div>
+          <h2 class="text-body-1 font-weight-black">Session objective</h2>
+          <p class="text-body-2 muted mt-1">Choose which sessions count and what finishes this task each day.</p>
+        </div>
+        <v-select
+          v-model="draft.sessionCountMode"
+          label="What counts"
+          :items="sessionCountItems"
+        />
+        <v-select
+          v-model="draft.sessionGoalType"
+          label="Goal"
+          :items="[
+            { title: 'Complete one session', value: 'complete' },
+            { title: 'Reach a duration', value: 'duration' },
+          ]"
+        />
+        <v-expand-transition>
+          <div v-if="draft.sessionGoalType === 'duration'" class="session-duration-setting">
+            <label class="field-label">Daily duration</label>
+            <TimerWheelPicker
+              v-model="draft.sessionTargetSeconds"
+              :max-minutes="180"
+              mode="duration"
+              class="mt-2"
+            />
+            <p class="field-help mt-2">
+              Time from completed sessions and sessions you end early is added to this task.
+            </p>
+          </div>
+        </v-expand-transition>
       </v-card>
 
       <v-card v-if="draft.type === 'tracking'" class="surface-card field-stack pa-5 mb-4">

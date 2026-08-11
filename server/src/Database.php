@@ -72,6 +72,7 @@ final class Database
                 'quick_amounts', 'cycle_length', 'program_repeat', 'program_strict',
                 'entry_notes_enabled', 'entry_note_suggestions_enabled', 'sort_order',
                 'color', 'interval_template', 'flashcard_review_set',
+                'session_count_mode', 'session_goal_type', 'session_target_seconds',
                 'tracking_trackers', 'reminder_enabled', 'reminder_times',
             ],
             'program_steps' => [
@@ -86,7 +87,8 @@ final class Database
             ],
             'entries' => [
                 'id', 'owner', 'task', 'occurrence', 'program_step', 'entry_date',
-                'created_at', 'value', 'kind', 'unit', 'note',
+                'created_at', 'value', 'kind', 'unit', 'note', 'source_type',
+                'source_session',
             ],
             'interval_templates' => [
                 'id', 'owner', 'name', 'description', 'color', 'definition',

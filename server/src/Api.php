@@ -199,6 +199,16 @@ final class Api
                 $this->completeIntervalSession($intervalMatches[1], $this->authenticate());
             }
             if (
+                $method === 'POST'
+                && preg_match(
+                    '#^/interval-sessions/([a-zA-Z0-9_-]{1,64})/end/?$#',
+                    $path,
+                    $intervalEndMatches,
+                ) === 1
+            ) {
+                $this->endIntervalSession($intervalEndMatches[1], $this->authenticate());
+            }
+            if (
                 $method === 'PATCH'
                 && preg_match(
                     '#^/interval-sessions/([a-zA-Z0-9_-]{1,64})/flashcards/?$#',
@@ -2578,8 +2588,8 @@ final class Api
             ) {
                 throw new ApiException(422, 'Interval task attribution cannot be changed after the session starts.');
             }
-            if (($body['status'] ?? null) === 'completed') {
-                throw new ApiException(422, 'Use the interval completion endpoint to complete a session.');
+            if (in_array(($body['status'] ?? null), ['completed', 'ended'], true)) {
+                throw new ApiException(422, 'Use an interval finishing endpoint to end a session.');
             }
         }
         if ($collection['name'] === 'journal_entries') {
@@ -3981,6 +3991,8 @@ final class Api
             $ejectedCount = (int) $session['ejected_count'];
             $totalCards = (int) $session['total_cards'];
             $occurrence = null;
+            $progressOccurrences = [];
+            $progressEntries = [];
 
             if ($action === 'restart') {
                 $selection = $this->flashcardReviewSelection([
@@ -4105,10 +4117,19 @@ final class Api
                 'id' => $id,
                 'owner' => $owner,
             ]);
-            if ($status === 'completed') {
-                $occurrence = $this->completeAttributedIntervalTask($session, $owner, $endedAt);
-            }
             $session = $this->ownedRecord('flashcard_review_sessions', $id, $owner);
+            if (in_array($status, ['completed', 'ended'], true)) {
+                $progress = $this->applyLinkedSessionTaskProgress(
+                    $session,
+                    $owner,
+                    'flashcards',
+                    $endedAt,
+                    (string) $user['timezone'],
+                );
+                $occurrence = $progress['occurrence'];
+                $progressOccurrences = $progress['occurrences'];
+                $progressEntries = $progress['entries'];
+            }
             $pdo->commit();
         } catch (Throwable $exception) {
             if ($pdo->inTransaction()) {
@@ -4123,6 +4144,8 @@ final class Api
                 $session,
             ),
             'occurrence' => $occurrence,
+            'occurrences' => $progressOccurrences,
+            'entries' => $progressEntries,
         ]);
     }
 
@@ -4534,6 +4557,16 @@ final class Api
 
     private function completeIntervalSession(string $id, array $user): never
     {
+        $this->finishIntervalSession($id, $user, 'completed');
+    }
+
+    private function endIntervalSession(string $id, array $user): never
+    {
+        $this->finishIntervalSession($id, $user, 'ended');
+    }
+
+    private function finishIntervalSession(string $id, array $user, string $status): never
+    {
         $body = $this->jsonBody();
         $allowedFields = ['runtime_state', 'elapsed_seconds', 'ended_at'];
         $unknown = array_values(array_diff(array_keys($body), $allowedFields));
@@ -4563,11 +4596,13 @@ final class Api
         $pdo->beginTransaction();
         try {
             $session = $this->ownedRecord('interval_sessions', $id, $owner);
-            if ((string) $session['status'] === 'ended') {
-                throw new ApiException(409, 'An ended interval session cannot be completed.');
+            if (in_array((string) $session['status'], ['completed', 'ended'], true)) {
+                if ((string) $session['status'] !== $status) {
+                    throw new ApiException(409, 'This interval session has already ended.');
+                }
             }
 
-            if ((string) $session['status'] !== 'completed') {
+            if ((string) $session['status'] !== $status) {
                 $statement = $pdo->prepare(
                     'UPDATE interval_sessions SET
                         status = :status,
@@ -4577,7 +4612,7 @@ final class Api
                      WHERE id = :id AND owner = :owner',
                 );
                 $statement->execute([
-                    'status' => 'completed',
+                    'status' => $status,
                     'runtime_state' => json_encode($runtime, JSON_THROW_ON_ERROR),
                     'elapsed_seconds' => $elapsedSeconds,
                     'ended_at' => $endedAt,
@@ -4586,8 +4621,14 @@ final class Api
                 ]);
             }
 
-            $occurrence = $this->completeAttributedIntervalTask($session, $owner, $endedAt);
             $session = $this->ownedRecord('interval_sessions', $id, $owner);
+            $progress = $this->applyLinkedSessionTaskProgress(
+                $session,
+                $owner,
+                'interval',
+                $endedAt,
+                (string) $user['timezone'],
+            );
             $pdo->commit();
         } catch (Throwable $exception) {
             if ($pdo->inTransaction()) {
@@ -4598,7 +4639,9 @@ final class Api
 
         $this->respond([
             'session' => $this->normalizeRecord($sessionCollection, $session),
-            'occurrence' => $occurrence,
+            'occurrence' => $progress['occurrence'],
+            'occurrences' => $progress['occurrences'],
+            'entries' => $progress['entries'],
         ]);
     }
 
@@ -4653,6 +4696,270 @@ final class Api
         $this->respond($this->normalizeRecord($collection, $session));
     }
 
+    /**
+     * Apply a finished linked session to every eligible top-level task, while preserving
+     * the existing direct-attribution behavior for program steps.
+     *
+     * @return array{occurrence: ?array, occurrences: array<int, array>, entries: array<int, array>}
+     */
+    private function applyLinkedSessionTaskProgress(
+        array $session,
+        string $owner,
+        string $sourceType,
+        string $completedAt,
+        string $timezone,
+    ): array {
+        $status = (string) ($session['status'] ?? '');
+        $taskId = (string) ($session['task'] ?? '');
+        $programStepId = (string) ($session['program_step'] ?? '');
+        $taskDate = (string) ($session['task_date'] ?? '');
+        if ($taskDate === '') {
+            $taskDate = $this->dateKeyInTimezone(
+                (string) ($session['started_at'] ?? $completedAt),
+                $timezone,
+            );
+        }
+
+        $primaryOccurrence = null;
+        $occurrences = [];
+        $entries = [];
+        if ($programStepId !== '' && $status === 'completed') {
+            $primaryOccurrence = $this->completeAttributedIntervalTask(
+                $session,
+                $owner,
+                $completedAt,
+            );
+            if ($primaryOccurrence !== null) {
+                $occurrences[] = $primaryOccurrence;
+            }
+        }
+
+        $sourceId = $sourceType === 'interval'
+            ? (string) ($session['template'] ?? '')
+            : (string) ($session['review_set'] ?? '');
+        if ($sourceId === '' || $taskDate === '') {
+            return [
+                'occurrence' => $primaryOccurrence,
+                'occurrences' => $occurrences,
+                'entries' => $entries,
+            ];
+        }
+
+        $taskType = $sourceType === 'interval' ? 'interval' : 'flashcards';
+        $sourceField = $sourceType === 'interval' ? 'interval_template' : 'flashcard_review_set';
+        $statement = $this->database->pdo->prepare(
+            "SELECT * FROM tasks
+             WHERE owner = :owner AND active = TRUE AND type = :type
+               AND {$sourceField} = :source
+               AND (id = :task OR session_count_mode = 'linked')
+             ORDER BY sort_order, id",
+        );
+        $statement->execute([
+            'owner' => $owner,
+            'type' => $taskType,
+            'source' => $sourceId,
+            'task' => $taskId,
+        ]);
+        $taskCollection = $this->requireCollection('occurrences');
+        $entryCollection = $this->requireCollection('entries');
+
+        foreach ($statement->fetchAll() as $task) {
+            $goalType = (string) ($task['session_goal_type'] ?? 'complete');
+            $elapsedSeconds = max(0, (int) ($session['elapsed_seconds'] ?? 0));
+            if ($goalType === 'complete' && $status !== 'completed') {
+                continue;
+            }
+            if (
+                $goalType === 'duration'
+                && (!in_array($status, ['completed', 'ended'], true) || $elapsedSeconds <= 0)
+            ) {
+                continue;
+            }
+            $occurrence = $this->sessionTaskOccurrence($task, $taskDate, $owner);
+            if (!is_array($occurrence)) {
+                if (!$this->taskScheduledOnDate($task, $taskDate)) {
+                    continue;
+                }
+                $occurrence = $this->createSessionTaskOccurrence($task, $taskDate, $owner);
+            } elseif (!in_array((string) $occurrence['status'], ['pending', 'completed'], true)) {
+                continue;
+            }
+
+            $entry = null;
+            if ($goalType === 'complete') {
+                if ((string) $occurrence['status'] !== 'completed') {
+                    $occurrence = $this->completeSessionTaskOccurrence(
+                        $occurrence,
+                        $owner,
+                        $completedAt,
+                    );
+                }
+            } else {
+                $entry = $this->recordSessionTaskEntry(
+                    $task,
+                    $occurrence,
+                    $taskDate,
+                    $sourceType,
+                    (string) ($session['id'] ?? ''),
+                    $elapsedSeconds,
+                    $owner,
+                );
+                $total = $this->sessionTaskDurationTotal((string) $task['id'], $taskDate, $owner);
+                if (
+                    $total >= max(1, (int) ($task['session_target_seconds'] ?? 0))
+                    && (string) $occurrence['status'] !== 'completed'
+                ) {
+                    $occurrence = $this->completeSessionTaskOccurrence(
+                        $occurrence,
+                        $owner,
+                        $completedAt,
+                    );
+                }
+            }
+
+            $normalizedOccurrence = $this->normalizeRecord($taskCollection, $occurrence);
+            $occurrences[(string) $occurrence['id']] = $normalizedOccurrence;
+            if ((string) $task['id'] === $taskId && $programStepId === '') {
+                $primaryOccurrence = $normalizedOccurrence;
+            }
+            if (is_array($entry)) {
+                $entries[(string) $entry['id']] = $this->normalizeRecord($entryCollection, $entry);
+            }
+        }
+
+        return [
+            'occurrence' => $primaryOccurrence,
+            'occurrences' => array_values($occurrences),
+            'entries' => array_values($entries),
+        ];
+    }
+
+    private function sessionTaskOccurrence(array $task, string $taskDate, string $owner): array|false
+    {
+        $statement = $this->database->pdo->prepare(
+            "SELECT * FROM occurrences
+             WHERE task = :task AND program_step = '' AND scheduled_date = :scheduled_date
+               AND owner = :owner
+             LIMIT 1",
+        );
+        $statement->execute([
+            'task' => $task['id'],
+            'scheduled_date' => $taskDate,
+            'owner' => $owner,
+        ]);
+        return $statement->fetch();
+    }
+
+    private function createSessionTaskOccurrence(array $task, string $taskDate, string $owner): array
+    {
+        $id = $this->newId();
+        $target = (string) ($task['session_goal_type'] ?? 'complete') === 'duration'
+            ? (int) ($task['session_target_seconds'] ?? 0)
+            : 1;
+        $unit = (string) ($task['session_goal_type'] ?? 'complete') === 'duration'
+            ? 'seconds'
+            : '';
+        $statement = $this->database->pdo->prepare(
+            "INSERT INTO occurrences (
+                id, owner, task, program_step, scheduled_date, status, sealed,
+                completed_at, snapshot_name, snapshot_target, snapshot_unit
+             ) VALUES (
+                :id, :owner, :task, '', :scheduled_date, 'pending', FALSE,
+                '', :snapshot_name, :snapshot_target, :snapshot_unit
+             )",
+        );
+        $statement->execute([
+            'id' => $id,
+            'owner' => $owner,
+            'task' => $task['id'],
+            'scheduled_date' => $taskDate,
+            'snapshot_name' => $task['name'],
+            'snapshot_target' => $target,
+            'snapshot_unit' => $unit,
+        ]);
+        return $this->ownedRecord('occurrences', $id, $owner);
+    }
+
+    private function completeSessionTaskOccurrence(
+        array $occurrence,
+        string $owner,
+        string $completedAt,
+    ): array {
+        $statement = $this->database->pdo->prepare(
+            "UPDATE occurrences SET status = 'completed', completed_at = :completed_at
+             WHERE id = :id AND owner = :owner",
+        );
+        $statement->execute([
+            'completed_at' => $completedAt,
+            'id' => $occurrence['id'],
+            'owner' => $owner,
+        ]);
+        return $this->ownedRecord('occurrences', (string) $occurrence['id'], $owner);
+    }
+
+    private function recordSessionTaskEntry(
+        array $task,
+        array $occurrence,
+        string $taskDate,
+        string $sourceType,
+        string $sourceSession,
+        int $elapsedSeconds,
+        string $owner,
+    ): ?array {
+        if ($sourceSession === '') {
+            return null;
+        }
+        $statement = $this->database->pdo->prepare(
+            "INSERT OR IGNORE INTO entries (
+                id, owner, task, occurrence, program_step, entry_date, created_at,
+                value, kind, unit, note, source_type, source_session
+             ) VALUES (
+                :id, :owner, :task, :occurrence, '', :entry_date, :created_at,
+                :value, 'duration', 'seconds', '', :source_type, :source_session
+             )",
+        );
+        $statement->execute([
+            'id' => $this->newId(),
+            'owner' => $owner,
+            'task' => $task['id'],
+            'occurrence' => $occurrence['id'],
+            'entry_date' => $taskDate,
+            'created_at' => $this->now(),
+            'value' => $elapsedSeconds,
+            'source_type' => $sourceType,
+            'source_session' => $sourceSession,
+        ]);
+        $lookup = $this->database->pdo->prepare(
+            'SELECT * FROM entries
+             WHERE owner = :owner AND task = :task AND program_step = \'\'
+               AND source_type = :source_type AND source_session = :source_session
+             LIMIT 1',
+        );
+        $lookup->execute([
+            'owner' => $owner,
+            'task' => $task['id'],
+            'source_type' => $sourceType,
+            'source_session' => $sourceSession,
+        ]);
+        $entry = $lookup->fetch();
+        return is_array($entry) ? $entry : null;
+    }
+
+    private function sessionTaskDurationTotal(string $taskId, string $taskDate, string $owner): int
+    {
+        $statement = $this->database->pdo->prepare(
+            "SELECT COALESCE(SUM(value), 0) FROM entries
+             WHERE task = :task AND program_step = '' AND entry_date = :entry_date
+               AND owner = :owner AND source_session != ''",
+        );
+        $statement->execute([
+            'task' => $taskId,
+            'entry_date' => $taskDate,
+            'owner' => $owner,
+        ]);
+        return (int) $statement->fetchColumn();
+    }
+
     private function completeAttributedIntervalTask(
         array $session,
         string $owner,
@@ -4661,7 +4968,7 @@ final class Api
         $taskId = (string) ($session['task'] ?? '');
         $programStepId = (string) ($session['program_step'] ?? '');
         $taskDate = (string) ($session['task_date'] ?? '');
-        if ($taskId === '' || $taskDate === '') {
+        if ($taskId === '' || $programStepId === '' || $taskDate === '') {
             return null;
         }
 
@@ -5391,7 +5698,22 @@ final class Api
             }
             $intervalTemplate = (string) ($record['interval_template'] ?? '');
             $flashcardReviewSet = (string) ($record['flashcard_review_set'] ?? '');
+            $sessionCountMode = (string) ($record['session_count_mode'] ?? 'task');
+            $sessionGoalType = (string) ($record['session_goal_type'] ?? 'complete');
+            $sessionTargetSeconds = (int) ($record['session_target_seconds'] ?? 0);
             $trackingTrackers = $record['tracking_trackers'] ?? [];
+            $isSessionTask = in_array(($record['type'] ?? ''), ['interval', 'flashcards'], true);
+            if ($isSessionTask && $sessionGoalType === 'duration' && $sessionTargetSeconds <= 0) {
+                throw new ApiException(422, 'Choose a session duration greater than zero.');
+            }
+            if (
+                !$isSessionTask
+                && ($sessionCountMode !== 'task'
+                    || $sessionGoalType !== 'complete'
+                    || $sessionTargetSeconds !== 0)
+            ) {
+                throw new ApiException(422, 'Session objectives are only available for Interval and Review set tasks.');
+            }
             if (($record['type'] ?? '') === 'interval') {
                 if (!$this->relationExists('interval_templates', $intervalTemplate, $owner)) {
                     throw new ApiException(422, 'Select a valid interval for this task.');

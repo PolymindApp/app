@@ -46,6 +46,9 @@ function mapTask(record: Record<string, any>): Task {
     sortOrder: record.sort_order || 0,
     intervalTemplate: record.interval_template || undefined,
     flashcardReviewSet: record.flashcard_review_set || undefined,
+    sessionCountMode: record.session_count_mode === 'linked' ? 'linked' : 'task',
+    sessionGoalType: record.session_goal_type === 'duration' ? 'duration' : 'complete',
+    sessionTargetSeconds: Number(record.session_target_seconds || 0),
     trackingTrackers: asStringArray(record.tracking_trackers),
     reminderEnabled: record.reminder_enabled === true,
     reminderTimes: asStringArray(record.reminder_times),
@@ -98,6 +101,8 @@ function mapEntry(record: Record<string, any>): Entry {
     kind: record.kind,
     unit: record.unit || '',
     note: record.note || undefined,
+    sourceType: record.source_type || undefined,
+    sourceSession: record.source_session || undefined,
   }
 }
 
@@ -166,7 +171,14 @@ export const useTaskStore = defineStore('tasks', () => {
       : !step && task.type === 'step_counter'
         ? stepCounts.value[dateKey] || 0
         : entriesFor(task, date, step).reduce((sum, entry) => sum + entry.value, 0)
-    const target = trackingTrackerIds.length || (!step && task.type === 'journal' ? 1 : step?.targetValue || task.targetValue || 1)
+    const isSessionDuration = !step
+      && ['interval', 'flashcards'].includes(task.type)
+      && task.sessionGoalType === 'duration'
+    const target = trackingTrackerIds.length || (!step && task.type === 'journal'
+      ? 1
+      : isSessionDuration
+        ? task.sessionTargetSeconds || 1
+        : step?.targetValue || task.targetValue || 1)
     const operator = step?.targetOperator || task.targetOperator || 'gte'
     const targetReached = task.type === 'tracking' && !step
       ? trackingTrackerIds.length > 0 && value === target
@@ -175,7 +187,7 @@ export const useTaskStore = defineStore('tasks', () => {
       : meetsTarget(value, target, operator)
     const occurrenceComplete = occurrence?.status === 'completed'
     const isOccurrenceDriven = (step && ['check', 'interval', 'flashcards'].includes(step.completionType))
-      || (!step && ['check', 'interval', 'flashcards'].includes(task.type))
+      || (!step && ['check', 'interval', 'flashcards'].includes(task.type) && !isSessionDuration)
     const isDailyTotal = !step && task.type === 'daily_total'
     const sealed = isDailyTotal && Boolean(occurrence?.sealed)
     const complete = isOccurrenceDriven
@@ -421,6 +433,77 @@ export const useTaskStore = defineStore('tasks', () => {
     return occurrenceFor(progress.task, parseISO(dateKey), progress.programStep)
   }
 
+  async function applyLocalSessionProgress(input: {
+    id: string
+    sourceType: 'interval' | 'flashcards'
+    sourceId?: string
+    taskId?: string
+    programStepId?: string
+    taskDate?: string
+    startedAt: string
+    status: 'completed' | 'ended'
+    elapsedSeconds: number
+    completedAt: string
+  }) {
+    if (!tasks.value.length) await load()
+    const taskDate = input.taskDate || toDateKey(new Date(input.startedAt))
+    if (input.programStepId && input.taskId && input.status === 'completed') {
+      await completeAttributedTask(input.taskId, taskDate, input.programStepId)
+    }
+    if (!input.sourceId) return
+
+    const date = parseISO(taskDate)
+    const candidates = tasks.value.filter(task => (
+      task.active
+      && task.type === input.sourceType
+      && (input.sourceType === 'interval'
+        ? task.intervalTemplate === input.sourceId
+        : task.flashcardReviewSet === input.sourceId)
+      && (task.id === input.taskId || task.sessionCountMode === 'linked')
+      && isTaskScheduled(task, date)
+    ))
+    for (const task of candidates) {
+      if (task.sessionGoalType !== 'duration') {
+        if (input.status === 'completed') {
+          await completeAttributedTask(task.id, taskDate)
+        }
+        continue
+      }
+      if (input.elapsedSeconds <= 0) continue
+      const existingEntry = entries.value.find(entry => (
+        entry.task === task.id
+        && entry.sourceType === input.sourceType
+        && entry.sourceSession === input.id
+      ))
+      if (existingEntry) continue
+
+      const occurrence = await ensureOccurrence(task, date)
+      const record = await api.collection('entries').create({
+        owner: api.authStore.record!.id,
+        task: task.id,
+        occurrence: occurrence.id,
+        program_step: '',
+        entry_date: taskDate,
+        value: Math.max(0, Math.round(input.elapsedSeconds)),
+        kind: 'duration',
+        unit: 'seconds',
+        note: '',
+        source_type: input.sourceType,
+        source_session: input.id,
+      })
+      upsertEntryRecord(record)
+      const updated = makeProgress(task, date)
+      if (updated.complete && occurrence.status !== 'completed') {
+        const updatedOccurrence = await api.collection('occurrences').update(occurrence.id, {
+          status: 'completed',
+          completed_at: input.completedAt,
+        })
+        Object.assign(occurrence, mapOccurrence(updatedOccurrence))
+      }
+    }
+    await syncTaskReminders()
+  }
+
   async function setDailyTotalSealed(progress: TaskProgress) {
     if (progress.task.type !== 'daily_total' || progress.programStep) return
     const progressDate = parseISO(progress.scheduledDate)
@@ -535,6 +618,16 @@ export const useTaskStore = defineStore('tasks', () => {
       sort_order: sortOrder,
       interval_template: draft.type === 'interval' ? draft.intervalTemplate || '' : '',
       flashcard_review_set: draft.type === 'flashcards' ? draft.flashcardReviewSet || '' : '',
+      session_count_mode: ['interval', 'flashcards'].includes(draft.type)
+        ? draft.sessionCountMode || 'task'
+        : 'task',
+      session_goal_type: ['interval', 'flashcards'].includes(draft.type)
+        ? draft.sessionGoalType || 'complete'
+        : 'complete',
+      session_target_seconds: ['interval', 'flashcards'].includes(draft.type)
+        && draft.sessionGoalType === 'duration'
+          ? draft.sessionTargetSeconds || 0
+          : 0,
       tracking_trackers: draft.type === 'tracking' ? [...new Set(draft.trackingTrackers ?? [])] : [],
       reminder_enabled: draft.reminderEnabled,
       reminder_times: [...new Set(draft.reminderTimes)],
@@ -595,6 +688,15 @@ export const useTaskStore = defineStore('tasks', () => {
     else occurrences.value.push(occurrence)
     void syncTaskReminders()
     return occurrence
+  }
+
+  function upsertEntryRecord(record: Record<string, any>) {
+    const entry = mapEntry(record)
+    const index = entries.value.findIndex(item => item.id === entry.id)
+    if (index >= 0) entries.value.splice(index, 1, entry)
+    else entries.value.unshift(entry)
+    void syncTaskReminders()
+    return entry
   }
 
   function reorderTasksInMemory(orderedIds: string[]) {
@@ -695,6 +797,7 @@ export const useTaskStore = defineStore('tasks', () => {
     entriesFor,
     toggleComplete,
     completeAttributedTask,
+    applyLocalSessionProgress,
     setDailyTotalSealed,
     addEntry,
     loadEntryNoteHistory,
@@ -704,6 +807,7 @@ export const useTaskStore = defineStore('tasks', () => {
     saveTask,
     toggleTaskActive,
     upsertOccurrenceRecord,
+    upsertEntryRecord,
     reorderTasks,
     deleteTask,
   }

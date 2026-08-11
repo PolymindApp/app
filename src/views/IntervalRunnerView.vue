@@ -1149,8 +1149,7 @@ async function endEarly() {
   if (!item) return
   const result = reconciled(item)
   const runtime = { ...result.runtime, stepStartedAt: undefined, updatedAt: new Date().toISOString() }
-  await store.updateSession(item.id, {
-    status: 'ended',
+  await store.endSession(item.id, {
     runtime,
     elapsedSeconds: Math.round(runtime.accumulatedMs / 1000),
     endedAt: new Date().toISOString(),

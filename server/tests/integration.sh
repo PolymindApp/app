@@ -134,7 +134,7 @@ suffix="$(php -r 'echo bin2hex(random_bytes(5));')"
 password="correct-horse-battery"
 
 migration_count="$(sqlite3 "$test_db" 'SELECT COUNT(*) FROM mom_schema_migrations;')"
-[[ "$migration_count" == 32 ]] || {
+[[ "$migration_count" == 33 ]] || {
   echo "The API did not apply the complete database migration sequence." >&2
   exit 1
 }
@@ -1067,6 +1067,68 @@ standalone_occurrence_is_null="$(php -r '
 ' <<<"$standalone_completion_response")"
 [[ "$standalone_occurrence_is_null" == yes ]] || {
   echo "A standalone interval unexpectedly completed a task." >&2
+  exit 1
+}
+
+curl --silent --show-error --fail \
+  -X PATCH -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"session_count_mode":"linked","session_goal_type":"duration","session_target_seconds":1200}' \
+  "$api_url/collections/tasks/records/$interval_task_two_id" >/dev/null
+duration_session_payload="$(php -r '
+  $payload = json_decode($argv[1], true, 512, JSON_THROW_ON_ERROR);
+  $payload["task_date"] = "2026-08-02";
+  $payload["started_at"] = $argv[2];
+  $payload["runtime_state"]["stepStartedAt"] = $argv[2];
+  $payload["runtime_state"]["updatedAt"] = $argv[2];
+  echo json_encode($payload, JSON_THROW_ON_ERROR);
+' "$standalone_session_payload" "2026-08-02T14:00:00Z")"
+duration_session_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "$duration_session_payload" \
+  "$api_url/collections/interval_sessions/records")"
+duration_session_id="$(json_field id <<<"$duration_session_response")"
+curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"runtime_state":{"stepIndex":0,"remainingMs":300,"accumulatedMs":700000,"updatedAt":"2026-08-02T14:11:40Z"},"elapsed_seconds":700,"ended_at":"2026-08-02T14:11:40Z"}' \
+  "$api_url/interval-sessions/$duration_session_id/end" >/dev/null
+
+duration_session_payload="$(php -r '
+  $payload = json_decode($argv[1], true, 512, JSON_THROW_ON_ERROR);
+  $payload["started_at"] = $argv[2];
+  $payload["runtime_state"]["stepStartedAt"] = $argv[2];
+  $payload["runtime_state"]["updatedAt"] = $argv[2];
+  echo json_encode($payload, JSON_THROW_ON_ERROR);
+' "$duration_session_payload" "2026-08-02T15:00:00Z")"
+duration_session_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "$duration_session_payload" \
+  "$api_url/collections/interval_sessions/records")"
+duration_session_id="$(json_field id <<<"$duration_session_response")"
+duration_completion_payload='{"runtime_state":{"stepIndex":1,"remainingMs":0,"accumulatedMs":600000,"updatedAt":"2026-08-02T15:10:00Z"},"elapsed_seconds":600,"ended_at":"2026-08-02T15:10:00Z"}'
+curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "$duration_completion_payload" \
+  "$api_url/interval-sessions/$duration_session_id/complete" >/dev/null
+curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "$duration_completion_payload" \
+  "$api_url/interval-sessions/$duration_session_id/complete" >/dev/null
+
+duration_task_summary="$(sqlite3 "$test_db" \
+  "SELECT (SELECT COALESCE(SUM(value), 0) FROM entries
+             WHERE task = '$interval_task_two_id' AND entry_date = '2026-08-02') || ':' ||
+          (SELECT COUNT(*) FROM entries
+             WHERE task = '$interval_task_two_id' AND entry_date = '2026-08-02') || ':' ||
+          (SELECT status FROM occurrences
+             WHERE task = '$interval_task_two_id' AND scheduled_date = '2026-08-02');")"
+[[ "$duration_task_summary" == "1300:2:completed" ]] || {
+  echo "Standalone interval duration was not accumulated exactly once toward its linked task." >&2
   exit 1
 }
 

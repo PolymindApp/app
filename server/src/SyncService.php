@@ -880,6 +880,21 @@ final class SyncService
             if (($values['reminder_enabled'] ?? false) && $reminderTimes === []) {
                 throw new ApiException(422, 'Add at least one time for an enabled task reminder.');
             }
+            $isSessionTask = in_array(($values['type'] ?? ''), ['interval', 'flashcards'], true);
+            $sessionCountMode = (string) ($values['session_count_mode'] ?? 'task');
+            $sessionGoalType = (string) ($values['session_goal_type'] ?? 'complete');
+            $sessionTargetSeconds = (int) ($values['session_target_seconds'] ?? 0);
+            if ($isSessionTask && $sessionGoalType === 'duration' && $sessionTargetSeconds <= 0) {
+                throw new ApiException(422, 'Choose a session duration greater than zero.');
+            }
+            if (
+                !$isSessionTask
+                && ($sessionCountMode !== 'task'
+                    || $sessionGoalType !== 'complete'
+                    || $sessionTargetSeconds !== 0)
+            ) {
+                throw new ApiException(422, 'Session objectives are only available for Interval and Review set tasks.');
+            }
         }
         $relations = match ($resource) {
             'program_steps' => ['task' => 'tasks'],

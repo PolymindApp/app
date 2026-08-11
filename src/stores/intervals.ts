@@ -349,17 +349,65 @@ export const useIntervalStore = defineStore('intervals', () => {
       elapsedSeconds: changes.elapsedSeconds,
       endedAt: changes.endedAt,
     })
+    return mergeFinishedSession(response)
+  }
+
+  async function endSession(
+    sessionId: string,
+    changes: {
+      runtime: IntervalRuntimeState
+      elapsedSeconds: number
+      endedAt: string
+    },
+  ) {
+    const response = await api.endIntervalSession(sessionId, {
+      runtimeState: changes.runtime,
+      elapsedSeconds: changes.elapsedSeconds,
+      endedAt: changes.endedAt,
+    })
+    return mergeFinishedSession(response)
+  }
+
+  async function mergeFinishedSession(response: {
+    session: Record<string, any>
+    occurrence: Record<string, any> | null
+    occurrences?: Record<string, any>[]
+    entries?: Record<string, any>[]
+    local?: boolean
+  }) {
     const mapped = mapSession(response.session)
-    const index = sessions.value.findIndex((session) => session.id === sessionId)
+    const index = sessions.value.findIndex((session) => session.id === mapped.id)
     if (index >= 0) sessions.value.splice(index, 1, mapped)
     else sessions.value.unshift(mapped)
-    if (response.occurrence) useTaskStore().upsertOccurrenceRecord(response.occurrence)
-    else if (mapped.status === 'completed' && mapped.task && mapped.taskDate) {
-      await useTaskStore().completeAttributedTask(
-        mapped.task,
-        mapped.taskDate,
-        mapped.programStep || '',
-      )
+    const taskStore = useTaskStore()
+    const progressOccurrences = response.occurrences || []
+    progressOccurrences.forEach(record => taskStore.upsertOccurrenceRecord(record))
+    if (response.occurrence && !progressOccurrences.some(record => record.id === response.occurrence?.id)) {
+      taskStore.upsertOccurrenceRecord(response.occurrence)
+    }
+    const progressEntries = response.entries || []
+    progressEntries.forEach(record => taskStore.upsertEntryRecord(record))
+    if (response.local) {
+      await taskStore.applyLocalSessionProgress({
+        id: mapped.id,
+        sourceType: 'interval',
+        sourceId: mapped.template,
+        taskId: mapped.task,
+        programStepId: mapped.programStep,
+        taskDate: mapped.taskDate,
+        startedAt: mapped.startedAt,
+        status: mapped.status === 'completed' ? 'completed' : 'ended',
+        elapsedSeconds: mapped.elapsedSeconds,
+        completedAt: mapped.endedAt || new Date().toISOString(),
+      })
+    } else if (
+      !response.occurrence
+      && !progressOccurrences.length
+      && mapped.status === 'completed'
+      && mapped.task
+      && mapped.taskDate
+    ) {
+      await taskStore.completeAttributedTask(mapped.task, mapped.taskDate, mapped.programStep || '')
     }
     localStorage.removeItem(RECOVERY_KEY)
     return mapped
@@ -427,6 +475,7 @@ export const useIntervalStore = defineStore('intervals', () => {
     updateSession,
     updateSessionFlashcardReview,
     completeSession,
+    endSession,
     reconcileActiveSession,
     mirrorRuntime,
     loadQuickIntervalSettings,

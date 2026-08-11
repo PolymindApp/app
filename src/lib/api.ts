@@ -60,11 +60,16 @@ interface UserSettingsResponse {
 interface CompleteIntervalSessionResponse {
   session: RecordModel
   occurrence: RecordModel | null
+  occurrences?: RecordModel[]
+  entries?: RecordModel[]
+  local?: boolean
 }
 
 interface FlashcardReviewActionResponse {
   session: RecordModel
   occurrence: RecordModel | null
+  occurrences?: RecordModel[]
+  entries?: RecordModel[]
 }
 
 interface FlashcardImportResponse {
@@ -681,10 +686,42 @@ class ApiClient {
         elapsed_seconds: Math.max(0, Math.round(input.elapsedSeconds)),
         ended_at: input.endedAt,
       })
-      return { session, occurrence: null }
+      return { session, occurrence: null, occurrences: [], entries: [], local: true }
     }
     return request<CompleteIntervalSessionResponse>(
       `/interval-sessions/${encodeURIComponent(sessionId)}/complete`,
+      {
+        method: 'POST',
+        body: {
+          runtime_state: input.runtimeState,
+          elapsed_seconds: input.elapsedSeconds,
+          ended_at: input.endedAt,
+        },
+      },
+      this.authStore,
+    )
+  }
+
+  async endIntervalSession(
+    sessionId: string,
+    input: {
+      runtimeState: unknown
+      elapsedSeconds: number
+      endedAt: string
+    },
+  ) {
+    const accountId = this.authStore.record?.id || ''
+    if (accountId && await hasLocalBootstrap(accountId)) {
+      const session = await putLocalPatch(accountId, 'interval_sessions', sessionId, {
+        status: 'ended',
+        runtime_state: input.runtimeState,
+        elapsed_seconds: Math.max(0, Math.round(input.elapsedSeconds)),
+        ended_at: input.endedAt,
+      })
+      return { session, occurrence: null, occurrences: [], entries: [], local: true }
+    }
+    return request<CompleteIntervalSessionResponse>(
+      `/interval-sessions/${encodeURIComponent(sessionId)}/end`,
       {
         method: 'POST',
         body: {

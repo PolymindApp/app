@@ -690,6 +690,43 @@ describe('TaskCard amount actions', () => {
     expect(otherTask.get('.task-card-header-main').attributes('aria-expanded')).toBe('true')
   })
 
+  it('shows accumulated time for a session duration objective', () => {
+    const intervalProgress: TaskProgress = {
+      ...progress,
+      task: {
+        ...progress.task,
+        id: 'conditioning-time',
+        name: 'Conditioning time',
+        type: 'interval',
+        intervalTemplate: 'interval-1',
+        sessionGoalType: 'duration',
+        sessionTargetSeconds: 20 * 60,
+      },
+      value: 12 * 60,
+      percent: 60,
+    }
+    const wrapper = mount(TaskCard, {
+      props: {
+        progress: intervalProgress,
+        interval: { name: 'Conditioning', duration: '10m' },
+        canStartInterval: true,
+      },
+      global: {
+        stubs: {
+          VBtn: VBtnStub,
+          VCard: { template: '<div><slot /></div>' },
+          VExpandTransition: { template: '<div><slot /></div>' },
+          ExpandTransition: { template: '<div><slot /></div>' },
+          VIcon: true,
+          VProgressLinear: true,
+        },
+      },
+    })
+
+    expect(wrapper.get('.metric-row').text()).toContain('12m / 20m')
+    expect(wrapper.text()).toContain('Start interval')
+  })
+
   it('automatically collapses when the task becomes complete', async () => {
     const wrapper = mount(TaskCard, {
       props: { progress },

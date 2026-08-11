@@ -140,6 +140,12 @@ describe('flashcard store', () => {
         status: 'completed', sealed: false, completed_at: '2026-08-05T10:00:07Z',
         snapshot_name: 'Review cards', snapshot_target: 1, snapshot_unit: '',
       },
+      entries: [{
+        id: 'entry-1', task: 'task-1', occurrence: 'occurrence-1', program_step: '',
+        entry_date: '2026-08-05', created_at: '2026-08-05T10:00:07Z', value: 7,
+        kind: 'duration', unit: 'seconds', note: '', source_type: 'flashcards',
+        source_session: 'session-1',
+      }],
     })
 
     const completed = await store.act('session-1', 'success', 7)
@@ -150,6 +156,14 @@ describe('flashcard store', () => {
     expect(store.cards[0].lastReviewedAt).toBeTruthy()
     expect(useTaskStore().occurrences).toEqual([
       expect.objectContaining({ id: 'occurrence-1', status: 'completed' }),
+    ])
+    expect(useTaskStore().entries).toEqual([
+      expect.objectContaining({
+        id: 'entry-1',
+        value: 7,
+        sourceType: 'flashcards',
+        sourceSession: 'session-1',
+      }),
     ])
   })
 
