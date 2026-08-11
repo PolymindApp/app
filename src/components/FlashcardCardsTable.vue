@@ -35,6 +35,7 @@ const usesInfiniteScroll = computed(() =>
 const PAGE_SIZE = 10
 const cardPage = ref(1)
 const visibleCardCount = ref(PAGE_SIZE)
+const horizontalScrollLeft = ref(0)
 const infiniteScrollOptions = { rootMargin: '0px 0px 192px 0px' }
 
 const selectedCardIds = computed({
@@ -96,6 +97,10 @@ function loadMoreCards(intersecting: boolean) {
   visibleCardCount.value = Math.min(props.cards.length, visibleCardCount.value + PAGE_SIZE)
 }
 
+function syncHeaderScroll(event: Event) {
+  horizontalScrollLeft.value = Math.max(0, (event.currentTarget as HTMLElement).scrollLeft)
+}
+
 function cardTagNames(card: Flashcard) {
   return card.tags.length
     ? card.tags.map(tag => tagNames.value.get(tag) || 'Removed tag').join(', ')
@@ -106,26 +111,49 @@ function cardTagNames(card: Flashcard) {
 <template>
   <div class="flashcard-cards-table">
     <div class="card-library" :class="{ 'surface-card': surface }">
+      <div class="card-library-header" aria-label="Flashcard table columns">
+        <div
+          class="card-library-header__track"
+          :class="{ 'card-library-header__track--without-selection': !selectable }"
+          :style="{ transform: `translateX(-${horizontalScrollLeft}px)` }"
+        >
+          <div v-if="selectable" class="card-library-header__cell card-library-header__select">
+            <v-checkbox-btn
+              :model-value="allCardsSelected"
+              :indeterminate="someCardsSelected"
+              color="secondary"
+              density="compact"
+              hide-details="auto"
+              :aria-label="`Select all ${cards.length} cards`"
+              @update:model-value="toggleAllSelection(Boolean($event))"
+            />
+          </div>
+          <div class="card-library-header__cell" aria-hidden="true">
+            <slot name="image-column-heading">Image</slot>
+          </div>
+          <div class="card-library-header__cell" aria-hidden="true">Faces</div>
+          <div class="card-library-header__cell" aria-hidden="true">
+            <slot name="last-column-heading">Tags</slot>
+          </div>
+        </div>
+      </div>
       <div
         class="card-library-scroll"
         role="region"
         aria-label="Flashcard table"
         tabindex="0"
+        @scroll.passive="syncHeaderScroll"
       >
         <v-table density="compact" class="card-library-table">
-          <thead>
+          <colgroup>
+            <col v-if="selectable" class="card-library-table__select-column">
+            <col class="card-library-table__image-column">
+            <col class="card-library-table__faces-column">
+            <col>
+          </colgroup>
+          <thead class="card-library-table__semantic-heading">
             <tr>
-              <th v-if="selectable" scope="col" class="card-library-table__select">
-                <v-checkbox-btn
-                  :model-value="allCardsSelected"
-                  :indeterminate="someCardsSelected"
-                  color="secondary"
-                  density="compact"
-                  hide-details="auto"
-                  :aria-label="`Select all ${cards.length} cards`"
-                  @update:model-value="toggleAllSelection(Boolean($event))"
-                />
-              </th>
+              <th v-if="selectable" scope="col" aria-label="Selection" />
               <th scope="col" class="card-library-table__image-heading">
                 <slot name="image-column-heading">Image</slot>
               </th>
@@ -233,16 +261,21 @@ function cardTagNames(card: Flashcard) {
 
 <style scoped>
 .card-library { overflow: clip; }
+.card-library-header { position: sticky; z-index: 3; top: calc(3.75rem + max(env(safe-area-inset-top, 0rem), var(--safe-area-inset-top, 0rem))); width: 100%; height: 2.25rem; overflow: hidden; background: rgb(var(--v-theme-surface)); box-shadow: 0 .0625rem 0 rgba(var(--v-theme-on-surface), .1); }
+.card-library-header__track { display: grid; width: max(42rem, 100%); height: 100%; grid-template-columns: 3rem 3rem 54% minmax(0, 1fr); will-change: transform; }
+.card-library-header__track--without-selection { grid-template-columns: 3rem 54% minmax(0, 1fr); }
+.card-library-header__cell { display: flex; min-width: 0; height: 2.25rem; padding: 0 .75rem; align-items: center; color: rgba(var(--v-theme-on-surface), .52); font-size: .64rem; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+.card-library-header__select { justify-content: center; padding-right: .25rem; padding-left: .25rem; }
+.card-library-header__select :deep(.v-selection-control) { justify-content: center; }
 .card-library-scroll { max-width: 100%; overflow-x: auto; overscroll-behavior-inline: contain; }
 .card-library-scroll:focus-visible { outline: .125rem solid rgba(var(--v-theme-secondary), .72); outline-offset: -.125rem; }
 .card-library-table { min-width: 42rem; max-width: none; background: transparent; }
 .card-library-table :deep(.v-table__wrapper) { overflow: visible; }
 .card-library-table :deep(table) { width: 100%; table-layout: fixed; }
-.card-library-table th { position: sticky; z-index: 3; top: calc(3.75rem + max(env(safe-area-inset-top, 0rem), var(--safe-area-inset-top, 0rem))); height: 2.25rem !important; padding: 0 .75rem !important; background: rgb(var(--v-theme-surface)); box-shadow: 0 .0625rem 0 rgba(var(--v-theme-on-surface), .1); color: rgba(var(--v-theme-on-surface), .52); font-size: .64rem !important; font-weight: 900 !important; letter-spacing: .08em; text-transform: uppercase; }
-.card-library-table th.card-library-table__select { width: 3rem; }
-.card-library-table th.card-library-table__image-heading { width: 3rem; }
-.card-library-table th.card-library-table__faces-heading { width: 54%; }
-.card-library-table th.card-library-table__tags-heading { width: auto; }
+.card-library-table__semantic-heading { position: absolute; width: .0625rem; height: .0625rem; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
+.card-library-table__select-column { width: 3rem; }
+.card-library-table__image-column { width: 3rem; }
+.card-library-table__faces-column { width: 54%; }
 .card-library-table th.card-library-table__select,
 .card-library-table td.card-library-table__select { padding-right: .25rem !important; padding-left: .25rem !important; text-align: center; }
 .card-library-table th.card-library-table__image-heading,
@@ -268,11 +301,14 @@ function cardTagNames(card: Flashcard) {
 .flashcard-table__tags { color: rgba(var(--v-theme-on-surface), .56); font-size: .7rem; }
 
 @media (max-width: 31.25rem) {
+  .card-library-header__cell { padding-right: .5rem; padding-left: .5rem; }
+  .card-library-header__select { padding-right: .125rem; padding-left: .125rem; }
   .card-library-table th,
   .card-library-table td { padding-right: .5rem !important; padding-left: .5rem !important; }
   .card-library-table th.card-library-table__select,
   .card-library-table td.card-library-table__select { padding-right: .125rem !important; padding-left: .125rem !important; }
-  .card-library-table th.card-library-table__image-heading { width: 3rem; }
-  .card-library-table th.card-library-table__faces-heading { width: 52%; }
+  .card-library-header__track { grid-template-columns: 3rem 3rem 52% minmax(0, 1fr); }
+  .card-library-header__track--without-selection { grid-template-columns: 3rem 52% minmax(0, 1fr); }
+  .card-library-table__faces-column { width: 52%; }
 }
 </style>

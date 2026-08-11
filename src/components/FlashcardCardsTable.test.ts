@@ -138,12 +138,27 @@ describe('FlashcardCardsTable', () => {
     expect(scrollRegion.attributes('role')).toBe('region')
     expect(scrollRegion.attributes('aria-label')).toBe('Flashcard table')
     expect(scrollRegion.attributes('tabindex')).toBe('0')
+    expect(scrollRegion.find('.card-library-header').exists()).toBe(false)
+    expect(wrapper.get('.card-library-header').element.nextElementSibling)
+      .toBe(scrollRegion.element)
     expect(scrollRegion.findAll('thead th').map(heading => heading.text())).toEqual([
       '',
       'Image',
       'Faces',
       'Tags',
     ])
+  })
+
+  it('keeps the sticky header aligned while the table scrolls horizontally', async () => {
+    const wrapper = mountTable([card(1)])
+    const scrollRegion = wrapper.get('.card-library-scroll')
+    const headerTrack = wrapper.get('.card-library-header__track')
+
+    expect(headerTrack.attributes('style')).toContain('translateX(-0px)')
+    scrollRegion.element.scrollLeft = 144
+    await scrollRegion.trigger('scroll')
+
+    expect(headerTrack.attributes('style')).toContain('translateX(-144px)')
   })
 
   it('allows the final column to represent Review set inclusion instead of tags', () => {
