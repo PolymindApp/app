@@ -389,6 +389,9 @@ async function deleteSelectedCards() {
       :surface="tableSurface"
       @open-card="emit('open-card', $event)"
     >
+      <template v-if="$slots['image-column-heading']" #image-column-heading>
+        <slot name="image-column-heading" />
+      </template>
       <template v-if="$slots['last-column-heading']" #last-column-heading>
         <slot name="last-column-heading" />
       </template>

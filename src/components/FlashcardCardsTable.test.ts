@@ -162,6 +162,17 @@ describe('FlashcardCardsTable', () => {
     expect(wrapper.text()).not.toContain('Vocabulary')
   })
 
+  it('supports visually hidden Review set column headings', () => {
+    const wrapper = mountTable([card(1)], {
+      'image-column-heading': () => h('span', { class: 'd-sr-only' }, 'Image'),
+      'last-column-heading': () => h('span', { class: 'd-sr-only' }, 'Included?'),
+    })
+
+    const headings = wrapper.findAll('thead th')
+    expect(headings[1]?.get('.d-sr-only').text()).toBe('Image')
+    expect(headings.at(-1)?.get('.d-sr-only').text()).toBe('Included?')
+  })
+
   it('toggles selection from the selection cell without opening the card', async () => {
     const cards = [card(1)]
     const wrapper = mountTable(cards)

@@ -126,7 +126,9 @@ function cardTagNames(card: Flashcard) {
                   @update:model-value="toggleAllSelection(Boolean($event))"
                 />
               </th>
-              <th scope="col" class="card-library-table__image-heading">Image</th>
+              <th scope="col" class="card-library-table__image-heading">
+                <slot name="image-column-heading">Image</slot>
+              </th>
               <th scope="col" class="card-library-table__faces-heading">Faces</th>
               <th scope="col" class="card-library-table__tags-heading">
                 <slot name="last-column-heading">Tags</slot>
