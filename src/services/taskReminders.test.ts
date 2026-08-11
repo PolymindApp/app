@@ -100,12 +100,13 @@ beforeEach(() => {
 })
 
 describe('task reminders', () => {
-  it('replaces task and legacy tracker notifications with every active task time', async () => {
+  it('replaces repeating reminders with dated notifications for every active task time', async () => {
+    const now = new Date(2026, 7, 10, 8)
     await reconcileTaskReminders([
       task(),
       task({ id: 'paused', active: false }),
       task({ id: 'disabled', reminderEnabled: false }),
-    ])
+    ], { now, lookaheadDays: 1 })
 
     expect(mocks.cancel).toHaveBeenCalledWith({ notifications: [{ id: 1 }, { id: 2 }] })
     expect(mocks.createChannel).toHaveBeenCalledWith(expect.objectContaining({ id: 'task-reminders' }))
@@ -114,13 +115,30 @@ describe('task reminders', () => {
     expect(notifications).toEqual(expect.arrayContaining([
       expect.objectContaining({
         body: 'Evening review',
-        schedule: { on: { hour: 9, minute: 15 }, repeats: true, allowWhileIdle: true },
+        schedule: { at: new Date(2026, 7, 10, 9, 15), allowWhileIdle: true },
+        extra: expect.objectContaining({ scheduledDate: '2026-08-10' }),
       }),
       expect.objectContaining({
-        schedule: { on: { hour: 20, minute: 30 }, repeats: true, allowWhileIdle: true },
+        schedule: { at: new Date(2026, 7, 10, 20, 30), allowWhileIdle: true },
       }),
     ]))
     expect(new Set(notifications.map((notification: { id: number }) => notification.id)).size).toBe(2)
+  })
+
+  it('does not leave a notification programmed for a completed task occurrence', async () => {
+    const now = new Date(2026, 7, 10, 8)
+
+    await reconcileTaskReminders([task()], {
+      now,
+      lookaheadDays: 2,
+      isTaskIncomplete: (_task, date) => date.getDate() !== 10,
+    })
+
+    const notifications = mocks.schedule.mock.calls[0]?.[0].notifications
+    expect(notifications).toHaveLength(2)
+    expect(notifications.every((notification: any) => (
+      notification.extra.scheduledDate === '2026-08-11'
+    ))).toBe(true)
   })
 
   it('cancels stale notifications without scheduling while permission is denied', async () => {
@@ -199,7 +217,11 @@ describe('task reminders', () => {
   })
 
   it('creates stable IDs per task and time', () => {
-    expect(taskReminderNotificationId('task-1', '09:15')).toBe(taskReminderNotificationId('task-1', '09:15'))
-    expect(taskReminderNotificationId('task-1', '09:15')).not.toBe(taskReminderNotificationId('task-1', '20:30'))
+    expect(taskReminderNotificationId('task-1', '09:15', '2026-08-10')).toBe(
+      taskReminderNotificationId('task-1', '09:15', '2026-08-10'),
+    )
+    expect(taskReminderNotificationId('task-1', '09:15', '2026-08-10')).not.toBe(
+      taskReminderNotificationId('task-1', '09:15', '2026-08-11'),
+    )
   })
 })

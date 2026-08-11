@@ -1,11 +1,15 @@
 import { Capacitor, registerPlugin } from '@capacitor/core'
 import { LocalNotifications } from '@capacitor/local-notifications'
+import { addDays, startOfDay } from 'date-fns'
 import type { Router } from 'vue-router'
+import { isTaskScheduled, toDateKey } from '@/services/schedule'
 import type { Task } from '@/types/domain'
 
 const CHANNEL_ID = 'task-reminders'
 const TASK_EXTRA_KIND = 'mom-task-reminder'
 const LEGACY_TRACKING_EXTRA_KIND = 'mom-tracking-reminder'
+const TASK_REMINDER_LOOKAHEAD_DAYS = 30
+const MAX_SCHEDULED_TASK_REMINDERS = 400
 
 interface NativeTaskReminderStatus {
   notificationsEnabled: boolean
@@ -28,6 +32,12 @@ export interface TaskReminderCapabilityIssue {
   action: string
 }
 
+export interface TaskReminderReconcileOptions {
+  now?: Date
+  lookaheadDays?: number
+  isTaskIncomplete?: (task: Task, date: Date) => boolean
+}
+
 const NativeTaskReminderSettings = registerPlugin<NativeTaskReminderSettingsPlugin>(
   'TaskReminderSettings',
 )
@@ -35,7 +45,7 @@ const NativeTaskReminderSettings = registerPlugin<NativeTaskReminderSettingsPlug
 const CHANNEL = {
   id: CHANNEL_ID,
   name: 'Task reminders',
-  description: 'Daily reminders for active tasks.',
+  description: 'Reminders for incomplete scheduled tasks.',
   importance: 3 as const,
   visibility: 1 as const,
   vibration: true,
@@ -119,7 +129,10 @@ export async function openTaskReminderCapabilitySettings(capability: TaskReminde
   }
 }
 
-export async function reconcileTaskReminders(tasks: Task[]) {
+export async function reconcileTaskReminders(
+  tasks: Task[],
+  options: TaskReminderReconcileOptions = {},
+) {
   if (!taskRemindersAvailable()) return
   const pending = await LocalNotifications.getPending()
   const replaceable = pending.notifications.filter(notification => (
@@ -130,35 +143,52 @@ export async function reconcileTaskReminders(tasks: Task[]) {
     await LocalNotifications.cancel({ notifications: replaceable.map(({ id }) => ({ id })) })
   }
 
-  const enabled = tasks.flatMap(task => (
-    task.active && task.reminderEnabled
-      ? [...new Set(task.reminderTimes)].map(time => ({ task, time }))
-      : []
-  ))
-  if (!enabled.length) return
+  const now = options.now ?? new Date()
+  const lookaheadDays = Math.max(1, options.lookaheadDays ?? TASK_REMINDER_LOOKAHEAD_DAYS)
+  const enabledTasks = tasks.filter(task => task.active && task.reminderEnabled)
+  const notifications = enabledTasks
+    .flatMap(task => {
+      const times = [...new Set(task.reminderTimes)]
+      return Array.from({ length: lookaheadDays }, (_, offset) => addDays(startOfDay(now), offset))
+        .filter(date => (
+          isTaskScheduled(task, date)
+          && (options.isTaskIncomplete?.(task, date) ?? true)
+        ))
+        .flatMap(date => times.map(time => {
+          const [hour = 20, minute = 0] = time.split(':').map(Number)
+          const at = new Date(date)
+          at.setHours(hour, minute, 0, 0)
+          return { task, time, at }
+        }))
+    })
+    .filter(({ at }) => at.getTime() > now.getTime())
+    .sort((left, right) => (
+      left.at.getTime() - right.at.getTime()
+      || left.task.sortOrder - right.task.sortOrder
+      || left.time.localeCompare(right.time)
+    ))
+    .slice(0, MAX_SCHEDULED_TASK_REMINDERS)
+    .map(({ task, time, at }) => ({
+      id: taskReminderNotificationId(task.id, time, toDateKey(at)),
+      title: 'Task reminder',
+      body: task.name,
+      channelId: CHANNEL_ID,
+      autoCancel: true,
+      schedule: { at, allowWhileIdle: true },
+      extra: {
+        kind: TASK_EXTRA_KIND,
+        taskId: task.id,
+        scheduledDate: toDateKey(at),
+        route: '/tasks',
+      },
+    }))
+  if (!notifications.length) return
 
   const status = await LocalNotifications.checkPermissions()
   if (status.display !== 'granted') return
 
   await LocalNotifications.createChannel(CHANNEL)
-  await LocalNotifications.schedule({
-    notifications: enabled.map(({ task, time }) => {
-      const [hour = 20, minute = 0] = time.split(':').map(Number)
-      return {
-        id: taskReminderNotificationId(task.id, time),
-        title: 'Task reminder',
-        body: task.name,
-        channelId: CHANNEL_ID,
-        autoCancel: true,
-        schedule: { on: { hour, minute }, repeats: true, allowWhileIdle: true },
-        extra: {
-          kind: TASK_EXTRA_KIND,
-          taskId: task.id,
-          route: '/tasks',
-        },
-      }
-    }),
-  })
+  await LocalNotifications.schedule({ notifications })
 }
 
 export async function installTaskNotificationRouting(router: Router) {
@@ -173,8 +203,8 @@ export async function installTaskNotificationRouting(router: Router) {
   })
 }
 
-export function taskReminderNotificationId(taskId: string, time: string) {
-  const value = `${taskId}:${time}`
+export function taskReminderNotificationId(taskId: string, time: string, date = '') {
+  const value = `${taskId}:${time}:${date}`
   let hash = 5381
   for (let index = 0; index < value.length; index += 1) {
     hash = ((hash * 33) ^ value.charCodeAt(index)) >>> 0

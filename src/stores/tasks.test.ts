@@ -12,6 +12,9 @@ const apiMocks = vi.hoisted(() => ({
 const healthMocks = vi.hoisted(() => ({
   readHealthConnectSteps: vi.fn(),
 }))
+const reminderMocks = vi.hoisted(() => ({
+  reconcileTaskReminders: vi.fn(),
+}))
 
 vi.mock('@/lib/api', () => ({
   api: {
@@ -33,6 +36,10 @@ vi.mock('@/lib/api', () => ({
 
 vi.mock('@/services/healthConnect', () => ({
   readHealthConnectSteps: healthMocks.readHealthConnectSteps,
+}))
+
+vi.mock('@/services/taskReminders', () => ({
+  reconcileTaskReminders: reminderMocks.reconcileTaskReminders,
 }))
 
 import { useTaskStore } from './tasks'
@@ -94,6 +101,22 @@ describe('quantitative task completion', () => {
     apiMocks.getEntries.mockReset()
     apiMocks.updateOccurrence.mockReset()
     healthMocks.readHealthConnectSteps.mockReset()
+    reminderMocks.reconcileTaskReminders.mockReset()
+    reminderMocks.reconcileTaskReminders.mockResolvedValue(undefined)
+  })
+
+  it('reports completed occurrences as ineligible for their programmed reminder', async () => {
+    const store = useTaskStore()
+    store.tasks = [{ ...task, reminderEnabled: true, reminderTimes: ['20:00'] }]
+    store.entries = [entry('completed-entry', 4)]
+
+    await store.syncTaskReminders()
+
+    const options = reminderMocks.reconcileTaskReminders.mock.calls[0]?.[1]
+    expect(options.isTaskIncomplete(store.tasks[0], selectedDate)).toBe(false)
+
+    store.entries = [entry('partial-entry', 2)]
+    expect(options.isTaskIncomplete(store.tasks[0], selectedDate)).toBe(true)
   })
 
   it('does not remain complete when adjustments reduce a four-hour task to zero', () => {

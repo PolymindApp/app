@@ -2,6 +2,7 @@ import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import { api } from '@/lib/api'
 import { useSnackbarStore } from '@/stores/snackbar'
+import { useTaskStore } from '@/stores/tasks'
 import type { JournalEntry, JournalEntryDraft } from '@/types/domain'
 
 export function mapJournalEntry(record: Record<string, any>): JournalEntry {
@@ -60,6 +61,7 @@ export const useJournalStore = defineStore('journal', () => {
       if (request !== rangeRequest) return false
       entries.value = records.map(mapJournalEntry)
       loaded.value = true
+      await useTaskStore().syncTaskReminders()
       return true
     } catch (cause) {
       if (request === rangeRequest) {
@@ -98,12 +100,14 @@ export const useJournalStore = defineStore('journal', () => {
     const index = entries.value.findIndex((item) => item.id === entry.id)
     if (index >= 0) entries.value.splice(index, 1, entry)
     else entries.value.unshift(entry)
+    await useTaskStore().syncTaskReminders()
     return entry
   }
 
   async function deleteEntry(id: string) {
     await api.collection('journal_entries').delete(id)
     entries.value = entries.value.filter((entry) => entry.id !== id)
+    await useTaskStore().syncTaskReminders()
     useSnackbarStore().showDeletion('Reflection')
   }
 

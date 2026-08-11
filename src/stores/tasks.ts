@@ -117,6 +117,7 @@ export const useTaskStore = defineStore('tasks', () => {
   let stepCountRequest = 0
   let progressRangeRequest = 0
   let initialProgressSince = ''
+  let reminderSyncQueue: Promise<void> = Promise.resolve()
   const loadedProgressRanges = new Set<string>()
 
   const activeTasks = computed(() => tasks.value.filter((task) => task.active))
@@ -267,6 +268,20 @@ export const useTaskStore = defineStore('tasks', () => {
 
   const completionRate = computed(() => completionRateForDate(selectedDate.value) || 0)
 
+  function isTaskIncompleteForReminder(task: Task, date: Date) {
+    const progress = progressForDate(date).filter(item => item.task.id === task.id)
+    return progress.length > 0 && progress.some(item => !item.complete)
+  }
+
+  function syncTaskReminders() {
+    reminderSyncQueue = reminderSyncQueue
+      .catch(() => undefined)
+      .then(() => reconcileTaskReminders(tasks.value, {
+        isTaskIncomplete: isTaskIncompleteForReminder,
+      }))
+    return reminderSyncQueue.catch(() => undefined)
+  }
+
   async function load() {
     if (!api.authStore.record) return
     loading.value = true
@@ -285,7 +300,7 @@ export const useTaskStore = defineStore('tasks', () => {
       entries.value = entryRecords.map(mapEntry)
       initialProgressSince = since
       loadedProgressRanges.clear()
-      await reconcileTaskReminders(tasks.value).catch(() => undefined)
+      await syncTaskReminders()
     } catch (cause) {
       error.value = cause instanceof Error ? cause.message : 'Could not load your plan.'
       throw cause
@@ -318,6 +333,7 @@ export const useTaskStore = defineStore('tasks', () => {
       entryRecords.map(mapEntry).forEach((item) => mergedEntries.set(item.id, item))
       entries.value = [...mergedEntries.values()]
       loadedProgressRanges.add(rangeKey)
+      await syncTaskReminders()
       return true
     } catch (cause) {
       if (request === progressRangeRequest) {
@@ -347,12 +363,14 @@ export const useTaskStore = defineStore('tasks', () => {
         ...stepCounts.value,
         [toDateKey(date)]: steps,
       }
+      await syncTaskReminders()
     } catch (cause) {
       if (request !== stepCountRequest) return
       const key = toDateKey(date)
       const nextStepCounts = { ...stepCounts.value }
       delete nextStepCounts[key]
       stepCounts.value = nextStepCounts
+      await syncTaskReminders()
       stepCountError.value = cause instanceof Error
         ? cause.message
         : 'Your Health Connect steps could not be loaded.'
@@ -389,6 +407,7 @@ export const useTaskStore = defineStore('tasks', () => {
       completed_at: complete ? new Date().toISOString() : '',
     })
     Object.assign(occurrence, mapOccurrence(record))
+    await syncTaskReminders()
   }
 
   async function completeAttributedTask(taskId: string, dateKey: string, programStepId = '') {
@@ -413,6 +432,7 @@ export const useTaskStore = defineStore('tasks', () => {
       completed_at: sealed ? new Date().toISOString() : '',
     })
     Object.assign(occurrence, mapOccurrence(record))
+    await syncTaskReminders()
   }
 
   async function addEntry(progress: TaskProgress, amount: number, kind?: Entry['kind'], note = '') {
@@ -447,6 +467,7 @@ export const useTaskStore = defineStore('tasks', () => {
         Object.assign(occurrence, mapOccurrence(updatedOccurrence))
       }
     }
+    await syncTaskReminders()
   }
 
   async function loadEntryNoteHistory(taskId: string) {
@@ -480,6 +501,7 @@ export const useTaskStore = defineStore('tasks', () => {
     if (status === 'carried') {
       await ensureOccurrence(progress.task, addDays(progressDate, 1), progress.programStep)
     }
+    await syncTaskReminders()
   }
 
   async function saveTask(draft: TaskDraft) {
@@ -563,7 +585,7 @@ export const useTaskStore = defineStore('tasks', () => {
   async function toggleTaskActive(task: Task) {
     const record = await api.collection('tasks').update(task.id, { active: !task.active })
     Object.assign(task, mapTask(record))
-    await reconcileTaskReminders(tasks.value).catch(() => undefined)
+    await syncTaskReminders()
   }
 
   function upsertOccurrenceRecord(record: Record<string, any>) {
@@ -571,6 +593,7 @@ export const useTaskStore = defineStore('tasks', () => {
     const index = occurrences.value.findIndex((item) => item.id === occurrence.id)
     if (index >= 0) occurrences.value.splice(index, 1, occurrence)
     else occurrences.value.push(occurrence)
+    void syncTaskReminders()
     return occurrence
   }
 
@@ -612,6 +635,7 @@ export const useTaskStore = defineStore('tasks', () => {
           api.collection('tasks').update(task.id, { sort_order: task.sortOrder }),
         ),
       )
+      await syncTaskReminders()
     } catch (cause) {
       tasks.value = previousTasks
       await Promise.allSettled(
@@ -634,7 +658,7 @@ export const useTaskStore = defineStore('tasks', () => {
     steps.value = steps.value.filter((step) => step.task !== taskId)
     occurrences.value = occurrences.value.filter((occurrence) => occurrence.task !== taskId)
     entries.value = entries.value.filter((entry) => entry.task !== taskId)
-    await reconcileTaskReminders(tasks.value).catch(() => undefined)
+    await syncTaskReminders()
     useSnackbarStore().showDeletion('Routine')
   }
 
@@ -643,6 +667,7 @@ export const useTaskStore = defineStore('tasks', () => {
     const shiftedStart = toDateKey(addDays(parseISO(progress.task.startDate), 1))
     await api.collection('tasks').update(progress.task.id, { start_date: shiftedStart })
     progress.task.startDate = shiftedStart
+    await syncTaskReminders()
   }
 
   return {
@@ -662,6 +687,7 @@ export const useTaskStore = defineStore('tasks', () => {
     progressForDate,
     completionRateForDate,
     reviewProgressForDate,
+    syncTaskReminders,
     load,
     loadProgressRange,
     refreshStepCount,
