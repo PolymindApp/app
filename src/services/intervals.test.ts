@@ -12,6 +12,7 @@ import {
   intervalGlobalRepetitionSettings,
   intervalRunProgress,
   intervalStepCount,
+  intervalStepPlaysFlashcardReview,
   moveIntervalNodeToGroup,
   normalizeQuickIntervalSettings,
   quickIntervalDefinition,
@@ -185,6 +186,21 @@ describe('interval definitions', () => {
 
     expect(validateIntervalDefinition(definition)).toEqual([])
     expect(intervalDuration(definition)).toBe(90)
+  })
+
+  it('defaults Review set playback off for Train and Prepare intervals', () => {
+    const train = createIntervalStep('Cardio', 'train', 90)
+    const prepare = createIntervalStep('Prepare', 'prepare', 20)
+    const work = createIntervalStep('Work', 'work', 30)
+
+    expect(intervalStepPlaysFlashcardReview(train)).toBe(false)
+    expect(intervalStepPlaysFlashcardReview(prepare)).toBe(false)
+    expect(intervalStepPlaysFlashcardReview(work)).toBe(true)
+
+    train.flashcardReviewEnabled = true
+    prepare.flashcardReviewEnabled = true
+    expect(intervalStepPlaysFlashcardReview(train)).toBe(true)
+    expect(intervalStepPlaysFlashcardReview(prepare)).toBe(true)
   })
 
   it('allows confirmation intervals without a duration', () => {

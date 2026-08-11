@@ -65,7 +65,8 @@ export function intervalStepDurationSeconds(step: IntervalStepNode) {
 }
 
 export function intervalStepPlaysFlashcardReview(step: IntervalStepNode) {
-  return step.flashcardReviewEnabled !== false
+  if (typeof step.flashcardReviewEnabled === 'boolean') return step.flashcardReviewEnabled
+  return step.kind !== 'train' && step.kind !== 'prepare'
 }
 
 export function normalizeQuickIntervalSettings(value: unknown): QuickIntervalSettings | undefined {

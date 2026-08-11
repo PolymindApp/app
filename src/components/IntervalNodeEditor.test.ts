@@ -142,7 +142,15 @@ describe('IntervalNodeEditor interval type select', () => {
 
     expect(node.kind).toBe('train')
     expect(node.name).toBe('Train')
+    expect(node.flashcardReviewEnabled).toBe(false)
     expect(wrapper.find('.stub-selection [data-icon="mdi-heart"]').exists()).toBe(true)
+
+    node.flashcardReviewEnabled = true
+    wrapper.findComponent(VSelectStub).vm.$emit('update:modelValue', 'prepare')
+    await wrapper.vm.$nextTick()
+
+    expect(node.kind).toBe('prepare')
+    expect(node.flashcardReviewEnabled).toBe(false)
   })
 
   it('shows the final-round skip option when the parent sequence allows it', async () => {
@@ -214,4 +222,38 @@ describe('IntervalNodeEditor interval type select', () => {
     await wrapper.setProps({ reviewSetSpeechEnabled: false })
     expect(wrapper.text()).not.toContain('Play Review set during this step')
   })
+
+  it.each(['train', 'prepare'] as const)(
+    'shows Review set playback off by default for %s intervals',
+    (kind) => {
+      const node: IntervalStepNode = {
+        id: `step-${kind}`,
+        type: 'step',
+        name: kind,
+        kind,
+        durationSeconds: 30,
+      }
+      const wrapper = mount(IntervalNodeEditor, {
+        props: editorProps(node, { reviewSetSpeechEnabled: true }),
+        global: {
+          directives: { longPressDrag: {}, longPressDrop: {} },
+          stubs: {
+            ExpandTransition: { template: '<div><slot /></div>' },
+            VBtn: true,
+            VCard: { template: '<div><slot /></div>' },
+            VCheckbox: VCheckboxStub,
+            VIcon: VIconStub,
+            VListItem: VListItemStub,
+            VSelect: VSelectStub,
+            VTextField: true,
+            TimerWheelPicker: true,
+          },
+        },
+      })
+
+      const playback = wrapper.findAllComponents(VCheckboxStub)
+        .find(checkbox => checkbox.props('label') === 'Play Review set during this step')
+      expect(playback?.props('modelValue')).toBe(false)
+    },
+  )
 })

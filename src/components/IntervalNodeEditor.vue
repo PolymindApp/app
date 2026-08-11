@@ -9,6 +9,7 @@ import {
   startSelectionFeedback,
 } from '@/services/haptics'
 import type { LongPressDragResult } from '@/directives/longPressDrag'
+import { intervalStepPlaysFlashcardReview } from '@/services/intervals'
 import { INTERVAL_STEP_TYPES, INTERVAL_TYPE_PRESENTATION } from '@/services/intervalTypes'
 import type { IntervalGroupNode, IntervalNode, IntervalStepKind } from '@/types/domain'
 
@@ -72,7 +73,7 @@ const durationSeconds = computed({
 })
 
 const flashcardReviewEnabled = computed({
-  get: () => props.node.type === 'step' && props.node.flashcardReviewEnabled !== false,
+  get: () => props.node.type === 'step' && intervalStepPlaysFlashcardReview(props.node),
   set: (enabled: boolean) => {
     if (props.node.type === 'step') props.node.flashcardReviewEnabled = enabled
   },
@@ -85,6 +86,7 @@ function selectKind(kind: IntervalStepKind | null) {
     option.title.localeCompare(currentName, undefined, { sensitivity: 'accent' }) === 0,
   )
   props.node.kind = kind
+  if (kind === 'train' || kind === 'prepare') props.node.flashcardReviewEnabled = false
   if (!currentName || hasTypeName) {
     props.node.name = INTERVAL_STEP_TYPES.find((option) => option.value === kind)?.title || kind
   }
