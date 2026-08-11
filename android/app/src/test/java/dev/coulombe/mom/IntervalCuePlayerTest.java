@@ -20,7 +20,6 @@ public class IntervalCuePlayerTest {
             "harp",
             "magic",
             "notification",
-            "terror",
             "count",
             "go",
             "complete",

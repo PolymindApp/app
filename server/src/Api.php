@@ -35,7 +35,6 @@ final class Api
         'harp',
         'magic',
         'notification',
-        'terror',
         'go',
         'complete',
         'count',

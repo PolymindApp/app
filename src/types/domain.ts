@@ -145,7 +145,6 @@ export type IntervalCueSound =
   | 'harp'
   | 'magic'
   | 'notification'
-  | 'terror'
   | 'go'
   | 'complete'
   | 'count'

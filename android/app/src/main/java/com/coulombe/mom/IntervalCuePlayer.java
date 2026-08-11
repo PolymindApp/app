@@ -90,7 +90,6 @@ final class IntervalCuePlayer {
         signalResources.put("harp", R.raw.harp);
         signalResources.put("magic", R.raw.magic);
         signalResources.put("notification", R.raw.notification);
-        signalResources.put("terror", R.raw.terror);
     }
 
     static void preload(Context context) {
@@ -135,7 +134,6 @@ final class IntervalCuePlayer {
             case "harp":
             case "magic":
             case "notification":
-            case "terror":
             case "count":
             case "go":
             case "complete":

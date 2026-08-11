@@ -42,7 +42,6 @@ export const INTERVAL_CUE_SOUND_OPTIONS: Array<{
   { title: 'Harp Flourish', value: 'harp' },
   { title: 'Magic Sparkle', value: 'magic' },
   { title: 'Soft Notification', value: 'notification' },
-  { title: 'Terror Sting', value: 'terror' },
   { title: 'Go Signal', value: 'go' },
   { title: 'Completion Signal', value: 'complete' },
   { title: 'Countdown Tick', value: 'count' },

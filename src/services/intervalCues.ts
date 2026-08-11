@@ -27,7 +27,6 @@ const cueUrls = {
   harp: '/sounds/harp.mp3',
   magic: '/sounds/magic.mp3',
   notification: '/sounds/notification.mp3',
-  terror: '/sounds/terror.mp3',
   count: '/sounds/count.mp3',
   go: '/sounds/go.mp3',
   complete: '/sounds/complete.mp3',
