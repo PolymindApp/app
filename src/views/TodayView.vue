@@ -24,7 +24,12 @@ import {
   taskEntryNoteForAmount,
   taskEntryNoteOptions,
 } from '@/services/taskEntryNotes'
-import { TASK_FILTER_ITEMS, tasksWithoutProgress } from '@/services/taskFilters'
+import {
+  TASK_FILTER_ITEMS,
+  readTaskFilterSelection,
+  tasksWithoutProgress,
+  writeTaskFilterSelection,
+} from '@/services/taskFilters'
 import type { TaskFilterId } from '@/services/taskFilters'
 import { taskIdsFromProgressDrag, taskProgressDragKey } from '@/services/taskReordering'
 import { useIntervalStore } from '@/stores/intervals'
@@ -81,8 +86,9 @@ const trackingSheetDate = ref(toDateKey(new Date()))
 const trackingSheetContext = ref('')
 const taskPage = ref<HTMLElement>()
 const valuePulseVersions = ref<Record<string, number>>({})
-const showCompleted = ref(false)
-const showNotScheduled = ref(false)
+const initialTaskFilters = readTaskFilterSelection()
+const showCompleted = ref(initialTaskFilters.includes('completed'))
+const showNotScheduled = ref(initialTaskFilters.includes('not_scheduled'))
 const taskFiltersOpen = ref(false)
 const reorderingTasks = ref(false)
 const recentlyCompletedKeys = ref(new Set<string>())
@@ -158,6 +164,13 @@ const reviewItems = computed(() => store.reviewProgressForDate(selectedDate.valu
 const doneCount = computed(() => selectedProgress.value.filter((item) => item.complete).length)
 const taskFiltersActive = computed(() => showCompleted.value || showNotScheduled.value)
 let appStateListener: Awaited<ReturnType<typeof App.addListener>> | undefined
+
+watch([showCompleted, showNotScheduled], ([completed, notScheduled]) => {
+  const filters: TaskFilterId[] = []
+  if (completed) filters.push('completed')
+  if (notScheduled) filters.push('not_scheduled')
+  writeTaskFilterSelection(filters)
+})
 
 onMounted(async () => {
   try {
