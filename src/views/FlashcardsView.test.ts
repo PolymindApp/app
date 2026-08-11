@@ -6,6 +6,7 @@ import type { FlashcardReviewSet } from '@/types/domain'
 const mocks = vi.hoisted(() => ({
   router: { push: vi.fn() },
   store: {
+    cards: [] as Array<{ id: string }>,
     reviewSets: [] as FlashcardReviewSet[],
     sessions: [],
     tags: [],
@@ -63,7 +64,7 @@ const CardStub = defineComponent({
 
 const ButtonStub = defineComponent({
   inheritAttrs: false,
-  props: { ariaLabel: String, disabled: Boolean },
+  props: { ariaLabel: String, disabled: Boolean, to: [Object, String] },
   emits: ['click'],
   setup(props, { attrs, emit, slots }) {
     return () => h('button', {
@@ -118,6 +119,7 @@ function mountView() {
 
 describe('Flashcards Review set cards', () => {
   beforeEach(() => {
+    mocks.store.cards = [{ id: 'card-1' }, { id: 'card-2' }, { id: 'card-3' }]
     mocks.store.reviewSets = [
       reviewSet('owned-set', 'Vocabulary'),
       reviewSet('shared-set', 'Shared Spanish', {
@@ -129,6 +131,20 @@ describe('Flashcards Review set cards', () => {
     ]
     mocks.store.startReview.mockReset().mockResolvedValue({ id: 'session-1' })
     mocks.router.push.mockReset()
+  })
+
+  it('summarizes the card library and keeps both card actions together', () => {
+    const wrapper = mountView()
+    const summary = wrapper.get('.card-library-summary')
+
+    expect(summary.text()).toContain('Card library')
+    expect(summary.get('.card-library-summary__stat strong').text()).toBe('3')
+    expect(summary.get('.card-library-summary__stat span').text()).toBe('cards')
+
+    const actions = summary.findAllComponents(ButtonStub)
+    expect(actions.map(action => action.text())).toEqual(['Add card', 'Manage cards'])
+    expect(actions[0].props('to')).toEqual({ name: 'flashcard-new' })
+    expect(actions[1].props('to')).toEqual({ name: 'flashcard-cards' })
   })
 
   it.each([

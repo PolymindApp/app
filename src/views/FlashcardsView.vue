@@ -146,7 +146,41 @@ async function openReviewSet(reviewSet: FlashcardReviewSet) {
     </v-alert>
 
     <section>
-      <div class="section-heading mt-0">
+      <v-card
+        class="card-library-summary surface-card pa-5"
+        aria-labelledby="card-library-summary-title"
+      >
+        <div class="card-library-summary__details">
+          <div class="card-library-summary__icon" aria-hidden="true">
+            <v-icon icon="mdi-card-multiple-outline" size="28" />
+          </div>
+          <div>
+            <h2 id="card-library-summary-title">Card library</h2>
+            <p class="card-library-summary__stat">
+              <strong>{{ store.cards.length }}</strong>
+              <span>{{ store.cards.length === 1 ? 'card' : 'cards' }}</span>
+            </p>
+          </div>
+        </div>
+        <div class="card-library-summary__actions">
+          <v-btn
+            color="secondary"
+            prepend-icon="mdi-card-plus-outline"
+            :to="{ name: 'flashcard-new' }"
+          >
+            Add card
+          </v-btn>
+          <v-btn
+            variant="tonal"
+            prepend-icon="mdi-card-multiple-outline"
+            :to="{ name: 'flashcard-cards' }"
+          >
+            Manage cards
+          </v-btn>
+        </div>
+      </v-card>
+
+      <div class="section-heading">
         <h2>Your Review sets</h2>
         <v-btn
           size="small"
@@ -238,17 +272,6 @@ async function openReviewSet(reviewSet: FlashcardReviewSet) {
         <p class="text-body-2 muted mt-2 mb-5">Choose which tags to review and how the cards should move.</p>
         <v-btn color="secondary" :to="{ name: 'flashcard-review-set-new' }">Create Review set</v-btn>
       </v-card>
-      <v-btn
-        block
-        size="large"
-        class="mt-4"
-        variant="outlined"
-        color="secondary"
-        prepend-icon="mdi-card-multiple-outline"
-        :to="{ name: 'flashcard-cards' }"
-      >
-        Manage cards
-      </v-btn>
     </section>
 
     <section v-if="sharedReviewSets.length">
@@ -462,6 +485,14 @@ async function openReviewSet(reviewSet: FlashcardReviewSet) {
 </template>
 
 <style scoped>
+.card-library-summary { display: flex; align-items: center; justify-content: space-between; gap: 1.5rem; }
+.card-library-summary__details { display: flex; min-width: 0; align-items: center; gap: 1rem; }
+.card-library-summary__icon { display: grid; width: 3.25rem; height: 3.25rem; flex: 0 0 auto; place-items: center; border-radius: 1rem; background: rgba(var(--v-theme-secondary), .14); color: rgb(var(--v-theme-secondary)); }
+.card-library-summary h2 { font-size: .82rem; font-weight: 900; }
+.card-library-summary__stat { display: flex; align-items: baseline; gap: .4rem; margin-top: .15rem; }
+.card-library-summary__stat strong { font-family: Impact, "Arial Narrow", sans-serif; font-size: 2rem; letter-spacing: -.03em; line-height: 1; }
+.card-library-summary__stat span { color: rgba(var(--v-theme-on-surface), .56); font-size: .72rem; font-weight: 800; }
+.card-library-summary__actions { display: grid; grid-template-columns: repeat(2, max-content); gap: .5rem; }
 .review-set-list { display: grid; gap: .75rem; }
 .review-set { overflow: hidden; cursor: pointer; }
 .review-set:focus-visible { outline: .125rem solid rgba(var(--v-theme-secondary), .72); outline-offset: .1875rem; }
@@ -491,5 +522,12 @@ async function openReviewSet(reviewSet: FlashcardReviewSet) {
 @media (max-width: 59.9375rem) {
   .flashcards-page--active { padding-bottom: calc(7rem + var(--page-safe-area-bottom)); }
   .active-review { position: fixed; z-index: 20; right: 0; bottom: calc(4.5rem + env(safe-area-inset-bottom)); left: 0; border-radius: 0 !important; box-shadow: 0 -.75rem 1.875rem rgba(0, 0, 0, .28) !important; }
+}
+@media (max-width: 37.5rem) {
+  .card-library-summary { align-items: stretch; flex-direction: column; gap: 1rem; }
+  .card-library-summary__actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 23.5rem) {
+  .card-library-summary__actions { grid-template-columns: 1fr; }
 }
 </style>
