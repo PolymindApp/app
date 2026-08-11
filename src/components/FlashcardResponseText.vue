@@ -7,29 +7,22 @@ const props = withDefaults(defineProps<{
   note?: string
   noteBeforeBack?: boolean
   density?: 'full' | 'compact'
-  reserveNoteSpace?: boolean
 }>(), {
   note: '',
   noteBeforeBack: false,
   density: 'full',
-  reserveNoteSpace: false,
 })
 
 type ResponsePart = {
   kind: 'back' | 'note'
   presentation: 'primary' | 'supporting'
   value: string
-  placeholder?: boolean
 }
 
 const parts = computed<ResponsePart[]>(() => {
   const back = { kind: 'back' as const, value: props.back }
-  if (!props.note && !props.reserveNoteSpace) return [{ ...back, presentation: 'primary' }]
-  const note = {
-    kind: 'note' as const,
-    value: props.note,
-    placeholder: !props.note,
-  }
+  if (!props.note) return [{ ...back, presentation: 'primary' }]
+  const note = { kind: 'note' as const, value: props.note }
   return props.noteBeforeBack
     ? [
         { ...note, presentation: 'primary' },
@@ -51,12 +44,8 @@ const parts = computed<ResponsePart[]>(() => {
       :class="[
         'flashcard-response-text__part',
         `flashcard-response-text__${part.presentation}`,
-        {
-          'flashcard-response-text__placeholder': part.placeholder,
-          'text-secondary': part.presentation === 'primary',
-        },
+        { 'text-secondary': part.presentation === 'primary' },
       ]"
-      :aria-hidden="part.placeholder ? 'true' : undefined"
       :data-response-part="part.kind"
       :data-response-presentation="part.presentation"
       :style="{
@@ -84,14 +73,6 @@ const parts = computed<ResponsePart[]>(() => {
 .flashcard-response-text__part {
   overflow-wrap: anywhere;
   white-space: pre-wrap;
-}
-
-.flashcard-response-text__placeholder {
-  visibility: hidden;
-}
-
-.flashcard-response-text__placeholder::before {
-  content: '\00a0';
 }
 
 .flashcard-response-text__primary {

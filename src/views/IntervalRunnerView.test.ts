@@ -281,7 +281,7 @@ describe('IntervalRunnerView flashcard area', () => {
     wrapper.unmount()
   })
 
-  it('keeps the front and back with its note slot mounted to reserve their full height', async () => {
+  it('reserves response height on the card content without requesting an empty note', async () => {
     const active = intervalSession('running')
     active.runtime.accumulatedMs = 6_000
     mocks.intervalStore.sessions = reactive([active])
@@ -293,7 +293,7 @@ describe('IntervalRunnerView flashcard area', () => {
     expect(wrapper.get('.interval-review-card__faces strong').classes())
       .toContain('interval-review-card__face--hidden')
     expect(response.classes()).not.toContain('interval-review-card__face--hidden')
-    expect(response.props('reserveNoteSpace')).toBe(true)
+    expect(response.props()).not.toHaveProperty('reserveNoteSpace')
 
     wrapper.unmount()
   })
