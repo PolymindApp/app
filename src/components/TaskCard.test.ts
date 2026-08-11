@@ -15,6 +15,11 @@ const VListItemStub = defineComponent({
   template: '<div><slot name="prepend" /><span>{{ title }}</span><small>{{ subtitle }}</small><slot name="append" /></div>',
 })
 
+const VProgressLinearStub = defineComponent({
+  props: { color: String },
+  template: '<div class="stub-progress-linear" />',
+})
+
 const progress: TaskProgress = {
   task: {
     id: 'water',
@@ -725,6 +730,46 @@ describe('TaskCard amount actions', () => {
 
     expect(wrapper.get('.metric-row').text()).toContain('12m / 20m')
     expect(wrapper.text()).toContain('Start interval')
+  })
+
+  it.each([
+    ['quantity', { type: 'daily_total' }],
+    ['tracking', { type: 'tracking', trackingTrackers: [] }],
+    ['interval duration', {
+      type: 'interval',
+      intervalTemplate: 'interval-1',
+      sessionGoalType: 'duration',
+      sessionTargetSeconds: 20 * 60,
+    }],
+    ['Review set duration', {
+      type: 'flashcards',
+      flashcardReviewSet: 'review-set-1',
+      sessionGoalType: 'duration',
+      sessionTargetSeconds: 20 * 60,
+    }],
+  ] as Array<[string, Partial<TaskProgress['task']>]>)('uses the task color for %s progress', (_, taskOverrides) => {
+    const color = '#5CC8FF'
+    const taskProgress: TaskProgress = {
+      ...progress,
+      task: { ...progress.task, ...taskOverrides, color },
+      value: 1,
+      percent: 50,
+    }
+    const wrapper = mount(TaskCard, {
+      props: { progress: taskProgress },
+      global: {
+        stubs: {
+          VBtn: VBtnStub,
+          VCard: { template: '<div><slot /></div>' },
+          VExpandTransition: { template: '<div><slot /></div>' },
+          ExpandTransition: { template: '<div><slot /></div>' },
+          VIcon: true,
+          VProgressLinear: VProgressLinearStub,
+        },
+      },
+    })
+
+    expect(wrapper.getComponent(VProgressLinearStub).props('color')).toBe(color)
   })
 
   it('automatically collapses when the task becomes complete', async () => {

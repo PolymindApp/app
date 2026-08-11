@@ -364,7 +364,7 @@ watch(() => props.valuePulse, async (pulse, previousPulse) => {
             <v-progress-linear
               v-if="isSessionDuration"
               :model-value="progress.percent"
-              :color="stateColor"
+              :color="taskColor"
               bg-color="white"
               :bg-opacity="0.14"
               rounded
@@ -402,7 +402,7 @@ watch(() => props.valuePulse, async (pulse, previousPulse) => {
           <v-progress-linear
             v-if="isSessionDuration"
             :model-value="progress.percent"
-            :color="stateColor"
+            :color="taskColor"
             bg-color="white"
             :bg-opacity="0.14"
             rounded
@@ -429,7 +429,7 @@ watch(() => props.valuePulse, async (pulse, previousPulse) => {
         <template v-else-if="isTracking">
           <v-progress-linear
             :model-value="progress.percent"
-            color="secondary"
+            :color="taskColor"
             bg-color="white"
             :bg-opacity="0.14"
             rounded
@@ -528,7 +528,7 @@ watch(() => props.valuePulse, async (pulse, previousPulse) => {
             </div>
             <v-progress-linear
               :model-value="progress.percent"
-              :color="stateColor"
+              :color="taskColor"
               bg-color="white"
               :bg-opacity="0.14"
               rounded
