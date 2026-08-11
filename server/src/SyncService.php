@@ -515,6 +515,9 @@ final class SyncService
         if ($resource === 'flashcards') {
             $payload = $this->prepareFlashcardImagePayload($payload);
         }
+        if ($resource === 'flashcard_review_events' && ($payload['outcome'] ?? null) === 'eject') {
+            $payload['outcome'] = 'ejected';
+        }
         $existingVersion = $this->versionRow($account, $resource, $recordId);
         if (is_array($existingVersion) && (int) $existingVersion['deleted'] === 1) {
             throw new ApiException(409, 'This record was already deleted.');
@@ -570,6 +573,9 @@ final class SyncService
         $current = $this->ownedRecord($resource, $recordId, $account);
         if ($resource === 'flashcards') {
             $payload = $this->prepareFlashcardImagePayload($payload);
+        }
+        if ($resource === 'flashcard_review_events' && ($payload['outcome'] ?? null) === 'eject') {
+            $payload['outcome'] = 'ejected';
         }
         $values = $this->validatedValues($resource, $config, $payload, false);
         if ($values === []) {

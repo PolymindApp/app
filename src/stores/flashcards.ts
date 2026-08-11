@@ -813,10 +813,12 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       if (action === 'undo_eject') {
         if (ejectedCount <= 0) throw new Error('There is no ejected flashcard to restore.')
         const ejectedEvents = await api.collection('flashcard_review_events').getFullList({
-          filter: `session = "${sessionId}" && outcome = "ejected"`,
+          filter: `session = "${sessionId}"`,
           sort: '-reviewed_at,-id',
         })
-        const lastEject = ejectedEvents[0]
+        const lastEject = ejectedEvents.find(event => (
+          event.outcome === 'ejected' || event.outcome === 'eject'
+        ))
         if (!lastEject) throw new Error('There is no ejected flashcard to restore.')
         const reviewSet = reviewSets.value.find(item => item.id === current.reviewSet)
         if (!reviewSet) throw new Error('The Review set for this session is no longer available.')
@@ -844,7 +846,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
         if (queue.length > 1) queue.push(queue.shift()!)
       } else {
         const card = queue.shift()!
-        const outcome = action === 'view' ? 'passive' : action
+        const outcome = action === 'view' ? 'passive' : action === 'eject' ? 'ejected' : action
         if (action === 'eject') ejectedCount += 1
         else {
           viewedCount += 1

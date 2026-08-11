@@ -4035,7 +4035,8 @@ final class Api
                     }
                     $eventStatement = $pdo->prepare(
                         "SELECT id, card FROM flashcard_review_events
-                         WHERE owner = :owner AND session = :session AND outcome = 'ejected'
+                         WHERE owner = :owner AND session = :session
+                           AND outcome IN ('ejected', 'eject')
                          ORDER BY reviewed_at DESC, id DESC LIMIT 1",
                     );
                     $eventStatement->execute(['owner' => $owner, 'session' => $id]);
@@ -4057,7 +4058,8 @@ final class Api
                     $ejectedCount--;
                     $deleteEvent = $pdo->prepare(
                         "DELETE FROM flashcard_review_events
-                         WHERE id = :id AND owner = :owner AND session = :session AND outcome = 'ejected'",
+                         WHERE id = :id AND owner = :owner AND session = :session
+                           AND outcome IN ('ejected', 'eject')",
                     );
                     $deleteEvent->execute([
                         'id' => (string) $event['id'],

@@ -2,6 +2,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import type { FlashcardReviewSession } from '@/types/domain'
 
 const mocks = vi.hoisted(() => ({
+  createEvent: vi.fn(),
   deleteEvent: vi.fn(),
   listEvents: vi.fn(),
   updateSession: vi.fn(),
@@ -21,7 +22,7 @@ vi.mock('@/lib/api', () => ({
     collection: (name: string) => {
       if (name === 'flashcard_review_sessions') return { update: mocks.updateSession }
       if (name === 'flashcard_review_events') {
-        return { delete: mocks.deleteEvent, getFullList: mocks.listEvents }
+        return { create: mocks.createEvent, delete: mocks.deleteEvent, getFullList: mocks.listEvents }
       }
       throw new Error(`Unexpected collection: ${name}`)
     },
@@ -69,6 +70,7 @@ function sessionRecord(updates: Record<string, unknown> = {}) {
 describe('flashcard Review set restart', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    mocks.createEvent.mockReset().mockResolvedValue({})
     mocks.deleteEvent.mockReset().mockResolvedValue(true)
     mocks.listEvents.mockReset()
     mocks.updateSession.mockReset().mockImplementation(async (_id, updates) => (
@@ -194,14 +196,14 @@ describe('flashcard Review set restart', () => {
       errorCount: 0, ejectedCount: 1,
     }]
     mocks.listEvents.mockResolvedValue([{
-      id: 'event-eject-1', session: 'session-1', card: 'card-1', outcome: 'ejected',
+      id: 'event-eject-1', session: 'session-1', card: 'card-1', outcome: 'eject',
       reviewed_at: '2026-08-10T12:00:40Z',
     }])
 
     const restored = await store.act('session-1', 'undo_eject', 42)
 
     expect(mocks.listEvents).toHaveBeenCalledWith({
-      filter: 'session = "session-1" && outcome = "ejected"',
+      filter: 'session = "session-1"',
       sort: '-reviewed_at,-id',
     })
     expect(mocks.deleteEvent).toHaveBeenCalledWith('event-eject-1')
@@ -214,5 +216,30 @@ describe('flashcard Review set restart', () => {
     }))
     expect(restored).toMatchObject({ ejectedCount: 0 })
     expect(restored.queue.map(card => card.id)).toEqual(['card-1', 'card-2'])
+  })
+
+  it('records new local ejections with the canonical outcome', async () => {
+    const store = useFlashcardStore()
+    store.sessions = [{
+      id: 'session-1', reviewSet: 'set-1', status: 'running', name: 'Vocabulary',
+      mode: 'manual', cardSides: 'both', indefinite: false, maxCards: 2,
+      sortMode: 'recently_added', tags: [], frontSeconds: 5, backSeconds: 5,
+      backSpeechRepeatCount: 1, noteBeforeBack: false, speechEnabled: false,
+      frontLanguage: '', backLanguage: '', queue: [{
+        id: 'card-1', front: 'One', back: 'Un', note: '', image: '', tags: [],
+      }, {
+        id: 'card-2', front: 'Two', back: 'Deux', note: '', image: '', tags: [],
+      }], startedAt: '2026-08-10T12:00:00Z', updatedAt: '2026-08-10T12:00:42Z',
+      elapsedSeconds: 42, totalCards: 2, viewedCount: 0, successCount: 0,
+      errorCount: 0, ejectedCount: 0,
+    }]
+
+    await store.act('session-1', 'eject', 42)
+
+    expect(mocks.createEvent).toHaveBeenCalledWith(expect.objectContaining({
+      session: 'session-1',
+      card: 'card-1',
+      outcome: 'ejected',
+    }))
   })
 })
