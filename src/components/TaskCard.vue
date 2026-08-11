@@ -365,7 +365,8 @@ watch(() => props.valuePulse, async (pulse, previousPulse) => {
               v-if="isSessionDuration"
               :model-value="progress.percent"
               :color="stateColor"
-              bg-color="surface-variant"
+              bg-color="white"
+              :bg-opacity="0.14"
               rounded
               height="7"
               class="mt-2"
@@ -402,7 +403,8 @@ watch(() => props.valuePulse, async (pulse, previousPulse) => {
             v-if="isSessionDuration"
             :model-value="progress.percent"
             :color="stateColor"
-            bg-color="surface-variant"
+            bg-color="white"
+            :bg-opacity="0.14"
             rounded
             height="7"
             class="mt-2"
@@ -428,7 +430,8 @@ watch(() => props.valuePulse, async (pulse, previousPulse) => {
           <v-progress-linear
             :model-value="progress.percent"
             color="secondary"
-            bg-color="surface-variant"
+            bg-color="white"
+            :bg-opacity="0.14"
             rounded
             height="7"
             class="mt-4"
@@ -526,7 +529,8 @@ watch(() => props.valuePulse, async (pulse, previousPulse) => {
             <v-progress-linear
               :model-value="progress.percent"
               :color="stateColor"
-              bg-color="surface-variant"
+              bg-color="white"
+              :bg-opacity="0.14"
               rounded
               height="7"
               class="mt-2"
