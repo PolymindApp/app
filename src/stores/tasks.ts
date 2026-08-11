@@ -689,7 +689,7 @@ export const useTaskStore = defineStore('tasks', () => {
       program_repeat: draft.programRepeat ?? true,
       program_strict: draft.programStrict ?? false,
       entry_notes_enabled: draft.entryNotesEnabled,
-      entry_note_suggestions_enabled: draft.entryNoteSuggestionsEnabled,
+      entry_note_suggestions_enabled: false,
       sort_order: sortOrder,
       interval_template: draft.type === 'interval' ? draft.intervalTemplate || '' : '',
       flashcard_review_set: draft.type === 'flashcards' ? draft.flashcardReviewSet || '' : '',

@@ -28,12 +28,3 @@ export function taskEntryNoteOptions(entries: Entry[], taskId: string) {
   }
   return [...notes]
 }
-
-export function taskEntryNoteForAmount(entries: Entry[], taskId: string, amount: number) {
-  const match = newestEntries(entries).find((entry) =>
-    entry.task === taskId
-    && Math.abs(entry.value) === amount
-    && Boolean(sanitizeTaskEntryNote(entry.note).trim()),
-  )
-  return match ? sanitizeTaskEntryNote(match.note).trim() : ''
-}

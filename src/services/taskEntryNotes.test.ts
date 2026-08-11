@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
   sanitizeTaskEntryNote,
-  taskEntryNoteForAmount,
   taskEntryNoteOptions,
 } from './taskEntryNotes'
 import type { Entry } from '@/types/domain'
@@ -35,16 +34,6 @@ describe('task entry note references', () => {
 
   it('returns distinct notes for the task in most-recent order', () => {
     expect(taskEntryNoteOptions(entries, 'task-1')).toEqual(['Track run', 'Trail run'])
-  })
-
-  it('finds the newest note associated with the entered amount', () => {
-    expect(taskEntryNoteForAmount(entries, 'task-1', 12)).toBe('Track run')
-    expect(taskEntryNoteForAmount(entries, 'task-1', 5)).toBe('Trail run')
-  })
-
-  it('matches a previously subtracted amount entered without a sign', () => {
-    const subtraction = entry('subtract', 'task-1', -3, 'Correction', '2026-08-02T13:00:00.000Z')
-    expect(taskEntryNoteForAmount([subtraction], 'task-1', 3)).toBe('Correction')
   })
 
   it('removes line breaks and limits notes to 255 characters', () => {

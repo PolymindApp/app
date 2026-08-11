@@ -22,7 +22,6 @@ import { formatTrackingValue } from '@/services/tracking'
 import {
   TASK_ENTRY_NOTE_MAX_LENGTH,
   sanitizeTaskEntryNote,
-  taskEntryNoteForAmount,
   taskEntryNoteOptions,
 } from '@/services/taskEntryNotes'
 import {
@@ -66,7 +65,6 @@ const exactAmountInput = ref('')
 const exactNote = ref('')
 const exactNoteHistory = ref<Entry[]>([])
 const exactNoteLoading = ref(false)
-const exactNoteAutoFilled = ref(false)
 const exactEditingEntry = ref<Entry>()
 const exactError = ref('')
 let exactNoteHistoryRequest = 0
@@ -544,7 +542,6 @@ async function openExact(progress: TaskProgress) {
   exactEditingEntry.value = undefined
   exactAmountInput.value = ''
   exactNote.value = ''
-  exactNoteAutoFilled.value = false
   exactNoteHistory.value = store.entries.filter((entry) => entry.task === progress.task.id)
   exactAction.value = undefined
   exactError.value = ''
@@ -566,26 +563,7 @@ async function openExact(progress: TaskProgress) {
   }
 }
 
-watch([exactAmount, exactNoteHistory], ([amount]) => {
-  if (exactEditingEntry.value) return
-  if (!exactProgress.value?.task.entryNoteSuggestionsEnabled) return
-  if (amount === null) {
-    if (exactNoteAutoFilled.value) exactNote.value = ''
-    exactNoteAutoFilled.value = false
-    return
-  }
-  if (exactNote.value && !exactNoteAutoFilled.value) return
-  const note = taskEntryNoteForAmount(
-    exactNoteHistory.value,
-    exactProgress.value?.task.id || '',
-    amount,
-  )
-  exactNote.value = note
-  exactNoteAutoFilled.value = Boolean(note)
-})
-
 function updateExactNote(value: unknown) {
-  exactNoteAutoFilled.value = false
   exactNote.value = sanitizeTaskEntryNote(value)
 }
 
@@ -596,7 +574,6 @@ function editTaskLogEntry(entry: Entry) {
   exactEditingEntry.value = entry
   exactAmountInput.value = String(Number(entry.value.toFixed(2)))
   exactNote.value = entry.note || ''
-  exactNoteAutoFilled.value = false
   exactNoteHistory.value = taskLogEntries.value
   exactNoteLoading.value = false
   exactAction.value = undefined

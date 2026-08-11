@@ -400,15 +400,6 @@ async function removeTask() {
             <div><strong>Notes when logging</strong><p>Add an optional note to each amount entry</p></div>
             <v-switch v-model="draft.entryNotesEnabled" color="secondary" hide-details="auto" inset />
           </div>
-          <v-expand-transition>
-            <div v-if="draft.entryNotesEnabled">
-              <v-divider />
-              <div class="setting-row">
-                <div><strong>Match notes by amount</strong><p>Prefill the latest note previously used for the same amount</p></div>
-                <v-switch v-model="draft.entryNoteSuggestionsEnabled" color="secondary" hide-details="auto" inset />
-              </div>
-            </div>
-          </v-expand-transition>
         </template>
       </v-card>
 
