@@ -11,9 +11,11 @@ const props = withDefaults(defineProps<{
   modelValue: string[]
   selectable?: boolean
   interactive?: boolean
+  surface?: boolean
 }>(), {
   selectable: true,
   interactive: true,
+  surface: true,
 })
 
 const emit = defineEmits<{
@@ -103,7 +105,7 @@ function cardTagNames(card: Flashcard) {
 
 <template>
   <div class="flashcard-cards-table">
-    <div class="card-library surface-card">
+    <div class="card-library" :class="{ 'surface-card': surface }">
       <v-table density="compact" class="card-library-table">
         <thead>
           <tr>
@@ -120,7 +122,9 @@ function cardTagNames(card: Flashcard) {
             </th>
             <th scope="col" class="card-library-table__image-heading">Image</th>
             <th scope="col" class="card-library-table__faces-heading">Faces</th>
-            <th scope="col" class="card-library-table__tags-heading">Tags</th>
+            <th scope="col" class="card-library-table__tags-heading">
+              <slot name="last-column-heading">Tags</slot>
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -182,9 +186,11 @@ function cardTagNames(card: Flashcard) {
               </div>
             </td>
             <td class="card-library-table__tags-cell">
-              <span class="flashcard-table__text flashcard-table__tags" :title="cardTagNames(card)">
-                {{ cardTagNames(card) }}
-              </span>
+              <slot name="last-column" :card="card">
+                <span class="flashcard-table__text flashcard-table__tags" :title="cardTagNames(card)">
+                  {{ cardTagNames(card) }}
+                </span>
+              </slot>
             </td>
           </tr>
         </tbody>

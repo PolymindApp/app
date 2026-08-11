@@ -271,4 +271,30 @@ describe('FlashcardCardsManager', () => {
       query: { reviewSetId: 'set-1' },
     })
   })
+
+  it('supports Review set inclusion actions as its only toolbar control', async () => {
+    const selectionActionHandler = vi.fn()
+    const wrapper = mountManager({
+      canAdd: false,
+      selectable: true,
+      selectionActions: [
+        { action: 'exclude', title: 'Exclude', icon: 'mdi-minus-circle-outline' },
+        { action: 'include', title: 'Include', icon: 'mdi-check-circle-outline' },
+      ],
+      selectionActionHandler,
+      showTagFilter: false,
+      tableSurface: false,
+    })
+
+    expect(wrapper.find('.autocomplete-stub').exists()).toBe(false)
+    expect(wrapper.get('.card-filter-actions').classes()).toContain('card-filter-actions--only')
+    expect(wrapper.findAll('.card-filter-action')).toHaveLength(1)
+    expect(wrapper.findAll('.bulk-item').map(item => item.text())).toEqual(['Exclude', 'Include'])
+
+    await wrapper.get('.select-all-cards').trigger('click')
+    await wrapper.findAll('.bulk-item')[0]!.trigger('click')
+    await nextTick()
+
+    expect(selectionActionHandler).toHaveBeenCalledWith('exclude', ['card-1', 'card-2'])
+  })
 })

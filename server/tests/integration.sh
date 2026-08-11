@@ -134,7 +134,7 @@ suffix="$(php -r 'echo bin2hex(random_bytes(5));')"
 password="correct-horse-battery"
 
 migration_count="$(sqlite3 "$test_db" 'SELECT COUNT(*) FROM mom_schema_migrations;')"
-[[ "$migration_count" == 33 ]] || {
+[[ "$migration_count" == 34 ]] || {
   echo "The API did not apply the complete database migration sequence." >&2
   exit 1
 }

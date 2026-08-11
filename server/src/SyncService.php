@@ -14,6 +14,12 @@ final class SyncService
     private const PROTOCOL_VERSION = 1;
     private const MAX_OPERATIONS = 100;
     private const MAX_CHANGES = 500;
+    private const FLASHCARD_REVIEW_PREFERENCE_FIELDS = [
+        'mode', 'card_sides', 'indefinite', 'max_cards', 'front_seconds',
+        'back_seconds', 'back_speech_repeat_count', 'note_before_back',
+        'speech_enabled', 'front_language', 'back_language', 'sort_mode',
+        'excluded_cards',
+    ];
 
     public function __construct(
         private readonly Database $database,
@@ -302,15 +308,16 @@ final class SyncService
         if ($command === 'review_set_preferences.patch') {
             $reviewSetId = $this->recordId($payload['review_set_id'] ?? null);
             $reviewSet = $this->accessibleReviewSet($reviewSetId, $account);
-            $fields = [
-                'mode', 'card_sides', 'indefinite', 'max_cards', 'front_seconds',
-                'back_seconds', 'back_speech_repeat_count', 'note_before_back',
-                'speech_enabled', 'front_language', 'back_language', 'sort_mode',
-            ];
+            $fields = self::FLASHCARD_REVIEW_PREFERENCE_FIELDS;
+            $requiredFields = array_values(array_filter(
+                $fields,
+                static fn (string $field): bool => $field !== 'excluded_cards',
+            ));
             $settingsPayload = array_intersect_key($payload, array_flip($fields));
-            if (count($settingsPayload) !== count($fields)) {
+            if (count(array_intersect_key($settingsPayload, array_flip($requiredFields))) !== count($requiredFields)) {
                 throw new ApiException(422, 'Every Review set preference is required.');
             }
+            $settingsPayload['excluded_cards'] ??= [];
             $config = Schema::collection('flashcard_review_sets');
             if ($config === null) {
                 throw new ApiException(500, 'Review set schema is unavailable.');
@@ -324,32 +331,7 @@ final class SyncService
             if ($settings['mode'] !== 'passive') {
                 $settings['indefinite'] = false;
             }
-            $statement = $this->database->pdo->prepare(
-                'INSERT INTO flashcard_review_set_preferences (
-                    review_set, account, mode, card_sides, indefinite, max_cards,
-                    front_seconds, back_seconds, back_speech_repeat_count, note_before_back,
-                    speech_enabled, front_language, back_language, sort_mode, updated_at
-                 ) VALUES (
-                    :review_set, :account, :mode, :card_sides, :indefinite, :max_cards,
-                    :front_seconds, :back_seconds, :back_speech_repeat_count, :note_before_back,
-                    :speech_enabled, :front_language, :back_language, :sort_mode, :updated_at
-                 ) ON CONFLICT(review_set, account) DO UPDATE SET
-                    mode = excluded.mode, card_sides = excluded.card_sides,
-                    indefinite = excluded.indefinite, max_cards = excluded.max_cards,
-                    front_seconds = excluded.front_seconds, back_seconds = excluded.back_seconds,
-                    back_speech_repeat_count = excluded.back_speech_repeat_count,
-                    note_before_back = excluded.note_before_back,
-                    speech_enabled = excluded.speech_enabled,
-                    front_language = excluded.front_language,
-                    back_language = excluded.back_language,
-                    sort_mode = excluded.sort_mode, updated_at = excluded.updated_at',
-            );
-            $statement->execute([
-                'review_set' => $reviewSetId,
-                'account' => $account,
-                ...$this->databaseValues($config, $settings),
-                'updated_at' => $this->now(),
-            ]);
+            $this->saveReviewSetPreferences($reviewSetId, $account, $config, $settings);
             if ((string) $reviewSet['owner'] === $account) {
                 $assignments = array_map(
                     static fn (string $field): string => $field . ' = :' . $field,
@@ -555,6 +537,13 @@ final class SyncService
         $this->saveFieldClocks($account, $resource, $recordId, $fieldClocks);
         if ($resource === 'flashcard_review_events') {
             $this->recordFlashcardReviewStats($values, $account);
+        } elseif ($resource === 'flashcard_review_sets') {
+            $this->saveReviewSetPreferences(
+                $recordId,
+                $account,
+                $config,
+                $this->ownedRecord($resource, $recordId, $account),
+            );
         }
         return [
             'status' => 'applied',
@@ -624,6 +613,14 @@ final class SyncService
         $parameters['id'] = $recordId;
         $parameters['owner'] = $account;
         $statement->execute($parameters);
+        if ($resource === 'flashcard_review_sets') {
+            $this->saveReviewSetPreferences(
+                $recordId,
+                $account,
+                $config,
+                [...$current, ...$accepted],
+            );
+        }
         $this->saveFieldClocks($account, $resource, $recordId, $mergedClocks);
         return [
             'status' => count($accepted) === count($values) ? 'applied' : 'merged',
@@ -1262,10 +1259,13 @@ final class SyncService
                 'mode', 'card_sides', 'indefinite', 'max_cards', 'front_seconds',
                 'back_seconds', 'back_speech_repeat_count', 'note_before_back',
                 'speech_enabled', 'front_language', 'back_language', 'sort_mode',
+                'excluded_cards',
             ] as $field) {
-                $result[$field] = in_array($field, ['indefinite', 'note_before_back', 'speech_enabled'], true)
-                    ? (bool) $settings[$field]
-                    : $settings[$field];
+                $result[$field] = match ($field) {
+                    'indefinite', 'note_before_back', 'speech_enabled' => (bool) $settings[$field],
+                    'excluded_cards' => $this->stringArray($settings[$field] ?? []),
+                    default => $settings[$field],
+                };
             }
         }
         $result['access_role'] = (string) ($record['access_role'] ?? 'owner');
@@ -1278,6 +1278,47 @@ final class SyncService
         $result['tag_details'] = $this->tagDetails((string) $record['owner'], $tags);
         $result['matching_card_count'] = count($this->matchingCards($record));
         return $result;
+    }
+
+    private function saveReviewSetPreferences(
+        string $reviewSetId,
+        string $account,
+        array $config,
+        array $settings,
+    ): void {
+        $values = array_intersect_key(
+            $settings,
+            array_flip(self::FLASHCARD_REVIEW_PREFERENCE_FIELDS),
+        );
+        $values['excluded_cards'] = $this->stringArray($values['excluded_cards'] ?? []);
+        $statement = $this->database->pdo->prepare(
+            'INSERT INTO flashcard_review_set_preferences (
+                review_set, account, mode, card_sides, indefinite, max_cards,
+                front_seconds, back_seconds, back_speech_repeat_count, note_before_back,
+                speech_enabled, front_language, back_language, sort_mode, excluded_cards, updated_at
+             ) VALUES (
+                :review_set, :account, :mode, :card_sides, :indefinite, :max_cards,
+                :front_seconds, :back_seconds, :back_speech_repeat_count, :note_before_back,
+                :speech_enabled, :front_language, :back_language, :sort_mode, :excluded_cards, :updated_at
+             ) ON CONFLICT(review_set, account) DO UPDATE SET
+                mode = excluded.mode, card_sides = excluded.card_sides,
+                indefinite = excluded.indefinite, max_cards = excluded.max_cards,
+                front_seconds = excluded.front_seconds, back_seconds = excluded.back_seconds,
+                back_speech_repeat_count = excluded.back_speech_repeat_count,
+                note_before_back = excluded.note_before_back,
+                speech_enabled = excluded.speech_enabled,
+                front_language = excluded.front_language,
+                back_language = excluded.back_language,
+                sort_mode = excluded.sort_mode,
+                excluded_cards = excluded.excluded_cards,
+                updated_at = excluded.updated_at',
+        );
+        $statement->execute([
+            'review_set' => $reviewSetId,
+            'account' => $account,
+            ...$this->databaseValues($config, $values),
+            'updated_at' => $this->now(),
+        ]);
     }
 
     private function reviewSetCards(array $reviewSet, string $account): array

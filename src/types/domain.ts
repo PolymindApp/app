@@ -301,6 +301,13 @@ export type FlashcardBulkAction =
   | 'clear_tags'
   | 'delete'
 export type FlashcardBulkRecordAction = Exclude<FlashcardBulkAction, 'assign_images'>
+export type FlashcardSelectionAction = 'exclude' | 'include'
+export interface FlashcardSelectionActionItem {
+  action: FlashcardSelectionAction
+  title: string
+  icon: string
+  color?: string
+}
 export type FlashcardReviewSetAccessRole = 'owner' | 'readonly' | 'editor'
 export type SquareImageSource = 'none' | 'url' | 'upload' | 'library'
 
@@ -400,6 +407,7 @@ export interface FlashcardReviewSet extends FlashcardReviewSettings {
   ownerName: string
   ownerAvatar: string
   accessRole: FlashcardReviewSetAccessRole
+  excludedCards?: string[]
   shareId?: string
   matchingCardCount: number
   sortOrder: number
@@ -464,6 +472,7 @@ export interface FlashcardReviewSession extends FlashcardReviewSettings {
   status: FlashcardReviewStatus
   name: string
   tags: string[]
+  excludedCards?: string[]
   queue: FlashcardReviewQueueCard[]
   startedAt: string
   endedAt?: string

@@ -82,6 +82,7 @@ function mapReviewSet(record: Record<string, any>): FlashcardReviewSet {
     ownerName: record.owner_name || api.authStore.record?.name || '',
     ownerAvatar: apiAssetUrl(record.owner_avatar || api.authStore.record?.avatar || ''),
     accessRole: record.access_role || 'owner',
+    excludedCards: Array.isArray(record.excluded_cards) ? record.excluded_cards : [],
     shareId: record.share_id || undefined,
     matchingCardCount: Number(record.matching_card_count || 0),
     mode: record.mode,
@@ -127,6 +128,9 @@ function mapSession(record: Record<string, any>): FlashcardReviewSession {
     maxCards: Number(record.max_cards_snapshot || DEFAULT_FLASHCARD_SESSION_CARDS),
     sortMode: record.sort_snapshot,
     tags: Array.isArray(record.tags_snapshot) ? record.tags_snapshot : [],
+    excludedCards: Array.isArray(record.excluded_cards_snapshot)
+      ? record.excluded_cards_snapshot
+      : [],
     frontSeconds: Number(record.front_seconds_snapshot || 5),
     backSeconds: Number(record.back_seconds_snapshot || 5),
     backSpeechRepeatCount: Number(
@@ -299,6 +303,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
         } else if (
           includeInActiveSessions
           && cardMatchesTags(card, session.tags)
+          && !(session.excludedCards || []).includes(card.id)
           && session.totalCards < session.maxCards
         ) {
           session.queue.push(snapshot)
@@ -405,6 +410,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       back_language: draft.backLanguage,
       sort_mode: draft.sortMode,
       sort_order: draft.sortOrder,
+      excluded_cards: draft.excludedCards || [],
     }
     const record = draft.id
       ? await api.collection('flashcard_review_sets').update(draft.id, payload)
@@ -415,7 +421,10 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     return reviewSet
   }
 
-  async function saveReviewSetPreferences(id: string, settings: FlashcardReviewSettings) {
+  async function saveReviewSetPreferences(
+    id: string,
+    settings: FlashcardReviewSettings & { excludedCards?: string[] },
+  ) {
     const record = await api.updateFlashcardReviewSetPreferences(id, settings)
     const reviewSet = mapReviewSet(record)
     const index = reviewSets.value.findIndex(item => item.id === id)
@@ -657,6 +666,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
         max_cards_snapshot: preview.maxCards,
         sort_snapshot: preview.sortMode,
         tags_snapshot: preview.tags,
+        excluded_cards_snapshot: preview.excludedCards || [],
         front_seconds_snapshot: preview.frontSeconds,
         back_seconds_snapshot: preview.backSeconds,
         back_speech_repeat_count_snapshot: preview.backSpeechRepeatCount,
@@ -791,6 +801,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       queue = flashcardReviewQueue({
         ...reviewSet,
         tags: [...current.tags],
+        excludedCards: [...(current.excludedCards || [])],
         sortMode: current.sortMode,
         maxCards: current.maxCards,
       }, availableCards)

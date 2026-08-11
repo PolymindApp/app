@@ -334,6 +334,41 @@ describe('Polymind API client adapter', () => {
     expect(JSON.parse(options.body as string)).toEqual({ template: 'template-1' })
   })
 
+  it('persists excluded cards with Review set preferences', async () => {
+    const token = futureToken()
+    localStorage.setItem('mom-api-auth', JSON.stringify({
+      token,
+      record: { id: 'review-preference-user', email: 'person@example.com' },
+    }))
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ id: 'set-1' }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { api } = await import('./api')
+    await api.updateFlashcardReviewSetPreferences('set-1', {
+      mode: 'manual',
+      cardSides: 'both',
+      indefinite: false,
+      maxCards: 20,
+      frontSeconds: 5,
+      backSeconds: 5,
+      backSpeechRepeatCount: 1,
+      noteBeforeBack: false,
+      speechEnabled: false,
+      frontLanguage: '',
+      backLanguage: '',
+      sortMode: 'difficult',
+      excludedCards: ['card-2', 'card-9'],
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/flashcard-review-sets/set-1/preferences',
+      expect.objectContaining({
+        method: 'PATCH',
+        body: expect.stringContaining('"excluded_cards":["card-2","card-9"]'),
+      }),
+    )
+  })
+
   it('expires the remote token but preserves the cached offline account after an unauthorized response', async () => {
     const token = futureToken()
     localStorage.setItem('mom-api-auth', JSON.stringify({

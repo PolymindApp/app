@@ -46,6 +46,12 @@ final class Api
         'speech_enabled', 'front_language', 'back_language',
         'sort_mode',
     ];
+    private const FLASHCARD_REVIEW_PREFERENCE_FIELDS = [
+        'mode', 'card_sides', 'indefinite', 'max_cards', 'front_seconds', 'back_seconds',
+        'back_speech_repeat_count', 'note_before_back',
+        'speech_enabled', 'front_language', 'back_language',
+        'sort_mode', 'excluded_cards',
+    ];
     private readonly CodexBridgeClient $codexBridge;
     private readonly Mailer $mailer;
     private readonly SyncService $syncService;
@@ -2551,7 +2557,7 @@ final class Api
                 (string) $user['id'],
                 array_intersect_key(
                     $this->normalizeRecord($collection, $record),
-                    array_flip(self::FLASHCARD_REVIEW_SETTING_FIELDS),
+                    array_flip(self::FLASHCARD_REVIEW_PREFERENCE_FIELDS),
                 ),
             );
         }
@@ -2575,7 +2581,7 @@ final class Api
                 'back_speech_repeat_count',
                 'note_before_back',
                 'speech_enabled', 'front_language', 'back_language',
-                'sort_mode', 'sort_order',
+                'sort_mode', 'sort_order', 'excluded_cards',
             ]);
         }
         if ($collection['name'] === 'interval_sessions') {
@@ -2664,12 +2670,12 @@ final class Api
             }
         } elseif (
             $collection['name'] === 'flashcard_review_sets'
-            && array_intersect(array_keys($values), self::FLASHCARD_REVIEW_SETTING_FIELDS) !== []
+            && array_intersect(array_keys($values), self::FLASHCARD_REVIEW_PREFERENCE_FIELDS) !== []
         ) {
             $this->saveFlashcardReviewSetPreferences(
                 $id,
                 (string) $user['id'],
-                array_intersect_key($combined, array_flip(self::FLASHCARD_REVIEW_SETTING_FIELDS)),
+                array_intersect_key($combined, array_flip(self::FLASHCARD_REVIEW_PREFERENCE_FIELDS)),
             );
         }
         $this->respond($this->normalizeRecord($collection, $record));
@@ -2744,9 +2750,17 @@ final class Api
             } elseif ($addWhenEligible) {
                 $selectedTags = $this->decodeJsonColumn($session['tags_snapshot'] ?? '[]');
                 $selectedTags = is_array($selectedTags) ? $selectedTags : [];
+                $excludedCards = $this->decodeJsonColumn(
+                    $session['excluded_cards_snapshot'] ?? '[]',
+                );
+                $excludedCards = is_array($excludedCards) ? $excludedCards : [];
                 $matches = $selectedTags === [] || array_intersect($selectedTags, $cardTags) !== [];
                 $maxCards = (int) ($session['max_cards_snapshot'] ?? 20);
-                if ($matches && (int) $session['total_cards'] < $maxCards) {
+                if (
+                    $matches
+                    && !in_array((string) $card['id'], $excludedCards, true)
+                    && (int) $session['total_cards'] < $maxCards
+                ) {
                     $queue[] = $snapshot;
                     $changed = true;
                 }
@@ -3130,7 +3144,7 @@ final class Api
         if ((string) $reviewSet['owner'] === $account) {
             $assignments = array_map(
                 static fn (string $field): string => $field . ' = :' . $field,
-                self::FLASHCARD_REVIEW_SETTING_FIELDS,
+                self::FLASHCARD_REVIEW_PREFERENCE_FIELDS,
             );
             $statement = $this->database->pdo->prepare(
                 'UPDATE flashcard_review_sets SET ' . implode(', ', $assignments) . ', updated_at = :updated_at
@@ -3319,6 +3333,9 @@ final class Api
         }
 
         $settings = $this->effectiveFlashcardReviewSettings($reviewSet, $account);
+        $sourceExcludedCards = array_fill_keys($settings['excluded_cards'] ?? [], true);
+        $settings['excluded_cards'] = [];
+        $copiedExcludedCards = [];
         $copyName = $this->uniqueReviewSetCopyName((string) $reviewSet['name'], $account);
         $scopeTagName = $this->uniqueFlashcardTagName($copyName, $account);
         $scopeTagId = $this->newId();
@@ -3364,13 +3381,13 @@ final class Api
                     id, owner, name, tags, mode, card_sides, indefinite, max_cards,
                     front_seconds, back_seconds, back_speech_repeat_count,
                     note_before_back,
-                    speech_enabled, front_language, back_language, sort_mode,
+                    speech_enabled, front_language, back_language, sort_mode, excluded_cards,
                     sort_order, created_at, updated_at
                  ) VALUES (
                     :id, :owner, :name, :tags, :mode, :card_sides, :indefinite, :max_cards,
                     :front_seconds, :back_seconds, :back_speech_repeat_count,
                     :note_before_back,
-                    :speech_enabled, :front_language, :back_language, :sort_mode,
+                    :speech_enabled, :front_language, :back_language, :sort_mode, :excluded_cards,
                     :sort_order, :created_at, :updated_at
                  )',
             );
@@ -3384,8 +3401,6 @@ final class Api
                 'created_at' => $now,
                 'updated_at' => $now,
             ]);
-            $this->saveFlashcardReviewSetPreferences($newSetId, $account, $settings);
-
             $cardStatement = $pdo->prepare(
                 'INSERT INTO flashcards (
                     id, owner, front, back, note, image_url, image_file,
@@ -3413,8 +3428,9 @@ final class Api
                         $createdFiles[] = $imageFile;
                     }
                 }
+                $copiedCardId = $this->newId();
                 $cardStatement->execute([
-                    'id' => $this->newId(),
+                    'id' => $copiedCardId,
                     'owner' => $account,
                     'front' => $card['front'],
                     'back' => $card['back'],
@@ -3428,7 +3444,19 @@ final class Api
                     'updated_at' => $now,
                     'last_reviewed_at' => '',
                 ]);
+                if (isset($sourceExcludedCards[(string) $card['id']])) {
+                    $copiedExcludedCards[] = $copiedCardId;
+                }
             }
+            $settings['excluded_cards'] = $copiedExcludedCards;
+            $statement = $pdo->prepare(
+                'UPDATE flashcard_review_sets SET excluded_cards = :excluded_cards WHERE id = :id',
+            );
+            $statement->execute([
+                'excluded_cards' => json_encode($copiedExcludedCards, JSON_THROW_ON_ERROR),
+                'id' => $newSetId,
+            ]);
+            $this->saveFlashcardReviewSetPreferences($newSetId, $account, $settings);
             $pdo->commit();
         } catch (Throwable $exception) {
             if ($pdo->inTransaction()) {
@@ -3872,6 +3900,7 @@ final class Api
                 'INSERT INTO flashcard_review_sessions (
                     id, owner, source_owner, review_set, status, snapshot_name, mode_snapshot, card_sides_snapshot,
                     sort_snapshot, indefinite_snapshot, max_cards_snapshot, tags_snapshot,
+                    excluded_cards_snapshot,
                     front_seconds_snapshot, back_seconds_snapshot,
                     back_speech_repeat_count_snapshot,
                     note_before_back_snapshot,
@@ -3881,7 +3910,7 @@ final class Api
                  ) VALUES (
                     :id, :owner, :source_owner, :review_set, :status, :snapshot_name, :mode_snapshot,
                     :card_sides_snapshot, :sort_snapshot, :indefinite_snapshot, :max_cards_snapshot,
-                    :tags_snapshot, :front_seconds_snapshot, :back_seconds_snapshot,
+                    :tags_snapshot, :excluded_cards_snapshot, :front_seconds_snapshot, :back_seconds_snapshot,
                     :back_speech_repeat_count_snapshot,
                     :note_before_back_snapshot,
                     :speech_enabled_snapshot, :front_language_snapshot, :back_language_snapshot, :queue_state,
@@ -3902,6 +3931,10 @@ final class Api
                 'indefinite_snapshot' => (bool) $reviewSet['indefinite'],
                 'max_cards_snapshot' => (int) $reviewSet['max_cards'],
                 'tags_snapshot' => json_encode(array_values($selectedTags), JSON_THROW_ON_ERROR),
+                'excluded_cards_snapshot' => json_encode(
+                    array_values($reviewSet['excluded_cards'] ?? []),
+                    JSON_THROW_ON_ERROR,
+                ),
                 'front_seconds_snapshot' => (int) $reviewSet['front_seconds'],
                 'back_seconds_snapshot' => (int) $reviewSet['back_seconds'],
                 'back_speech_repeat_count_snapshot' => (
@@ -3996,6 +4029,7 @@ final class Api
             if ($action === 'restart') {
                 $selection = $this->flashcardReviewSelection([
                     'tags' => $session['tags_snapshot'],
+                    'excluded_cards' => $session['excluded_cards_snapshot'],
                     'sort_mode' => $session['sort_snapshot'],
                     'max_cards' => $session['max_cards_snapshot'],
                 ], (string) ($session['source_owner'] ?: $owner), $owner);
@@ -4232,6 +4266,7 @@ final class Api
 
             $selection = $this->flashcardReviewSelection([
                 'tags' => $session['tags_snapshot'],
+                'excluded_cards' => $session['excluded_cards_snapshot'],
                 'sort_mode' => $settings['sort_mode'],
                 'max_cards' => 100,
             ], (string) ($session['source_owner'] ?: $owner), $owner);
@@ -4448,13 +4483,21 @@ final class Api
         if (!is_array($selectedTags)) {
             $selectedTags = [];
         }
+        $excludedValue = $reviewSet['excluded_cards'] ?? '[]';
+        $excludedCards = is_array($excludedValue)
+            ? $excludedValue
+            : $this->decodeJsonColumn($excludedValue);
+        $excludedCards = is_array($excludedCards) ? $excludedCards : [];
         $statement = $this->database->pdo->prepare(
             'SELECT * FROM flashcards WHERE owner = :owner',
         );
         $statement->execute(['owner' => $sourceOwner]);
         $cards = array_values(array_filter(
             $statement->fetchAll(),
-            function (array $card) use ($selectedTags): bool {
+            function (array $card) use ($selectedTags, $excludedCards): bool {
+                if (in_array((string) $card['id'], $excludedCards, true)) {
+                    return false;
+                }
                 if ($selectedTags === []) {
                     return true;
                 }
@@ -4478,7 +4521,7 @@ final class Api
             );
         }
         if ($cards === []) {
-            throw new ApiException(409, 'No flashcards match this Review set.');
+            throw new ApiException(409, 'No flashcards are included in this Review set.');
         }
 
         $sortMode = (string) $reviewSet['sort_mode'];
@@ -6343,7 +6386,7 @@ final class Api
 
     private function validatedFlashcardReviewSettings(array $body): array
     {
-        $this->allowOnlyFields($body, self::FLASHCARD_REVIEW_SETTING_FIELDS);
+        $this->allowOnlyFields($body, self::FLASHCARD_REVIEW_PREFERENCE_FIELDS);
         $fields = $this->requireCollection('flashcard_review_sets')['config']['fields'];
         $settings = [];
         foreach (self::FLASHCARD_REVIEW_SETTING_FIELDS as $field) {
@@ -6354,6 +6397,11 @@ final class Api
             }
             $settings[$field] = $this->validateField($field, $body[$field], $fields[$field]);
         }
+        $settings['excluded_cards'] = $this->validateField(
+            'excluded_cards',
+            $body['excluded_cards'] ?? [],
+            $fields['excluded_cards'],
+        );
         if ($settings['mode'] !== 'passive') {
             $settings['indefinite'] = false;
         }
@@ -6380,6 +6428,10 @@ final class Api
                 default => (string) ($source[$field] ?? ''),
             };
         }
+        $excludedCards = $this->decodeJsonColumn($source['excluded_cards'] ?? '[]');
+        $settings['excluded_cards'] = is_array($excludedCards)
+            ? array_values(array_filter($excludedCards, 'is_string'))
+            : [];
         return $settings;
     }
 
@@ -6393,12 +6445,12 @@ final class Api
                 review_set, account, mode, card_sides, indefinite, max_cards,
                 front_seconds, back_seconds, back_speech_repeat_count,
                 note_before_back,
-                speech_enabled, front_language, back_language, sort_mode, updated_at
+                speech_enabled, front_language, back_language, sort_mode, excluded_cards, updated_at
              ) VALUES (
                 :review_set, :account, :mode, :card_sides, :indefinite, :max_cards,
                 :front_seconds, :back_seconds, :back_speech_repeat_count,
                 :note_before_back,
-                :speech_enabled, :front_language, :back_language, :sort_mode, :updated_at
+                :speech_enabled, :front_language, :back_language, :sort_mode, :excluded_cards, :updated_at
              )
              ON CONFLICT(review_set, account) DO UPDATE SET
                 mode = excluded.mode,
@@ -6413,6 +6465,7 @@ final class Api
                 front_language = excluded.front_language,
                 back_language = excluded.back_language,
                 sort_mode = excluded.sort_mode,
+                excluded_cards = excluded.excluded_cards,
                 updated_at = excluded.updated_at',
         );
         $statement->execute([
@@ -6427,11 +6480,15 @@ final class Api
     {
         $values = array_intersect_key(
             $settings,
-            array_flip(self::FLASHCARD_REVIEW_SETTING_FIELDS),
+            array_flip(self::FLASHCARD_REVIEW_PREFERENCE_FIELDS),
         );
         $values['indefinite'] = !empty($values['indefinite']) ? 1 : 0;
         $values['note_before_back'] = !empty($values['note_before_back']) ? 1 : 0;
         $values['speech_enabled'] = !empty($values['speech_enabled']) ? 1 : 0;
+        $values['excluded_cards'] = json_encode(
+            array_values($values['excluded_cards'] ?? []),
+            JSON_THROW_ON_ERROR,
+        );
         return $values;
     }
 

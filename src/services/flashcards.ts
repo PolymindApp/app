@@ -7,6 +7,7 @@ import type {
   FlashcardReviewSettings,
   FlashcardReviewSide,
   FlashcardReviewSort,
+  FlashcardSelectionAction,
   IntervalFlashcardReviewSnapshot,
 } from '@/types/domain'
 
@@ -74,6 +75,31 @@ export const FLASHCARD_REVIEW_SESSION_MENU_ITEMS = [
     divider: true,
   },
 ] as const
+
+export const FLASHCARD_REVIEW_SELECTION_MENU_ITEMS = [
+  {
+    action: 'exclude',
+    title: 'Exclude',
+    icon: 'mdi-minus-circle-outline',
+    color: 'warning',
+  },
+  {
+    action: 'include',
+    title: 'Include',
+    icon: 'mdi-check-circle-outline',
+    color: 'success',
+  },
+] as const
+
+export function updateFlashcardReviewExclusions(
+  excludedCards: readonly string[],
+  action: FlashcardSelectionAction,
+  cardIds: readonly string[],
+) {
+  const exclusions = new Set(excludedCards)
+  cardIds.forEach(id => action === 'exclude' ? exclusions.add(id) : exclusions.delete(id))
+  return [...exclusions]
+}
 
 export function flashcardReviewSettingsSignature(settings: FlashcardReviewSettings) {
   return JSON.stringify({
@@ -268,7 +294,10 @@ export function flashcardReviewQueue(
   random = Math.random,
 ) {
   return sortFlashcardsForReview(
-    cards.filter(card => cardMatchesTags(card, reviewSet.tags)),
+    cards.filter(card => (
+      cardMatchesTags(card, reviewSet.tags)
+      && !(reviewSet.excludedCards || []).includes(card.id)
+    )),
     reviewSet.sortMode,
     random,
   )
@@ -304,6 +333,7 @@ export function createFlashcardReviewPreviewSession(
     maxCards: reviewSet.maxCards,
     sortMode: reviewSet.sortMode,
     tags: [...reviewSet.tags],
+    excludedCards: [...(reviewSet.excludedCards || [])],
     frontSeconds: reviewSet.frontSeconds,
     backSeconds: reviewSet.backSeconds,
     backSpeechRepeatCount: reviewSet.mode === 'passive' && reviewSet.speechEnabled

@@ -125,7 +125,10 @@ function mapImageLibraryAsset(record: Record<string, any>): ImageLibraryAsset {
   }
 }
 
-function flashcardReviewSettingsBody(settings: FlashcardReviewSettings) {
+function flashcardReviewSettingsBody(
+  settings: FlashcardReviewSettings & { excludedCards?: string[] },
+  includeExclusions = false,
+) {
   return {
     mode: settings.mode,
     card_sides: settings.cardSides,
@@ -139,6 +142,7 @@ function flashcardReviewSettingsBody(settings: FlashcardReviewSettings) {
     front_language: settings.frontLanguage,
     back_language: settings.backLanguage,
     sort_mode: settings.sortMode,
+    ...(includeExclusions ? { excluded_cards: settings.excludedCards || [] } : {}),
   }
 }
 
@@ -855,9 +859,12 @@ class ApiClient {
     return request<RecordModel[]>('/flashcard-review-sets', {}, this.authStore)
   }
 
-  async updateFlashcardReviewSetPreferences(reviewSetId: string, settings: FlashcardReviewSettings) {
+  async updateFlashcardReviewSetPreferences(
+    reviewSetId: string,
+    settings: FlashcardReviewSettings & { excludedCards?: string[] },
+  ) {
     const accountId = this.authStore.record?.id || ''
-    const body = flashcardReviewSettingsBody(settings)
+    const body = flashcardReviewSettingsBody(settings, true)
     if (accountId && await hasLocalBootstrap(accountId)) {
       const record = await putLocalProjectionPatch(
         accountId,

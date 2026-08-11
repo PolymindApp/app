@@ -64,6 +64,7 @@ final class Schema
                 'fields' => [
                     'name' => self::text(160, true),
                     'tags' => self::jsonArray(5000),
+                    'excluded_cards' => self::jsonArray(200000),
                     'mode' => self::choice(['manual', 'passive'], true),
                     'card_sides' => self::choice(['both', 'front', 'back'], true),
                     'indefinite' => self::boolean(),
@@ -258,6 +259,7 @@ final class Schema
                         'difficult', 'never_reviewed', 'least_recent', 'recently_added', 'random',
                     ], true),
                     'tags_snapshot' => self::jsonArray(5000),
+                    'excluded_cards_snapshot' => self::jsonArray(200000),
                     'front_seconds_snapshot' => self::integer(1, 60),
                     'back_seconds_snapshot' => self::integer(1, 60),
                     'back_speech_repeat_count_snapshot' => self::integer(1, 5),

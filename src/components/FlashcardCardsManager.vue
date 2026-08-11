@@ -13,6 +13,8 @@ import type {
   Flashcard,
   FlashcardBulkAction,
   FlashcardBulkRecordAction,
+  FlashcardSelectionAction,
+  FlashcardSelectionActionItem,
   FlashcardTag,
 } from '@/types/domain'
 
@@ -31,6 +33,11 @@ const props = withDefaults(defineProps<{
     cardIds: string[],
     tagIds: string[],
   ) => Promise<unknown>
+  selectionActions?: readonly FlashcardSelectionActionItem[]
+  selectionActionHandler?: (
+    action: FlashcardSelectionAction,
+    cardIds: string[],
+  ) => Promise<unknown> | unknown
   assignImageHandler?: (cardId: string, imageId: number) => Promise<unknown>
   selectable?: boolean
   interactive?: boolean
@@ -40,6 +47,8 @@ const props = withDefaults(defineProps<{
   emptyTitle?: string
   emptyDescription?: string
   firstCardLabel?: string
+  showTagFilter?: boolean
+  tableSurface?: boolean
 }>(), {
   libraryActions: false,
   showImport: false,
@@ -52,6 +61,8 @@ const props = withDefaults(defineProps<{
   emptyTitle: 'Your card library is empty',
   emptyDescription: 'Add a prompt and answer, then keep entering cards without closing the form.',
   firstCardLabel: 'Add your first card',
+  showTagFilter: true,
+  tableSurface: true,
 })
 
 const emit = defineEmits<{
@@ -80,6 +91,7 @@ const deleteCardsDialog = ref(false)
 
 const filteredCards = computed(() => props.cards.filter(card => cardMatchesTags(card, selectedTags.value)))
 const availableBulkMenuItems = computed(() => {
+  if (props.selectionActions?.length) return props.selectionActions
   const actions = props.libraryActions
     ? FLASHCARD_BULK_MENU_ITEMS.map(item => item.action)
     : props.bulkActions || []
@@ -183,8 +195,12 @@ function handleTagFilterMousedown(event: MouseEvent) {
   tagFilterFocusArmed.value = true
 }
 
-function chooseBulkAction(action: FlashcardBulkAction) {
+function chooseBulkAction(action: FlashcardBulkAction | FlashcardSelectionAction) {
   bulkMenuOpen.value = false
+  if (action === 'exclude' || action === 'include') {
+    void runSelectionAction(action)
+    return
+  }
   if (action === 'assign_images') {
     bulkError.value = ''
     bulkImageDialogOpen.value = true
@@ -203,6 +219,21 @@ function chooseBulkAction(action: FlashcardBulkAction) {
   }
   if (action === 'clear_tags') clearTagsDialog.value = true
   else if (action === 'delete') deleteCardsDialog.value = true
+}
+
+async function runSelectionAction(action: FlashcardSelectionAction) {
+  const cardIds = [...selectedCardIds.value]
+  if (!cardIds.length || !props.selectionActionHandler) return
+  bulkError.value = ''
+  bulkSaving.value = true
+  try {
+    await props.selectionActionHandler(action, cardIds)
+    selectedCardIds.value = []
+  } catch (cause) {
+    bulkError.value = cause instanceof Error ? cause.message : 'Could not update the selected cards.'
+  } finally {
+    bulkSaving.value = false
+  }
 }
 
 function completeBulkImageAssignment() {
@@ -255,6 +286,7 @@ async function deleteSelectedCards() {
   <div class="flashcard-cards-manager">
     <div class="card-filters mb-3">
       <v-autocomplete
+        v-if="showTagFilter"
         v-model="selectedTags"
         v-model:menu="tagFilterMenuOpen"
         :items="tags"
@@ -282,7 +314,10 @@ async function deleteSelectedCards() {
       <div
         v-if="hasActions"
         class="card-filter-actions"
-        :class="`card-filter-actions--${actionCount}`"
+        :class="[
+          `card-filter-actions--${actionCount}`,
+          { 'card-filter-actions--only': !showTagFilter },
+        ]"
       >
         <template v-if="libraryActions">
           <v-btn
@@ -341,7 +376,7 @@ async function deleteSelectedCards() {
               {{ selectedCardIds.length }} {{ selectedCardIds.length === 1 ? 'card' : 'cards' }} selected
             </v-list-subheader>
             <template v-for="item in availableBulkMenuItems" :key="item.action">
-              <v-divider v-if="item.divider" class="my-1" />
+              <v-divider v-if="'divider' in item && item.divider" class="my-1" />
               <v-list-item
                 :prepend-icon="item.icon"
                 :title="item.title"
@@ -384,10 +419,18 @@ async function deleteSelectedCards() {
       :tags="tags"
       :selectable="selectable"
       :interactive="interactive"
+      :surface="tableSurface"
       @open-card="emit('open-card', $event)"
-    />
+    >
+      <template v-if="$slots['last-column-heading']" #last-column-heading>
+        <slot name="last-column-heading" />
+      </template>
+      <template v-if="$slots['last-column']" #last-column="{ card }">
+        <slot name="last-column" :card="card" />
+      </template>
+    </FlashcardCardsTable>
 
-    <v-card v-else class="surface-card pa-8 text-center">
+    <v-card v-else class="pa-8 text-center" :class="{ 'surface-card': tableSurface }">
       <v-icon icon="mdi-cards-outline" size="44" color="secondary" />
       <h3 class="text-h6 font-weight-black mt-3">
         {{ cards.length ? 'No cards match these tags' : emptyTitle }}
@@ -497,6 +540,7 @@ async function deleteSelectedCards() {
 <style scoped>
 .card-filters { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: .75rem; }
 .card-filter-actions { display: flex; align-items: stretch; gap: .25rem; }
+.card-filter-actions--only { grid-column: 1 / -1; justify-content: flex-end; }
 .card-filter-action { min-width: 4rem; min-height: 3.75rem; height: auto !important; padding: .125rem .375rem !important; text-transform: none; }
 .card-filter-action__content { display: flex; min-width: 0; flex-direction: column; align-items: center; justify-content: center; gap: .2rem; }
 .card-filter-action__label { margin-top: .25rem; overflow: hidden; max-width: 100%; font-size: .64rem; font-weight: 800; line-height: 1.15; text-overflow: ellipsis; white-space: nowrap; }

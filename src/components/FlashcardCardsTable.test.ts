@@ -1,4 +1,4 @@
-import { nextTick } from 'vue'
+import { h, nextTick } from 'vue'
 import { mount } from '@vue/test-utils'
 import FlashcardCardsTable from '@/components/FlashcardCardsTable.vue'
 import type { Flashcard } from '@/types/domain'
@@ -58,13 +58,14 @@ function card(index: number, image = ''): Flashcard {
   }
 }
 
-function mountTable(cards: Flashcard[]) {
+function mountTable(cards: Flashcard[], slots: Record<string, any> = {}) {
   return mount(FlashcardCardsTable, {
     props: {
       cards,
       tags: [{ id: 'tag-1', name: 'Vocabulary' }],
       modelValue: [],
     },
+    slots,
     global: {
       stubs: {
         ExpandTransition: { template: '<div><slot /></div>' },
@@ -128,6 +129,22 @@ describe('FlashcardCardsTable', () => {
     expect(wrapper.findAll('.flashcard-table__image-frame')).toHaveLength(2)
     expect(wrapper.get('.image-stub').attributes('src')).toBe(cards[0]?.image)
     expect(wrapper.get('[aria-label="No image"]').exists()).toBe(true)
+  })
+
+  it('allows the final column to represent Review set inclusion instead of tags', () => {
+    const wrapper = mountTable([card(1), card(2)], {
+      'last-column-heading': 'Included?',
+      'last-column': ({ card: item }: { card: Flashcard }) => h(
+        'span',
+        { class: 'included-state' },
+        item.id === 'card-1' ? 'Included' : 'Excluded',
+      ),
+    })
+
+    expect(wrapper.findAll('thead th').at(-1)?.text()).toBe('Included?')
+    expect(wrapper.findAll('.included-state').map(state => state.text()))
+      .toEqual(['Included', 'Excluded'])
+    expect(wrapper.text()).not.toContain('Vocabulary')
   })
 
   it('toggles selection from the selection cell without opening the card', async () => {

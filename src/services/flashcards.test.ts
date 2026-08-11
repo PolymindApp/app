@@ -11,6 +11,7 @@ import {
   reviewSetCardCount,
   sessionAccuracy,
   sortFlashcardsForReview,
+  updateFlashcardReviewExclusions,
 } from '@/services/flashcards'
 import type { Flashcard, FlashcardReviewSet } from '@/types/domain'
 
@@ -147,6 +148,31 @@ describe('flashcard review helpers', () => {
 
     expect(snapshot?.cards.map(card => card.id)).toEqual(['new'])
     expect(snapshot?.cards[0]?.note).toBe('Newest card note')
+  })
+
+  it('excludes selected cards before applying ordering and the card limit', () => {
+    const snapshot = createIntervalFlashcardReviewSnapshot(
+      { ...reviewSet, excludedCards: ['new'], maxCards: 1 },
+      cards,
+    )
+
+    expect(snapshot?.cards.map(card => card.id)).toEqual(['difficult'])
+  })
+
+  it('keeps unrelated exclusions while card filters and ordering change', () => {
+    const afterExclude = updateFlashcardReviewExclusions(
+      ['card-hidden-by-current-filter'],
+      'exclude',
+      ['card-visible'],
+    )
+    const afterInclude = updateFlashcardReviewExclusions(
+      afterExclude,
+      'include',
+      ['card-visible'],
+    )
+
+    expect(afterExclude).toEqual(['card-hidden-by-current-filter', 'card-visible'])
+    expect(afterInclude).toEqual(['card-hidden-by-current-filter'])
   })
 
   it('prepares a paused Review set preview without recording progress', () => {
