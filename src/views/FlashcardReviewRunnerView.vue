@@ -216,7 +216,6 @@ const sessionActionItems = computed(() => reviewRunnerSessionMenuItems({
   busy: busy.value || speechOverAmplificationBusy.value,
   preview: isReviewSetPreview.value,
   finished: isFinished.value,
-  hasCard: Boolean(currentCard.value),
   canRestart: Boolean(session.value?.reviewSet),
 }))
 const sessionActionsDisabled = computed(() => sessionActionItems.value.every(item => item.disabled))
@@ -1259,6 +1258,32 @@ async function leaveRunner() {
             />
           </div>
         </footer>
+
+        <div class="review-card-actions d-flex justify-center ga-2">
+          <v-btn
+            v-if="!isReviewSetPreview"
+            size="large"
+            variant="text"
+            color="warning"
+            prepend-icon="mdi-eject-outline"
+            aria-label="Eject current card"
+            :disabled="busy || !currentCard"
+            @click="requestCurrentCardEjection"
+          >
+            Eject card
+          </v-btn>
+          <v-btn
+            size="large"
+            variant="text"
+            :disabled="isReviewSetPreview || busy"
+            @click="cardMenuOpen = true"
+          >
+            <template #prepend>
+              <v-icon icon="mdi-dots-horizontal" size="1.125rem" />
+            </template>
+            Options
+          </v-btn>
+        </div>
 
       </section>
     </template>

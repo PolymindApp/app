@@ -9,7 +9,6 @@ interface IntervalRunnerSessionMenuState {
 
 interface ReviewRunnerSessionMenuState extends IntervalRunnerSessionMenuState {
   finished: boolean
-  hasCard: boolean
   canRestart: boolean
 }
 
@@ -51,28 +50,15 @@ export function reviewRunnerSessionMenuItems(
 ): RunnerSessionMenuItem[] {
   const sessionUnavailable = state.preview || state.finished || state.busy
   return [
-    {
-      action: 'options',
-      title: 'Card options',
-      icon: 'mdi-dots-horizontal-circle-outline',
-      disabled: state.preview || state.finished || state.busy,
-    },
     ...(state.speechAvailable
       ? [amplificationItem(state.amplified, state.finished || state.busy)]
       : []),
-    {
-      action: 'eject',
-      title: 'Eject current card',
-      icon: 'mdi-eject-outline',
-      color: 'warning',
-      disabled: sessionUnavailable || !state.hasCard,
-    },
     {
       action: 'restart',
       title: 'Restart review',
       icon: 'mdi-restart',
       disabled: sessionUnavailable || !state.canRestart,
-      divider: true,
+      divider: state.speechAvailable,
     },
     {
       action: 'end',

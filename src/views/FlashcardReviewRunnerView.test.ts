@@ -220,10 +220,12 @@ describe('FlashcardReviewRunnerView Review set preview', () => {
     expect(mocks.store.startReview).not.toHaveBeenCalled()
     expect(wrapper.get('[aria-label="Start review"]').attributes('disabled')).toBeUndefined()
     expect(wrapper.find('[aria-label="Eject current card"]').exists()).toBe(false)
-    expect(wrapper.findAll('button').filter(button => button.text() === 'Options')).toHaveLength(0)
+    expect(wrapper.get('.review-card-actions').element.previousElementSibling)
+      .toBe(wrapper.get('.review-navigation').element)
+    expect(wrapper.findAll('button').filter(button => button.text() === 'Options')).toHaveLength(1)
+    expect(wrapper.findAll('button').find(button => button.text() === 'Options')?.attributes('disabled'))
+      .toBeDefined()
     expect(wrapper.getComponent(RunnerSessionActionsStub).props('items')).toEqual([
-      expect.objectContaining({ action: 'options', disabled: true }),
-      expect.objectContaining({ action: 'eject', disabled: true }),
       expect.objectContaining({ action: 'restart', disabled: true }),
       expect.objectContaining({ action: 'end', disabled: true }),
     ])
@@ -242,9 +244,10 @@ describe('FlashcardReviewRunnerView Review set preview', () => {
       query: {},
     })
     expect(wrapper.find('[aria-label="Pause review"]').exists()).toBe(true)
+    expect(wrapper.get('[aria-label="Eject current card"]').text()).toBe('Eject card')
+    expect(wrapper.findAll('button').find(button => button.text() === 'Options')?.attributes('disabled'))
+      .toBeUndefined()
     expect(wrapper.getComponent(RunnerSessionActionsStub).props('items')).toEqual([
-      expect.objectContaining({ action: 'options', disabled: false }),
-      expect.objectContaining({ action: 'eject', disabled: false }),
       expect.objectContaining({ action: 'restart', disabled: false }),
       expect.objectContaining({ action: 'end', disabled: false }),
     ])
@@ -272,15 +275,13 @@ describe('FlashcardReviewRunnerView Review set preview', () => {
     await actions[0]!.trigger('click')
     const menuItems = wrapper.findAll('.runner-session-actions button')
     expect(menuItems.map(button => button.text())).toEqual([
-      'Card options',
       'Enable TTS amplification',
-      'Eject current card',
       'Restart review',
       'End review',
     ])
-    expect(menuItems[1]!.attributes('aria-pressed')).toBe('false')
+    expect(menuItems[0]!.attributes('aria-pressed')).toBe('false')
 
-    await menuItems[1]!.trigger('click')
+    await menuItems[0]!.trigger('click')
     await flushPromises()
 
     expect(mocks.toggleSpeechOverAmplification).toHaveBeenCalledOnce()
@@ -290,7 +291,7 @@ describe('FlashcardReviewRunnerView Review set preview', () => {
     expect(wrapper.get('[data-action="amplification"]').text()).toBe('Disable TTS amplification')
     expect(wrapper.get('[data-action="amplification"]').attributes('aria-pressed')).toBe('true')
 
-    await wrapper.get('[data-action="options"]').trigger('click')
+    await wrapper.findAll('button').find(button => button.text() === 'Options')!.trigger('click')
     expect(wrapper.find('.flashcard-context-actions').exists()).toBe(true)
 
     wrapper.unmount()
