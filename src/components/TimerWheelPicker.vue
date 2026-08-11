@@ -28,8 +28,15 @@ const minutes = ref(0)
 const seconds = ref(0)
 const minutePosition = ref(0)
 const secondPosition = ref(0)
-const scrollFrames: Partial<Record<'minutes' | 'seconds', number>> = {}
-const scrollSettleTimers: Partial<Record<'minutes' | 'seconds', number>> = {}
+type WheelPart = 'minutes' | 'seconds'
+const scrollFrames: Partial<Record<WheelPart, number>> = {}
+const scrollSettleTimers: Partial<Record<WheelPart, number>> = {}
+const activePointerParts = new Map<number, WheelPart>()
+const activeTouchParts = new Map<number, WheelPart>()
+const pendingSettleParts = new Set<WheelPart>()
+const releaseReadyParts = new Set<WheelPart>()
+const minuteInteracting = ref(false)
+const secondInteracting = ref(false)
 let selectionActive = false
 let selectionEndTimer: number | undefined
 const timeMode = computed(() => props.mode === 'time')
@@ -48,6 +55,8 @@ function focusWheel() {
 
 function deactivateWheel() {
   if (!wheelFocused.value) return
+  settleScroller('minutes', true)
+  settleScroller('seconds', true)
   wheelFocused.value = false
   finishSelection()
   const activeElement = document.activeElement
@@ -132,7 +141,7 @@ function syncScrollers() {
   scrollToValue(secondScroller.value, seconds.value)
 }
 
-function updateValue(part: 'minutes' | 'seconds', value: number, behavior: ScrollBehavior = 'smooth') {
+function updateValue(part: WheelPart, value: number, behavior: ScrollBehavior = 'smooth') {
   const changed = part === 'minutes' ? minutes.value !== value : seconds.value !== value
   if (part === 'minutes') {
     minutes.value = value
@@ -145,13 +154,13 @@ function updateValue(part: 'minutes' | 'seconds', value: number, behavior: Scrol
   if (changed) tickSelection()
 }
 
-function updateInput(part: 'minutes' | 'seconds', value: string | number | null) {
+function updateInput(part: WheelPart, value: string | number | null) {
   const maximum = part === 'minutes' ? primaryMaximum.value : 59
   const normalized = Math.min(maximum, Math.max(0, Math.round(Number(value) || 0)))
   updateValue(part, normalized, 'auto')
 }
 
-function activateCenteredValue(part: 'minutes' | 'seconds') {
+function activateCenteredValue(part: WheelPart) {
   const element = part === 'minutes' ? minuteScroller.value : secondScroller.value
   if (!element) return
   const maximum = part === 'minutes' ? primaryMaximum.value : 59
@@ -167,13 +176,63 @@ function activateCenteredValue(part: 'minutes' | 'seconds') {
   tickSelection()
 }
 
-function settleScroller(part: 'minutes' | 'seconds') {
+function partIsInteracting(part: WheelPart) {
+  return [...activePointerParts.values(), ...activeTouchParts.values()].includes(part)
+}
+
+function updatePartInteraction(part: WheelPart) {
+  const interacting = partIsInteracting(part)
+  if (part === 'minutes') minuteInteracting.value = interacting
+  else secondInteracting.value = interacting
+}
+
+function beginPointerInteraction(part: WheelPart, event: PointerEvent) {
+  activePointerParts.set(event.pointerId, part)
+  updatePartInteraction(part)
+}
+
+function beginTouchInteraction(part: WheelPart, event: TouchEvent) {
+  Array.from(event.changedTouches).forEach(touch => activeTouchParts.set(touch.identifier, part))
+  updatePartInteraction(part)
+}
+
+function finishPartInteraction(part: WheelPart) {
+  updatePartInteraction(part)
+  if (partIsInteracting(part) || !pendingSettleParts.has(part)) return
+  if (releaseReadyParts.has(part)) settleScroller(part)
+  else scheduleScrollSettle(part)
+}
+
+function finishPointerInteraction(event: PointerEvent) {
+  const part = activePointerParts.get(event.pointerId)
+  if (!part) return
+  activePointerParts.delete(event.pointerId)
+  finishPartInteraction(part)
+}
+
+function finishTouchInteraction(event: TouchEvent) {
+  const parts = new Set<WheelPart>()
+  Array.from(event.changedTouches).forEach(touch => {
+    const part = activeTouchParts.get(touch.identifier)
+    if (part) parts.add(part)
+    activeTouchParts.delete(touch.identifier)
+  })
+  parts.forEach(finishPartInteraction)
+}
+
+function settleScroller(part: WheelPart, force = false) {
   if (scrollSettleTimers[part]) window.clearTimeout(scrollSettleTimers[part])
   scrollSettleTimers[part] = undefined
-  if (!wheelFocused.value) return
+  if (!wheelFocused.value || !pendingSettleParts.has(part)) return
+  if (!force && partIsInteracting(part)) {
+    releaseReadyParts.add(part)
+    return
+  }
 
   const element = part === 'minutes' ? minuteScroller.value : secondScroller.value
   if (!element) return
+  pendingSettleParts.delete(part)
+  releaseReadyParts.delete(part)
   const maximum = part === 'minutes' ? primaryMaximum.value : 59
   const value = Math.min(maximum, Math.max(0, Math.round(element.scrollTop / itemHeight)))
   activateCenteredValue(part)
@@ -182,13 +241,15 @@ function settleScroller(part: 'minutes' | 'seconds') {
   scrollToValue(element, value, 'smooth')
 }
 
-function scheduleScrollSettle(part: 'minutes' | 'seconds') {
+function scheduleScrollSettle(part: WheelPart) {
   if (scrollSettleTimers[part]) window.clearTimeout(scrollSettleTimers[part])
   scrollSettleTimers[part] = window.setTimeout(() => settleScroller(part), 120)
 }
 
-function handleScroll(part: 'minutes' | 'seconds') {
+function handleScroll(part: WheelPart) {
   if (!wheelFocused.value) return
+  pendingSettleParts.add(part)
+  releaseReadyParts.delete(part)
   scheduleScrollSettle(part)
   if (scrollFrames[part]) cancelAnimationFrame(scrollFrames[part])
   scrollFrames[part] = requestAnimationFrame(() => {
@@ -233,12 +294,20 @@ watch(() => props.active, (active) => {
 
 onMounted(() => {
   document.addEventListener('pointerdown', handleOutsidePointerDown, true)
+  document.addEventListener('pointerup', finishPointerInteraction, true)
+  document.addEventListener('pointercancel', finishPointerInteraction, true)
+  document.addEventListener('touchend', finishTouchInteraction, true)
+  document.addEventListener('touchcancel', finishTouchInteraction, true)
   setLocalValue(props.modelValue)
   if (props.active) nextTick(syncScrollers)
 })
 
 onBeforeUnmount(() => {
   document.removeEventListener('pointerdown', handleOutsidePointerDown, true)
+  document.removeEventListener('pointerup', finishPointerInteraction, true)
+  document.removeEventListener('pointercancel', finishPointerInteraction, true)
+  document.removeEventListener('touchend', finishTouchInteraction, true)
+  document.removeEventListener('touchcancel', finishTouchInteraction, true)
   Object.values(scrollFrames).forEach((frame) => frame && cancelAnimationFrame(frame))
   Object.values(scrollSettleTimers).forEach((timer) => timer && window.clearTimeout(timer))
   finishSelection()
@@ -297,11 +366,14 @@ onBeforeUnmount(() => {
       <div
         ref="minuteScroller"
         class="timer-wheel__column"
+        :class="{ 'timer-wheel__column--interacting': minuteInteracting }"
         role="listbox"
         :aria-label="timeMode ? 'Hours' : 'Minutes'"
         :aria-activedescendant="`${pickerId}-minutes-${minutes}`"
         @scroll.passive="handleScroll('minutes')"
         @scrollend.passive="settleScroller('minutes')"
+        @pointerdown="beginPointerInteraction('minutes', $event)"
+        @touchstart.passive="beginTouchInteraction('minutes', $event)"
       >
         <div class="timer-wheel__spacer" aria-hidden="true" />
         <button
@@ -327,11 +399,14 @@ onBeforeUnmount(() => {
       <div
         ref="secondScroller"
         class="timer-wheel__column"
+        :class="{ 'timer-wheel__column--interacting': secondInteracting }"
         role="listbox"
         :aria-label="timeMode ? 'Minutes' : 'Seconds'"
         :aria-activedescendant="`${pickerId}-seconds-${seconds}`"
         @scroll.passive="handleScroll('seconds')"
         @scrollend.passive="settleScroller('seconds')"
+        @pointerdown="beginPointerInteraction('seconds', $event)"
+        @touchstart.passive="beginTouchInteraction('seconds', $event)"
       >
         <div class="timer-wheel__spacer" aria-hidden="true" />
         <button
@@ -426,6 +501,9 @@ onBeforeUnmount(() => {
 .timer-wheel--focused .timer-wheel__column {
   overflow-y: auto;
   touch-action: pan-y;
+}
+.timer-wheel__column--interacting {
+  scroll-snap-type: none;
 }
 .timer-wheel__column::-webkit-scrollbar { display: none; }
 .timer-wheel__spacer { height: 52px; scroll-snap-align: none; }

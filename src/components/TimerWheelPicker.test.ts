@@ -29,6 +29,12 @@ function mountPicker() {
   })
 }
 
+function dispatchPointer(type: string, pointerId: number) {
+  const event = new Event(type, { bubbles: true })
+  Object.defineProperty(event, 'pointerId', { value: pointerId })
+  document.dispatchEvent(event)
+}
+
 describe('TimerWheelPicker focus gate', () => {
   it('requires focus before scrolling and shows the focused state', async () => {
     const wrapper = mountPicker()
@@ -93,6 +99,31 @@ describe('TimerWheelPicker focus gate', () => {
 
     expect(seconds.element.scrollTop).toBe(10 * 52)
     expect(seconds.find('.timer-wheel__option--selected').text()).toContain('10')
+
+    wrapper.unmount()
+  })
+
+  it('waits for pointer release before snapping a settled scroll', async () => {
+    const wrapper = mountPicker()
+    await wrapper.find('.timer-wheel__focus-guard').trigger('click')
+    const seconds = wrapper.findAll<HTMLElement>('.timer-wheel__column')[1]!
+
+    await seconds.trigger('pointerdown', { pointerId: 7 })
+    expect(seconds.classes()).toContain('timer-wheel__column--interacting')
+
+    seconds.element.scrollTop = 10 * 52 + 20
+    await seconds.trigger('scroll')
+    await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)))
+    await seconds.trigger('scrollend')
+
+    expect(seconds.element.scrollTop).toBe(10 * 52 + 20)
+    expect(seconds.find('.timer-wheel__option--selected').text()).toContain('10')
+
+    dispatchPointer('pointerup', 7)
+    await nextTick()
+
+    expect(seconds.classes()).not.toContain('timer-wheel__column--interacting')
+    expect(seconds.element.scrollTop).toBe(10 * 52)
 
     wrapper.unmount()
   })
