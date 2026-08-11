@@ -175,22 +175,24 @@ function selectKind(kind: IntervalStepKind | null) {
           <legend>Duration</legend>
           <TimerWheelPicker v-model="durationSeconds" />
         </fieldset>
-        <v-checkbox
-          v-if="reviewSetSpeechEnabled"
-          v-model="flashcardReviewEnabled"
-          label="Play Review set during this step"
-          color="secondary"
-          density="comfortable"
-          hide-details="auto"
-        />
-        <v-checkbox
-          v-if="canSkipOnLastRound"
-          v-model="node.skipOnLastRound"
-          label="Skip this step on the final round"
-          color="secondary"
-          density="comfortable"
-          hide-details
-        />
+        <div>
+            <v-checkbox
+            v-if="reviewSetSpeechEnabled"
+            v-model="flashcardReviewEnabled"
+            label="Play Review set during this step"
+            color="secondary"
+            density="comfortable"
+            hide-details="auto"
+            />
+            <v-checkbox
+            v-if="canSkipOnLastRound"
+            v-model="node.skipOnLastRound"
+            label="Skip this step on the final round"
+            color="secondary"
+            density="comfortable"
+            hide-details
+            />
+        </div>
       </div>
     </v-expand-transition>
 
