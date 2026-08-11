@@ -11,9 +11,9 @@ describe('interval type sounds', () => {
 
     expect(Object.keys(sounds)).toEqual(INTERVAL_STEP_TYPES.map(type => type.value))
     expect(sounds).toEqual({
-      train: 'cine-hit',
+      train: 'go',
       work: 'cash',
-      rest: 'harp',
+      rest: 'notification',
       prepare: 'chime',
       meditation: 'gong',
       confirmation: 'confirm',
@@ -25,7 +25,7 @@ describe('interval type sounds', () => {
     const sounds = normalizeIntervalTypeSounds({ work: 'count', rest: 'bell', meditation: 'none' })
 
     expect(sounds.work).toBe('count')
-    expect(sounds.rest).toBe('harp')
+    expect(sounds.rest).toBe('notification')
     expect(sounds.meditation).toBe('none')
     expect(sounds.confirmation).toBe('confirm')
   })

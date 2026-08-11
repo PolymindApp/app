@@ -54,9 +54,9 @@ const INTERVAL_CUE_SOUNDS = new Set<IntervalCueSound>(
 
 export function defaultIntervalTypeSounds(): IntervalTypeSoundSettings {
   return {
-    train: 'cine-hit',
+    train: 'go',
     work: 'cash',
-    rest: 'harp',
+    rest: 'notification',
     prepare: 'chime',
     meditation: 'gong',
     confirmation: 'confirm',
