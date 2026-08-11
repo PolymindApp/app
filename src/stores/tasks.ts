@@ -2,6 +2,7 @@ import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { addDays, endOfWeek, format, parseISO, startOfWeek, subDays } from 'date-fns'
 import { api } from '@/lib/api'
+import { hasLocalBootstrap, listLocalRecords } from '@/lib/localDatabase'
 import { readHealthConnectSteps } from '@/services/healthConnect'
 import { dailyTotalCompletionPercent, isTaskScheduled, meetsTarget, programCycleDay, progressPercent, stepsForDate, toDateKey } from '@/services/schedule'
 import { taskNeedsReview } from '@/services/taskCardActions'
@@ -312,6 +313,7 @@ export const useTaskStore = defineStore('tasks', () => {
       entries.value = entryRecords.map(mapEntry)
       initialProgressSince = since
       loadedProgressRanges.clear()
+      await reconcileLocalSessionProgress(since)
       await syncTaskReminders()
     } catch (cause) {
       error.value = cause instanceof Error ? cause.message : 'Could not load your plan.'
@@ -444,7 +446,7 @@ export const useTaskStore = defineStore('tasks', () => {
     status: 'completed' | 'ended'
     elapsedSeconds: number
     completedAt: string
-  }) {
+  }, syncReminders = true) {
     if (!tasks.value.length) await load()
     const taskDate = input.taskDate || toDateKey(new Date(input.startedAt))
     if (input.programStepId && input.taskId && input.status === 'completed') {
@@ -501,7 +503,47 @@ export const useTaskStore = defineStore('tasks', () => {
         Object.assign(occurrence, mapOccurrence(updatedOccurrence))
       }
     }
-    await syncTaskReminders()
+    if (syncReminders) await syncTaskReminders()
+  }
+
+  async function reconcileLocalSessionProgress(since: string) {
+    const accountId = api.authStore.record?.id || ''
+    if (!tasks.value.length || !accountId || !await hasLocalBootstrap(accountId)) return
+    const [intervalSessions, flashcardSessions] = await Promise.all([
+      listLocalRecords(accountId, 'interval_sessions'),
+      listLocalRecords(accountId, 'flashcard_review_sessions'),
+    ])
+    const sessions = [
+      ...intervalSessions.map(session => ({
+        record: session,
+        sourceType: 'interval' as const,
+        sourceId: String(session.template || ''),
+      })),
+      ...flashcardSessions.map(session => ({
+        record: session,
+        sourceType: 'flashcards' as const,
+        sourceId: String(session.review_set || ''),
+      })),
+    ]
+    for (const { record, sourceType, sourceId } of sessions) {
+      const status = String(record.status || '')
+      if (status !== 'completed' && status !== 'ended') continue
+      const startedAt = String(record.started_at || '')
+      const taskDate = String(record.task_date || '')
+      if (!startedAt || (startedAt.slice(0, 10) < since && (!taskDate || taskDate < since))) continue
+      await applyLocalSessionProgress({
+        id: String(record.id || ''),
+        sourceType,
+        sourceId,
+        taskId: String(record.task || ''),
+        programStepId: String(record.program_step || ''),
+        taskDate,
+        startedAt,
+        status,
+        elapsedSeconds: Number(record.elapsed_seconds || 0),
+        completedAt: String(record.ended_at || record.updated_at || new Date().toISOString()),
+      }, false)
+    }
   }
 
   async function setDailyTotalSealed(progress: TaskProgress) {
