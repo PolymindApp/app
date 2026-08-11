@@ -8,6 +8,9 @@ const apiMocks = vi.hoisted(() => ({
   update: vi.fn(),
   delete: vi.fn(),
 }))
+const taskMocks = vi.hoisted(() => ({
+  syncTaskReminders: vi.fn(),
+}))
 
 vi.mock('@/lib/api', () => ({
   api: {
@@ -16,6 +19,9 @@ vi.mock('@/lib/api', () => ({
       return apiMocks
     },
   },
+}))
+vi.mock('@/stores/tasks', () => ({
+  useTaskStore: () => taskMocks,
 }))
 
 import { useJournalStore } from './journal'
@@ -42,6 +48,7 @@ describe('journal store', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     Object.values(apiMocks).forEach(mock => mock.mockReset())
+    taskMocks.syncTaskReminders.mockReset().mockResolvedValue(undefined)
   })
 
   it('loads a week and maps source snapshots', async () => {
@@ -61,6 +68,7 @@ describe('journal store', () => {
       taskSnapshot: 'Train',
       trackerSnapshots: { 'tracker-1': 'Mood', 'tracker-2': 'Energy' },
     })
+    expect(store.loadedRange).toBe('2026-07-27:2026-08-02')
   })
 
   it('persists a plain copied context with a reflection', async () => {
@@ -103,6 +111,18 @@ describe('journal store', () => {
     await olderLoad
 
     expect(store.entries.map(entry => entry.id)).toEqual(['newer-week'])
+    expect(store.loadedRange).toBe('2026-08-03:2026-08-09')
+  })
+
+  it('does not keep the local list loading while reminders reconcile', async () => {
+    taskMocks.syncTaskReminders.mockReturnValue(new Promise(() => undefined))
+    apiMocks.getFullList.mockResolvedValue([record('journal-1')])
+    const store = useJournalStore()
+
+    await store.loadRange('2026-08-01', '2026-08-31')
+
+    expect(store.loading).toBe(false)
+    expect(store.entries.map(entry => entry.id)).toEqual(['journal-1'])
   })
 
   it('shows a confirmation only after a reflection is successfully deleted', async () => {

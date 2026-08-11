@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
     entries: [] as Record<string, unknown>[],
     loading: false,
     loaded: true,
+    loadedRange: '2026-08-01:2026-08-31',
     error: '',
     loadRange: vi.fn(),
   },
@@ -64,9 +65,57 @@ describe('JournalView month navigation', () => {
       entry('next', '2026-08-06', 'Next reflection'),
     ]
     mocks.journalStore.loadRange.mockReset().mockResolvedValue(true)
+    mocks.journalStore.loading = false
+    mocks.journalStore.loaded = true
+    mocks.journalStore.loadedRange = '2026-08-01:2026-08-31'
     mocks.taskStore.load.mockReset().mockResolvedValue(undefined)
     mocks.trackingStore.trackers = []
     mocks.trackingStore.load.mockReset().mockResolvedValue(undefined)
+  })
+
+  it('keeps the loaded month visible during a background refresh', () => {
+    mocks.journalStore.loading = true
+    mocks.journalStore.loadRange.mockReturnValue(new Promise(() => undefined))
+
+    const wrapper = mount(JournalView, {
+      global: {
+        stubs: {
+          WeekNavigator: WeekNavigatorStub,
+          VAlert: { template: '<div><slot /><slot name="append" /></div>' },
+          VBtn: { template: '<button><slot /></button>' },
+          VCard: { template: '<article><slot /></article>' },
+          VChip: { template: '<span><slot /></span>' },
+          VIcon: true,
+          VProgressCircular: true,
+        },
+      },
+    })
+
+    expect(wrapper.text()).toContain('Selected reflection')
+    expect(wrapper.text()).not.toContain('Loading reflections…')
+  })
+
+  it('does not show entries cached for another month during initial hydration', () => {
+    mocks.journalStore.loading = true
+    mocks.journalStore.loadedRange = '2026-07-01:2026-07-31'
+    mocks.journalStore.loadRange.mockReturnValue(new Promise(() => undefined))
+
+    const wrapper = mount(JournalView, {
+      global: {
+        stubs: {
+          WeekNavigator: WeekNavigatorStub,
+          VAlert: { template: '<div><slot /><slot name="append" /></div>' },
+          VBtn: { template: '<button><slot /></button>' },
+          VCard: { template: '<article><slot /></article>' },
+          VChip: { template: '<span><slot /></span>' },
+          VIcon: true,
+          VProgressCircular: true,
+        },
+      },
+    })
+
+    expect(wrapper.text()).toContain('Loading reflections…')
+    expect(wrapper.text()).not.toContain('Selected reflection')
   })
 
   it('loads a full month and lists all reflections newest first', async () => {

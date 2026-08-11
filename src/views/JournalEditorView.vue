@@ -10,12 +10,15 @@ import FormActionBar from '@/components/FormActionBar.vue'
 import { useJournalStore } from '@/stores/journal'
 import { useTaskStore } from '@/stores/tasks'
 import { useTrackingStore } from '@/stores/tracking'
+import type { JournalEntry } from '@/types/domain'
 
 const route = useRoute()
 const router = useRouter()
 const journalStore = useJournalStore()
 const taskStore = useTaskStore()
 const trackingStore = useTrackingStore()
+const entryId = computed(() => typeof route.params.id === 'string' ? route.params.id : '')
+const isEditing = computed(() => Boolean(entryId.value))
 const allowAutomaticFocus = Capacitor.getPlatform() !== 'android'
 const form = ref()
 const title = ref('')
@@ -23,15 +26,13 @@ const body = ref('')
 const occurredLocal = ref('')
 const task = ref<string>()
 const trackers = ref<string[]>([])
-const loading = ref(true)
+const loading = ref(isEditing.value)
 const saving = ref(false)
 const deleting = ref(false)
 const deleteDialog = ref(false)
 const error = ref('')
 const original = ref('')
 
-const entryId = computed(() => typeof route.params.id === 'string' ? route.params.id : '')
-const isEditing = computed(() => Boolean(entryId.value))
 const taskItems = computed(() => [...taskStore.tasks]
   .sort((left, right) => Number(right.active) - Number(left.active) || left.name.localeCompare(right.name))
   .map(item => ({
@@ -91,37 +92,53 @@ function destinationRoute() {
     : { name: 'journal' as const, query: destinationQuery() }
 }
 
-onMounted(async () => {
+function applyEntry(entry: JournalEntry) {
+  title.value = entry.title
+  body.value = entry.body
+  occurredLocal.value = format(new Date(entry.occurredAt), "yyyy-MM-dd'T'HH:mm")
+  task.value = entry.task
+  trackers.value = [...entry.trackers]
+  original.value = signature.value
+}
+
+function initializeNewEntry() {
+  occurredLocal.value = defaultOccurredLocal()
+  task.value = typeof route.query.task === 'string' ? route.query.task : undefined
+  trackers.value = typeof route.query.tracker === 'string' ? [route.query.tracker] : []
+  original.value = signature.value
+}
+
+async function loadEntry() {
   error.value = ''
   try {
-    await Promise.allSettled([
-      taskStore.tasks.length ? Promise.resolve() : taskStore.load(),
-      trackingStore.loaded ? Promise.resolve() : trackingStore.load(),
-    ])
-    if (isEditing.value) {
-      const entry = await journalStore.getEntry(entryId.value)
-      title.value = entry.title
-      body.value = entry.body
-      occurredLocal.value = format(new Date(entry.occurredAt), "yyyy-MM-dd'T'HH:mm")
-      task.value = entry.task
-      trackers.value = [...entry.trackers]
-    } else {
-      occurredLocal.value = defaultOccurredLocal()
-      task.value = typeof route.query.task === 'string'
-        && taskStore.tasks.some(item => item.id === route.query.task)
-        ? route.query.task
-        : undefined
-      trackers.value = typeof route.query.tracker === 'string'
-        && trackingStore.trackers.some(item => item.id === route.query.tracker)
-        ? [route.query.tracker]
-        : []
-    }
-    original.value = signature.value
+    applyEntry(await journalStore.getEntry(entryId.value))
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Could not open this reflection.'
   } finally {
     loading.value = false
   }
+}
+
+function loadContextOptions() {
+  return Promise.allSettled([
+    taskStore.tasks.length ? Promise.resolve() : taskStore.load(),
+    trackingStore.loaded ? Promise.resolve() : trackingStore.load(),
+  ])
+}
+
+if (isEditing.value) {
+  const cachedEntry = journalStore.entries.find(entry => entry.id === entryId.value)
+  if (cachedEntry) {
+    applyEntry(cachedEntry)
+    loading.value = false
+  }
+} else {
+  initializeNewEntry()
+}
+
+onMounted(() => {
+  void loadContextOptions()
+  if (isEditing.value && loading.value) void loadEntry()
 })
 
 async function save() {
@@ -213,6 +230,7 @@ async function removeEntry() {
             v-model="task"
             label="Task (optional)"
             :items="taskItems"
+            :loading="taskStore.loading"
             clearable
             variant="outlined"
             hide-details="auto"
@@ -221,6 +239,7 @@ async function removeEntry() {
             v-model="trackers"
             label="Trackers (optional)"
             :items="trackerItems"
+            :loading="trackingStore.loading"
             clearable
             multiple
             chips

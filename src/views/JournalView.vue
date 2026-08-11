@@ -26,6 +26,9 @@ const vRipple = Ripple
 const taskId = computed(() => typeof route.query.task === 'string' ? route.query.task : '')
 const trackerId = computed(() => typeof route.query.tracker === 'string' ? route.query.tracker : '')
 const selectedMonthKey = computed(() => format(selectedDate.value, 'yyyy-MM'))
+const selectedMonthRange = computed(() => monthRange(selectedDate.value))
+const hasLoadedSelectedRange = computed(() => journalStore.loadedRange
+  === `${selectedMonthRange.value.start}:${selectedMonthRange.value.end}`)
 const filteredMonthEntries = computed(() => filterJournalEntries(
   journalStore.entries,
   'all',
@@ -33,7 +36,8 @@ const filteredMonthEntries = computed(() => filterJournalEntries(
   trackerId.value,
 ))
 const groups = computed(() => groupJournalEntries(filteredMonthEntries.value))
-const showEmptyState = computed(() => journalStore.loaded && !journalStore.loading && groups.value.length === 0)
+const showInitialLoading = computed(() => journalStore.loading && !hasLoadedSelectedRange.value)
+const showEmptyState = computed(() => hasLoadedSelectedRange.value && groups.value.length === 0)
 const filteredTask = computed(() => taskStore.tasks.find((task) => task.id === taskId.value))
 const filteredTracker = computed(() => trackingStore.trackers.find((tracker) => tracker.id === trackerId.value))
 
@@ -172,12 +176,12 @@ onMounted(async () => {
             </template>
           </v-alert>
 
-          <div v-if="journalStore.loading" class="journal-loading py-12">
+          <div v-if="showInitialLoading" class="journal-loading py-12">
             <v-progress-circular indeterminate color="secondary" size="34" />
             <span class="text-body-2 muted">Loading reflections…</span>
           </div>
 
-          <div v-else-if="groups.length" class="journal-groups mt-5">
+          <div v-else-if="hasLoadedSelectedRange && groups.length" class="journal-groups mt-5">
             <section v-for="group in groups" :key="group.date">
               <div class="section-heading">
                 <h2>{{ format(parseISO(group.date), 'EEEE, MMMM d') }}</h2>

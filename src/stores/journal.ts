@@ -44,6 +44,7 @@ export const useJournalStore = defineStore('journal', () => {
   const entries = ref<JournalEntry[]>([])
   const loading = ref(false)
   const loaded = ref(false)
+  const loadedRange = ref('')
   const error = ref('')
   let rangeRequest = 0
   let lastRange: [string, string] | undefined
@@ -61,7 +62,8 @@ export const useJournalStore = defineStore('journal', () => {
       if (request !== rangeRequest) return false
       entries.value = records.map(mapJournalEntry)
       loaded.value = true
-      await useTaskStore().syncTaskReminders()
+      loadedRange.value = `${start}:${end}`
+      void useTaskStore().syncTaskReminders()
       return true
     } catch (cause) {
       if (request === rangeRequest) {
@@ -115,6 +117,7 @@ export const useJournalStore = defineStore('journal', () => {
     entries,
     loading,
     loaded,
+    loadedRange,
     error,
     loadRange,
     reloadCurrentRange,
