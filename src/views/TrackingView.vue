@@ -352,6 +352,7 @@ async function loadVisibleWeekEntries() {
           rounded="lg"
           @click="editActionTracker"
         />
+        <v-divider class="my-1" />
         <v-list-item
           prepend-icon="mdi-notebook-plus-outline"
           title="Write reflection"
