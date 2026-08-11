@@ -1233,6 +1233,7 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
 .task-masonry-item:last-child { margin-bottom: 0; }
 .task-masonry-item > * { min-height: 0; }
 .task-masonry-item.long-press-drag-ghost { overflow: hidden; }
+.task-stack :deep(.long-press-drag-placeholder) { margin-bottom: .7rem; }
 .task-masonry-item--draggable :deep([data-task-drag-handle]) { cursor: grab; }
 .task-list-enter-active,
 .task-list-leave-active {
