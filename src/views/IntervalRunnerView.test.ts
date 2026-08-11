@@ -411,7 +411,7 @@ describe('IntervalRunnerView flashcard area', () => {
         durationSeconds: 10,
       },
     ]
-    active.runtime.remainingMs = 10_000
+    active.runtime.remainingMs = 6_500
     mocks.intervalStore.sessions = reactive([active])
 
     const wrapper = mountRunner()
@@ -425,7 +425,7 @@ describe('IntervalRunnerView flashcard area', () => {
     const stored = mocks.intervalStore.sessions[0]!
     stored.runtime.stepIndex = 1
     stored.runtime.accumulatedMs = 10_000
-    stored.runtime.remainingMs = 20_000
+    stored.runtime.remainingMs = 6_500
     await wrapper.vm.$nextTick()
     await flushPromises()
 
@@ -452,7 +452,7 @@ describe('IntervalRunnerView flashcard area', () => {
     mocks.speakFlashcardText.mockClear()
     stored.runtime.stepIndex = 2
     stored.runtime.accumulatedMs = 30_000
-    stored.runtime.remainingMs = 10_000
+    stored.runtime.remainingMs = 6_500
     await wrapper.vm.$nextTick()
     await flushPromises()
 
@@ -460,6 +460,32 @@ describe('IntervalRunnerView flashcard area', () => {
     expect(wrapper.get('.interval-review-card').attributes('disabled')).toBeUndefined()
     expect(wrapper.get('.interval-review-card').classes()).not.toContain('interval-review-card--playback-paused')
     expect(mocks.speakFlashcardText).toHaveBeenCalledWith('House', 'en-US')
+
+    wrapper.unmount()
+  })
+
+  it('waits at the start of an enabled step before speaking the Review set', async () => {
+    const active = intervalSession('running')
+    if (!active.flashcardReview) throw new Error('Expected a Review set snapshot')
+    active.flashcardReview.speechEnabled = true
+    active.flashcardReview.frontLanguage = 'en-US'
+    active.definition.children = [{
+      id: 'read',
+      type: 'step',
+      name: 'Read',
+      kind: 'work',
+      durationSeconds: 10,
+    }]
+    active.runtime.remainingMs = 10_000
+    mocks.intervalStore.sessions = reactive([active])
+
+    const wrapper = mountRunner()
+    await flushPromises()
+
+    expect(wrapper.get('.interval-review-card__meta small').text()).toBe('Paused')
+    expect(wrapper.get('.interval-review-card').classes())
+      .toContain('interval-review-card--playback-paused')
+    expect(mocks.speakFlashcardText).not.toHaveBeenCalled()
 
     wrapper.unmount()
   })

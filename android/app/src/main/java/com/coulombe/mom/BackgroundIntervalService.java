@@ -49,6 +49,7 @@ public class BackgroundIntervalService extends Service {
     private static final String CHANNEL_ID = "mom_interval_timer";
     private static final int NOTIFICATION_ID = 4107;
     private static final long TICK_MS = 250L;
+    static final long REVIEW_EDGE_PAUSE_MS = 3_000L;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final List<IntervalStep> steps = new ArrayList<>();
@@ -66,7 +67,7 @@ public class BackgroundIntervalService extends Service {
     private boolean vibrationEnabled;
     private boolean running;
     private long reviewBaseElapsedMs;
-    private long reviewConfiguredElapsedMs;
+    private long reviewConfiguredWindowElapsedMs;
     private long reviewFrontDurationMs = 5000L;
     private long reviewBaseBackDurationMs = 5000L;
     private long reviewBackDurationMs = 5000L;
@@ -245,7 +246,9 @@ public class BackgroundIntervalService extends Service {
         pendingReviewSpeechText = "";
         pendingReviewSpeechLanguage = "";
         reviewBaseElapsedMs = Math.max(0L, intent.getLongExtra(EXTRA_ELAPSED_MS, 0L));
-        reviewConfiguredElapsedMs = SystemClock.elapsedRealtime();
+        reviewConfiguredWindowElapsedMs = currentStepReviewWindowElapsedMs(
+            SystemClock.elapsedRealtime()
+        );
         appWasVisible = MainActivity.isAppVisible();
 
         if (encodedReview == null || encodedReview.trim().isEmpty()) {
@@ -284,14 +287,48 @@ public class BackgroundIntervalService extends Service {
         reviewBackLanguage = review.optString("backLanguage", "").trim();
         reviewSpeechOverAmplified = review.optBoolean("overAmplified", false);
         if (!previousSessionId.equals(sessionId)) lastReviewSpeechKey = "";
-        if (!currentStepPlaysFlashcardReview()) pauseReviewSpeech();
+        if (!currentStepPlaysFlashcardReview(SystemClock.elapsedRealtime())) pauseReviewSpeech();
     }
 
-    private boolean currentStepPlaysFlashcardReview() {
+    private boolean currentStepAllowsFlashcardReview() {
         return !steps.isEmpty()
             && stepIndex >= 0
             && stepIndex < steps.size()
             && steps.get(stepIndex).flashcardReviewEnabled;
+    }
+
+    static long reviewWindowElapsedMs(long durationMs, long remainingMs) {
+        long safeDurationMs = Math.max(0L, durationMs);
+        long safeRemainingMs = Math.min(safeDurationMs, Math.max(0L, remainingMs));
+        long reviewDurationMs = Math.max(0L, safeDurationMs - (REVIEW_EDGE_PAUSE_MS * 2L));
+        return Math.min(
+            reviewDurationMs,
+            Math.max(0L, safeDurationMs - safeRemainingMs - REVIEW_EDGE_PAUSE_MS)
+        );
+    }
+
+    static boolean reviewWindowIsActive(long durationMs, long remainingMs) {
+        long safeDurationMs = Math.max(0L, durationMs);
+        long safeRemainingMs = Math.min(safeDurationMs, Math.max(0L, remainingMs));
+        long elapsedMs = safeDurationMs - safeRemainingMs;
+        return elapsedMs >= REVIEW_EDGE_PAUSE_MS
+            && safeRemainingMs > REVIEW_EDGE_PAUSE_MS;
+    }
+
+    private long currentStepRemainingMs(long now) {
+        return Math.max(0L, deadlineElapsedMs - now);
+    }
+
+    private long currentStepReviewWindowElapsedMs(long now) {
+        if (!currentStepAllowsFlashcardReview()) return 0L;
+        IntervalStep step = steps.get(stepIndex);
+        return reviewWindowElapsedMs(step.durationMs, currentStepRemainingMs(now));
+    }
+
+    private boolean currentStepPlaysFlashcardReview(long now) {
+        if (!currentStepAllowsFlashcardReview()) return false;
+        IntervalStep step = steps.get(stepIndex);
+        return reviewWindowIsActive(step.durationMs, currentStepRemainingMs(now));
     }
 
     private void pauseReviewSpeech() {
@@ -302,18 +339,19 @@ public class BackgroundIntervalService extends Service {
     }
 
     private long currentReviewElapsedMs(long now) {
-        return reviewBaseElapsedMs + (
-            currentStepPlaysFlashcardReview()
-                ? Math.max(0L, now - reviewConfiguredElapsedMs)
-                : 0L
+        return reviewBaseElapsedMs + Math.max(
+            0L,
+            currentStepReviewWindowElapsedMs(now) - reviewConfiguredWindowElapsedMs
         );
     }
 
     private void settleReviewClock(long now) {
-        if (currentStepPlaysFlashcardReview()) {
-            reviewBaseElapsedMs += Math.max(0L, now - reviewConfiguredElapsedMs);
-        }
-        reviewConfiguredElapsedMs = now;
+        long currentWindowElapsedMs = currentStepReviewWindowElapsedMs(now);
+        reviewBaseElapsedMs += Math.max(
+            0L,
+            currentWindowElapsedMs - reviewConfiguredWindowElapsedMs
+        );
+        reviewConfiguredWindowElapsedMs = currentWindowElapsedMs;
     }
 
     private ReviewPhase currentReviewPhase(long now) {
@@ -343,7 +381,7 @@ public class BackgroundIntervalService extends Service {
 
     private void updateReviewSpeech(long now) {
         boolean appVisible = MainActivity.isAppVisible();
-        if (!currentStepPlaysFlashcardReview()) {
+        if (!currentStepPlaysFlashcardReview(now)) {
             pauseReviewSpeech();
             appWasVisible = appVisible;
             return;
@@ -378,7 +416,7 @@ public class BackgroundIntervalService extends Service {
             || pendingReviewSpeechText.isEmpty()
             || pendingReviewSpeechLanguage.isEmpty()
             || MainActivity.isAppVisible()
-            || !currentStepPlaysFlashcardReview()
+            || !currentStepPlaysFlashcardReview(SystemClock.elapsedRealtime())
         ) return;
         int availability = speech.setLanguage(Locale.forLanguageTag(pendingReviewSpeechLanguage));
         if (
@@ -424,9 +462,11 @@ public class BackgroundIntervalService extends Service {
             if (!MainActivity.isAppVisible()) playStepCue();
             if (steps.get(stepIndex).requiresConfirmation) {
                 deadlineElapsedMs = now;
+                reviewConfiguredWindowElapsedMs = 0L;
                 return;
             }
             deadlineElapsedMs += steps.get(stepIndex).durationMs;
+            reviewConfiguredWindowElapsedMs = 0L;
         }
     }
 

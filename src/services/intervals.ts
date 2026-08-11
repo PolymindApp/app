@@ -16,6 +16,7 @@ const safeMultiply = (left: number, right: number) => Math.min(Number.MAX_SAFE_I
 const GLOBAL_REPETITION_GROUP_ID = 'interval-global-repetition'
 export const MIN_GLOBAL_REPETITIONS = 2
 export const MAX_GLOBAL_REPETITIONS = 15
+export const INTERVAL_FLASHCARD_REVIEW_EDGE_PAUSE_MS = 3_000
 
 function clampGlobalRepetitions(value: number) {
   return Math.min(
@@ -67,6 +68,32 @@ export function intervalStepDurationSeconds(step: IntervalStepNode) {
 export function intervalStepPlaysFlashcardReview(step: IntervalStepNode) {
   if (typeof step.flashcardReviewEnabled === 'boolean') return step.flashcardReviewEnabled
   return step.kind !== 'train' && step.kind !== 'prepare'
+}
+
+function intervalStepFlashcardReviewDurationSeconds(step: IntervalStepNode) {
+  if (!intervalStepPlaysFlashcardReview(step)) return 0
+  return Math.max(
+    0,
+    intervalStepDurationSeconds(step) - ((INTERVAL_FLASHCARD_REVIEW_EDGE_PAUSE_MS * 2) / 1000),
+  )
+}
+
+function normalizedIntervalStepRemainingMs(step: IntervalStepNode, remainingMs: number) {
+  const durationMs = intervalStepDurationSeconds(step) * 1000
+  const safeRemainingMs = Number.isFinite(remainingMs) ? remainingMs : durationMs
+  return Math.min(durationMs, Math.max(0, safeRemainingMs))
+}
+
+export function intervalStepFlashcardReviewPlaybackIsActive(
+  step: IntervalStepNode,
+  remainingMs: number,
+) {
+  if (!intervalStepPlaysFlashcardReview(step)) return false
+  const durationMs = intervalStepDurationSeconds(step) * 1000
+  const normalizedRemainingMs = normalizedIntervalStepRemainingMs(step, remainingMs)
+  const elapsedMs = durationMs - normalizedRemainingMs
+  return elapsedMs >= INTERVAL_FLASHCARD_REVIEW_EDGE_PAUSE_MS
+    && normalizedRemainingMs > INTERVAL_FLASHCARD_REVIEW_EDGE_PAUSE_MS
 }
 
 export function normalizeQuickIntervalSettings(value: unknown): QuickIntervalSettings | undefined {
@@ -263,7 +290,7 @@ export function intervalNodeDuration(node: IntervalNode): number {
 
 function intervalNodeFlashcardReviewDuration(node: IntervalNode): number {
   if (node.type === 'step') {
-    return intervalStepPlaysFlashcardReview(node) ? intervalStepDurationSeconds(node) : 0
+    return intervalStepFlashcardReviewDurationSeconds(node)
   }
   const childDuration = node.children.reduce(
     (sum, child) => safeAdd(sum, intervalNodeFlashcardReviewDuration(child)),
@@ -353,7 +380,16 @@ export function intervalFlashcardReviewElapsedMs(
   const elapsedBeforeMs = context.elapsedBeforeSeconds * 1000
   if (!intervalStepPlaysFlashcardReview(context.step)) return elapsedBeforeMs
   const durationMs = intervalStepDurationSeconds(context.step) * 1000
-  const elapsedInStep = Math.min(durationMs, Math.max(0, durationMs - remainingMs))
+  const reviewDurationMs = intervalStepFlashcardReviewDurationSeconds(context.step) * 1000
+  const elapsedInStep = Math.min(
+    reviewDurationMs,
+    Math.max(
+      0,
+      durationMs
+        - normalizedIntervalStepRemainingMs(context.step, remainingMs)
+        - INTERVAL_FLASHCARD_REVIEW_EDGE_PAUSE_MS,
+    ),
+  )
   return safeAdd(elapsedBeforeMs, elapsedInStep)
 }
 

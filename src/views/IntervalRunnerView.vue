@@ -50,7 +50,7 @@ import {
   reconcileIntervalRuntime,
   resolveIntervalStep,
   intervalStepDurationSeconds,
-  intervalStepPlaysFlashcardReview,
+  intervalStepFlashcardReviewPlaybackIsActive,
   MAX_GLOBAL_REPETITIONS,
   MIN_GLOBAL_REPETITIONS,
 } from '@/services/intervals'
@@ -171,7 +171,10 @@ const flashcardReviewPlaybackEnabled = computed(() => {
   return Boolean(
     review
     && step
-    && (!review.speechEnabled || intervalStepPlaysFlashcardReview(step)),
+    && (!review.speechEnabled || intervalStepFlashcardReviewPlaybackIsActive(
+      step,
+      displayRemainingMs.value,
+    )),
   )
 })
 const flashcardReviewElapsedMs = computed(() => {
