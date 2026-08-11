@@ -104,6 +104,22 @@ describe('IntervalPlanList actions', () => {
     expect(mocks.router.push).toHaveBeenCalledWith('/intervals/run/template/morning-hiit')
   })
 
+  it('constrains a long title without displacing the three-dot action', () => {
+    mocks.store.templates = [{
+      ...template,
+      name: 'A very long uninterrupted interval title that must remain inside its parent card',
+    }]
+    const wrapper = mountList()
+
+    const row = wrapper.get('.interval-plan-card__row')
+    const details = wrapper.get('.interval-plan-details')
+    const actions = wrapper.get('.interval-plan-actions')
+
+    expect(row.element.children[1]).toBe(details.element)
+    expect(row.element.lastElementChild).toBe(actions.element)
+    expect(details.get('h2').classes()).toContain('text-truncate')
+  })
+
   it('shows only Edit, Duplicate, and Delete in the three-dot menu', async () => {
     const wrapper = mountList()
 

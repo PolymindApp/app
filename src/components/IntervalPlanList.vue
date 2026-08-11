@@ -100,11 +100,11 @@ function requestDelete(template: IntervalTemplate) {
       @keydown.enter="startTemplate(template)"
       @keydown.space.prevent="startTemplate(template)"
     >
-      <div class="d-flex align-start ga-3">
+      <div class="interval-plan-card__row d-flex align-start ga-3">
         <div class="interval-template-icon" :style="{ background: template.color }">
           <v-icon icon="mdi-timer-outline" size="21" />
         </div>
-        <div class="flex-grow-1 min-width-0">
+        <div class="interval-plan-details">
           <h2 class="text-body-1 font-weight-black text-truncate">{{ template.name }}</h2>
           <p class="text-caption muted mt-1">
             {{ formatIntervalDuration(intervalDuration(template.definition)) }} ·
@@ -165,8 +165,10 @@ function requestDelete(template: IntervalTemplate) {
 
 <style scoped>
 .interval-plan-list { display: grid; gap: .75rem; }
-.interval-plan-card { cursor: pointer; }
+.interval-plan-card { overflow: hidden; cursor: pointer; }
 .interval-plan-card:focus-visible { outline: 3px solid rgb(var(--v-theme-primary) / .55); outline-offset: 3px; }
+.interval-plan-card__row { width: 100%; min-width: 0; }
+.interval-plan-details { overflow: hidden; min-width: 0; flex: 1 1 0; }
 .interval-plan-actions { flex: 0 0 auto; }
 .interval-template-icon { display: grid; width: 42px; height: 42px; flex: 0 0 auto; place-items: center; border-radius: 14px; color: #17200f; }
 @media (min-width: 700px) { .interval-plan-list { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
