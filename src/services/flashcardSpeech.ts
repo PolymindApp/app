@@ -39,10 +39,30 @@ interface FlashcardSpeechPlugin {
 }
 
 const NativeFlashcardSpeech = registerPlugin<FlashcardSpeechPlugin>('FlashcardSpeech')
+const SPEECH_OVER_AMPLIFICATION_STORAGE_KEY = 'mom-flashcard-speech:over-amplification'
 let nativeBackgroundActive = false
 let activeBrowserUtterance: SpeechSynthesisUtterance | undefined
 let browserVoiceLoad: Promise<SpeechSynthesisVoice[]> | undefined
-let speechOverAmplificationEnabled = false
+
+function storedSpeechOverAmplificationIsEnabled() {
+  if (typeof localStorage === 'undefined') return false
+  try {
+    return localStorage.getItem(SPEECH_OVER_AMPLIFICATION_STORAGE_KEY) === 'true'
+  } catch {
+    return false
+  }
+}
+
+function storeSpeechOverAmplification(enabled: boolean) {
+  if (typeof localStorage === 'undefined') return
+  try {
+    localStorage.setItem(SPEECH_OVER_AMPLIFICATION_STORAGE_KEY, String(enabled))
+  } catch {
+    // Speech remains usable for the current session if device storage is unavailable.
+  }
+}
+
+let speechOverAmplificationEnabled = storedSpeechOverAmplificationIsEnabled()
 
 function isNativeAndroid() {
   return Capacitor.getPlatform() === 'android' && Capacitor.isNativePlatform()
@@ -59,10 +79,14 @@ export function flashcardSpeechOverAmplificationIsEnabled() {
 export async function setFlashcardSpeechOverAmplification(enabled: boolean) {
   const previous = speechOverAmplificationEnabled
   speechOverAmplificationEnabled = enabled
-  if (!isNativeAndroid()) return enabled
+  if (!isNativeAndroid()) {
+    storeSpeechOverAmplification(enabled)
+    return enabled
+  }
 
   try {
     await NativeFlashcardSpeech.setOverAmplification({ enabled })
+    storeSpeechOverAmplification(enabled)
     return enabled
   } catch (cause) {
     speechOverAmplificationEnabled = previous
