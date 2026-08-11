@@ -7,6 +7,7 @@ import { storeToRefs } from 'pinia'
 import { useDisplay } from 'vuetify'
 import { useRouter } from 'vue-router'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
+import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import TaskCard from '@/components/TaskCard.vue'
 import TrackingLogBottomSheet from '@/components/TrackingLogBottomSheet.vue'
 import WeekDateNavigator from '@/components/WeekDateNavigator.vue'
@@ -66,8 +67,10 @@ const exactNote = ref('')
 const exactNoteHistory = ref<Entry[]>([])
 const exactNoteLoading = ref(false)
 const exactNoteAutoFilled = ref(false)
+const exactEditingEntry = ref<Entry>()
+const exactError = ref('')
 let exactNoteHistoryRequest = 0
-const exactAction = ref<'add' | 'subtract' | 'set'>()
+const exactAction = ref<'add' | 'subtract' | 'set' | 'save'>()
 const reviewSheet = ref(false)
 const taskSheet = ref(false)
 const taskSheetMode = ref<'actions' | 'history'>('actions')
@@ -75,6 +78,8 @@ const taskActionProgress = ref<TaskProgress>()
 const taskLogEntries = ref<Entry[]>([])
 const taskLogLoading = ref(false)
 const taskLogError = ref('')
+const taskLogDeleteDialog = ref(false)
+const taskLogDeleteEntry = ref<Entry>()
 let taskLogRequest = 0
 const activeIntervalSheet = ref(false)
 const activeReviewSheet = ref(false)
@@ -493,6 +498,13 @@ function taskEntryTime(entry: Entry) {
   return Number.isNaN(created.getTime()) ? 'Logged entry' : format(created, 'h:mm a')
 }
 
+function taskEntrySubtitle(entry: Entry) {
+  return [
+    taskEntryTime(entry),
+    ...(entry.note ? [taskEntryKindLabel(entry)] : []),
+  ].join(' · ')
+}
+
 async function openTaskLogHistory() {
   const progress = taskActionProgress.value
   if (!progress || taskLogLoading.value) return
@@ -529,11 +541,13 @@ function runTaskCardAction(action: TaskCardActionId) {
 
 async function openExact(progress: TaskProgress) {
   exactProgress.value = progress
+  exactEditingEntry.value = undefined
   exactAmountInput.value = ''
   exactNote.value = ''
   exactNoteAutoFilled.value = false
   exactNoteHistory.value = store.entries.filter((entry) => entry.task === progress.task.id)
   exactAction.value = undefined
+  exactError.value = ''
   exactDialog.value = true
 
   if (!progress.task.entryNotesEnabled) return
@@ -553,6 +567,7 @@ async function openExact(progress: TaskProgress) {
 }
 
 watch([exactAmount, exactNoteHistory], ([amount]) => {
+  if (exactEditingEntry.value) return
   if (!exactProgress.value?.task.entryNoteSuggestionsEnabled) return
   if (amount === null) {
     if (exactNoteAutoFilled.value) exactNote.value = ''
@@ -572,6 +587,55 @@ watch([exactAmount, exactNoteHistory], ([amount]) => {
 function updateExactNote(value: unknown) {
   exactNoteAutoFilled.value = false
   exactNote.value = sanitizeTaskEntryNote(value)
+}
+
+function editTaskLogEntry(entry: Entry) {
+  const progress = taskActionProgress.value
+  if (!progress || progress.sealed || busy.value) return
+  exactProgress.value = progress
+  exactEditingEntry.value = entry
+  exactAmountInput.value = String(Number(entry.value.toFixed(2)))
+  exactNote.value = entry.note || ''
+  exactNoteAutoFilled.value = false
+  exactNoteHistory.value = taskLogEntries.value
+  exactNoteLoading.value = false
+  exactAction.value = undefined
+  exactError.value = ''
+  exactDialog.value = true
+}
+
+function toggleExactSign() {
+  if (!exactAmountInput.value || exactAmountInput.value === '0') return
+  exactAmountInput.value = exactAmountInput.value.startsWith('-')
+    ? exactAmountInput.value.slice(1)
+    : `-${exactAmountInput.value}`
+}
+
+function requestTaskLogDeletion(entry: Entry) {
+  if (taskActionProgress.value?.sealed || busy.value) return
+  taskLogDeleteEntry.value = entry
+  taskLogDeleteDialog.value = true
+}
+
+async function confirmTaskLogDeletion() {
+  const progress = taskActionProgress.value
+  const entry = taskLogDeleteEntry.value
+  if (!progress || !entry || busy.value) return
+  taskLogError.value = ''
+  try {
+    await run(async () => {
+      const deleted = await store.deleteEntry(progress, entry.id)
+      if (!deleted) return
+      taskLogEntries.value = taskLogEntries.value.filter(item => item.id !== entry.id)
+      pulseProgressValue(progress)
+    })
+    taskLogDeleteDialog.value = false
+    taskLogDeleteEntry.value = undefined
+  } catch (cause) {
+    taskLogError.value = cause instanceof Error ? cause.message : 'Could not delete this log entry.'
+    taskLogDeleteDialog.value = false
+    taskLogDeleteEntry.value = undefined
+  }
 }
 
 function openTimeLogger(progress: TaskProgress) {
@@ -733,6 +797,36 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
     ))
     pulseProgressValue(progress)
     exactDialog.value = false
+  } catch (cause) {
+    exactError.value = cause instanceof Error ? cause.message : 'Could not save this log entry.'
+  } finally {
+    exactAction.value = undefined
+  }
+}
+
+async function saveTaskLogEntry() {
+  const progress = exactProgress.value
+  const entry = exactEditingEntry.value
+  if (!progress || !entry || exactAmount.value === null) return
+  exactAction.value = 'save'
+  exactError.value = ''
+  try {
+    await run(async () => {
+      const updated = await store.updateEntry(
+        progress,
+        entry.id,
+        exactAmount.value!,
+        progress.task.entryNotesEnabled ? exactNote.value.trim() : entry.note || '',
+      )
+      if (!updated) return
+      const index = taskLogEntries.value.findIndex(item => item.id === updated.id)
+      if (index >= 0) taskLogEntries.value.splice(index, 1, updated)
+      pulseProgressValue(progress)
+    })
+    exactDialog.value = false
+    exactEditingEntry.value = undefined
+  } catch (cause) {
+    exactError.value = cause instanceof Error ? cause.message : 'Could not update this log entry.'
   } finally {
     exactAction.value = undefined
   }
@@ -968,11 +1062,14 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
       <v-card class="pa-5">
         <div class="d-flex align-center justify-space-between mb-5">
           <div class="min-width-0">
-            <h2 class="text-h6 font-weight-black">Log amount</h2>
+            <h2 class="text-h6 font-weight-black">{{ exactEditingEntry ? 'Edit log entry' : 'Log amount' }}</h2>
             <p class="text-body-2 muted text-truncate mt-1">{{ exactProgress?.programStep?.name || exactProgress?.task.name }}</p>
           </div>
           <v-btn icon="mdi-close" variant="text" aria-label="Close amount logger" @click="exactDialog = false" />
         </div>
+        <v-alert v-if="exactError" type="error" variant="tonal" density="compact" class="mb-4">
+          {{ exactError }}
+        </v-alert>
         <div class="amount-entry mb-4">
           <v-number-input
             v-if="smAndUp"
@@ -982,9 +1079,16 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
             :autofocus="allowAutomaticFocus"
           />
           <div v-else class="amount-keypad">
-            <output class="amount-keypad__display" aria-live="polite">
-              {{ exactAmountInput || '0' }}
-            </output>
+            <div class="amount-keypad__display">
+              <v-btn
+                v-if="exactEditingEntry"
+                icon="mdi-plus-minus-variant"
+                variant="text"
+                aria-label="Change amount sign"
+                @click="toggleExactSign"
+              />
+              <output aria-live="polite">{{ exactAmountInput || '0' }}</output>
+            </div>
             <div class="amount-keypad__keys">
               <v-btn
                 v-for="key in keypadKeys"
@@ -1014,7 +1118,18 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
           class="mb-4"
           @update:model-value="updateExactNote"
         />
-        <div class="exact-actions">
+        <v-btn
+          v-if="exactEditingEntry"
+          block
+          size="large"
+          color="secondary"
+          :loading="busy && exactAction === 'save'"
+          :disabled="exactAmount === null || (busy && exactAction !== 'save')"
+          @click="saveTaskLogEntry"
+        >
+          Save
+        </v-btn>
+        <div v-else class="exact-actions">
           <v-btn
             block
             size="large"
@@ -1127,10 +1242,35 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
             :key="entry.id"
             :prepend-icon="taskEntryIcon(entry)"
             :title="entry.note || taskEntryKindLabel(entry)"
-            :subtitle="`${taskEntryTime(entry)} · ${taskEntryKindLabel(entry)}`"
             rounded="lg"
           >
-            <template #append><strong class="task-log-value">{{ taskEntryValue(entry) }}</strong></template>
+            <template #subtitle>
+              <span>{{ taskEntrySubtitle(entry) }}</span>
+              <strong class="task-log-value">{{ taskEntryValue(entry) }}</strong>
+            </template>
+            <template #append>
+              <div class="task-log-actions">
+                <v-btn
+                  icon="mdi-pencil-outline"
+                  variant="text"
+                  class="task-log-action"
+                  :disabled="busy || taskActionProgress?.sealed"
+                  :aria-label="`Edit ${taskEntryValue(entry)} log entry`"
+                  @touchstart.stop
+                  @click.stop="editTaskLogEntry(entry)"
+                />
+                <v-btn
+                  icon="mdi-delete-outline"
+                  variant="text"
+                  color="error"
+                  class="task-log-action"
+                  :disabled="busy || taskActionProgress?.sealed"
+                  :aria-label="`Delete ${taskEntryValue(entry)} log entry`"
+                  @touchstart.stop
+                  @click.stop="requestTaskLogDeletion(entry)"
+                />
+              </div>
+            </template>
           </v-list-item>
         </template>
         <div v-else class="task-log-empty px-4 py-8 text-center">
@@ -1140,6 +1280,18 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
         </div>
       </template>
     </ActionBottomSheet>
+
+    <ConfirmDialog
+      v-model="taskLogDeleteDialog"
+      title="Delete log entry?"
+      :message="taskLogDeleteEntry
+        ? `Delete ${taskEntryValue(taskLogDeleteEntry)} logged at ${taskEntryTime(taskLogDeleteEntry)}? This cannot be undone.`
+        : 'This log entry will be permanently deleted.'"
+      confirm-text="Delete"
+      icon="mdi-delete-outline"
+      :loading="busy"
+      @confirm="confirmTaskLogDeletion"
+    />
 
     <ActionBottomSheet
       v-model="reviewSheet"
@@ -1252,7 +1404,8 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
 }
 .empty-icon { display: grid; width: 64px; height: 64px; place-items: center; border-radius: 20px; background: #c7f464; color: #17200f; }
 .amount-keypad { display: grid; gap: 1rem; }
-.amount-keypad__display { display: flex; min-height: 72px; align-items: center; justify-content: flex-end; padding: .75rem 1rem; border: 1px solid rgb(var(--v-theme-on-surface) / .16); border-radius: 16px; background: rgb(var(--v-theme-surface-variant)); font-size: 2rem; font-weight: 900; line-height: 1; }
+.amount-keypad__display { display: flex; min-height: 72px; align-items: center; justify-content: space-between; padding: .75rem 1rem; border: 1px solid rgb(var(--v-theme-on-surface) / .16); border-radius: 16px; background: rgb(var(--v-theme-surface-variant)); font-size: 2rem; font-weight: 900; line-height: 1; }
+.amount-keypad__display output { margin-left: auto; }
 .amount-keypad__keys { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .65rem; }
 .amount-keypad__keys .v-btn { min-width: 0; height: 54px; font-size: 1.05rem; font-weight: 850; }
 .exact-actions {
@@ -1267,7 +1420,9 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
 .exact-action--subtract { grid-area: subtract; }
 .exact-action--add { grid-area: add; }
 .exact-action--set { grid-area: set; }
-.task-log-value { max-width: 8rem; font-size: .78rem; text-align: right; white-space: nowrap; }
+.task-log-actions { display: flex; align-items: center; }
+.task-log-action { width: 2.75rem !important; min-width: 2.75rem !important; height: 2.75rem !important; }
+.task-log-value { display: block; margin-top: .125rem; color: rgb(var(--v-theme-on-surface)); font-size: .8rem; white-space: nowrap; }
 .task-log-empty { min-height: 10rem; }
 .review-row { display: flex; flex-direction: column; align-items: stretch; gap: 1rem; border-top: 1px solid rgba(255,255,255,.08); }
 .review-actions { display: grid; gap: .5rem; }

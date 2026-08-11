@@ -5,6 +5,8 @@ import type { Entry, JournalEntry, Occurrence, ProgramStep, Task, TrackingEntry 
 const apiMocks = vi.hoisted(() => ({
   createOccurrence: vi.fn(),
   createEntry: vi.fn(),
+  updateEntry: vi.fn(),
+  deleteEntry: vi.fn(),
   getEntries: vi.fn(),
   updateOccurrence: vi.fn(),
   updateTask: vi.fn(),
@@ -22,6 +24,8 @@ vi.mock('@/lib/api', () => ({
     collection: (name: string) => {
       if (name === 'entries') return {
         create: apiMocks.createEntry,
+        update: apiMocks.updateEntry,
+        delete: apiMocks.deleteEntry,
         getFullList: apiMocks.getEntries,
       }
       if (name === 'occurrences') return {
@@ -98,6 +102,8 @@ describe('quantitative task completion', () => {
     setActivePinia(createPinia())
     apiMocks.createOccurrence.mockReset()
     apiMocks.createEntry.mockReset()
+    apiMocks.updateEntry.mockReset()
+    apiMocks.deleteEntry.mockReset()
     apiMocks.getEntries.mockReset()
     apiMocks.updateOccurrence.mockReset()
     healthMocks.readHealthConnectSteps.mockReset()
@@ -587,6 +593,91 @@ describe('quantitative task completion', () => {
     expect(apiMocks.getEntries).toHaveBeenCalledWith({
       filter: `task = "${task.id}" && entry_date = "2026-07-29" && program_step = ""`,
       sort: '-created_at',
+    })
+  })
+
+  it('updates a log entry and reopens progress when its value falls below the target', async () => {
+    const store = useTaskStore()
+    store.selectedDate = selectedDate
+    store.occurrences = [{ ...completedOccurrence }]
+    store.entries = [entry('entry-to-edit', 4)]
+    apiMocks.updateEntry.mockResolvedValue({
+      id: 'entry-to-edit',
+      task: task.id,
+      occurrence: completedOccurrence.id,
+      program_step: '',
+      entry_date: '2026-07-29',
+      created_at: '2026-07-29T12:00:00.000Z',
+      value: 1,
+      kind: 'duration',
+      unit: 'hours',
+      note: 'Shortened',
+    })
+    apiMocks.updateOccurrence.mockResolvedValue({
+      id: completedOccurrence.id,
+      task: task.id,
+      program_step: '',
+      scheduled_date: '2026-07-29',
+      status: 'pending',
+      sealed: false,
+      completed_at: '',
+      snapshot_name: task.name,
+      snapshot_target: 4,
+      snapshot_unit: 'hours',
+    })
+
+    const updated = await store.updateEntry(
+      store.makeProgress(task, selectedDate),
+      'entry-to-edit',
+      1,
+      'Shortened',
+    )
+
+    expect(apiMocks.updateEntry).toHaveBeenCalledWith('entry-to-edit', {
+      value: 1,
+      note: 'Shortened',
+    })
+    expect(updated).toMatchObject({ value: 1, note: 'Shortened' })
+    expect(apiMocks.updateOccurrence).toHaveBeenCalledWith(completedOccurrence.id, {
+      status: 'pending',
+      completed_at: '',
+    })
+    expect(store.makeProgress(task, selectedDate)).toMatchObject({
+      value: 1,
+      complete: false,
+    })
+  })
+
+  it('deletes a log entry and removes its contribution from progress', async () => {
+    const store = useTaskStore()
+    store.selectedDate = selectedDate
+    store.occurrences = [{ ...completedOccurrence }]
+    store.entries = [entry('entry-to-delete', 4)]
+    apiMocks.deleteEntry.mockResolvedValue(true)
+    apiMocks.updateOccurrence.mockResolvedValue({
+      id: completedOccurrence.id,
+      task: task.id,
+      program_step: '',
+      scheduled_date: '2026-07-29',
+      status: 'pending',
+      sealed: false,
+      completed_at: '',
+      snapshot_name: task.name,
+      snapshot_target: 4,
+      snapshot_unit: 'hours',
+    })
+
+    const deleted = await store.deleteEntry(
+      store.makeProgress(task, selectedDate),
+      'entry-to-delete',
+    )
+
+    expect(deleted).toBe(true)
+    expect(apiMocks.deleteEntry).toHaveBeenCalledWith('entry-to-delete')
+    expect(store.entries).toEqual([])
+    expect(store.makeProgress(task, selectedDate)).toMatchObject({
+      value: 0,
+      complete: false,
     })
   })
 })

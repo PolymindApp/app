@@ -577,11 +577,44 @@ export const useTaskStore = defineStore('tasks', () => {
       note: sanitizeTaskEntryNote(note).trim(),
     })
     entries.value.unshift(mapEntry(record))
+    await syncEntryProgress(progress)
+  }
+
+  async function updateEntry(progress: TaskProgress, entryId: string, amount: number, note = '') {
+    if (progress.sealed) return undefined
+    const record = await api.collection('entries').update(entryId, {
+      value: amount,
+      note: sanitizeTaskEntryNote(note).trim(),
+    })
+    const entry = mapEntry(record)
+    const index = entries.value.findIndex(item => item.id === entry.id)
+    if (index >= 0) entries.value.splice(index, 1, entry)
+    else entries.value.unshift(entry)
+    await syncEntryProgress(progress)
+    return entry
+  }
+
+  async function deleteEntry(progress: TaskProgress, entryId: string) {
+    if (progress.sealed) return false
+    await api.collection('entries').delete(entryId)
+    entries.value = entries.value.filter(entry => entry.id !== entryId)
+    await syncEntryProgress(progress)
+    useSnackbarStore().showDeletion('Log')
+    return true
+  }
+
+  async function syncEntryProgress(progress: TaskProgress) {
+    const progressDate = parseISO(progress.scheduledDate)
     const updated = makeProgress(progress.task, progressDate, progress.programStep)
     const isCheck = progress.programStep
       ? progress.programStep.completionType === 'check'
       : progress.task.type === 'check'
-    if (!isCheck) {
+    const occurrence = occurrenceFor(
+      progress.task,
+      progressDate,
+      progress.programStep,
+    )
+    if (!isCheck && occurrence) {
       const shouldComplete = updated.complete
       const nextStatus = shouldComplete ? 'completed' : 'pending'
       if (occurrence.status !== nextStatus) {
@@ -842,6 +875,8 @@ export const useTaskStore = defineStore('tasks', () => {
     applyLocalSessionProgress,
     setDailyTotalSealed,
     addEntry,
+    updateEntry,
+    deleteEntry,
     loadEntryNoteHistory,
     loadEntriesForDay,
     setStatus,
