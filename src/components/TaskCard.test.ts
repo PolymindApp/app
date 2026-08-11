@@ -453,7 +453,7 @@ describe('TaskCard amount actions', () => {
     expect(wrapper.get('.schedule-status').text()).toBe('Paused')
   })
 
-  it('toggles a check-off only from its Done and Undone button', async () => {
+  it('expands a check-off from its header and toggles only from Done or Undone', async () => {
     const checkProgress: TaskProgress = {
       ...progress,
       task: {
@@ -479,11 +479,19 @@ describe('TaskCard amount actions', () => {
     })
 
     const statusIcon = wrapper.get('div.check-control')
+    const header = wrapper.get('.task-card-header-main')
     expect(wrapper.get('[aria-label="More actions for Medication"]').exists()).toBe(true)
     expect(statusIcon.attributes('aria-hidden')).toBe('true')
+    expect(header.attributes('aria-expanded')).toBe('true')
     await statusIcon.trigger('click')
     await wrapper.get('.task-card').trigger('click')
     expect(wrapper.emitted('toggle')).toBeUndefined()
+    expect(header.attributes('aria-label')).toBe('Expand Medication')
+    expect(header.attributes('aria-expanded')).toBe('false')
+    expect(wrapper.get('.task-card-body').attributes('style')).toContain('display: none')
+
+    await header.trigger('click')
+    expect(header.attributes('aria-expanded')).toBe('true')
 
     const completeButton = wrapper.get('[aria-label="Done Medication"]')
     expect(completeButton.text()).toBe('Done')
@@ -491,6 +499,7 @@ describe('TaskCard amount actions', () => {
     await completeButton.trigger('click')
 
     expect(wrapper.emitted('toggle')).toEqual([[checkProgress, true]])
+    expect(header.attributes('aria-expanded')).toBe('false')
 
     const completedProgress: TaskProgress = {
       ...checkProgress,
@@ -501,6 +510,7 @@ describe('TaskCard amount actions', () => {
     await wrapper.setProps({ busy: true })
     await wrapper.setProps({ progress: completedProgress })
     await wrapper.setProps({ busy: false })
+    await header.trigger('click')
     const uncompleteButton = wrapper.get('[aria-label="Undone Medication"]')
     expect(uncompleteButton.text()).toBe('Undone')
     await uncompleteButton.trigger('click')

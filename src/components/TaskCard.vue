@@ -86,7 +86,7 @@ const isTracking = computed(() => !step.value && task.value.type === 'tracking')
 const isJournal = computed(() => !step.value && task.value.type === 'journal')
 const isDailyTotal = computed(() => !step.value && task.value.type === 'daily_total')
 const isStepCounter = computed(() => !step.value && task.value.type === 'step_counter')
-const headerExpandable = computed(() => !isCheck.value && !props.scheduleStatus)
+const headerExpandable = computed(() => !props.scheduleStatus)
 const canLogAmount = computed(() => taskCanLogAmounts(props.progress))
 const canLogTime = computed(() => !step.value && task.value.type === 'duration')
 const canToggleCheck = computed(() =>
@@ -230,7 +230,7 @@ watch(expansionKey, () => {
 })
 
 watch(displayedComplete, (complete, wasComplete) => {
-  if (!isCheck.value && complete && !wasComplete) {
+  if (complete && !wasComplete) {
     expanded.value = false
     storeExpansionState(props.progress, false)
   }
@@ -309,8 +309,8 @@ watch(() => props.valuePulse, async (pulse, previousPulse) => {
     <v-expand-transition>
       <div
         v-if="!scheduleStatus"
-        v-show="isCheck || expanded"
-        :id="!isCheck ? detailsId : undefined"
+        v-show="expanded"
+        :id="detailsId"
         class="task-card-body"
       >
         <v-btn
