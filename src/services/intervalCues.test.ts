@@ -279,6 +279,21 @@ describe('interval cue audio', () => {
     expect(audioContexts[0].sources[0].buffer).toMatchObject({ marker: 3 })
   })
 
+  it('prepares and plays the dedicated flashcard eject sound', async () => {
+    vi.mocked(fetch).mockImplementation(async (input) => ({
+      ok: true,
+      arrayBuffer: async () => new Uint8Array([String(input).includes('eject') ? 5 : 1]).buffer,
+    } as Response))
+    const { playFlashcardEjectCue, prepareFlashcardEjectCue } = await import('./intervalCues')
+
+    await prepareFlashcardEjectCue()
+    playFlashcardEjectCue()
+
+    await vi.waitFor(() => expect(audioContexts[0]?.sources[0]?.start).toHaveBeenCalledOnce())
+    expect(fetch).toHaveBeenCalledWith('/sounds/eject.mp3')
+    expect(audioContexts[0].sources[0].buffer).toMatchObject({ marker: 5 })
+  })
+
   it('prepares and plays the completion sound for a task time target', async () => {
     const { playTaskCompleteCue, prepareTaskCompleteCue } = await import('./intervalCues')
 

@@ -26,6 +26,7 @@ public class IntervalCuePlayerTest {
         };
 
         for (String sound : sounds) assertTrue(IntervalCuePlayer.supportsSound(sound));
+        assertTrue(IntervalCuePlayer.supportsSound("eject"));
         assertFalse(IntervalCuePlayer.supportsSound("none"));
         assertFalse(IntervalCuePlayer.supportsSound("bell"));
     }

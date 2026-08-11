@@ -31,10 +31,12 @@ import {
 import { createIntervalCueHandoff } from '@/services/intervalCueHandoff'
 import {
   notifyIntervalTransition,
+  playFlashcardEjectCue,
   playIntervalCompleteCue,
   playIntervalCountCue,
   playIntervalGoCue,
   prepareIntervalCues,
+  prepareFlashcardEjectCue,
   requestIntervalWakeLock,
 } from '@/services/intervalCues'
 import {
@@ -1037,11 +1039,13 @@ async function ejectIntervalFlashcard() {
   const cardId = flashcardPhase.value?.card.id
   if (!review || !cardId || flashcardEjecting.value) return
   flashcardEjecting.value = true
+  void prepareFlashcardEjectCue()
   try {
     await updateFlashcardSnapshot({
       ...review,
       cards: review.cards.filter(card => card.id !== cardId),
     })
+    playFlashcardEjectCue()
     await closeFlashcardEjection(false)
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Could not eject this flashcard.'

@@ -43,7 +43,11 @@ vi.mock('@/services/flashcardSpeech', () => ({
   syncBackgroundFlashcardReview: vi.fn().mockResolvedValue(false),
   toggleFlashcardSpeechOverAmplification: mocks.toggleSpeechOverAmplification,
 }))
-vi.mock('@/services/intervalCues', () => ({ playReviewCompleteCue: vi.fn() }))
+vi.mock('@/services/intervalCues', () => ({
+  playFlashcardEjectCue: vi.fn(),
+  playReviewCompleteCue: vi.fn(),
+  prepareFlashcardEjectCue: vi.fn().mockResolvedValue(undefined),
+}))
 vi.mock('@/services/screenWakeLock', () => ({
   requestScreenWakeLock: vi.fn().mockResolvedValue(undefined),
 }))

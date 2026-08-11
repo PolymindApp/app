@@ -16,6 +16,7 @@ export { requestScreenWakeLock as requestIntervalWakeLock } from '@/services/scr
 
 let audioContext: AudioContext | undefined
 type PlayableIntervalCueSound = Exclude<IntervalCueSound, 'none'>
+type AppCueSound = PlayableIntervalCueSound | 'eject'
 const cueUrls = {
   cash: '/sounds/cash.mp3',
   celestial: '/sounds/celestial.mp3',
@@ -30,8 +31,9 @@ const cueUrls = {
   count: '/sounds/count.mp3',
   go: '/sounds/go.mp3',
   complete: '/sounds/complete.mp3',
-} as const satisfies Record<PlayableIntervalCueSound, string>
-type CueName = PlayableIntervalCueSound
+  eject: '/sounds/eject.mp3',
+} as const satisfies Record<AppCueSound, string>
+type CueName = AppCueSound
 
 const cueData: Partial<Record<CueName, ArrayBuffer>> = {}
 const cueDataLoads: Partial<Record<CueName, Promise<ArrayBuffer>>> = {}
@@ -203,6 +205,18 @@ export async function previewIntervalCueSound(sound: IntervalCueSound) {
 
 export function playReviewCompleteCue() {
   playAudioCue('complete')
+}
+
+export async function prepareFlashcardEjectCue() {
+  try {
+    await prepareAudioCue('eject')
+  } catch {
+    // Eject audio remains best-effort when playback is unavailable.
+  }
+}
+
+export function playFlashcardEjectCue() {
+  playCue('eject', { soundEnabled: true, vibrationEnabled: false }, true)
 }
 
 export async function prepareTaskCompleteCue() {

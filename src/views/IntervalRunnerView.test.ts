@@ -66,10 +66,12 @@ vi.mock('@/services/flashcardSpeech', () => ({
 }))
 vi.mock('@/services/intervalCues', () => ({
   notifyIntervalTransition: vi.fn().mockResolvedValue(undefined),
+  playFlashcardEjectCue: vi.fn(),
   playIntervalCompleteCue: vi.fn(),
   playIntervalCountCue: vi.fn(),
   playIntervalGoCue: vi.fn(),
   prepareIntervalCues: vi.fn().mockResolvedValue(undefined),
+  prepareFlashcardEjectCue: vi.fn().mockResolvedValue(undefined),
   requestIntervalWakeLock: vi.fn().mockResolvedValue(undefined),
 }))
 

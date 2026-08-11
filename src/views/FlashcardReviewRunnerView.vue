@@ -19,7 +19,11 @@ import {
   syncBackgroundFlashcardReview,
   toggleFlashcardSpeechOverAmplification,
 } from '@/services/flashcardSpeech'
-import { playReviewCompleteCue } from '@/services/intervalCues'
+import {
+  playFlashcardEjectCue,
+  playReviewCompleteCue,
+  prepareFlashcardEjectCue,
+} from '@/services/intervalCues'
 import { reviewRunnerSessionMenuItems } from '@/services/runnerSessionActions'
 import { requestScreenWakeLock, type ScreenWakeLock } from '@/services/screenWakeLock'
 import {
@@ -446,13 +450,16 @@ async function performAction(
   busy.value = true
   error.value = ''
   let succeeded = false
+  if (action === 'eject') void prepareFlashcardEjectCue()
   try {
     const updated = await store.act(session.value.id, action, elapsedSeconds.value)
     localElapsedMs.value = updated.elapsedSeconds * 1000
     lastTickAt = Date.now()
     if (['success', 'error', 'view', 'previous', 'next', 'push', 'eject', 'undo_eject', 'restart'].includes(action)) resetCurrentCardPhase()
+    if (action === 'eject') playFlashcardEjectCue()
     if (
-      previousStatus === 'running'
+      action !== 'eject'
+      && previousStatus === 'running'
       && updated.status === 'completed'
       && options.playCompletionCue !== false
       && document.visibilityState === 'visible'
