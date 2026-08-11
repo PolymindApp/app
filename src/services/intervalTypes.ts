@@ -57,7 +57,7 @@ export function defaultIntervalTypeSounds(): IntervalTypeSoundSettings {
     train: 'cine-hit',
     work: 'cash',
     rest: 'harp',
-    prepare: 'go',
+    prepare: 'chime',
     meditation: 'gong',
     confirmation: 'confirm',
     custom: 'go',
