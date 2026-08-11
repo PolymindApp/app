@@ -180,4 +180,74 @@ describe('offline Review set task progress', () => {
     await taskStore.load()
     expect(await listLocalRecords(accountId, 'entries')).toHaveLength(1)
   })
+
+  it('credits only Review-enabled time from a completed interval with an attached set', async () => {
+    await completeLocalBootstrap(accountId, 1, [
+      durationTaskResource(),
+      resource('interval_sessions', 'interval-session-1', {
+        template: 'interval-1',
+        task: '',
+        program_step: '',
+        task_date: '',
+        source: 'template',
+        status: 'completed',
+        snapshot_name: 'Study interval',
+        definition_snapshot: {
+          version: 1,
+          children: [
+            {
+              id: 'review-step',
+              type: 'step',
+              name: 'Review',
+              kind: 'work',
+              durationSeconds: 60,
+            },
+            {
+              id: 'silent-step',
+              type: 'step',
+              name: 'Silent',
+              kind: 'rest',
+              durationSeconds: 60,
+              flashcardReviewEnabled: false,
+            },
+          ],
+        },
+        cue_snapshot: { soundEnabled: true, vibrationEnabled: true },
+        flashcard_snapshot: {
+          reviewSet: 'set-1',
+          cards: [{ id: 'card-1', front: 'One', back: 'Un', note: '', tags: [] }],
+        },
+        started_at: '2026-08-10T16:00:00.000Z',
+        ended_at: '2026-08-10T16:02:00.000Z',
+        updated_at: '2026-08-10T16:02:00.000Z',
+        planned_seconds: 120,
+        elapsed_seconds: 120,
+        runtime_state: {
+          stepIndex: 2,
+          remainingMs: 0,
+          accumulatedMs: 120_000,
+          updatedAt: '2026-08-10T16:02:00.000Z',
+        },
+      }),
+    ])
+
+    const taskStore = useTaskStore()
+    await taskStore.load()
+
+    expect(taskStore.makeProgress(taskStore.tasks[0]!, new Date(2026, 7, 10))).toMatchObject({
+      value: 54,
+      percent: 18,
+      complete: false,
+    })
+    expect(await listLocalRecords(accountId, 'entries')).toEqual([
+      expect.objectContaining({
+        task: 'task-1',
+        value: 54,
+        source_type: 'flashcards',
+        source_session: 'interval-session-1',
+      }),
+    ])
+    await taskStore.load()
+    expect(await listLocalRecords(accountId, 'entries')).toHaveLength(1)
+  })
 })

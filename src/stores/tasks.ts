@@ -4,6 +4,7 @@ import { addDays, endOfWeek, format, parseISO, startOfWeek, subDays } from 'date
 import { api } from '@/lib/api'
 import { hasLocalBootstrap, listLocalRecords } from '@/lib/localDatabase'
 import { readHealthConnectSteps } from '@/services/healthConnect'
+import { completedIntervalFlashcardReviewSeconds } from '@/services/intervals'
 import { dailyTotalCompletionPercent, isTaskScheduled, meetsTarget, programCycleDay, progressPercent, stepsForDate, toDateKey } from '@/services/schedule'
 import { taskNeedsReview } from '@/services/taskCardActions'
 import { sanitizeTaskEntryNote } from '@/services/taskEntryNotes'
@@ -11,7 +12,16 @@ import { reconcileTaskReminders } from '@/services/taskReminders'
 import { useSnackbarStore } from '@/stores/snackbar'
 import { useJournalStore } from '@/stores/journal'
 import { useTrackingStore } from '@/stores/tracking'
-import type { Entry, Occurrence, ProgramStep, Task, TaskDraft, TaskProgress } from '@/types/domain'
+import type {
+  Entry,
+  IntervalDefinition,
+  IntervalRuntimeState,
+  Occurrence,
+  ProgramStep,
+  Task,
+  TaskDraft,
+  TaskProgress,
+} from '@/types/domain'
 
 const asNumberArray = (value: unknown, fallback: number[] = []) =>
   Array.isArray(value) ? value.map(Number) : fallback
@@ -123,6 +133,7 @@ export const useTaskStore = defineStore('tasks', () => {
   let stepCountRequest = 0
   let progressRangeRequest = 0
   let initialProgressSince = ''
+  let reconciledSessionProgressKey = ''
   let reminderSyncQueue: Promise<void> = Promise.resolve()
   const loadedProgressRanges = new Set<string>()
 
@@ -311,6 +322,13 @@ export const useTaskStore = defineStore('tasks', () => {
       steps.value = stepRecords.map(mapStep)
       occurrences.value = occurrenceRecords.map(mapOccurrence)
       entries.value = entryRecords.map(mapEntry)
+      const reconciliationKey = `${api.authStore.record.id}:${since}`
+      if (reconciledSessionProgressKey !== reconciliationKey) {
+        const reconciled = await api.reconcileSessionTaskProgress?.(since)
+        reconciled?.occurrences.forEach(upsertOccurrenceRecord)
+        reconciled?.entries.forEach(upsertEntryRecord)
+        reconciledSessionProgressKey = reconciliationKey
+      }
       initialProgressSince = since
       loadedProgressRanges.clear()
       await reconcileLocalSessionProgress(since)
@@ -541,6 +559,38 @@ export const useTaskStore = defineStore('tasks', () => {
         startedAt,
         status,
         elapsedSeconds: Number(record.elapsed_seconds || 0),
+        completedAt: String(record.ended_at || record.updated_at || new Date().toISOString()),
+      }, false)
+      if (sourceType !== 'interval') continue
+      const snapshot = record.flashcard_snapshot
+      const definition = record.definition_snapshot
+      const runtime = record.runtime_state
+      const reviewSetId = snapshot && typeof snapshot === 'object' && !Array.isArray(snapshot)
+        ? String((snapshot as Record<string, unknown>).reviewSet || '')
+        : ''
+      if (
+        !reviewSetId
+        || !definition
+        || typeof definition !== 'object'
+        || Array.isArray(definition)
+        || !runtime
+        || typeof runtime !== 'object'
+        || Array.isArray(runtime)
+      ) continue
+      const reviewElapsedSeconds = completedIntervalFlashcardReviewSeconds(
+        definition as unknown as IntervalDefinition,
+        runtime as unknown as IntervalRuntimeState,
+        Number(record.elapsed_seconds || 0),
+      )
+      if (reviewElapsedSeconds <= 0) continue
+      await applyLocalSessionProgress({
+        id: String(record.id || ''),
+        sourceType: 'flashcards',
+        sourceId: reviewSetId,
+        taskDate: String(record.task_date || ''),
+        startedAt,
+        status,
+        elapsedSeconds: reviewElapsedSeconds,
         completedAt: String(record.ended_at || record.updated_at || new Date().toISOString()),
       }, false)
     }

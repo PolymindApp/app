@@ -169,6 +169,9 @@ final class Api
                     $this->jsonBody(),
                 ));
             }
+            if ($method === 'POST' && $path === '/task-session-progress/reconcile') {
+                $this->reconcileSessionTaskProgress($this->authenticate());
+            }
             if (
                 in_array($method, ['GET', 'POST', 'DELETE'], true)
                 && $path === '/auth/chatgpt'
@@ -4706,6 +4709,15 @@ final class Api
                 $endedAt,
                 (string) $user['timezone'],
             );
+            $reviewProgress = $this->applyIntervalFlashcardTaskProgress(
+                $session,
+                $owner,
+                $endedAt,
+                (string) $user['timezone'],
+            );
+            if ($reviewProgress !== null) {
+                $progress = $this->mergeSessionTaskProgress($progress, $reviewProgress);
+            }
             $pdo->commit();
         } catch (Throwable $exception) {
             if ($pdo->inTransaction()) {
@@ -4909,6 +4921,219 @@ final class Api
             'occurrences' => array_values($occurrences),
             'entries' => array_values($entries),
         ];
+    }
+
+    /**
+     * Credit an interval's embedded Review set as a linked Review-set session. The interval's
+     * direct task attribution stays with the interval source; only tasks configured to count any
+     * session of this Review set are eligible here.
+     *
+     * @return null|array{occurrence: ?array, occurrences: array<int, array>, entries: array<int, array>}
+     */
+    private function applyIntervalFlashcardTaskProgress(
+        array $session,
+        string $owner,
+        string $completedAt,
+        string $timezone,
+    ): ?array {
+        $snapshot = $this->decodeJsonColumn($session['flashcard_snapshot'] ?? '{}');
+        $reviewSetId = is_array($snapshot) ? (string) ($snapshot['reviewSet'] ?? '') : '';
+        $elapsedSeconds = $this->intervalFlashcardReviewElapsedSeconds($session);
+        if ($reviewSetId === '' || $elapsedSeconds <= 0) {
+            return null;
+        }
+
+        return $this->applyLinkedSessionTaskProgress(array_merge($session, [
+            'task' => '',
+            'program_step' => '',
+            'review_set' => $reviewSetId,
+            'elapsed_seconds' => $elapsedSeconds,
+        ]), $owner, 'flashcards', $completedAt, $timezone);
+    }
+
+    private function reconcileSessionTaskProgress(array $user): never
+    {
+        $body = $this->jsonBody();
+        $this->allowOnlyFields($body, ['since']);
+        if (!is_string($body['since'] ?? null)) {
+            throw new ApiException(422, 'The reconciliation start date is required.', [
+                'since' => 'required',
+            ]);
+        }
+        $since = $this->validateDateKey($body['since'], 'since');
+        if ($since === '') {
+            throw new ApiException(422, 'The reconciliation start date is required.', [
+                'since' => 'required',
+            ]);
+        }
+
+        $owner = (string) $user['id'];
+        $timezone = (string) $user['timezone'];
+        $pdo = $this->database->pdo;
+        $progress = ['occurrence' => null, 'occurrences' => [], 'entries' => []];
+        $pdo->beginTransaction();
+        try {
+            $statement = $pdo->prepare(
+                "SELECT * FROM interval_sessions
+                 WHERE owner = :owner AND status IN ('completed', 'ended')
+                   AND flashcard_snapshot <> '' AND flashcard_snapshot <> '{}'
+                   AND (
+                       task_date >= :since
+                       OR (task_date = '' AND substr(started_at, 1, 10) >= :since)
+                   )
+                 ORDER BY started_at, id",
+            );
+            $statement->execute(['owner' => $owner, 'since' => $since]);
+            foreach ($statement->fetchAll() as $session) {
+                $completedAt = (string) (
+                    ($session['ended_at'] ?? '')
+                    ?: ($session['updated_at'] ?? '')
+                    ?: ($session['started_at'] ?? $this->now())
+                );
+                $reviewProgress = $this->applyIntervalFlashcardTaskProgress(
+                    $session,
+                    $owner,
+                    $completedAt,
+                    $timezone,
+                );
+                if ($reviewProgress !== null) {
+                    $progress = $this->mergeSessionTaskProgress($progress, $reviewProgress);
+                }
+            }
+            $pdo->commit();
+        } catch (Throwable $exception) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $exception;
+        }
+
+        $this->respond([
+            'occurrences' => $progress['occurrences'],
+            'entries' => $progress['entries'],
+        ]);
+    }
+
+    /**
+     * @param array{occurrence: ?array, occurrences: array<int, array>, entries: array<int, array>} $progress
+     * @param array{occurrence: ?array, occurrences: array<int, array>, entries: array<int, array>} $additional
+     * @return array{occurrence: ?array, occurrences: array<int, array>, entries: array<int, array>}
+     */
+    private function mergeSessionTaskProgress(array $progress, array $additional): array
+    {
+        $occurrences = [];
+        foreach (array_merge($progress['occurrences'], $additional['occurrences']) as $occurrence) {
+            $occurrences[(string) $occurrence['id']] = $occurrence;
+        }
+        $entries = [];
+        foreach (array_merge($progress['entries'], $additional['entries']) as $entry) {
+            $entries[(string) $entry['id']] = $entry;
+        }
+        return [
+            'occurrence' => $progress['occurrence'],
+            'occurrences' => array_values($occurrences),
+            'entries' => array_values($entries),
+        ];
+    }
+
+    private function intervalFlashcardReviewElapsedSeconds(array $session): int
+    {
+        $definition = $this->decodeJsonColumn($session['definition_snapshot'] ?? '{}');
+        $runtime = $this->decodeJsonColumn($session['runtime_state'] ?? '{}');
+        if (!is_array($definition) || !is_array($runtime)) {
+            return 0;
+        }
+
+        $steps = [];
+        $nodes = isset($definition['children']) && is_array($definition['children'])
+            ? $definition['children']
+            : [];
+        $repetition = $definition['globalRepetition'] ?? null;
+        if (is_array($repetition) && ($repetition['enabled'] ?? false) === true) {
+            $repeatCount = min(15, max(2, (int) round((float) ($repetition['defaultCount'] ?? 2))));
+            $nodes = [[
+                'type' => 'group',
+                'repeatCount' => $repeatCount,
+                'children' => $nodes,
+            ]];
+        }
+        $this->appendExpandedIntervalSteps($nodes, $steps);
+
+        $stepIndex = max(0, (int) ($runtime['stepIndex'] ?? 0));
+        $remainingMs = is_numeric($runtime['remainingMs'] ?? null)
+            ? max(0.0, (float) $runtime['remainingMs'])
+            : null;
+        $reviewElapsedMs = 0.0;
+        $edgePauseMs = 3000.0;
+        foreach ($steps as $index => $step) {
+            if ($index > $stepIndex) {
+                break;
+            }
+            $reviewEnabled = array_key_exists('flashcardReviewEnabled', $step)
+                ? $step['flashcardReviewEnabled'] === true
+                : !in_array((string) ($step['kind'] ?? ''), ['train', 'prepare'], true);
+            if (!$reviewEnabled) {
+                continue;
+            }
+            $durationMs = $this->intervalStepDurationMilliseconds($step);
+            $reviewDurationMs = max(0.0, $durationMs - ($edgePauseMs * 2));
+            if ($index < $stepIndex) {
+                $reviewElapsedMs += $reviewDurationMs;
+            } else {
+                $normalizedRemainingMs = $remainingMs === null
+                    ? $durationMs
+                    : min($durationMs, $remainingMs);
+                $reviewElapsedMs += min(
+                    $reviewDurationMs,
+                    max(0.0, $durationMs - $normalizedRemainingMs - $edgePauseMs),
+                );
+            }
+        }
+
+        $sessionElapsedMs = max(0.0, (float) ($session['elapsed_seconds'] ?? 0) * 1000);
+        return (int) round(min($reviewElapsedMs, $sessionElapsedMs) / 1000);
+    }
+
+    /** @param array<int, mixed> $nodes @param array<int, array> $steps */
+    private function appendExpandedIntervalSteps(array $nodes, array &$steps): void
+    {
+        foreach ($nodes as $node) {
+            if (!is_array($node) || count($steps) >= 10000) {
+                continue;
+            }
+            if (($node['type'] ?? '') === 'step') {
+                $steps[] = $node;
+                continue;
+            }
+            if (($node['type'] ?? '') !== 'group' || !is_array($node['children'] ?? null)) {
+                continue;
+            }
+
+            $repeatCount = min(10000, max(0, (int) floor((float) ($node['repeatCount'] ?? 0))));
+            $children = $node['children'];
+            $lastChild = $children === [] ? null : $children[array_key_last($children)];
+            $skipLast = $repeatCount > 1
+                && is_array($lastChild)
+                && ($lastChild['type'] ?? '') === 'step'
+                && ($lastChild['skipOnLastRound'] ?? false) === true;
+            for ($iteration = 0; $iteration < $repeatCount && count($steps) < 10000; $iteration++) {
+                $iterationChildren = $skipLast && $iteration === $repeatCount - 1
+                    ? array_slice($children, 0, -1)
+                    : $children;
+                $this->appendExpandedIntervalSteps($iterationChildren, $steps);
+            }
+        }
+    }
+
+    private function intervalStepDurationMilliseconds(array $step): float
+    {
+        if (($step['kind'] ?? '') === 'confirmation') {
+            return 0.0;
+        }
+        $seconds = is_numeric($step['durationSeconds'] ?? null)
+            ? max(0.0, (float) $step['durationSeconds'])
+            : 0.0;
+        return $seconds * 1000;
     }
 
     private function sessionTaskOccurrence(array $task, string $taskDate, string $owner): array|false

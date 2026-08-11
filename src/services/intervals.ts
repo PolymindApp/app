@@ -393,6 +393,22 @@ export function intervalFlashcardReviewElapsedMs(
   return safeAdd(elapsedBeforeMs, elapsedInStep)
 }
 
+export function completedIntervalFlashcardReviewSeconds(
+  definition: IntervalDefinition,
+  runtime: Pick<IntervalRuntimeState, 'stepIndex' | 'remainingMs'>,
+  elapsedSeconds: number,
+) {
+  const reviewSeconds = Math.round(intervalFlashcardReviewElapsedMs(
+    definition,
+    runtime.stepIndex,
+    runtime.remainingMs,
+  ) / 1000)
+  return Math.min(
+    Math.max(0, Math.round(Number(elapsedSeconds) || 0)),
+    Math.max(0, reviewSeconds),
+  )
+}
+
 function resolveInNodes(
   nodes: IntervalNode[],
   requestedIndex: number,

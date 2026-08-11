@@ -65,6 +65,11 @@ interface CompleteIntervalSessionResponse {
   local?: boolean
 }
 
+interface SessionTaskProgressResponse {
+  occurrences: RecordModel[]
+  entries: RecordModel[]
+}
+
 interface FlashcardReviewActionResponse {
   session: RecordModel
   occurrence: RecordModel | null
@@ -734,6 +739,18 @@ class ApiClient {
           ended_at: input.endedAt,
         },
       },
+      this.authStore,
+    )
+  }
+
+  async reconcileSessionTaskProgress(since: string): Promise<SessionTaskProgressResponse> {
+    const accountId = this.authStore.record?.id || ''
+    if (accountId && await hasLocalBootstrap(accountId)) {
+      return { occurrences: [], entries: [] }
+    }
+    return request<SessionTaskProgressResponse>(
+      '/task-session-progress/reconcile',
+      { method: 'POST', body: { since } },
       this.authStore,
     )
   }

@@ -271,6 +271,85 @@ describe('interval task attribution', () => {
     ])
   })
 
+  it('immediately credits Review-enabled interval time to linked Review-set tasks offline', async () => {
+    const definition = {
+      version: 1 as const,
+      children: [
+        {
+          id: 'review-step',
+          type: 'step' as const,
+          name: 'Review',
+          kind: 'work' as const,
+          durationSeconds: 60,
+        },
+        {
+          id: 'silent-step',
+          type: 'step' as const,
+          name: 'Silent',
+          kind: 'rest' as const,
+          durationSeconds: 60,
+          flashcardReviewEnabled: false,
+        },
+      ],
+    }
+    const runtime = {
+      stepIndex: 2,
+      remainingMs: 0,
+      accumulatedMs: 120_000,
+      updatedAt: '2026-08-10T16:02:00.000Z',
+    }
+    apiMocks.completeIntervalSession.mockResolvedValue({
+      local: true,
+      session: {
+        id: 'session-1',
+        template: 'template-1',
+        source: 'template',
+        status: 'completed',
+        snapshot_name: 'Study interval',
+        definition_snapshot: definition,
+        cue_snapshot: { soundEnabled: true, vibrationEnabled: true },
+        flashcard_snapshot: {
+          reviewSet: 'set-1',
+          name: 'Vocabulary',
+          cards: [{ id: 'card-1', front: 'One', back: 'Un', note: '', image: '', tags: [] }],
+        },
+        started_at: '2026-08-10T16:00:00.000Z',
+        ended_at: '2026-08-10T16:02:00.000Z',
+        task_date: '2026-08-10',
+        planned_seconds: 120,
+        elapsed_seconds: 120,
+        runtime_state: runtime,
+      },
+      occurrence: null,
+      occurrences: [],
+      entries: [],
+    })
+    const { useTaskStore } = await import('./tasks')
+    const taskStore = useTaskStore()
+    const applyProgress = vi.spyOn(taskStore, 'applyLocalSessionProgress').mockResolvedValue(undefined)
+
+    await useIntervalStore().completeSession('session-1', {
+      runtime,
+      elapsedSeconds: 120,
+      endedAt: '2026-08-10T16:02:00.000Z',
+    })
+
+    expect(applyProgress).toHaveBeenCalledTimes(2)
+    expect(applyProgress.mock.calls[0]?.[0]).toMatchObject({
+      id: 'session-1',
+      sourceType: 'interval',
+      sourceId: 'template-1',
+      elapsedSeconds: 120,
+    })
+    expect(applyProgress.mock.calls[0]?.[1]).toBe(false)
+    expect(applyProgress.mock.calls[1]?.[0]).toMatchObject({
+      id: 'session-1',
+      sourceType: 'flashcards',
+      sourceId: 'set-1',
+      elapsedSeconds: 54,
+    })
+  })
+
   it('persists a note on a finished interval session', async () => {
     apiMocks.updateIntervalSession.mockResolvedValue({
       id: 'session-1',

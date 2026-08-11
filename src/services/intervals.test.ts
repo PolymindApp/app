@@ -2,6 +2,7 @@ import { reactive } from 'vue'
 import { describe, expect, it } from 'vitest'
 import {
   cloneIntervalTemplateDraft,
+  completedIntervalFlashcardReviewSeconds,
   createIntervalGroup,
   createIntervalStep,
   createRuntimeState,
@@ -383,6 +384,16 @@ describe('interval definitions', () => {
     expect(intervalFlashcardReviewElapsedMs(definition, 0, 5_000)).toBe(2_000)
     expect(intervalFlashcardReviewElapsedMs(definition, 1, 10_000)).toBe(4_000)
     expect(intervalFlashcardReviewElapsedMs(definition, 2, 15_000)).toBe(16_000)
+    expect(completedIntervalFlashcardReviewSeconds(
+      definition,
+      { stepIndex: 3, remainingMs: 0 },
+      60,
+    )).toBe(28)
+    expect(completedIntervalFlashcardReviewSeconds(
+      definition,
+      { stepIndex: 3, remainingMs: 0 },
+      25,
+    )).toBe(25)
   })
 
   it('plays a Review set only between the three-second step buffers', () => {

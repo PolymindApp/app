@@ -2183,6 +2183,107 @@ flashcard_occurrence_count="$(sqlite3 "$test_db" \
   exit 1
 }
 
+hybrid_duration_task_payload="$(php -r '
+  $payload = json_decode($argv[1], true, 512, JSON_THROW_ON_ERROR);
+  $payload["name"] = "Review time across runners";
+  $payload["sort_order"] = 12;
+  $payload["session_count_mode"] = "linked";
+  $payload["session_goal_type"] = "duration";
+  $payload["session_target_seconds"] = 2;
+  echo json_encode($payload, JSON_THROW_ON_ERROR);
+' "$flashcard_task_payload")"
+hybrid_duration_task_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "$hybrid_duration_task_payload" \
+  "$api_url/collections/tasks/records")"
+hybrid_duration_task_id="$(json_field id <<<"$hybrid_duration_task_response")"
+hybrid_interval_payload="$(php -r '
+  $payload = json_decode($argv[1], true, 512, JSON_THROW_ON_ERROR);
+  $payload["task"] = "";
+  $payload["program_step"] = "";
+  $payload["task_date"] = $argv[2];
+  $payload["started_at"] = $argv[2] . "T14:00:00Z";
+  $payload["definition_snapshot"]["children"][0]["durationSeconds"] = 7;
+  $payload["planned_seconds"] = 7;
+  $payload["runtime_state"]["remainingMs"] = 7000;
+  $payload["runtime_state"]["accumulatedMs"] = 0;
+  $payload["runtime_state"]["stepStartedAt"] = $payload["started_at"];
+  $payload["runtime_state"]["updatedAt"] = $payload["started_at"];
+  echo json_encode($payload, JSON_THROW_ON_ERROR);
+' "$manual_interval_payload" "$flashcard_today")"
+hybrid_interval_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "$hybrid_interval_payload" \
+  "$api_url/collections/interval_sessions/records")"
+hybrid_interval_session_id="$(json_field id <<<"$hybrid_interval_response")"
+hybrid_interval_completion="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "{\"runtime_state\":{\"stepIndex\":1,\"remainingMs\":0,\"accumulatedMs\":7000,\"updatedAt\":\"${flashcard_today}T14:00:07Z\"},\"elapsed_seconds\":7,\"ended_at\":\"${flashcard_today}T14:00:07Z\"}" \
+  "$api_url/interval-sessions/$hybrid_interval_session_id/complete")"
+hybrid_interval_entry="$(php -r '
+  $data = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+  foreach ($data["entries"] ?? [] as $entry) {
+      if (($entry["task"] ?? "") === $argv[1]) {
+          echo $entry["value"] . ":" . $entry["source_type"] . ":" . $entry["source_session"];
+      }
+  }
+' "$hybrid_duration_task_id" <<<"$hybrid_interval_completion")"
+[[ "$hybrid_interval_entry" == "1:flashcards:$hybrid_interval_session_id" ]] || {
+  echo "An interval with an attached Review set did not credit its Review-enabled time." >&2
+  exit 1
+}
+curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "{\"runtime_state\":{\"stepIndex\":1,\"remainingMs\":0,\"accumulatedMs\":7000,\"updatedAt\":\"${flashcard_today}T14:00:07Z\"},\"elapsed_seconds\":7,\"ended_at\":\"${flashcard_today}T14:00:07Z\"}" \
+  "$api_url/interval-sessions/$hybrid_interval_session_id/complete" >/dev/null
+
+linked_review_session_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"task":"","program_step":"","task_date":""}' \
+  "$api_url/flashcard-review-sets/$manual_review_set_id/sessions")"
+linked_review_session_id="$(json_field id <<<"$linked_review_session_response")"
+curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"action":"end","elapsed_seconds":1}' \
+  "$api_url/flashcard-review-sessions/$linked_review_session_id/actions" >/dev/null
+sqlite3 "$test_db" \
+  "DELETE FROM entries WHERE task = '$hybrid_duration_task_id' AND source_session = '$hybrid_interval_session_id';"
+hybrid_reconciliation_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "{\"since\":\"$flashcard_today\"}" \
+  "$api_url/task-session-progress/reconcile")"
+hybrid_reconciled_entry="$(php -r '
+  $data = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+  foreach ($data["entries"] ?? [] as $entry) {
+      if (($entry["task"] ?? "") === $argv[1]
+          && ($entry["source_session"] ?? "") === $argv[2]) {
+          echo $entry["value"];
+      }
+  }
+' "$hybrid_duration_task_id" "$hybrid_interval_session_id" <<<"$hybrid_reconciliation_response")"
+[[ "$hybrid_reconciled_entry" == 1 ]] || {
+  echo "Recent hybrid Review-set progress was not repaired during reconciliation." >&2
+  exit 1
+}
+hybrid_duration_summary="$(sqlite3 "$test_db" \
+  "SELECT (SELECT COALESCE(SUM(value), 0) FROM entries
+             WHERE task = '$hybrid_duration_task_id' AND entry_date = '$flashcard_today') || ':' ||
+          (SELECT COUNT(*) FROM entries
+             WHERE task = '$hybrid_duration_task_id' AND entry_date = '$flashcard_today') || ':' ||
+          (SELECT status FROM occurrences
+             WHERE task = '$hybrid_duration_task_id' AND scheduled_date = '$flashcard_today');")"
+[[ "$hybrid_duration_summary" == "2:2:completed" ]] || {
+  echo "Interval and standalone Review-set time did not accumulate exactly once toward one duration objective." >&2
+  exit 1
+}
+
 looping_flashcard_task_payload="$(php -r '
   $payload = json_decode($argv[1], true, 512, JSON_THROW_ON_ERROR);
   $payload["name"] = "Looping review task";
@@ -2678,6 +2779,14 @@ detached_looping_session_count="$(sqlite3 "$test_db" \
   "SELECT COUNT(*) FROM flashcard_review_sessions WHERE id = '$looping_flashcard_session_id' AND task = '' AND program_step = '';")"
 [[ "$looping_flashcard_task_delete_status" == 204 && "$detached_looping_session_count" == 1 ]] || {
   echo "Deleting a looping flashcard task did not preserve and detach its session history." >&2
+  exit 1
+}
+
+hybrid_duration_task_delete_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  -X DELETE -H "Authorization: Bearer $alice_token" \
+  "$api_url/collections/tasks/records/$hybrid_duration_task_id")"
+[[ "$hybrid_duration_task_delete_status" == 204 ]] || {
+  echo "Deleting the hybrid Review-set duration task failed." >&2
   exit 1
 }
 

@@ -5,6 +5,7 @@ import { useSnackbarStore } from '@/stores/snackbar'
 import { useTaskStore } from '@/stores/tasks'
 import {
   cloneIntervalTemplateDraft,
+  completedIntervalFlashcardReviewSeconds,
   createRuntimeState,
   intervalDuration,
   normalizeQuickIntervalSettings,
@@ -388,6 +389,14 @@ export const useIntervalStore = defineStore('intervals', () => {
     const progressEntries = response.entries || []
     progressEntries.forEach(record => taskStore.upsertEntryRecord(record))
     if (response.local) {
+      const reviewSetId = mapped.flashcardReview?.reviewSet || ''
+      const reviewElapsedSeconds = reviewSetId
+        ? completedIntervalFlashcardReviewSeconds(
+            mapped.definition,
+            mapped.runtime,
+            mapped.elapsedSeconds,
+          )
+        : 0
       await taskStore.applyLocalSessionProgress({
         id: mapped.id,
         sourceType: 'interval',
@@ -399,7 +408,19 @@ export const useIntervalStore = defineStore('intervals', () => {
         status: mapped.status === 'completed' ? 'completed' : 'ended',
         elapsedSeconds: mapped.elapsedSeconds,
         completedAt: mapped.endedAt || new Date().toISOString(),
-      })
+      }, reviewElapsedSeconds <= 0)
+      if (reviewElapsedSeconds > 0) {
+        await taskStore.applyLocalSessionProgress({
+          id: mapped.id,
+          sourceType: 'flashcards',
+          sourceId: reviewSetId,
+          taskDate: mapped.taskDate,
+          startedAt: mapped.startedAt,
+          status: mapped.status === 'completed' ? 'completed' : 'ended',
+          elapsedSeconds: reviewElapsedSeconds,
+          completedAt: mapped.endedAt || new Date().toISOString(),
+        })
+      }
     } else if (
       !response.occurrence
       && !progressOccurrences.length
