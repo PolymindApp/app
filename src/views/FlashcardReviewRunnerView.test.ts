@@ -238,16 +238,14 @@ describe('FlashcardReviewRunnerView Review set preview', () => {
 
     expect(mocks.store.startReview).not.toHaveBeenCalled()
     expect(wrapper.get('[aria-label="Start review"]').attributes('disabled')).toBeUndefined()
-    expect(wrapper.find('[aria-label="Eject current card"]').exists()).toBe(false)
+    expect(wrapper.get('[aria-label="Eject current card"]').attributes('disabled')).toBeDefined()
     expect(wrapper.get('.review-card-actions').element.previousElementSibling)
       .toBe(wrapper.get('.review-navigation').element)
     expect(wrapper.findAll('button').filter(button => button.text() === 'Options')).toHaveLength(1)
     expect(wrapper.findAll('button').find(button => button.text() === 'Options')?.attributes('disabled'))
       .toBeDefined()
-    expect(wrapper.getComponent(RunnerSessionActionsStub).props('items')).toEqual([
-      expect.objectContaining({ action: 'restart', disabled: true }),
-      expect.objectContaining({ action: 'end', disabled: true }),
-    ])
+    expect(wrapper.findComponent(RunnerSessionActionsStub).exists()).toBe(false)
+    expect(wrapper.findComponent(FlashcardContextActionsStub).exists()).toBe(false)
 
     await wrapper.get('[aria-label="Start review"]').trigger('click')
     await flushPromises()

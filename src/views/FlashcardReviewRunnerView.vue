@@ -501,6 +501,8 @@ async function pauseReview(markVisibilityPause: boolean) {
 async function startPreviewReview() {
   const preview = previewSession.value
   if (!preview?.reviewSet || busy.value) return
+  sessionActionsSheet.value = false
+  cardMenuOpen.value = false
   busy.value = true
   error.value = ''
   try {
@@ -1283,13 +1285,12 @@ async function leaveRunner() {
 
         <div class="review-card-actions d-flex justify-center ga-2">
           <v-btn
-            v-if="!isReviewSetPreview"
             size="large"
             variant="text"
             color="warning"
             prepend-icon="mdi-eject-outline"
             aria-label="Eject current card"
-            :disabled="busy || !currentCard"
+            :disabled="isReviewSetPreview || busy || !currentCard"
             @click="ejectCurrentCard"
           >
             Eject card
@@ -1311,6 +1312,7 @@ async function leaveRunner() {
     </template>
 
     <RunnerSessionActions
+      v-if="session && !isReviewSetPreview && !loading"
       v-model="sessionActionsSheet"
       title="Review actions"
       aria-label="Review session actions"
@@ -1319,6 +1321,7 @@ async function leaveRunner() {
     />
 
     <FlashcardContextActions
+      v-if="session && !isReviewSetPreview && !loading"
       v-model="cardMenuOpen"
       :busy="busy"
       :can-manage-card="canManageCurrentCard && Boolean(currentCard)"
