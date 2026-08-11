@@ -297,6 +297,39 @@ describe('FlashcardReviewRunnerView Review set preview', () => {
     wrapper.unmount()
   })
 
+  it.each([
+    { mode: 'manual' as const, selector: '.review-card' },
+    { mode: 'passive' as const, selector: '.passive-card' },
+  ])('replays paused $mode card speech without resuming the session', async ({ mode, selector }) => {
+    const active = {
+      ...runningSession(),
+      mode,
+      status: 'paused' as const,
+      speechEnabled: true,
+      frontLanguage: 'en-CA',
+    }
+    mocks.route.params = { sessionId: active.id }
+    mocks.store.sessions = reactive([active])
+    mocks.store.loadSession.mockResolvedValue(active)
+
+    const wrapper = mountRunner()
+    await flushPromises()
+    mocks.speakFlashcardText.mockClear()
+
+    const reviewCard = wrapper.get(selector)
+    expect(reviewCard.attributes('disabled')).toBeUndefined()
+    expect(reviewCard.attributes('aria-disabled')).not.toBe('true')
+
+    await reviewCard.trigger('click')
+    await flushPromises()
+
+    expect(mocks.speakFlashcardText).toHaveBeenCalledWith('House', 'en-CA')
+    expect(active.status).toBe('paused')
+    expect(mocks.store.act).not.toHaveBeenCalled()
+
+    wrapper.unmount()
+  })
+
   it('restarts the Review set session from the actions menu', async () => {
     const active = {
       ...runningSession(),

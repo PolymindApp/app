@@ -131,6 +131,13 @@ const canManageCurrentCard = computed(() => !currentReviewSet.value
   || currentReviewSet.value.accessRole !== 'readonly')
 const isFinished = computed(() => session.value?.status === 'completed' || session.value?.status === 'ended')
 const isRunning = computed(() => session.value?.status === 'running')
+const canReplayCurrentSide = computed(() => Boolean(
+  session.value?.speechEnabled
+  && currentCard.value
+  && !isReviewSetPreview.value
+  && !isFinished.value
+  && !busy.value,
+))
 const shouldKeepScreenAwake = computed(() => Boolean(
   session.value && !isFinished.value && !isReviewSetPreview.value,
 ))
@@ -570,16 +577,23 @@ function handleVisibilityChange() {
   })
 }
 
-function speechKey() {
-  if (!currentCard.value || !session.value?.speechEnabled || session.value.status !== 'running') return ''
+function speechKey(allowPaused = false) {
+  if (
+    !currentCard.value
+    || !session.value?.speechEnabled
+    || (
+      session.value.status !== 'running'
+      && !(allowPaused && session.value.status === 'paused')
+    )
+  ) return ''
   return `${currentCard.value.id}:${currentSpeechSide.value}:${passiveSpeechRepeatIndex.value}`
 }
 
-async function speakCurrentSide() {
+async function speakCurrentSide(allowPaused = false) {
   const request = ++speechRequest
   const value = session.value
   const card = currentCard.value
-  const key = speechKey()
+  const key = speechKey(allowPaused)
   if (
     loading.value
     || reconcilingBackground.value
@@ -617,16 +631,13 @@ function retrySpeech() {
 
 function replayCurrentSide() {
   if (
-    !session.value?.speechEnabled
-    || session.value.status !== 'running'
-    || !currentCard.value
-    || busy.value
+    !canReplayCurrentSide.value
     || document.visibilityState !== 'visible'
   ) return false
 
   lastSpokenKey = ''
   speechPlaybackWarning.value = ''
-  void speakCurrentSide()
+  void speakCurrentSide(true)
   return true
 }
 
@@ -1073,7 +1084,7 @@ async function leaveRunner() {
           :aria-label="session.speechEnabled
             ? `Replay ${currentSpeechSide} speech`
             : session.cardSides === 'both' && !revealed ? 'Show answer' : `${currentSpeechSide} shown`"
-          :disabled="session.status === 'paused' || busy"
+          :disabled="busy || (session.status !== 'running' && !canReplayCurrentSide)"
           @pointerdown="beginManualCardSwipe"
           @pointerup="finishManualCardSwipe"
           @pointercancel="cancelManualCardSwipe"
@@ -1129,13 +1140,13 @@ async function leaveRunner() {
 
         <div
           v-else
-          v-ripple="session.speechEnabled && session.status === 'running' && !busy"
+          v-ripple="canReplayCurrentSide"
           class="passive-card"
-          :class="{ 'passive-card--interactive': session.speechEnabled && session.status === 'running' && !busy }"
+          :class="{ 'passive-card--interactive': canReplayCurrentSide }"
           :role="session.speechEnabled ? 'button' : undefined"
-          :tabindex="session.speechEnabled && session.status === 'running' && !busy ? 0 : undefined"
+          :tabindex="canReplayCurrentSide ? 0 : undefined"
           :aria-label="session.speechEnabled ? `Replay ${passiveSide} speech` : undefined"
-          :aria-disabled="session.speechEnabled ? session.status !== 'running' || busy : undefined"
+          :aria-disabled="session.speechEnabled ? !canReplayCurrentSide : undefined"
           @click="replayCurrentSide"
           @keydown.enter="replayCurrentSide"
           @keydown.space.prevent="replayCurrentSide"
