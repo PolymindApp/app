@@ -9,6 +9,7 @@ import {
   buildTrackingInsight,
   dateRangeKeys,
   defaultTrackingInsightRangeDays,
+  trackingDailyValuesForRange,
   type TrackingInsightResult,
 } from '@/services/tracking'
 import { readHealthConnectStepsForDates } from '@/services/healthConnect'
@@ -242,6 +243,10 @@ async function analyze() {
       factor.factorMode,
       outcome.favorableDirection,
       { factor: factor.name, outcome: outcome.name },
+      {
+        missingMeansAbsent: factor.source === 'tracker'
+          && tracking.trackers.some((tracker) => `tracker:${tracker.id}` === factor.id && tracker.kind === 'event'),
+      },
     )
     if (request === analysisRequest) insight.value = result
   } catch (cause) {
@@ -310,9 +315,9 @@ async function factorDailyValues(sourceId: string, start: string, end: string): 
 
 function trackerDailyValues(trackerId: string, start: string, end: string) {
   const tracker = tracking.trackers.find((item) => item.id === trackerId)
-  return tracking.dailyValues(trackerId)
-    .filter((item) => item.date >= start && item.date <= end)
-    .map((item) => tracker?.kind === 'duration' ? { ...item, value: item.value / 60 } : item)
+  if (!tracker) return []
+  return trackingDailyValuesForRange(tracker, tracking.entries, start, end)
+    .map((item) => tracker.kind === 'duration' ? { ...item, value: item.value / 60 } : item)
 }
 </script>
 

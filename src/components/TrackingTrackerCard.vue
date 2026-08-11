@@ -75,6 +75,10 @@ const vRipple = Ripple
         <span v-if="entry.note" class="tracker-entry__note">{{ entry.note }}</span>
       </button>
     </div>
+    <div v-else-if="tracker.kind === 'event'" class="tracker-event-absence">
+      <v-icon icon="mdi-minus-circle-outline" size="17" />
+      <span>Not occurred</span>
+    </div>
   </v-card>
 </template>
 
@@ -162,6 +166,18 @@ const vRipple = Ripple
   gap: .25rem;
   padding: .35rem .55rem .55rem .75rem;
   border-top: 1px solid rgb(var(--v-theme-on-surface) / .08);
+}
+
+.tracker-event-absence {
+  display: flex;
+  min-height: 2.75rem;
+  align-items: center;
+  gap: .5rem;
+  padding: .65rem 1.2rem;
+  border-top: 1px solid rgb(var(--v-theme-on-surface) / .08);
+  color: rgb(var(--v-theme-on-surface) / .52);
+  font-size: .72rem;
+  font-weight: 800;
 }
 
 .tracker-entry {

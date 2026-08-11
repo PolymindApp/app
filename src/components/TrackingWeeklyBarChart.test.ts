@@ -115,8 +115,24 @@ describe('TrackingWeeklyBarChart', () => {
 
     expect(wrapper.find('.chart-readout').text()).toContain('Tuesday, Jul 28')
     expect(wrapper.findAll('.chart-readout__value')).toHaveLength(2)
-    expect(wrapper.find('.chart-readout').text()).toContain('Meditation:Not logged')
+    expect(wrapper.find('.chart-readout').text()).toContain('Meditation:Not occurred')
     expect(wrapper.find('.chart-readout').text()).toContain('Mood:Not logged')
+  })
+
+  it('shows unlogged event days as not occurred', () => {
+    const wrapper = mount(TrackingWeeklyBarChart, {
+      props: {
+        weekStart: new Date(2026, 6, 27, 12),
+        selectedDate: new Date(2026, 6, 27, 12),
+        trackers: [tracker({ id: 'migraine', name: 'Migraine' })],
+        entries: [],
+      },
+      global: { stubs: { VProgressLinear: VProgressLinearStub } },
+    })
+
+    expect(wrapper.find('.weekly-chart-empty').exists()).toBe(false)
+    expect(wrapper.find('.chart-readout').text()).toContain('Migraine:Not occurred')
+    expect(wrapper.findAll('.chart-bar')).toHaveLength(7)
   })
 
   it('shows a weekly empty state when there are no entries in range', () => {
@@ -124,7 +140,7 @@ describe('TrackingWeeklyBarChart', () => {
       props: {
         weekStart: new Date(2026, 6, 27, 12),
         selectedDate: new Date(2026, 6, 27, 12),
-        trackers: [tracker({})],
+        trackers: [tracker({ kind: 'rating', scaleMin: 1, scaleMax: 10, dailyAggregation: 'average' })],
         entries: [],
       },
       global: { stubs: { VIcon: true, VProgressLinear: VProgressLinearStub } },

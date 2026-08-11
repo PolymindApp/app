@@ -6,7 +6,9 @@ import {
   comparePresentAbsent,
   defaultTrackingInsightRangeDays,
   linearTrend,
+  formatTrackingValue,
   trackerDraftFromPreset,
+  trackingDailyValuesForRange,
   TRACKING_PRESETS,
 } from './tracking'
 import type { TrackingEntry, TrackingTracker } from '@/types/domain'
@@ -45,6 +47,36 @@ describe('tracking analysis', () => {
       { date: '2026-07-01', value: 6 },
       { date: '2026-07-02', value: 7 },
     ])
+  })
+
+  it('counts event logs and treats missing range dates as not occurred', () => {
+    const eventTracker: TrackingTracker = {
+      ...tracker,
+      id: 'migraine',
+      name: 'Migraine',
+      role: 'factor',
+      kind: 'event',
+      unit: 'times',
+      scaleMin: 0,
+      scaleMax: 0,
+      favorableDirection: 'neutral',
+      dailyAggregation: 'count',
+    }
+    const eventEntry = (date: string, value: number, suffix: number): TrackingEntry => ({
+      ...entry(date, value, suffix),
+      tracker: eventTracker.id,
+    })
+
+    expect(trackingDailyValuesForRange(eventTracker, [
+      eventEntry('2026-07-01', 1, 1),
+      eventEntry('2026-07-01', 1, 2),
+      eventEntry('2026-07-02', 0, 3),
+    ], '2026-07-01', '2026-07-03')).toEqual([
+      { date: '2026-07-01', value: 2 },
+      { date: '2026-07-02', value: 0 },
+      { date: '2026-07-03', value: 0 },
+    ])
+    expect(formatTrackingValue(eventTracker, 0)).toBe('Not occurred')
   })
 
   it('requires five explicitly observed days in each present/absent cohort', () => {
@@ -103,6 +135,27 @@ describe('tracking analysis', () => {
     expect(result.matched).toEqual([
       { date: '2026-07-01', factorValue: 1, outcomeValue: 8 },
     ])
+  })
+
+  it('explains implicit event absence without asking for negative logs', () => {
+    const result = buildTrackingInsight(
+      [
+        { date: '2026-07-01', value: 1 },
+        { date: '2026-07-02', value: 0 },
+      ],
+      [
+        { date: '2026-07-01', value: 8 },
+        { date: '2026-07-02', value: 6 },
+      ],
+      { start: '2026-07-01', end: '2026-07-02' },
+      'presence',
+      'higher',
+      { factor: 'Migraine', outcome: 'Energy' },
+      { missingMeansAbsent: true },
+    )
+
+    expect(result.summary).toContain('Days without an event log count as absent')
+    expect(result.summary).not.toContain('when it does not')
   })
 
   it('uses actual factor amounts for quantitative trends', () => {

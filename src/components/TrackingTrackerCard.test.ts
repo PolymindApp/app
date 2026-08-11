@@ -99,4 +99,29 @@ describe('TrackingTrackerCard', () => {
     expect(wrapper.get('tracking-rating-value-stub').element.parentElement).toBe(row)
     expect(wrapper.get('.tracker-entry__note').element.parentElement).toBe(row)
   })
+
+  it('shows an unlogged event as not occurred while keeping the card log action available', async () => {
+    const eventTracker: TrackingTracker = {
+      ...tracker,
+      id: 'migraine',
+      name: 'Migraine',
+      kind: 'event',
+      unit: 'times',
+      dailyAggregation: 'count',
+    }
+    const wrapper = mount(TrackingTrackerCard, {
+      props: { tracker: eventTracker, entries: [] },
+      global: {
+        stubs: {
+          VBtn: { template: '<button><slot /></button>' },
+          VCard: { template: '<div><slot /></div>' },
+          VIcon: true,
+        },
+      },
+    })
+
+    expect(wrapper.get('.tracker-event-absence').text()).toContain('Not occurred')
+    await wrapper.get('.tracker-card__log').trigger('click')
+    expect(wrapper.emitted('log')).toEqual([[eventTracker]])
+  })
 })

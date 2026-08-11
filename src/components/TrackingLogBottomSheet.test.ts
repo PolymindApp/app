@@ -93,4 +93,52 @@ describe('TrackingLogBottomSheet', () => {
     })
     expect(wrapper.emitted('update:modelValue')).toContainEqual([false])
   })
+
+  it('logs an event occurrence without offering a not-occurred action', async () => {
+    const eventTracker: TrackingTracker = {
+      ...tracker,
+      id: 'migraine',
+      name: 'Migraine',
+      role: 'factor',
+      kind: 'event',
+      unit: 'times',
+      favorableDirection: 'neutral',
+      dailyAggregation: 'count',
+    }
+    const wrapper = mount(TrackingLogBottomSheet, {
+      props: {
+        modelValue: true,
+        tracker: eventTracker,
+        date: '2026-08-06',
+      },
+      global: {
+        stubs: {
+          ActionBottomSheet: {
+            props: ['modelValue', 'title', 'description'],
+            template: '<div><slot name="content" /></div>',
+          },
+          DateTimePickerField: true,
+          LabeledSlider: true,
+          VAlert: true,
+          VBtn: VBtnStub,
+          VIcon: true,
+          VNumberInput: true,
+          VTextarea: true,
+        },
+      },
+    })
+
+    expect(wrapper.text()).toContain('Log occurrence')
+    expect(wrapper.text()).not.toContain('None today')
+    expect(wrapper.findAll('button')).toHaveLength(1)
+
+    await wrapper.get('button').trigger('click')
+    await flushPromises()
+
+    expect(apiMocks.createEntry).toHaveBeenCalledWith(expect.objectContaining({
+      tracker: 'migraine',
+      local_date: '2026-08-06',
+      value: 1,
+    }))
+  })
 })

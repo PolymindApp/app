@@ -20,7 +20,7 @@ const error = ref('')
 
 const kindOptions: Array<{ value: TrackerKind; title: string; subtitle: string; icon: string }> = [
   { value: 'yes_no', title: 'Yes / no', subtitle: 'One explicit answer per log', icon: 'mdi-check-circle-outline' },
-  { value: 'event', title: 'Repeatable event', subtitle: 'Count occurrences during a day', icon: 'mdi-counter' },
+  { value: 'event', title: 'Event', subtitle: 'Log only when it happens; missing days count as not occurred', icon: 'mdi-counter' },
   { value: 'number', title: 'Number', subtitle: 'Any measured numeric value', icon: 'mdi-numeric' },
   { value: 'rating', title: 'Rating', subtitle: 'A bounded scale, such as 1–10', icon: 'mdi-star-outline' },
   { value: 'duration', title: 'Duration', subtitle: 'Minutes spent on something', icon: 'mdi-timer-outline' },
@@ -209,7 +209,9 @@ async function remove() {
           ]"
           variant="outlined"
         />
-        <p class="field-help">Missing data stays missing. Use an explicit “No” or “None” log when that is what happened.</p>
+        <p v-if="draft.kind === 'event'" class="field-help">Log each occurrence. A day without a log is treated as not occurred.</p>
+        <p v-else-if="draft.kind === 'yes_no'" class="field-help">Log an explicit Yes or No for each observation.</p>
+        <p v-else class="field-help">Days without a log stay missing.</p>
       </v-card>
 
       <v-card v-if="isEditing" class="tracker-form-section surface-card pa-5 mb-4">

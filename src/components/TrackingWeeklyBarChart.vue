@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 import { addDays, format } from 'date-fns'
 import TrackingRatingValue from '@/components/TrackingRatingValue.vue'
 import { useResponsiveChartWidth } from '@/services/responsiveChart'
-import { aggregateTrackingEntries, formatTrackingValue } from '@/services/tracking'
+import { formatTrackingValue, trackingDailyValuesForRange } from '@/services/tracking'
 import type { TrackingEntry, TrackingTracker } from '@/types/domain'
 
 const props = defineProps<{
@@ -41,7 +41,9 @@ const weekEntries = computed(() => {
 
 const series = computed(() => props.trackers
   .map((tracker) => {
-    const daily = aggregateTrackingEntries(tracker, weekEntries.value)
+    const start = days.value[0]?.key || ''
+    const end = days.value.at(-1)?.key || ''
+    const daily = trackingDailyValuesForRange(tracker, weekEntries.value, start, end)
     const valueByDate = new Map(daily.map((item) => [item.date, item.value]))
     const values = days.value.map((day) => valueByDate.get(day.key) ?? null)
     const observed = values.filter((value): value is number => value !== null)

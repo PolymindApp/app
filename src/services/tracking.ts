@@ -68,6 +68,10 @@ export interface TrackingInsightResult {
   trend?: TrackingTrendResult
 }
 
+export interface TrackingInsightOptions {
+  missingMeansAbsent?: boolean
+}
+
 export type TrackingInsightRangeDays = 7 | 14 | 30 | 60 | 90
 
 const TRACKING_INSIGHT_RANGE_DAYS: TrackingInsightRangeDays[] = [7, 14, 30, 60, 90]
@@ -142,6 +146,23 @@ export function aggregateTrackingEntries(
     .sort((a, b) => a.date.localeCompare(b.date))
 }
 
+export function trackingDailyValuesForRange(
+  tracker: TrackingTracker,
+  entries: TrackingEntry[],
+  start: string,
+  end: string,
+): TrackingDailyValue[] {
+  const dailyValues = aggregateTrackingEntries(tracker, entries)
+    .filter((item) => item.date >= start && item.date <= end)
+  if (tracker.kind !== 'event') return dailyValues
+
+  const valueByDate = new Map(dailyValues.map((item) => [item.date, item.value]))
+  return dateRangeKeys(start, end).map((date) => ({
+    date,
+    value: valueByDate.get(date) ?? 0,
+  }))
+}
+
 function aggregateValues(entries: TrackingEntry[], aggregation: DailyAggregation) {
   const values = entries.map((entry) => entry.value)
   if (aggregation === 'count') return values.reduce((sum, value) => sum + (value > 0 ? 1 : 0), 0)
@@ -190,6 +211,7 @@ export function buildTrackingInsight(
   mode: TrackingFactorMode,
   favorableDirection: FavorableDirection,
   labels: { factor: string; outcome: string },
+  options: TrackingInsightOptions = {},
 ): TrackingInsightResult {
   const factorByDate = new Map(factor.map((item) => [item.date, item.value]))
   const outcomeByDate = new Map(outcome.map((item) => [item.date, item.value]))
@@ -216,7 +238,9 @@ export function buildTrackingInsight(
     const absentMean = comparison.second.mean
     const difference = Math.abs(presentMean - absentMean)
     const summary = !ready
-      ? `Log ${labels.factor} both when it happens and when it does not. Each group needs at least 5 ${labels.outcome} observations.`
+      ? options.missingMeansAbsent
+        ? `Log ${labels.factor} when it happens. Days without an event log count as absent; each group needs at least 5 ${labels.outcome} observations.`
+        : `Log ${labels.factor} both when it happens and when it does not. Each group needs at least 5 ${labels.outcome} observations.`
       : `${labels.outcome} averaged ${formatNumber(presentMean)} when ${labels.factor} was present and ${formatNumber(absentMean)} when it was absent—a difference of ${formatNumber(difference)}.`
     return {
       points,
@@ -358,7 +382,7 @@ export function formatNumber(value: number) {
 
 export function formatTrackingValue(tracker: TrackingTracker, value: number) {
   if (tracker.kind === 'yes_no') return value > 0 ? 'Yes' : 'No'
-  if (tracker.kind === 'event') return value === 0 ? 'None' : `${formatNumber(value)} ${value === 1 ? 'time' : 'times'}`
+  if (tracker.kind === 'event') return value === 0 ? 'Not occurred' : `${formatNumber(value)} ${value === 1 ? 'time' : 'times'}`
   if (tracker.kind === 'duration') {
     const hours = Math.floor(value / 3600)
     const minutes = Math.round((value % 3600) / 60)
