@@ -325,7 +325,6 @@ async function openReviewSet(reviewSet: FlashcardReviewSet) {
     <section>
       <div class="section-heading">
         <h2>Recent reviews</h2>
-        <span class="text-caption muted">{{ recentReviewsForWeek.length }}</span>
       </div>
       <WeekNavigator v-model="recentWeekStart" class="mb-3" />
       <transition name="review-history-content" mode="out-in">

@@ -75,7 +75,9 @@ onBeforeUnmount(() => {
       </div>
     </transition>
 
-    <div class="section-heading"><h2>Recent runs</h2><span class="text-caption muted">{{ recentSessionsForWeek.length }}</span></div>
+    <div class="section-heading">
+      <h2>Recent runs</h2>
+    </div>
     <WeekNavigator v-model="recentWeekStart" class="mb-3" />
     <transition name="interval-content" mode="out-in">
       <v-card
