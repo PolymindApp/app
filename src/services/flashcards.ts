@@ -220,6 +220,19 @@ export function cardMatchesTags(card: Pick<Flashcard, 'tags'>, selectedTags: str
   return !selectedTags.length || card.tags.some(tag => selectedTags.includes(tag))
 }
 
+export function cardMatchesSearch(
+  card: Pick<Flashcard, 'front' | 'back' | 'note'>,
+  tagNames: readonly string[],
+  query: string,
+) {
+  const terms = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean)
+  if (!terms.length) return true
+  const searchableText = [card.front, card.back, card.note, ...tagNames]
+    .join('\n')
+    .toLocaleLowerCase()
+  return terms.every(term => searchableText.includes(term))
+}
+
 export function formatReviewDuration(totalSeconds: number) {
   const seconds = Math.max(0, Math.round(totalSeconds))
   const minutes = Math.floor(seconds / 60)

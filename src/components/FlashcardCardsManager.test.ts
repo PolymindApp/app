@@ -4,34 +4,21 @@ import FlashcardCardsManager from '@/components/FlashcardCardsManager.vue'
 import type { Flashcard } from '@/types/domain'
 
 const bulkUpdateCards = vi.hoisted(() => vi.fn())
-const displayState = vi.hoisted(() => ({ mobile: true }))
-
-vi.mock('vuetify', async () => {
-  const { computed } = await import('vue')
-  return {
-    useDisplay: () => ({ smAndDown: computed(() => displayState.mobile) }),
-  }
-})
 
 vi.mock('@/stores/flashcards', () => ({
   useFlashcardStore: () => ({ bulkUpdateCards }),
 }))
 
-const AutocompleteStub = defineComponent({
-  props: { modelValue: Array, items: Array, menu: Boolean },
-  emits: ['mousedown:control', 'update:menu', 'update:modelValue'],
-  methods: {
-    handleMousedown(event: MouseEvent) {
-      this.$emit('update:menu', true)
-      this.$emit('mousedown:control', event)
-      if (!event.defaultPrevented) (event.currentTarget as HTMLInputElement).focus()
-    },
-  },
+const TextFieldStub = defineComponent({
+  props: { modelValue: String, label: String },
+  emits: ['update:modelValue'],
   template: `
-    <div class="autocomplete-stub">
-      <input class="filter-input" @mousedown="handleMousedown">
-      <button class="filter-tag" @click="$emit('update:modelValue', ['tag-1'])">Filter</button>
-    </div>
+    <input
+      class="search-input"
+      :aria-label="label"
+      :value="modelValue"
+      @input="$emit('update:modelValue', $event.target.value)"
+    >
   `,
 })
 
@@ -119,7 +106,6 @@ function mountManager(props: Record<string, unknown> = {}, attachTo?: Element) {
         FlashcardCardsTable: TableStub,
         FlashcardTagCombobox: true,
         VAlert: { template: '<div><slot /></div>' },
-        VAutocomplete: AutocompleteStub,
         VBadge: { template: '<span><slot /></span>' },
         VBtn: ButtonStub,
         VCard: { template: '<div><slot /></div>' },
@@ -134,30 +120,39 @@ function mountManager(props: Record<string, unknown> = {}, attachTo?: Element) {
         VListSubheader: { template: '<div><slot /></div>' },
         VMenu: { template: '<div><slot name="activator" :props="{}" /><slot /></div>' },
         VSelect: true,
+        VTextField: TextFieldStub,
       },
     },
   })
 }
 
 describe('FlashcardCardsManager', () => {
-  beforeEach(() => {
-    displayState.mobile = true
-  })
-
-  it('filters cards and reports the visible count without rendering a section heading', async () => {
-    const wrapper = mountManager()
+  it('searches fronts, backs, notes, and tag names while reporting the visible count', async () => {
+    const wrapper = mountManager({
+      cards: [
+        { ...card('card-1', 'Alpha prompt', ['tag-1']), back: 'Reverse answer', note: 'Memory clue' },
+        { ...card('card-2', 'Beta prompt', []), back: 'Other answer', note: 'Other note' },
+      ],
+    })
+    const search = wrapper.get<HTMLInputElement>('.search-input')
 
     expect(wrapper.find('h2').exists()).toBe(false)
-    expect(wrapper.get('.table-stub').text()).toContain('Tagged card')
-    expect(wrapper.get('.table-stub').text()).toContain('Untagged card')
+    expect(wrapper.get('.table-stub').text()).toContain('Alpha prompt')
+    expect(wrapper.get('.table-stub').text()).toContain('Beta prompt')
     expect(wrapper.emitted('update:filteredCount')?.at(-1)).toEqual([2])
 
-    await wrapper.get('.filter-tag').trigger('click')
-    await nextTick()
+    for (const query of ['alpha', 'reverse', 'memory', 'vocabulary', 'REVERSE memory']) {
+      await search.setValue(query)
+      await nextTick()
 
-    expect(wrapper.get('.table-stub').text()).toContain('Tagged card')
-    expect(wrapper.get('.table-stub').text()).not.toContain('Untagged card')
-    expect(wrapper.emitted('update:filteredCount')?.at(-1)).toEqual([1])
+      expect(wrapper.get('.table-stub').text()).toContain('Alpha prompt')
+      expect(wrapper.get('.table-stub').text()).not.toContain('Beta prompt')
+      expect(wrapper.emitted('update:filteredCount')?.at(-1)).toEqual([1])
+    }
+
+    await search.setValue('missing')
+    expect(wrapper.text()).toContain('No cards match your search')
+    expect(wrapper.text()).toContain('Clear the search or try another term.')
   })
 
   it('adapts the shared manager for editable and read-only Review sets', async () => {
@@ -219,36 +214,6 @@ describe('FlashcardCardsManager', () => {
     expect(swapNoteAndBack?.attributes('disabled')).toBeDefined()
   })
 
-  it('opens the mobile tag menu before allowing its input to focus', async () => {
-    const wrapper = mountManager({}, document.body)
-    const input = wrapper.get<HTMLInputElement>('.filter-input')
-
-    await input.trigger('mousedown')
-    expect(wrapper.getComponent(AutocompleteStub).props('menu')).toBe(true)
-    expect(document.activeElement).not.toBe(input.element)
-
-    await input.trigger('mousedown')
-    expect(document.activeElement).toBe(input.element)
-
-    input.element.blur()
-    wrapper.getComponent(AutocompleteStub).vm.$emit('update:menu', false)
-    await nextTick()
-    await input.trigger('mousedown')
-    expect(document.activeElement).not.toBe(input.element)
-    wrapper.unmount()
-  })
-
-  it('keeps single-click tag filter focus on desktop', async () => {
-    displayState.mobile = false
-    const wrapper = mountManager({}, document.body)
-    const input = wrapper.get<HTMLInputElement>('.filter-input')
-
-    await input.trigger('mousedown')
-
-    expect(document.activeElement).toBe(input.element)
-    wrapper.unmount()
-  })
-
   it('offers scoped import and bulk actions for editable Review sets', () => {
     const wrapper = mountManager({
       bulkActions: ['assign_images', 'delete'],
@@ -282,11 +247,11 @@ describe('FlashcardCardsManager', () => {
         { action: 'include', title: 'Include', icon: 'mdi-check-circle-outline' },
       ],
       selectionActionHandler,
-      showTagFilter: false,
+      showSearchFilter: false,
       tableSurface: false,
     })
 
-    expect(wrapper.find('.autocomplete-stub').exists()).toBe(false)
+    expect(wrapper.find('.search-input').exists()).toBe(false)
     expect(wrapper.get('.card-filter-actions').classes()).toContain('card-filter-actions--only')
     expect(wrapper.findAll('.card-filter-action')).toHaveLength(1)
     expect(wrapper.findAll('.bulk-item').map(item => item.text())).toEqual(['Exclude', 'Include'])

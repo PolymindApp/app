@@ -263,7 +263,7 @@ async function remove() {
           selectable
           :interactive="false"
           :can-add="false"
-          :show-tag-filter="false"
+          :show-search-filter="false"
           :table-surface="false"
           empty-title="No cards match this Review set"
           empty-description="Change the selected tags to include cards in this Review set."

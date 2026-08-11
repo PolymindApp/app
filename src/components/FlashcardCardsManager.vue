@@ -1,13 +1,12 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { useDisplay } from 'vuetify'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import FlashcardBulkImageAssignmentDialog from '@/components/FlashcardBulkImageAssignmentDialog.vue'
 import FlashcardCardsTable from '@/components/FlashcardCardsTable.vue'
 import FlashcardTagCombobox from '@/components/FlashcardTagCombobox.vue'
 import TagSelectionChip from '@/components/TagSelectionChip.vue'
-import { cardMatchesTags, FLASHCARD_BULK_MENU_ITEMS } from '@/services/flashcards'
+import { cardMatchesSearch, FLASHCARD_BULK_MENU_ITEMS } from '@/services/flashcards'
 import { useFlashcardStore } from '@/stores/flashcards'
 import type {
   Flashcard,
@@ -47,7 +46,7 @@ const props = withDefaults(defineProps<{
   emptyTitle?: string
   emptyDescription?: string
   firstCardLabel?: string
-  showTagFilter?: boolean
+  showSearchFilter?: boolean
   tableSurface?: boolean
 }>(), {
   libraryActions: false,
@@ -61,7 +60,7 @@ const props = withDefaults(defineProps<{
   emptyTitle: 'Your card library is empty',
   emptyDescription: 'Add a prompt and answer, then keep entering cards without closing the form.',
   firstCardLabel: 'Add your first card',
-  showTagFilter: true,
+  showSearchFilter: true,
   tableSurface: true,
 })
 
@@ -72,10 +71,7 @@ const emit = defineEmits<{
 }>()
 
 const store = useFlashcardStore()
-const { smAndDown } = useDisplay()
-const selectedTags = ref<string[]>([])
-const tagFilterMenuOpen = ref(false)
-const tagFilterFocusArmed = ref(false)
+const searchQuery = ref<string | null>('')
 const selectedCardIds = ref<string[]>([])
 const bulkError = ref('')
 const bulkSaving = ref(false)
@@ -89,7 +85,15 @@ const swapCardsDialog = ref(false)
 const clearTagsDialog = ref(false)
 const deleteCardsDialog = ref(false)
 
-const filteredCards = computed(() => props.cards.filter(card => cardMatchesTags(card, selectedTags.value)))
+const tagNameMap = computed(() => new Map(props.tags.map(tag => [tag.id, tag.name])))
+const filteredCards = computed(() => props.cards.filter(card => cardMatchesSearch(
+  card,
+  [
+    ...card.tags.map(tag => tagNameMap.value.get(tag) || ''),
+    ...(card.tagDetails || []).map(tag => tag.name),
+  ],
+  searchQuery.value || '',
+)))
 const availableBulkMenuItems = computed(() => {
   if (props.selectionActions?.length) return props.selectionActions
   const actions = props.libraryActions
@@ -155,16 +159,8 @@ watch(filteredCards, cards => {
   emit('update:filteredCount', cards.length)
 }, { immediate: true })
 
-watch(() => props.tags, (tags) => {
-  selectedTags.value = selectedTags.value.filter(id => tags.some(tag => tag.id === id))
-}, { deep: true, immediate: true })
-
-watch(selectedTags, () => {
+watch(searchQuery, () => {
   selectedCardIds.value = []
-}, { deep: true })
-
-watch(tagFilterMenuOpen, (open) => {
-  if (!open) tagFilterFocusArmed.value = false
 })
 
 watch(selectedCardIds, () => {
@@ -182,17 +178,6 @@ function openBulkTagAction(action: FlashcardBulkTagAction) {
   bulkTagIds.value = []
   bulkError.value = ''
   bulkTagSheetOpen.value = true
-}
-
-function handleTagFilterMousedown(event: MouseEvent) {
-  if (
-    !smAndDown.value
-    || tagFilterFocusArmed.value
-    || !(event.target instanceof HTMLInputElement)
-  ) return
-
-  event.preventDefault()
-  tagFilterFocusArmed.value = true
 }
 
 function chooseBulkAction(action: FlashcardBulkAction | FlashcardSelectionAction) {
@@ -285,38 +270,20 @@ async function deleteSelectedCards() {
 <template>
   <div class="flashcard-cards-manager">
     <div class="card-filters mb-3">
-      <v-autocomplete
-        v-if="showTagFilter"
-        v-model="selectedTags"
-        v-model:menu="tagFilterMenuOpen"
-        :items="tags"
-        item-title="name"
-        item-value="id"
-        label="Filter by tags"
-        variant="outlined"
-        density="comfortable"
-        rounded="lg"
-        hide-details="auto"
-        multiple
-        chips
-        closable-chips
+      <v-text-field
+        v-if="showSearchFilter"
+        v-model="searchQuery"
+        label="Search cards"
         clearable
         autocomplete="off"
-        no-data-text="No matching tags"
-        prepend-inner-icon="mdi-filter-variant"
-        :disabled="!tags.length"
-        @mousedown:control="handleTagFilterMousedown"
-      >
-        <template #chip="{ props: chipProps, item }">
-          <TagSelectionChip :chip-props="chipProps" :label="item.title" />
-        </template>
-      </v-autocomplete>
+        prepend-inner-icon="mdi-magnify"
+      />
       <div
         v-if="hasActions"
         class="card-filter-actions"
         :class="[
           `card-filter-actions--${actionCount}`,
-          { 'card-filter-actions--only': !showTagFilter },
+          { 'card-filter-actions--only': !showSearchFilter },
         ]"
       >
         <template v-if="libraryActions">
@@ -433,15 +400,15 @@ async function deleteSelectedCards() {
     <v-card v-else class="pa-8 text-center" :class="{ 'surface-card': tableSurface }">
       <v-icon icon="mdi-cards-outline" size="44" color="secondary" />
       <h3 class="text-h6 font-weight-black mt-3">
-        {{ cards.length ? 'No cards match these tags' : emptyTitle }}
+        {{ cards.length ? 'No cards match your search' : emptyTitle }}
       </h3>
       <p class="text-body-2 muted mt-2 mb-5">
-        {{ cards.length ? 'Clear a filter or choose another tag.' : emptyDescription }}
+        {{ cards.length ? 'Clear the search or try another term.' : emptyDescription }}
       </p>
       <v-btn v-if="!cards.length && canAdd" color="secondary" @click="emit('add-card')">
         {{ firstCardLabel }}
       </v-btn>
-      <v-btn v-else-if="cards.length" variant="tonal" @click="selectedTags = []">Clear filters</v-btn>
+      <v-btn v-else-if="cards.length" variant="tonal" @click="searchQuery = ''">Clear search</v-btn>
     </v-card>
 
     <template v-if="hasBulkActions">

@@ -1,5 +1,6 @@
 import {
   cardMatchesTags,
+  cardMatchesSearch,
   createFlashcardReviewPreviewSession,
   createIntervalFlashcardReviewSnapshot,
   flashcardAccuracy,
@@ -92,6 +93,20 @@ describe('flashcard review helpers', () => {
     expect(cardMatchesTags(card, [])).toBe(true)
     expect(cardMatchesTags(card, ['history', 'math'])).toBe(true)
     expect(cardMatchesTags(card, ['history'])).toBe(false)
+  })
+
+  it('searches all card text and resolved tag names case-insensitively', () => {
+    const card = {
+      front: 'What is a dovetail?',
+      back: 'A woodworking joint',
+      note: 'Remember the angled pins',
+    }
+
+    expect(cardMatchesSearch(card, ['Joinery'], '')).toBe(true)
+    expect(cardMatchesSearch(card, ['Joinery'], 'DOVETAIL')).toBe(true)
+    expect(cardMatchesSearch(card, ['Joinery'], 'woodworking angled')).toBe(true)
+    expect(cardMatchesSearch(card, ['Joinery'], 'joinery')).toBe(true)
+    expect(cardMatchesSearch(card, ['Joinery'], 'metal')).toBe(false)
   })
 
   it('derives difficulty and accuracy only from graded attempts', () => {
