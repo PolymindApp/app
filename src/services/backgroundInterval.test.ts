@@ -91,7 +91,7 @@ describe('background interval Review set playback', () => {
     await syncBackgroundInterval(session())
 
     expect(nativeMocks.plugin.start).toHaveBeenCalledWith(expect.objectContaining({
-      elapsedMs: 4_000,
+      elapsedMs: 2_000,
       stepIndex: 1,
       remainingMs: 10_000,
       steps: [

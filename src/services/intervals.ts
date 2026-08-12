@@ -16,7 +16,7 @@ const safeMultiply = (left: number, right: number) => Math.min(Number.MAX_SAFE_I
 const GLOBAL_REPETITION_GROUP_ID = 'interval-global-repetition'
 export const MIN_GLOBAL_REPETITIONS = 2
 export const MAX_GLOBAL_REPETITIONS = 15
-export const INTERVAL_FLASHCARD_REVIEW_EDGE_PAUSE_MS = 3_000
+export const INTERVAL_FLASHCARD_REVIEW_EDGE_PAUSE_MS = 4_000
 
 function clampGlobalRepetitions(value: number) {
   return Math.min(

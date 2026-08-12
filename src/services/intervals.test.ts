@@ -381,32 +381,32 @@ describe('interval definitions', () => {
     const last = createIntervalStep('Read again', 'work', 30)
     const definition: IntervalDefinition = { version: 1, children: [first, paused, last] }
 
-    expect(intervalFlashcardReviewElapsedMs(definition, 0, 5_000)).toBe(2_000)
-    expect(intervalFlashcardReviewElapsedMs(definition, 1, 10_000)).toBe(4_000)
-    expect(intervalFlashcardReviewElapsedMs(definition, 2, 15_000)).toBe(16_000)
+    expect(intervalFlashcardReviewElapsedMs(definition, 0, 5_000)).toBe(1_000)
+    expect(intervalFlashcardReviewElapsedMs(definition, 1, 10_000)).toBe(2_000)
+    expect(intervalFlashcardReviewElapsedMs(definition, 2, 15_000)).toBe(13_000)
     expect(completedIntervalFlashcardReviewSeconds(
       definition,
       { stepIndex: 3, remainingMs: 0 },
       60,
-    )).toBe(28)
+    )).toBe(24)
     expect(completedIntervalFlashcardReviewSeconds(
       definition,
       { stepIndex: 3, remainingMs: 0 },
       25,
-    )).toBe(25)
+    )).toBe(24)
   })
 
-  it('plays a Review set only between the three-second step buffers', () => {
+  it('plays a Review set only between the four-second step buffers', () => {
     const step = createIntervalStep('Read', 'work', 10)
 
     expect(intervalStepFlashcardReviewPlaybackIsActive(step, 10_000)).toBe(false)
-    expect(intervalStepFlashcardReviewPlaybackIsActive(step, 7_001)).toBe(false)
-    expect(intervalStepFlashcardReviewPlaybackIsActive(step, 7_000)).toBe(true)
-    expect(intervalStepFlashcardReviewPlaybackIsActive(step, 3_001)).toBe(true)
-    expect(intervalStepFlashcardReviewPlaybackIsActive(step, 3_000)).toBe(false)
+    expect(intervalStepFlashcardReviewPlaybackIsActive(step, 6_001)).toBe(false)
+    expect(intervalStepFlashcardReviewPlaybackIsActive(step, 6_000)).toBe(true)
+    expect(intervalStepFlashcardReviewPlaybackIsActive(step, 4_001)).toBe(true)
+    expect(intervalStepFlashcardReviewPlaybackIsActive(step, 4_000)).toBe(false)
 
-    step.durationSeconds = 6
-    expect(intervalStepFlashcardReviewPlaybackIsActive(step, 3_000)).toBe(false)
+    step.durationSeconds = 8
+    expect(intervalStepFlashcardReviewPlaybackIsActive(step, 4_000)).toBe(false)
   })
 
   it('preserves Review set timing across repeated groups', () => {
@@ -417,7 +417,7 @@ describe('interval definitions', () => {
     rounds.children = [read, paused]
     const definition: IntervalDefinition = { version: 1, children: [rounds] }
 
-    expect(intervalFlashcardReviewElapsedMs(definition, 2, 5_000)).toBe(6_000)
+    expect(intervalFlashcardReviewElapsedMs(definition, 2, 5_000)).toBe(3_000)
   })
 
   it('uses the shortened final round when its last interval is skipped', () => {

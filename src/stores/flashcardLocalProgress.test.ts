@@ -235,14 +235,14 @@ describe('offline Review set task progress', () => {
     await taskStore.load()
 
     expect(taskStore.makeProgress(taskStore.tasks[0]!, new Date(2026, 7, 10))).toMatchObject({
-      value: 54,
-      percent: 18,
+      value: 52,
+      percent: (52 / 300) * 100,
       complete: false,
     })
     expect(await listLocalRecords(accountId, 'entries')).toEqual([
       expect.objectContaining({
         task: 'task-1',
-        value: 54,
+        value: 52,
         source_type: 'flashcards',
         source_session: 'interval-session-1',
       }),

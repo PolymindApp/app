@@ -5173,7 +5173,7 @@ final class Api
             ? max(0.0, (float) $runtime['remainingMs'])
             : null;
         $reviewElapsedMs = 0.0;
-        $edgePauseMs = 3000.0;
+        $edgePauseMs = 4000.0;
         foreach ($steps as $index => $step) {
             if ($index > $stepIndex) {
                 break;

@@ -454,7 +454,7 @@ describe('IntervalRunnerView flashcard area', () => {
         durationSeconds: 10,
       },
     ]
-    active.runtime.remainingMs = 6_500
+    active.runtime.remainingMs = 5_500
     mocks.intervalStore.sessions = reactive([active])
 
     const wrapper = mountRunner()
@@ -468,7 +468,7 @@ describe('IntervalRunnerView flashcard area', () => {
     const stored = mocks.intervalStore.sessions[0]!
     stored.runtime.stepIndex = 1
     stored.runtime.accumulatedMs = 10_000
-    stored.runtime.remainingMs = 6_500
+    stored.runtime.remainingMs = 5_500
     await wrapper.vm.$nextTick()
     await flushPromises()
 
@@ -495,7 +495,7 @@ describe('IntervalRunnerView flashcard area', () => {
     mocks.speakFlashcardText.mockClear()
     stored.runtime.stepIndex = 2
     stored.runtime.accumulatedMs = 30_000
-    stored.runtime.remainingMs = 6_500
+    stored.runtime.remainingMs = 5_500
     await wrapper.vm.$nextTick()
     await flushPromises()
 

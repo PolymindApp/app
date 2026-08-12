@@ -346,7 +346,7 @@ describe('interval task attribution', () => {
       id: 'session-1',
       sourceType: 'flashcards',
       sourceId: 'set-1',
-      elapsedSeconds: 54,
+      elapsedSeconds: 52,
     })
   })
 

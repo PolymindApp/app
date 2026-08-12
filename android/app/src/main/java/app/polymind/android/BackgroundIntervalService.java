@@ -49,7 +49,7 @@ public class BackgroundIntervalService extends Service {
     private static final String CHANNEL_ID = "polymind_interval_timer";
     private static final int NOTIFICATION_ID = 4107;
     private static final long TICK_MS = 250L;
-    static final long REVIEW_EDGE_PAUSE_MS = 3_000L;
+    static final long REVIEW_EDGE_PAUSE_MS = 4_000L;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final List<IntervalStep> steps = new ArrayList<>();
