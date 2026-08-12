@@ -1222,8 +1222,7 @@ async function saveTaskLogEntry() {
             rounded="lg"
           >
             <template #subtitle>
-              <span>{{ taskEntrySubtitle(entry) }}</span>
-              <strong class="task-log-value">{{ taskEntryValue(entry) }}</strong>
+              <span>{{ taskEntrySubtitle(entry) }} · {{ taskEntryValue(entry) }}</span>
             </template>
             <template #append>
               <div class="task-log-actions">

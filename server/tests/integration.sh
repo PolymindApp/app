@@ -116,7 +116,7 @@ suffix="$(php -r 'echo bin2hex(random_bytes(5));')"
 password="correct-horse-battery"
 
 migration_count="$(sqlite3 "$test_db" 'SELECT COUNT(*) FROM polymind_schema_migrations;')"
-[[ "$migration_count" == 36 ]] || {
+[[ "$migration_count" == 37 ]] || {
   echo "The API did not apply the complete database migration sequence." >&2
   exit 1
 }

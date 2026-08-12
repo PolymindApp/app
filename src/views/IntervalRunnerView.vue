@@ -1303,7 +1303,7 @@ async function runAgain(repetitions?: number) {
                     class="runner-type-backdrop"
                     :class="{ 'runner-type-backdrop--hidden': Boolean(flashcardPhase?.card.image) }"
                     :kind="current.step.kind"
-                    size="clamp(8rem, 44vw, 28rem)"
+                    size="clamp(8rem, 44vw, 8rem)"
                     :animated="session.status === 'running' && !flashcardPhase?.card.image"
                   />
                   <transition name="runner-flashcard-image">
