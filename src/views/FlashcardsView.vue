@@ -421,51 +421,52 @@ async function reorderReviewSets(result: LongPressDragResult) {
               />
             </v-btn>
             <v-expand-transition>
-              <v-list
+              <div
                 v-show="isRecentReviewDayExpanded(group.key)"
                 :id="`recent-reviews-${group.key}`"
-                bg-color="transparent"
               >
-                <v-list-item
-                  v-for="session in group.sessions"
-                  :key="session.id"
-                  class="recent-review-item"
-                  :title="session.name"
-                >
-                  <template #prepend>
-                    <v-icon
-                      :icon="session.status === 'completed' ? 'mdi-check-circle-outline' : 'mdi-stop-circle-outline'"
-                      :color="recentReviewColor(session)"
-                    />
-                  </template>
-                  <span class="recent-review-meta">
-                    {{ format(new Date(session.startedAt), 'h:mm a') }} · {{ session.mode === 'passive' ? 'Passive' : 'Manual' }}
-                  </span>
-                  <div class="recent-review-progress">
-                    <v-progress-linear
-                      :model-value="flashcardReviewProgressPercent(session)"
-                      :color="recentReviewColor(session)"
-                      bg-color="white"
-                      :bg-opacity="0.14"
-                      height="4"
-                      rounded
-                      :aria-label="`${session.name}: ${flashcardReviewProgressPercent(session)}% accomplished`"
-                    />
-                  </div>
-                  <div class="recent-review-stats">
-                    <span v-if="session.mode === 'passive'">{{ session.viewedCount }} viewed</span>
-                    <template v-else>
-                      <span>{{ session.successCount }} success</span>
-                      <span>{{ session.errorCount }} error</span>
+                <v-list bg-color="transparent">
+                  <v-list-item
+                    v-for="session in group.sessions"
+                    :key="session.id"
+                    class="recent-review-item"
+                    :title="session.name"
+                  >
+                    <template #prepend>
+                      <v-icon
+                        :icon="session.status === 'completed' ? 'mdi-check-circle-outline' : 'mdi-stop-circle-outline'"
+                        :color="recentReviewColor(session)"
+                      />
                     </template>
-                    <span v-if="sessionAccuracy(session) !== undefined">{{ sessionAccuracy(session) }}% accuracy</span>
-                    <span v-if="session.ejectedCount">{{ session.ejectedCount }} ejected</span>
-                  </div>
-                  <template #append>
-                    <strong class="recent-review-time text-caption">{{ formatReviewDuration(session.elapsedSeconds) }}</strong>
-                  </template>
-                </v-list-item>
-              </v-list>
+                    <span class="recent-review-meta">
+                      {{ format(new Date(session.startedAt), 'h:mm a') }} · {{ session.mode === 'passive' ? 'Passive' : 'Manual' }}
+                    </span>
+                    <div class="recent-review-progress">
+                      <v-progress-linear
+                        :model-value="flashcardReviewProgressPercent(session)"
+                        :color="recentReviewColor(session)"
+                        bg-color="white"
+                        :bg-opacity="0.14"
+                        height="4"
+                        rounded
+                        :aria-label="`${session.name}: ${flashcardReviewProgressPercent(session)}% accomplished`"
+                      />
+                    </div>
+                    <div class="recent-review-stats">
+                      <span v-if="session.mode === 'passive'">{{ session.viewedCount }} viewed</span>
+                      <template v-else>
+                        <span>{{ session.successCount }} success</span>
+                        <span>{{ session.errorCount }} error</span>
+                      </template>
+                      <span v-if="sessionAccuracy(session) !== undefined">{{ sessionAccuracy(session) }}% accuracy</span>
+                      <span v-if="session.ejectedCount">{{ session.ejectedCount }} ejected</span>
+                    </div>
+                    <template #append>
+                      <strong class="recent-review-time text-caption">{{ formatReviewDuration(session.elapsedSeconds) }}</strong>
+                    </template>
+                  </v-list-item>
+                </v-list>
+              </div>
             </v-expand-transition>
           </section>
         </v-card>
