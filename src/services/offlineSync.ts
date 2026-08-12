@@ -51,6 +51,7 @@ let started = false
 let currentAccountId = ''
 let syncPromise: Promise<boolean> | undefined
 let syncRequested = false
+let retryPendingRequested = false
 let mutationTimer: number | undefined
 let retryTimer: number | undefined
 let pullTimer: number | undefined
@@ -128,6 +129,7 @@ export async function stopOfflineSync() {
   retryTimer = undefined
   pullTimer = undefined
   syncRequested = false
+  retryPendingRequested = false
 }
 
 async function switchAccount(accountId: string) {
@@ -197,8 +199,9 @@ function resetPullCadence() {
 
 export function syncNow(reason = 'manual') {
   if (reason !== 'poll' && reason !== 'retry') resetPullCadence()
+  if (reason === 'manual') retryPendingRequested = true
   if (syncPromise) {
-    if (reason === 'mutation') syncRequested = true
+    if (reason === 'mutation' || reason === 'manual') syncRequested = true
     return syncPromise
   }
   syncPromise = performRequestedSyncs().finally(() => {
@@ -211,7 +214,9 @@ async function performRequestedSyncs() {
   let succeeded = false
   do {
     syncRequested = false
-    succeeded = await performSync()
+    const retryPending = retryPendingRequested
+    retryPendingRequested = false
+    succeeded = await performSync(retryPending)
   } while (succeeded && syncRequested)
   return succeeded
 }
@@ -242,13 +247,14 @@ export async function clearOfflineMediaCache() {
   await caches.delete('polymind-media-v1')
 }
 
-async function performSync() {
+async function performSync(retryPending = false) {
   const accountId = currentAccountId || api.authStore.record?.id || ''
   lastSyncHadActivity = false
   if (!accountId) return false
   currentAccountId = accountId
   await initializeLocalMetadata(accountId)
   await recoverInterruptedOperations(accountId)
+  if (retryPending) await retryPendingOperationsNow(accountId)
   await refreshCounts()
 
   if (!api.authStore.token || !api.authStore.isValid) {
