@@ -44,6 +44,7 @@ const mocks = vi.hoisted(() => ({
   speakFlashcardText: vi.fn(),
   stopFlashcardSpeech: vi.fn(),
   toggleSpeechOverAmplification: vi.fn(),
+  nativeBackgroundIntervalIsActive: vi.fn(),
 }))
 
 vi.mock('vue-router', () => ({
@@ -54,7 +55,7 @@ vi.mock('@/stores/intervals', () => ({ useIntervalStore: () => mocks.intervalSto
 vi.mock('@/stores/flashcards', () => ({ useFlashcardStore: () => mocks.flashcardStore }))
 vi.mock('@/stores/tasks', () => ({ useTaskStore: () => mocks.taskStore }))
 vi.mock('@/services/backgroundInterval', () => ({
-  nativeBackgroundIntervalIsActive: vi.fn().mockReturnValue(false),
+  nativeBackgroundIntervalIsActive: mocks.nativeBackgroundIntervalIsActive,
   stopBackgroundInterval: vi.fn().mockResolvedValue(undefined),
   syncBackgroundInterval: vi.fn().mockResolvedValue(undefined),
 }))
@@ -228,6 +229,7 @@ describe('IntervalRunnerView flashcard area', () => {
     mocks.speakFlashcardText.mockReset().mockResolvedValue(undefined)
     mocks.stopFlashcardSpeech.mockReset().mockResolvedValue(undefined)
     mocks.toggleSpeechOverAmplification.mockReset().mockResolvedValue(true)
+    mocks.nativeBackgroundIntervalIsActive.mockReset().mockReturnValue(false)
   })
 
   it('orders session actions and toggles TTS amplification without replaying', async () => {
@@ -502,7 +504,7 @@ describe('IntervalRunnerView flashcard area', () => {
     expect(wrapper.get('.interval-review-card__meta small').text()).toBe('Front')
     expect(wrapper.get('.interval-review-card').attributes('disabled')).toBeUndefined()
     expect(wrapper.get('.interval-review-card').classes()).not.toContain('interval-review-card--playback-paused')
-    expect(mocks.speakFlashcardText).toHaveBeenCalledWith('House', 'en-US')
+    expect(mocks.speakFlashcardText).toHaveBeenCalledWith('House', 'en-US', '0:front:0')
 
     wrapper.unmount()
   })
@@ -530,6 +532,43 @@ describe('IntervalRunnerView flashcard area', () => {
       .toContain('interval-review-card--playback-paused')
     expect(mocks.speakFlashcardText).not.toHaveBeenCalled()
 
+    wrapper.unmount()
+  })
+
+  it('hands speech to the native interval without stopping it when the app is hidden', async () => {
+    const active = intervalSession('running')
+    if (!active.flashcardReview) throw new Error('Expected a Review set snapshot')
+    active.flashcardReview.speechEnabled = true
+    active.flashcardReview.frontLanguage = 'en-US'
+    active.flashcardReview.backLanguage = 'fr-FR'
+    active.runtime.remainingMs = 590_000
+    mocks.intervalStore.sessions = reactive([active])
+    mocks.nativeBackgroundIntervalIsActive.mockReturnValue(true)
+
+    const wrapper = mountRunner()
+    await flushPromises()
+
+    expect(mocks.speakFlashcardText).toHaveBeenCalledWith('Maison', 'fr-FR', '0:back:0')
+    mocks.stopFlashcardSpeech.mockClear()
+
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      value: 'hidden',
+    })
+    document.dispatchEvent(new Event('visibilitychange'))
+    await flushPromises()
+
+    const stored = mocks.intervalStore.sessions[0]!
+    stored.runtime.stepIndex = 1
+    await wrapper.vm.$nextTick()
+    await flushPromises()
+
+    expect(mocks.stopFlashcardSpeech).not.toHaveBeenCalled()
+
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      value: 'visible',
+    })
     wrapper.unmount()
   })
 

@@ -50,6 +50,7 @@ public class BackgroundIntervalService extends Service {
     private static final int NOTIFICATION_ID = 4107;
     private static final long TICK_MS = 250L;
     static final long REVIEW_EDGE_PAUSE_MS = 4_000L;
+    private static volatile BackgroundIntervalService activeInstance;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final List<IntervalStep> steps = new ArrayList<>();
@@ -146,6 +147,7 @@ public class BackgroundIntervalService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
+        activeInstance = this;
         createNotificationChannel();
         volumeBoost = new TtsVolumeBoost(this);
         speech = new TextToSpeech(this, status -> {
@@ -397,6 +399,24 @@ public class BackgroundIntervalService extends Service {
         appWasVisible = appVisible;
     }
 
+    public static boolean handoffForegroundSpeech(String speechKey) {
+        BackgroundIntervalService instance = activeInstance;
+        return instance != null && instance.recordForegroundSpeech(speechKey);
+    }
+
+    private boolean recordForegroundSpeech(String speechKey) {
+        String spokenKey = speechKey == null ? "" : speechKey.trim();
+        long now = SystemClock.elapsedRealtime();
+        if (spokenKey.isEmpty() || !currentStepPlaysFlashcardReview(now)) return false;
+        ReviewPhase phase = currentReviewPhase(now);
+        if (phase == null || !phase.key.equals(spokenKey)) return false;
+        lastReviewSpeechKey = phase.key;
+        pendingReviewSpeechText = "";
+        pendingReviewSpeechLanguage = "";
+        appWasVisible = false;
+        return true;
+    }
+
     private void speakCurrentReviewSide(long now, boolean force) {
         ReviewPhase phase = currentReviewPhase(now);
         if (phase == null || (!force && phase.key.equals(lastReviewSpeechKey))) return;
@@ -618,6 +638,7 @@ public class BackgroundIntervalService extends Service {
     @Override
     public void onDestroy() {
         running = false;
+        if (activeInstance == this) activeInstance = null;
         handler.removeCallbacksAndMessages(null);
         releaseWakeLock();
         if (volumeBoost != null) volumeBoost.stop();

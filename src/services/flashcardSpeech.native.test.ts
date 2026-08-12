@@ -35,4 +35,15 @@ describe('native flashcard speech', () => {
       overAmplified: false,
     })
   })
+
+  it('forwards the interval phase key for the native background handoff', async () => {
+    await speakFlashcardText('Maison', 'fr-CA', '3:back:0')
+
+    expect(nativeSpeech.speak).toHaveBeenCalledWith({
+      text: 'Maison',
+      language: 'fr-CA',
+      overAmplified: false,
+      backgroundIntervalSpeechKey: '3:back:0',
+    })
+  })
 })

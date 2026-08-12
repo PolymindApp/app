@@ -39,6 +39,7 @@ public class FlashcardSpeechPlugin extends Plugin {
     private boolean speechFailed;
     private boolean notificationPermissionRequested;
     private boolean overAmplificationEnabled;
+    private String backgroundIntervalSpeechKey = "";
     private TtsVolumeBoost volumeBoost;
 
     @Override
@@ -130,6 +131,7 @@ public class FlashcardSpeechPlugin extends Plugin {
             return;
         }
         overAmplificationEnabled = Boolean.TRUE.equals(call.getBoolean("overAmplified", false));
+        backgroundIntervalSpeechKey = "";
         String utteranceId = "polymind-flashcard-" + System.nanoTime();
         int result = volumeBoost.speak(
             speech,
@@ -142,6 +144,7 @@ public class FlashcardSpeechPlugin extends Plugin {
             call.reject("The card could not be spoken.");
             return;
         }
+        backgroundIntervalSpeechKey = call.getString("backgroundIntervalSpeechKey", "").trim();
         call.resolve();
     }
 
@@ -159,6 +162,7 @@ public class FlashcardSpeechPlugin extends Plugin {
     }
 
     private void stopForegroundSpeech() {
+        backgroundIntervalSpeechKey = "";
         if (pendingSpeechCall != null) {
             pendingSpeechCall.resolve();
             pendingSpeechCall = null;
@@ -262,10 +266,11 @@ public class FlashcardSpeechPlugin extends Plugin {
 
     @Override
     protected void handleOnPause() {
-        // The background Review set service owns all speech after the Activity is hidden.
-        // Cancel foreground synthesis and playback so the just-spoken face cannot restart
-        // during the lifecycle handoff; the service will still speak subsequent faces.
-        stopForegroundSpeech();
+        // Preserve an interval face that already started in the foreground. The background
+        // service skips that exact phase and takes ownership beginning with the next one.
+        if (!BackgroundIntervalService.handoffForegroundSpeech(backgroundIntervalSpeechKey)) {
+            stopForegroundSpeech();
+        }
     }
 
     @Override

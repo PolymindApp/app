@@ -12,7 +12,11 @@ import AppForm from '@/components/AppForm.vue'
 import IntervalTypeIcon from '@/components/IntervalTypeIcon.vue'
 import LabeledSlider from '@/components/LabeledSlider.vue'
 import RunnerSessionActions from '@/components/RunnerSessionActions.vue'
-import { stopBackgroundInterval, syncBackgroundInterval } from '@/services/backgroundInterval'
+import {
+  nativeBackgroundIntervalIsActive,
+  stopBackgroundInterval,
+  syncBackgroundInterval,
+} from '@/services/backgroundInterval'
 import {
   flashcardSpeechOverAmplificationIsEnabled,
   loadFlashcardSpeechSupport,
@@ -421,9 +425,9 @@ async function speakCurrentFlashcardSide() {
   const review = item?.flashcardReview
   const phase = flashcardPhase.value
   const key = item && phase ? `${item.id}:${phase.key}` : ''
+  if (document.visibilityState !== 'visible') return
   if (
-    document.visibilityState !== 'visible'
-    || item?.status !== 'running'
+    item?.status !== 'running'
     || !review?.speechEnabled
     || !flashcardReviewPlaybackEnabled.value
     || !phase
@@ -442,6 +446,7 @@ async function speakCurrentFlashcardSide() {
     await speakFlashcardText(
       phase.side === 'front' ? phase.card.front : phase.card.back,
       phase.side === 'front' ? review.frontLanguage : review.backLanguage,
+      phase.key,
     )
   } catch {
     // Speech is optional during intervals; timer playback continues without an inline warning.
@@ -506,7 +511,7 @@ function handlePageHide() {
   mirrorCurrentRuntime()
   void wakeLock?.release()
   wakeLock = undefined
-  void stopFlashcardSpeech()
+  if (!nativeBackgroundIntervalIsActive()) void stopFlashcardSpeech()
 }
 
 async function handleVisibility() {
@@ -519,7 +524,7 @@ async function handleVisibility() {
   } else if (document.visibilityState !== 'visible') {
     await wakeLock?.release()
     wakeLock = undefined
-    await stopFlashcardSpeech()
+    if (!nativeBackgroundIntervalIsActive()) await stopFlashcardSpeech()
   }
 }
 

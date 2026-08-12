@@ -15,7 +15,12 @@ interface NativeSpeechSupport {
 
 interface FlashcardSpeechPlugin {
   getLanguages(): Promise<NativeSpeechSupport>
-  speak(options: { text: string; language: string; overAmplified: boolean }): Promise<void>
+  speak(options: {
+    text: string
+    language: string
+    overAmplified: boolean
+    backgroundIntervalSpeechKey?: string
+  }): Promise<void>
   setOverAmplification(options: { enabled: boolean }): Promise<void>
   stopSpeaking(): Promise<void>
   startBackground(options: {
@@ -194,7 +199,11 @@ export function defaultFlashcardSpeechLanguage(languages: FlashcardSpeechLanguag
     || ''
 }
 
-export async function speakFlashcardText(text: string, language: string) {
+export async function speakFlashcardText(
+  text: string,
+  language: string,
+  backgroundIntervalSpeechKey = '',
+) {
   const content = text.trim()
   if (!content || !language) return
   if (isNativeAndroid()) {
@@ -202,6 +211,7 @@ export async function speakFlashcardText(text: string, language: string) {
       text: content,
       language,
       overAmplified: speechOverAmplificationEnabled,
+      ...(backgroundIntervalSpeechKey ? { backgroundIntervalSpeechKey } : {}),
     })
     return
   }
