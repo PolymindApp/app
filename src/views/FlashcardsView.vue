@@ -517,7 +517,7 @@ async function reorderReviewSets(result: LongPressDragResult) {
 </template>
 
 <style scoped>
-.flashcards-page:not(.flashcards-page--active) { padding-bottom: calc(10.5rem + var(--page-safe-area-bottom)); }
+.flashcards-page:not(.flashcards-page--active) { padding-bottom: calc(8.5rem + var(--page-safe-area-bottom)); }
 .card-library-action-bar { position: fixed; z-index: 20; right: 0; bottom: calc(4.5rem + env(safe-area-inset-bottom)); left: 0; padding: .75rem 1rem; border-top: .0625rem solid rgba(var(--v-theme-on-surface), .08); background: rgba(var(--v-theme-background), .52); -webkit-backdrop-filter: blur(1rem); backdrop-filter: blur(1rem); }
 .card-library-summary { display: flex; width: 100%; max-width: 45.5rem; margin: 0 auto; align-items: center; justify-content: space-between; gap: 1.5rem; background: transparent !important; }
 .card-library-summary__details { display: flex; min-width: 0; align-items: center; gap: 1rem; }
