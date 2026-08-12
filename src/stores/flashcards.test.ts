@@ -14,6 +14,7 @@ const apiMocks = vi.hoisted(() => ({
   setCardLibraryImage: vi.fn(),
   setReviewSetCardLibraryImage: vi.fn(),
   startReview: vi.fn(),
+  updateReviewSet: vi.fn(),
   updateCardImage: vi.fn(),
 }))
 
@@ -38,6 +39,7 @@ vi.mock('@/lib/api', () => ({
     collection: (name: string) => {
       if (name === 'flashcard_tags') return { create: apiMocks.createTag }
       if (name === 'flashcards') return { create: apiMocks.createCard }
+      if (name === 'flashcard_review_sets') return { update: apiMocks.updateReviewSet }
       throw new Error(`Unexpected collection: ${name}`)
     },
   },
@@ -61,7 +63,76 @@ describe('flashcard store', () => {
     apiMocks.setCardLibraryImage.mockReset()
     apiMocks.setReviewSetCardLibraryImage.mockReset()
     apiMocks.startReview.mockReset()
+    apiMocks.updateReviewSet.mockReset()
+    apiMocks.updateReviewSet.mockResolvedValue({})
     apiMocks.updateCardImage.mockReset()
+  })
+
+  it('persists owned Review set drag order without moving shared sets', async () => {
+    const store = useFlashcardStore()
+    const reviewSet = (id: string, sortOrder: number, accessRole: 'owner' | 'readonly') => ({
+      id,
+      name: id,
+      tags: [],
+      tagDetails: [],
+      owner: accessRole === 'owner' ? 'user-1' : 'user-2',
+      ownerName: '',
+      ownerAvatar: '',
+      accessRole,
+      excludedCards: [],
+      matchingCardCount: 0,
+      mode: 'manual' as const,
+      cardSides: 'both' as const,
+      indefinite: false,
+      maxCards: 20,
+      frontSeconds: 5,
+      backSeconds: 5,
+      backSpeechRepeatCount: 1,
+      noteBeforeBack: false,
+      speechEnabled: false,
+      frontLanguage: '',
+      backLanguage: '',
+      sortMode: 'difficult' as const,
+      sortOrder,
+      createdAt: '',
+      updatedAt: '',
+    })
+    const first = reviewSet('first', 0, 'owner')
+    const second = reviewSet('second', 1, 'owner')
+    const shared = reviewSet('shared', 8, 'readonly')
+    store.reviewSets = [first, second, shared]
+
+    await store.reorderReviewSets([second, first])
+
+    expect(store.reviewSets.map(item => item.id)).toEqual(['second', 'first', 'shared'])
+    expect(store.reviewSets.map(item => item.sortOrder)).toEqual([0, 1, 8])
+    expect(apiMocks.updateReviewSet.mock.calls).toEqual([
+      ['second', { sort_order: 0 }],
+      ['first', { sort_order: 1 }],
+    ])
+  })
+
+  it('restores Review set order when drag persistence fails', async () => {
+    const store = useFlashcardStore()
+    const base = {
+      name: '', tags: [], tagDetails: [], owner: 'user-1', ownerName: '', ownerAvatar: '',
+      accessRole: 'owner' as const, excludedCards: [], matchingCardCount: 0,
+      mode: 'manual' as const, cardSides: 'both' as const, indefinite: false, maxCards: 20,
+      frontSeconds: 5, backSeconds: 5, backSpeechRepeatCount: 1, noteBeforeBack: false,
+      speechEnabled: false, frontLanguage: '', backLanguage: '', sortMode: 'difficult' as const,
+      createdAt: '', updatedAt: '',
+    }
+    const first = { ...base, id: 'first', sortOrder: 0 }
+    const second = { ...base, id: 'second', sortOrder: 1 }
+    store.reviewSets = [first, second]
+    apiMocks.updateReviewSet.mockRejectedValueOnce(new Error('The API is offline.'))
+
+    await expect(store.reorderReviewSets([second, first]))
+      .rejects.toThrow('The API is offline.')
+
+    expect(store.reviewSets.map(item => item.id)).toEqual(['first', 'second'])
+    expect(store.reviewSets.map(item => item.sortOrder)).toEqual([0, 1])
+    expect(store.error).toBe('The API is offline.')
   })
 
   it('reuses an existing tag regardless of letter casing', async () => {

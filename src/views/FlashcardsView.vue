@@ -5,6 +5,7 @@ import { useRouter } from 'vue-router'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import WeekNavigator from '@/components/WeekNavigator.vue'
+import type { LongPressDragResult } from '@/directives/longPressDrag'
 import { flashcardReviewProgressPercent } from '@/services/flashcardHistory'
 import { formatReviewDuration, reviewSetCardCount, reviewSortTitle, sessionAccuracy } from '@/services/flashcards'
 import { FLASHCARD_REVIEW_SET_ACTIONS } from '@/services/flashcardReviewSetActions'
@@ -24,6 +25,7 @@ const selectedReviewSet = ref<FlashcardReviewSet>()
 const copyDialog = ref(false)
 const leaveDialog = ref(false)
 const working = ref(false)
+const reorderingReviewSets = ref(false)
 const notice = ref('')
 const recentWeekStart = ref(startOfWeek(new Date(), { weekStartsOn: 1 }))
 const ownedReviewSets = computed(() => store.reviewSets.filter(set => set.accessRole === 'owner'))
@@ -130,6 +132,25 @@ async function openReviewSet(reviewSet: FlashcardReviewSet) {
   }
 }
 
+async function reorderReviewSets(result: LongPressDragResult) {
+  const reviewSetsById = new Map(
+    ownedReviewSets.value.map(reviewSet => [reviewSet.id, reviewSet]),
+  )
+  const ordered = result.orderedIds
+    .map(id => reviewSetsById.get(id))
+    .filter((reviewSet): reviewSet is FlashcardReviewSet => Boolean(reviewSet))
+  if (ordered.length !== ownedReviewSets.value.length) return
+
+  reorderingReviewSets.value = true
+  try {
+    await store.reorderReviewSets(ordered)
+  } catch {
+    // The store restores the previous order and exposes the save error.
+  } finally {
+    reorderingReviewSets.value = false
+  }
+}
+
 </script>
 
 <template>
@@ -200,6 +221,12 @@ async function openReviewSet(reviewSet: FlashcardReviewSet) {
         <v-card
           v-for="reviewSet in ownedReviewSets"
           :key="reviewSet.id"
+          v-long-press-drag="{
+            id: reviewSet.id,
+            group: 'owned-review-sets',
+            disabled: ownedReviewSets.length < 2 || reorderingReviewSets,
+            onDrop: reorderReviewSets,
+          }"
           ripple
           class="review-set surface-card pa-4"
           role="button"

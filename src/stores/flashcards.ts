@@ -433,6 +433,46 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     return reviewSet
   }
 
+  async function reorderReviewSets(ordered: FlashcardReviewSet[]) {
+    const previousReviewSets = reviewSets.value.map((reviewSet) => ({ ...reviewSet }))
+    const previousSortOrders = new Map(
+      previousReviewSets.map((reviewSet) => [reviewSet.id, reviewSet.sortOrder]),
+    )
+    const sharedReviewSets = previousReviewSets.filter(reviewSet => reviewSet.accessRole !== 'owner')
+    reviewSets.value = [...ordered, ...sharedReviewSets]
+    ordered.forEach((reviewSet, index) => {
+      reviewSet.sortOrder = index
+    })
+    const changedReviewSets = ordered.filter(
+      (reviewSet) => previousSortOrders.get(reviewSet.id) !== reviewSet.sortOrder,
+    )
+    if (!changedReviewSets.length) return
+
+    error.value = ''
+    try {
+      await Promise.all(
+        changedReviewSets.map((reviewSet) =>
+          api.collection('flashcard_review_sets').update(reviewSet.id, {
+            sort_order: reviewSet.sortOrder,
+          }),
+        ),
+      )
+    } catch (cause) {
+      reviewSets.value = previousReviewSets
+      await Promise.allSettled(
+        changedReviewSets.map((reviewSet) =>
+          api.collection('flashcard_review_sets').update(reviewSet.id, {
+            sort_order: previousSortOrders.get(reviewSet.id),
+          }),
+        ),
+      )
+      error.value = cause instanceof Error
+        ? cause.message
+        : 'Could not save the Review set order.'
+      throw cause
+    }
+  }
+
   async function loadReviewSetCards(id: string) {
     const records = await api.getFlashcardReviewSetCards(id)
     const mapped = records.map(mapCard)
@@ -928,6 +968,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     bulkUpdateCards,
     saveReviewSet,
     saveReviewSetPreferences,
+    reorderReviewSets,
     deleteReviewSet,
     loadReviewSetCards,
     importReviewSetCards,
