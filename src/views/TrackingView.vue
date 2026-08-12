@@ -25,7 +25,6 @@ const sheetTracker = ref<TrackingTracker>()
 const editingEntry = ref<TrackingEntry>()
 const addingPreset = ref('')
 const error = ref('')
-const weeklyChartLoading = ref(false)
 const weeklyChartError = ref('')
 let weeklyLoadRequest = 0
 
@@ -189,7 +188,6 @@ onMounted(async () => {
 
 async function loadVisibleWeekEntries() {
   const request = ++weeklyLoadRequest
-  weeklyChartLoading.value = true
   weeklyChartError.value = ''
   try {
     await store.loadRange(
@@ -200,8 +198,6 @@ async function loadVisibleWeekEntries() {
     if (request === weeklyLoadRequest) {
       weeklyChartError.value = cause instanceof Error ? cause.message : 'Could not load this week’s entries.'
     }
-  } finally {
-    if (request === weeklyLoadRequest) weeklyChartLoading.value = false
   }
 }
 </script>
@@ -220,13 +216,6 @@ async function loadVisibleWeekEntries() {
     />
 
     <v-card v-if="store.trackers.length" class="weekly-chart-card surface-card pa-5 mb-3">
-      <v-progress-linear
-        v-if="weeklyChartLoading"
-        indeterminate
-        color="secondary"
-        class="mb-4"
-        aria-label="Loading weekly tracking entries"
-      />
       <v-alert v-if="weeklyChartError" type="error" variant="tonal" class="mb-4">
         {{ weeklyChartError }}
       </v-alert>
