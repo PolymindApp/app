@@ -170,7 +170,8 @@ async function importCards() {
           <template #label>CSV table <span class="required-mark">*</span></template>
         </v-textarea>
 
-        <pre class="flashcard-import-example mt-4">{{ CSV_EXAMPLE }}</pre>
+        <p class="text-caption muted mt-4 mb-2">Use this format, keeping the header row first:</p>
+        <pre class="flashcard-import-example">{{ CSV_EXAMPLE }}</pre>
 
         <v-alert
           v-if="parsed.errors.length"
