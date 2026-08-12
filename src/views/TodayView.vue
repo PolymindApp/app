@@ -1349,19 +1349,25 @@ async function saveTaskLogEntry() {
 .score-percent { color: #c7f464; font-size: 1.2rem; font-weight: 900; }
 .task-section-heading { flex-wrap: wrap; gap: .75rem; }
 .task-section-heading__controls { display: flex; min-width: 0; margin-left: auto; align-items: center; justify-content: flex-end; }
-.task-stack { position: relative; display: grid; gap: 0; }
+.task-stack {
+  --task-card-gap: .7rem;
+
+  position: relative;
+  display: grid;
+  gap: 0;
+}
+.task-stack:has(> .task-masonry-item) { margin-bottom: calc(0rem - var(--task-card-gap)); }
 .task-masonry-item {
   display: grid;
   min-width: 0;
-  margin-bottom: .7rem;
+  margin-bottom: var(--task-card-gap);
   border-radius: 1.5rem;
   grid-template-rows: 1fr;
   transition: margin-bottom .22s cubic-bezier(.22, 1, .36, 1);
 }
-.task-masonry-item:last-child { margin-bottom: 0; }
 .task-masonry-item > * { min-height: 0; }
 .task-masonry-item.long-press-drag-ghost { overflow: hidden; }
-.task-stack :deep(.long-press-drag-placeholder) { margin-bottom: .7rem; }
+.task-stack :deep(.long-press-drag-placeholder) { margin-bottom: var(--task-card-gap); }
 .task-masonry-item--draggable :deep([data-task-drag-handle]) { cursor: grab; }
 .task-list-enter-active,
 .task-list-leave-active {
@@ -1373,6 +1379,8 @@ async function saveTaskLogEntry() {
 }
 .task-list-enter-from,
 .task-list-leave-to { margin-bottom: 0; grid-template-rows: 0fr; opacity: 0; }
+.task-list-enter-from:only-child,
+.task-list-leave-to:only-child { margin-bottom: var(--task-card-gap); }
 .task-list-move {
   transition:
     transform .22s cubic-bezier(.22, 1, .36, 1),
