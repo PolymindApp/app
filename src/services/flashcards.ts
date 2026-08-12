@@ -8,6 +8,7 @@ import type {
   FlashcardReviewSide,
   FlashcardReviewSort,
   FlashcardSelectionAction,
+  FlashcardSettingsApplyTarget,
   IntervalFlashcardReviewSnapshot,
 } from '@/types/domain'
 
@@ -75,6 +76,15 @@ export const FLASHCARD_REVIEW_SESSION_MENU_ITEMS = [
     divider: true,
   },
 ] as const
+
+export const FLASHCARD_SETTINGS_APPLY_MENU_ITEMS: Array<{
+  target: FlashcardSettingsApplyTarget
+  title: string
+  icon: string
+}> = [
+  { target: 'session', title: 'Current session', icon: 'mdi-timer-outline' },
+  { target: 'review-set', title: 'Review set', icon: 'mdi-cards-outline' },
+]
 
 export const FLASHCARD_REVIEW_SELECTION_MENU_ITEMS = [
   {

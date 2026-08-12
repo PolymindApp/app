@@ -162,6 +162,29 @@ const FlashcardReviewSettingsFieldsStub = defineComponent({
   },
 })
 
+const ActionBottomSheetStub = defineComponent({
+  props: { modelValue: Boolean, title: String },
+  emits: ['update:modelValue'],
+  setup(props, { slots }) {
+    return () => props.modelValue
+      ? h('div', { class: 'action-bottom-sheet-stub' }, slots.default?.())
+      : undefined
+  },
+})
+
+const VListItemStub = defineComponent({
+  inheritAttrs: false,
+  props: { title: String },
+  emits: ['click'],
+  setup(props, { attrs, emit }) {
+    return () => h('button', {
+      ...attrs,
+      type: 'button',
+      onClick: () => emit('click'),
+    }, props.title)
+  },
+})
+
 function reviewSet(accessRole: FlashcardReviewSet['accessRole'] = 'owner'): FlashcardReviewSet {
   return {
     id: 'set-1',
@@ -251,7 +274,7 @@ function mountRunner() {
     global: {
       directives: { ripple: {} },
       stubs: {
-        ActionBottomSheet: true,
+        ActionBottomSheet: ActionBottomSheetStub,
         AppForm: AppFormStub,
         ConfirmDialog: ConfirmDialogStub,
         FlashcardCardDialog: true,
@@ -270,6 +293,7 @@ function mountRunner() {
         VDialog: VDialogStub,
         VDivider: true,
         VIcon: true,
+        VListItem: VListItemStub,
         VProgressCircular: true,
         VProgressLinear: true,
         VSpacer: true,
@@ -408,8 +432,10 @@ describe('IntervalRunnerView flashcard area', () => {
     await wrapper.get('.change-flashcard-settings').trigger('click')
     await wrapper.vm.$nextTick()
 
-    const applyButton = wrapper.get('.apply-session-settings')
-    await applyButton.trigger('click')
+    await wrapper.get('.apply-settings-menu').trigger('click')
+    expect(wrapper.get('.action-bottom-sheet-stub').findAll('button').map(item => item.text()))
+      .toEqual(['Current session', 'Review set'])
+    await wrapper.get('.apply-settings-target--session').trigger('click')
     await flushPromises()
 
     expect(mocks.intervalStore.updateSessionFlashcardReview).toHaveBeenCalledOnce()
@@ -432,8 +458,8 @@ describe('IntervalRunnerView flashcard area', () => {
     await wrapper.get('.change-flashcard-settings').trigger('click')
     await wrapper.vm.$nextTick()
 
-    const applyButton = wrapper.get('.apply-review-set-settings')
-    await applyButton.trigger('click')
+    await wrapper.get('.apply-settings-menu').trigger('click')
+    await wrapper.get('.apply-settings-target--review-set').trigger('click')
     await flushPromises()
 
     expect(mocks.flashcardStore.saveReviewSet).toHaveBeenCalledWith(expect.objectContaining({

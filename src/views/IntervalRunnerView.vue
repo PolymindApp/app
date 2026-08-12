@@ -31,6 +31,7 @@ import {
   flashcardTextFontSize,
   flashcardReviewSettingsAreValid,
   flashcardReviewSettingsSignature,
+  FLASHCARD_SETTINGS_APPLY_MENU_ITEMS,
 } from '@/services/flashcards'
 import { createIntervalCueHandoff } from '@/services/intervalCueHandoff'
 import {
@@ -67,6 +68,7 @@ import type {
   Flashcard,
   FlashcardContextAction,
   FlashcardReviewSettings,
+  FlashcardSettingsApplyTarget,
   FlashcardSpeechSupport,
   IntervalDefinition,
   IntervalFlashcardReviewSnapshot,
@@ -111,8 +113,9 @@ const flashcardDeleting = ref(false)
 const flashcardEjectDialog = ref(false)
 const flashcardEjecting = ref(false)
 const flashcardSettingsDialog = ref(false)
+const flashcardSettingsApplyMenu = ref(false)
 const flashcardSettingsForm = ref()
-const flashcardSettingsSaveTarget = ref<'session' | 'review-set'>()
+const flashcardSettingsSaveTarget = ref<FlashcardSettingsApplyTarget>()
 const flashcardSettingsError = ref('')
 const flashcardSettingsOriginal = ref('')
 const flashcardSpeechLoading = ref(false)
@@ -1135,6 +1138,7 @@ async function openFlashcardSettings() {
 }
 
 async function closeFlashcardSettings() {
+  flashcardSettingsApplyMenu.value = false
   flashcardSettingsDialog.value = false
   flashcardSettingsError.value = ''
   await finishFlashcardModal()
@@ -1148,7 +1152,7 @@ async function validateFlashcardSettings() {
   return { review, reviewSet }
 }
 
-async function saveFlashcardSettings(target: 'session' | 'review-set' = 'session') {
+async function saveFlashcardSettings(target: FlashcardSettingsApplyTarget = 'session') {
   const context = await validateFlashcardSettings()
   if (!context) return
   flashcardSettingsSaveTarget.value = target
@@ -1191,6 +1195,11 @@ async function saveFlashcardSettings(target: 'session' | 'review-set' = 'session
   } finally {
     flashcardSettingsSaveTarget.value = undefined
   }
+}
+
+function applyFlashcardSettingsTo(target: FlashcardSettingsApplyTarget) {
+  flashcardSettingsApplyMenu.value = false
+  void saveFlashcardSettings(target)
 }
 
 function handleFlashcardContextAction(action: FlashcardContextAction) {
@@ -1613,29 +1622,34 @@ async function runAgain(repetitions?: number) {
           <v-btn variant="text" :disabled="flashcardSettingsSaving" @click="closeFlashcardSettings">
             Cancel
           </v-btn>
-          <div class="flashcard-settings-save-actions">
-            <v-btn
-              class="apply-review-set-settings"
-              variant="outlined"
-              size="large"
-              :loading="flashcardSettingsSaveTarget === 'review-set'"
-              :disabled="!canSaveFlashcardSettings || flashcardSettingsSaving"
-              @click="saveFlashcardSettings('review-set')"
-            >
-              Apply to Review set
-            </v-btn>
-            <v-btn
-              class="apply-session-settings"
-              color="secondary"
-              size="large"
-              :loading="flashcardSettingsSaveTarget === 'session'"
-              :disabled="!canSaveFlashcardSettings || flashcardSettingsSaving"
-              @click="saveFlashcardSettings('session')"
-            >
-              Apply to current session
-            </v-btn>
-          </div>
+          <v-spacer />
+          <v-btn
+            class="apply-settings-menu"
+            color="secondary"
+            size="large"
+            append-icon="mdi-chevron-down"
+            :loading="flashcardSettingsSaving"
+            :disabled="!canSaveFlashcardSettings || flashcardSettingsSaving"
+            @click="flashcardSettingsApplyMenu = true"
+          >
+            Apply to...
+          </v-btn>
         </v-card-actions>
+        <ActionBottomSheet
+          v-model="flashcardSettingsApplyMenu"
+          title="Apply to..."
+          aria-label="Choose where to apply flashcard settings"
+        >
+          <v-list-item
+            v-for="item in FLASHCARD_SETTINGS_APPLY_MENU_ITEMS"
+            :key="item.target"
+            :class="`apply-settings-target--${item.target}`"
+            :title="item.title"
+            :prepend-icon="item.icon"
+            rounded="lg"
+            @click="applyFlashcardSettingsTo(item.target)"
+          />
+        </ActionBottomSheet>
       </v-card>
     </v-dialog>
 
@@ -2006,26 +2020,13 @@ async function runAgain(repetitions?: number) {
     calc(1.25rem + env(safe-area-inset-left, 0rem)) !important;
 }
 .flashcard-settings-actions {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
   padding:
     1rem
     calc(1rem + env(safe-area-inset-right, 0rem))
     calc(1rem + max(env(safe-area-inset-bottom, 0rem), var(--safe-area-inset-bottom, 0rem)))
     calc(1rem + env(safe-area-inset-left, 0rem)) !important;
 }
-.flashcard-settings-save-actions {
-  display: grid;
-  min-width: 0;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: .5rem;
-}
-.flashcard-settings-save-actions .v-btn { min-height: 3rem; }
-@media (max-width: 31.25rem) {
-  .flashcard-settings-actions { grid-template-columns: 1fr; }
-  .flashcard-settings-actions > .v-btn { justify-self: start; }
-  .flashcard-settings-save-actions { grid-template-columns: 1fr; }
-}
+.apply-settings-menu { min-width: 9rem; min-height: 3rem; }
 .repetition-summary {
   color: rgb(var(--v-theme-on-surface) / .62);
   font-size: .75rem;
