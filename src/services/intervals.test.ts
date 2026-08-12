@@ -190,13 +190,17 @@ describe('interval definitions', () => {
     expect(intervalDuration(definition)).toBe(90)
   })
 
-  it('defaults Review set playback off for Train and Prepare intervals', () => {
+  it('defaults Review set playback off for Train, Prepare, Meditation, and Confirmation intervals', () => {
     const train = createIntervalStep('Cardio', 'train', 90)
     const prepare = createIntervalStep('Prepare', 'prepare', 20)
+    const meditation = createIntervalStep('Meditate', 'meditation', 60)
+    const confirmation = createIntervalStep('Confirm', 'confirmation', 0)
     const work = createIntervalStep('Work', 'work', 30)
 
     expect(intervalStepPlaysFlashcardReview(train)).toBe(false)
     expect(intervalStepPlaysFlashcardReview(prepare)).toBe(false)
+    expect(intervalStepPlaysFlashcardReview(meditation)).toBe(false)
+    expect(intervalStepPlaysFlashcardReview(confirmation)).toBe(false)
     expect(intervalStepPlaysFlashcardReview(work)).toBe(true)
 
     train.flashcardReviewEnabled = true

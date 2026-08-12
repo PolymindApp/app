@@ -152,6 +152,18 @@ describe('IntervalNodeEditor interval type select', () => {
     expect(node.kind).toBe('prepare')
     expect(node.flashcardReviewEnabled).toBe(false)
 
+    wrapper.findComponent(VSelectStub).vm.$emit('update:modelValue', 'meditation')
+    await wrapper.vm.$nextTick()
+
+    expect(node.kind).toBe('meditation')
+    expect(node.flashcardReviewEnabled).toBe(false)
+
+    wrapper.findComponent(VSelectStub).vm.$emit('update:modelValue', 'confirmation')
+    await wrapper.vm.$nextTick()
+
+    expect(node.kind).toBe('confirmation')
+    expect(node.flashcardReviewEnabled).toBe(false)
+
     wrapper.findComponent(VSelectStub).vm.$emit('update:modelValue', 'work')
     await wrapper.vm.$nextTick()
 
@@ -229,7 +241,7 @@ describe('IntervalNodeEditor interval type select', () => {
     expect(wrapper.text()).not.toContain('Play Review set during this step')
   })
 
-  it.each(['train', 'prepare'] as const)(
+  it.each(['train', 'prepare', 'meditation', 'confirmation'] as const)(
     'shows Review set playback off by default for %s intervals',
     (kind) => {
       const node: IntervalStepNode = {

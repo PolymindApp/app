@@ -65,9 +65,13 @@ export function intervalStepDurationSeconds(step: IntervalStepNode) {
   return Number.isFinite(step.durationSeconds) ? Math.max(0, step.durationSeconds) : 0
 }
 
+export function intervalStepPlaysFlashcardReviewByDefault(kind: IntervalStepNode['kind']) {
+  return !['train', 'prepare', 'meditation', 'confirmation'].includes(kind)
+}
+
 export function intervalStepPlaysFlashcardReview(step: IntervalStepNode) {
   if (typeof step.flashcardReviewEnabled === 'boolean') return step.flashcardReviewEnabled
-  return step.kind !== 'train' && step.kind !== 'prepare'
+  return intervalStepPlaysFlashcardReviewByDefault(step.kind)
 }
 
 function intervalStepFlashcardReviewDurationSeconds(step: IntervalStepNode) {
