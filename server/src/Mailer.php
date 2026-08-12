@@ -116,7 +116,7 @@ final class Mailer
             . $escape($message) . '</p>'
             . '<p style="margin:0 0 24px"><a href="' . $escape($url) . '" '
             . 'style="display:inline-block;padding:12px 18px;border-radius:8px;'
-            . 'background:#C7F464;color:#192113;font-weight:700;text-decoration:none">'
+            . 'background:#C7F464;color:#ffffff;font-weight:700;text-decoration:none">'
             . $escape($action) . '</a></p>'
             . '<p style="margin:0;color:#626862;font-size:13px;line-height:1.5">'
             . $escape($footer) . '</p>'

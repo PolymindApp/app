@@ -198,7 +198,7 @@ alice_verification_token="$(mail_token verify-email)"
   echo "Registration did not send an email confirmation link." >&2
   exit 1
 }
-grep -q 'background:#C7F464;color:#192113' "$smtp_mailbox" || {
+grep -q 'background:#C7F464;color:#ffffff' "$smtp_mailbox" || {
   echo "The account email did not use the Polymind action button colors." >&2
   exit 1
 }
