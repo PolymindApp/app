@@ -726,6 +726,35 @@ task_note_suggestions_enabled="$(json_field entry_note_suggestions_enabled <<<"$
   exit 1
 }
 
+sync_task_order_body="$(php -r '
+  echo json_encode([
+      "clientId" => "integration-client",
+      "cursor" => 0,
+      "operations" => [[
+          "operationId" => "sync-task-order-" . $argv[1],
+          "resource" => "tasks",
+          "recordId" => $argv[1],
+          "kind" => "patch",
+          "payload" => ["sort_order" => 2],
+          "fieldClocks" => ["sort_order" => "9999999999999-000003-integration-client"],
+          "dependsOn" => [],
+      ]],
+  ], JSON_THROW_ON_ERROR);
+' "$task_id")"
+sync_task_order_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "$sync_task_order_body" \
+  "$api_url/sync/exchange")"
+php -r '
+  $response = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+  $ack = $response["acknowledgements"][0] ?? [];
+  if (($ack["status"] ?? null) !== "applied" || ($ack["resource"]["data"]["sort_order"] ?? null) !== 2) {
+      fwrite(STDERR, "Sync could not patch one task field when stored JSON fields were unchanged.\n");
+      exit(1);
+  }
+' <<<"$sync_task_order_response"
+
 entry_response="$(curl --silent --show-error --fail \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $alice_token" \

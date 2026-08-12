@@ -563,6 +563,7 @@ final class SyncService
         string $account,
     ): array {
         $current = $this->ownedRecord($resource, $recordId, $account);
+        $normalizedCurrent = $this->normalizeRecord($config, $current);
         if ($resource === 'flashcards') {
             $payload = $this->prepareFlashcardImagePayload($payload);
         }
@@ -605,7 +606,7 @@ final class SyncService
         if (in_array($resource, ['flashcards', 'flashcard_review_sets'], true)) {
             $accepted['updated_at'] = $this->now();
         }
-        $this->validateRelations($resource, [...$current, ...$accepted], $account);
+        $this->validateRelations($resource, [...$normalizedCurrent, ...$accepted], $account);
         $assignments = array_map(
             static fn (string $column): string => $column . ' = :' . $column,
             array_keys($accepted),
@@ -631,7 +632,7 @@ final class SyncService
                 $recordId,
                 $account,
                 $config,
-                [...$current, ...$accepted],
+                [...$normalizedCurrent, ...$accepted],
             );
         }
         $this->saveFieldClocks($account, $resource, $recordId, $mergedClocks);
