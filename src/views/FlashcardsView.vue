@@ -145,9 +145,9 @@ async function openReviewSet(reviewSet: FlashcardReviewSet) {
       {{ notice }}
     </v-alert>
 
-    <section>
+    <section class="card-library-action-bar page-action-area">
       <v-card
-        class="card-library-summary surface-card pa-5"
+        class="card-library-summary pa-3"
         aria-labelledby="card-library-summary-title"
       >
         <div class="card-library-summary__details">
@@ -173,6 +173,7 @@ async function openReviewSet(reviewSet: FlashcardReviewSet) {
           </v-btn>
           <v-btn
             variant="tonal"
+            size="large"
             prepend-icon="mdi-card-multiple-outline"
             :to="{ name: 'flashcard-cards' }"
           >
@@ -180,7 +181,9 @@ async function openReviewSet(reviewSet: FlashcardReviewSet) {
           </v-btn>
         </div>
       </v-card>
+    </section>
 
+    <section>
       <div class="section-heading">
         <h2>Your Review sets</h2>
         <v-btn
@@ -486,14 +489,17 @@ async function openReviewSet(reviewSet: FlashcardReviewSet) {
 </template>
 
 <style scoped>
-.card-library-summary { display: flex; align-items: center; justify-content: space-between; gap: 1.5rem; }
+.flashcards-page:not(.flashcards-page--active) { padding-bottom: 10.5rem; }
+.card-library-action-bar { position: fixed; z-index: 20; right: 0; bottom: calc(4.5rem + env(safe-area-inset-bottom)); left: 0; padding: .75rem 1rem; border-top: .0625rem solid rgba(var(--v-theme-on-surface), .08); background: rgba(var(--v-theme-background), .52); -webkit-backdrop-filter: blur(1rem); backdrop-filter: blur(1rem); }
+.card-library-summary { display: flex; width: 100%; max-width: 45.5rem; margin: 0 auto; align-items: center; justify-content: space-between; gap: 1.5rem; background: transparent !important; }
 .card-library-summary__details { display: flex; min-width: 0; align-items: center; gap: 1rem; }
 .card-library-summary__icon { display: grid; width: 3.25rem; height: 3.25rem; flex: 0 0 auto; place-items: center; border-radius: 1rem; background: rgba(var(--v-theme-secondary), .14); color: rgb(var(--v-theme-secondary)); }
 .card-library-summary h2 { font-size: .82rem; font-weight: 900; }
 .card-library-summary__stat { display: flex; align-items: baseline; gap: .4rem; margin-top: .15rem; }
 .card-library-summary__stat strong { font-family: Impact, "Arial Narrow", sans-serif; font-size: 2rem; letter-spacing: -.03em; line-height: 1; }
 .card-library-summary__stat span { color: rgba(var(--v-theme-on-surface), .56); font-size: .72rem; font-weight: 800; }
-.card-library-summary__actions { display: grid; grid-template-columns: repeat(2, max-content); gap: .5rem; }
+.card-library-summary__actions { display: grid; min-width: 0; flex: 1 1 0; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
+.card-library-summary__actions :deep(.v-btn) { width: 100%; }
 .review-set-list { display: grid; gap: .75rem; }
 .review-set { overflow: hidden; cursor: pointer; }
 .review-set:focus-visible { outline: .125rem solid rgba(var(--v-theme-secondary), .72); outline-offset: .1875rem; }
@@ -522,13 +528,15 @@ async function openReviewSet(reviewSet: FlashcardReviewSet) {
 .active-review__name { font-size: 1.35rem; }
 @media (max-width: 59.9375rem) {
   .flashcards-page--active { padding-bottom: calc(7rem + var(--page-safe-area-bottom)); }
+  .flashcards-page--active .card-library-action-bar { display: none; }
   .active-review { position: fixed; z-index: 20; right: 0; bottom: calc(4.5rem + env(safe-area-inset-bottom)); left: 0; border-radius: 0 !important; box-shadow: 0 -.75rem 1.875rem rgba(0, 0, 0, .28) !important; }
+}
+@media (min-width: 60rem) {
+  .flashcards-page:not(.flashcards-page--active) { padding-bottom: 7rem; }
+  .card-library-action-bar { bottom: 0; left: 14rem; }
 }
 @media (max-width: 37.5rem) {
   .card-library-summary { align-items: stretch; flex-direction: column; gap: 1rem; }
-  .card-library-summary__actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-@media (max-width: 23.5rem) {
-  .card-library-summary__actions { grid-template-columns: 1fr; }
+  .card-library-summary__actions { width: 100%; }
 }
 </style>

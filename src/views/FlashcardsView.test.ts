@@ -144,7 +144,7 @@ describe('Flashcards Review set cards', () => {
     const actions = summary.findAllComponents(ButtonStub)
     expect(actions.map(action => action.text())).toEqual(['Add card', 'Manage cards'])
     expect(actions[0].props('size')).toBe('large')
-    expect(actions[1].props('size')).toBeUndefined()
+    expect(actions[1].props('size')).toBe('large')
     expect(actions[0].props('to')).toEqual({ name: 'flashcard-new' })
     expect(actions[1].props('to')).toEqual({ name: 'flashcard-cards' })
   })
