@@ -396,6 +396,13 @@ async function signInWithPasskey() {
   max-width: 1080px;
 }
 
+:global(html.platform-android .auth-wrap),
+:global(html.platform-ios .auth-wrap) {
+  padding-block:
+    max(env(safe-area-inset-top, 0rem), var(--safe-area-inset-top, 0rem))
+    max(env(safe-area-inset-bottom, 0rem), var(--safe-area-inset-bottom, 0rem));
+}
+
 .logo-box {
   display: grid;
   width: 168px;
