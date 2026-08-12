@@ -146,7 +146,7 @@ async function openReviewSet(reviewSet: FlashcardReviewSet) {
     </v-alert>
 
     <section class="card-library-action-bar page-action-area">
-      <v-card
+      <div
         class="card-library-summary"
         aria-labelledby="card-library-summary-title"
       >
@@ -180,11 +180,11 @@ async function openReviewSet(reviewSet: FlashcardReviewSet) {
             Add new
           </v-btn>
         </div>
-      </v-card>
+      </div>
     </section>
 
     <section>
-      <div class="section-heading">
+      <div class="section-heading mt-0">
         <h2>Your Review sets</h2>
         <v-btn
           size="small"
@@ -524,9 +524,9 @@ async function openReviewSet(reviewSet: FlashcardReviewSet) {
 .recent-review-stats { display: flex; flex-wrap: wrap; gap: .3rem .65rem; margin-top: .45rem; color: rgba(var(--v-theme-on-surface), .58); font-size: .7rem; }
 .recent-review-time { display: block; width: 3.5rem; font-variant-numeric: tabular-nums; text-align: end; }
 .active-review { display: flex; align-items: center; justify-content: space-between; gap: 1rem; color: rgb(var(--v-theme-on-secondary)); }
-.active-review > div { display: flex; flex-direction: column; }
+.active-review > div { display: flex; min-width: 0; flex: 1 1 auto; flex-direction: column; }
 .active-review__label { font-size: .65rem; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
-.active-review__name { font-size: 1.35rem; }
+.active-review__name { width: 100%; font-size: 1.35rem; }
 @media (max-width: 59.9375rem) {
   .flashcards-page--active { padding-bottom: calc(7rem + var(--page-safe-area-bottom)); }
   .flashcards-page--active .card-library-action-bar { display: none; }

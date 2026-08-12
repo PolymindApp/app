@@ -367,7 +367,7 @@ function releaseLeavingPage(element: Element) {
 
           <h1 class="app-bar__title">{{ pageTitle }}</h1>
 
-          <div class="app-bar__actions">
+          <div class="app-bar__actions d-flex align-center ga-3">
             <v-btn
               :icon="syncIcon"
               :color="syncColor"

@@ -360,7 +360,8 @@ onBeforeUnmount(() => clearTimeout(stepSyncHideTimer))
             v-if="stepSyncIndicatorVisible"
             class="task-sync-progress"
             indeterminate
-            size="1rem"
+            size="18"
+            color="secondary"
             :width="2"
             aria-hidden="true"
           />

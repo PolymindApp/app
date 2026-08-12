@@ -100,7 +100,7 @@ function releaseUploadPreview() {
           width="512"
           max-width="100%"
           aspect-ratio="1"
-          contain
+
           @error="previewFailed = true"
         />
       </div>
@@ -123,6 +123,6 @@ function releaseUploadPreview() {
 .journal-image-field__title { font-size: .82rem; font-weight: 850; }
 .journal-image-field__hint { margin-top: .2rem; color: rgba(var(--v-theme-on-surface), .56); font-size: .7rem; }
 .journal-image-field__actions { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
-.journal-image-field__preview { display: grid; width: 100%; max-width: 100%; overflow: hidden; border: .0625rem solid rgba(var(--v-theme-on-surface), .1); border-radius: 1rem; place-items: center; background: rgba(var(--v-theme-on-surface), .04); }
+.journal-image-field__preview { width: 100%; max-width: 100%; overflow: hidden; border: .0625rem solid rgba(var(--v-theme-on-surface), .1); border-radius: 1rem; place-items: center; background: rgba(var(--v-theme-on-surface), .04); }
 .journal-image-field__preview :deep(img) { max-width: 100%; }
 </style>
