@@ -1,9 +1,9 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
-import { api } from '@/lib/api'
+import { api, apiAssetUrl } from '@/lib/api'
 import { useSnackbarStore } from '@/stores/snackbar'
 import { useTaskStore } from '@/stores/tasks'
-import type { JournalEntry, JournalEntryDraft } from '@/types/domain'
+import type { JournalEntry, JournalEntryDraft, SquareImageSourceValue } from '@/types/domain'
 
 export function mapJournalEntry(record: Record<string, any>): JournalEntry {
   const trackers = stringList(record.tracker)
@@ -11,6 +11,9 @@ export function mapJournalEntry(record: Record<string, any>): JournalEntry {
     id: record.id,
     title: record.title || '',
     body: record.body || '',
+    image: record.image_file
+      ? apiAssetUrl(`/journal-images/${record.image_file}`)
+      : apiAssetUrl(record.image_url || ''),
     occurredAt: record.occurred_at,
     localDate: record.local_date,
     timezoneOffset: Number(record.timezone_offset || 0),
@@ -85,7 +88,7 @@ export const useJournalStore = defineStore('journal', () => {
     return mapJournalEntry(await api.collection('journal_entries').getOne(id))
   }
 
-  async function saveEntry(draft: JournalEntryDraft) {
+  async function saveEntry(draft: JournalEntryDraft, image?: SquareImageSourceValue) {
     const payload = {
       title: draft.title.trim(),
       body: draft.body.trim(),
@@ -95,9 +98,14 @@ export const useJournalStore = defineStore('journal', () => {
       task: draft.task || '',
       tracker: draft.trackers,
     }
-    const record = draft.id
+    let record = draft.id
       ? await api.collection('journal_entries').update(draft.id, payload)
       : await api.collection('journal_entries').create(payload)
+    if (image?.upload) {
+      record = await api.updateJournalImage(record.id, image.upload)
+    } else if (draft.id && image?.source === 'none' && image.existingSource !== 'none') {
+      record = await api.removeJournalImage(record.id)
+    }
     const entry = mapJournalEntry(record)
     const index = entries.value.findIndex((item) => item.id === entry.id)
     if (index >= 0) entries.value.splice(index, 1, entry)

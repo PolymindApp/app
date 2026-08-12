@@ -7,6 +7,8 @@ const apiMocks = vi.hoisted(() => ({
   create: vi.fn(),
   update: vi.fn(),
   delete: vi.fn(),
+  updateJournalImage: vi.fn(),
+  removeJournalImage: vi.fn(),
 }))
 const taskMocks = vi.hoisted(() => ({
   syncTaskReminders: vi.fn(),
@@ -18,7 +20,10 @@ vi.mock('@/lib/api', () => ({
       if (name !== 'journal_entries') throw new Error(`Unexpected collection: ${name}`)
       return apiMocks
     },
+    updateJournalImage: apiMocks.updateJournalImage,
+    removeJournalImage: apiMocks.removeJournalImage,
   },
+  apiAssetUrl: (value: string) => value.startsWith('/') ? `/api${value}` : value,
 }))
 vi.mock('@/stores/tasks', () => ({
   useTaskStore: () => taskMocks,
@@ -32,6 +37,8 @@ function record(id: string, date = '2026-08-02') {
     id,
     title: 'A reflection',
     body: 'What I noticed.',
+    image_url: '',
+    image_file: 'a'.repeat(48) + '.jpg',
     occurred_at: `${date}T16:00:00.000Z`,
     local_date: date,
     timezone_offset: 240,
@@ -67,6 +74,7 @@ describe('journal store', () => {
       trackers: ['tracker-1', 'tracker-2'],
       taskSnapshot: 'Train',
       trackerSnapshots: { 'tracker-1': 'Mood', 'tracker-2': 'Energy' },
+      image: `/api/journal-images/${'a'.repeat(48)}.jpg`,
     })
     expect(store.loadedRange).toBe('2026-07-27:2026-08-02')
   })
@@ -95,6 +103,35 @@ describe('journal store', () => {
       tracker: ['tracker-1', 'tracker-2'],
     })
     expect(store.entries[0]?.id).toBe('journal-2')
+  })
+
+  it('attaches a compressed upload to the local reflection record', async () => {
+    apiMocks.create.mockResolvedValue(record('journal-2'))
+    apiMocks.updateJournalImage.mockResolvedValue({
+      ...record('journal-2'),
+      image_file: '',
+      image_url: 'data:image/jpeg;base64,reflection',
+    })
+    const store = useJournalStore()
+    const upload = new Blob(['reflection'], { type: 'image/jpeg' })
+
+    const saved = await store.saveEntry({
+      title: '',
+      body: 'Offline reflection',
+      occurredAt: '2026-08-02T16:00:00.000Z',
+      localDate: '2026-08-02',
+      timezoneOffset: 240,
+      trackers: [],
+    }, {
+      source: 'upload',
+      url: '',
+      existingUrl: '',
+      existingSource: 'none',
+      upload,
+    })
+
+    expect(apiMocks.updateJournalImage).toHaveBeenCalledWith('journal-2', upload)
+    expect(saved.image).toBe('data:image/jpeg;base64,reflection')
   })
 
   it('keeps the newest week when overlapping loads finish out of order', async () => {
@@ -133,6 +170,7 @@ describe('journal store', () => {
       id: 'journal-1',
       title: 'A reflection',
       body: 'What I noticed.',
+      image: '',
       occurredAt: '2026-08-02T16:00:00.000Z',
       localDate: '2026-08-02',
       timezoneOffset: 240,

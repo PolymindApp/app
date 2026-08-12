@@ -177,7 +177,10 @@ function localCreateDefaults(resource: string, body: Record<string, unknown>) {
   }
   if (resource === 'flashcard_review_sets') return { created_at: now, updated_at: now, ...body }
   if (resource === 'journal_entries') {
-    return { task_snapshot: '', tracker_snapshot: {}, created_at: now, updated_at: now, ...body }
+    return {
+      image_url: '', image_file: '', task_snapshot: '', tracker_snapshot: {},
+      created_at: now, updated_at: now, ...body,
+    }
   }
   if (resource === 'entries') return { created_at: now, ...body }
   return body
@@ -1270,6 +1273,41 @@ class ApiClient {
     )
   }
 
+  async updateJournalImage(entryId: string, image: Blob) {
+    if (image.type !== 'image/jpeg') {
+      throw new ApiError(422, 'The reflection image must be compressed as a JPEG.')
+    }
+    const accountId = this.authStore.record?.id || ''
+    if (accountId && await hasLocalBootstrap(accountId)) {
+      return putLocalPatch(accountId, 'journal_entries', entryId, {
+        image_url: await blobDataUrl(image),
+        image_file: '',
+        updated_at: new Date().toISOString(),
+      })
+    }
+    return request<RecordModel>(
+      `/journal-entries/${encodeURIComponent(entryId)}/image`,
+      { method: 'POST', body: { image: await blobDataUrl(image) } },
+      this.authStore,
+    )
+  }
+
+  async removeJournalImage(entryId: string) {
+    const accountId = this.authStore.record?.id || ''
+    if (accountId && await hasLocalBootstrap(accountId)) {
+      return putLocalPatch(accountId, 'journal_entries', entryId, {
+        image_url: '',
+        image_file: '',
+        updated_at: new Date().toISOString(),
+      })
+    }
+    return request<RecordModel>(
+      `/journal-entries/${encodeURIComponent(entryId)}/image`,
+      { method: 'DELETE' },
+      this.authStore,
+    )
+  }
+
   actOnFlashcardReviewSession(
     sessionId: string,
     action: FlashcardReviewAction,
@@ -1318,8 +1356,8 @@ function blobDataUrl(blob: Blob) {
     const reader = new FileReader()
     reader.onload = () => typeof reader.result === 'string'
       ? resolve(reader.result)
-      : reject(new Error('The compressed avatar could not be read.'))
-    reader.onerror = () => reject(new Error('The compressed avatar could not be read.'))
+      : reject(new Error('The compressed image could not be read.'))
+    reader.onerror = () => reject(new Error('The compressed image could not be read.'))
     reader.readAsDataURL(blob)
   })
 }

@@ -44,7 +44,7 @@ run_migrations() {
 
 sqlite3 "$empty_db" 'VACUUM'
 first_run="$(run_migrations "$empty_db")"
-[[ "$first_run" == "202607290001,202607290002,202607290003,202607300001,202607310001,202607310002,202607310003,202608010001,202608020001,202608020002,202608020003,202608020004,202608050001,202608050002,202608050003,202608060001,202608060002,202608060003,202608060004,202608070001,202608070002,202608070003,202608070004,202608070005,202608070006,202608080001,202608080003,202608090001,202608090002,202608100001,202608100002,202608110001,202608120001,202608120002" ]] || {
+[[ "$first_run" == "202607290001,202607290002,202607290003,202607300001,202607310001,202607310002,202607310003,202608010001,202608020001,202608020002,202608020003,202608020004,202608050001,202608050002,202608050003,202608060001,202608060002,202608060003,202608060004,202608070001,202608070002,202608070003,202608070004,202608070005,202608070006,202608080001,202608080003,202608090001,202608090002,202608100001,202608100002,202608110001,202608120001,202608120002,202608120003" ]] || {
   echo "An empty database did not apply the complete migration sequence." >&2
   exit 1
 }
@@ -95,7 +95,7 @@ for table in "${expected_tables[@]}"; do
 done
 
 migration_count="$(sqlite3 "$empty_db" 'SELECT COUNT(*) FROM polymind_schema_migrations;')"
-[[ "$migration_count" == 34 ]] || {
+[[ "$migration_count" == 35 ]] || {
   echo "Migration history does not contain all migrations." >&2
   exit 1
 }
@@ -108,6 +108,14 @@ tracker_reminder_columns="$(sqlite3 "$empty_db" \
    WHERE name IN ('reminder_enabled', 'reminder_time', 'reminder_show_name');")"
 [[ "$task_reminder_columns" == 2 && "$tracker_reminder_columns" == 0 ]] || {
   echo "Task reminder fields were not moved away from trackers." >&2
+  exit 1
+}
+
+journal_image_columns="$(sqlite3 "$empty_db" \
+  "SELECT COUNT(*) FROM pragma_table_info('journal_entries')
+   WHERE name IN ('image_url', 'image_file');")"
+[[ "$journal_image_columns" == 2 ]] || {
+  echo "The journal image migration did not install both image fields." >&2
   exit 1
 }
 
@@ -178,7 +186,7 @@ cli_output="$(
   POLYMIND_API_SECRET="polymind-migration-test-secret-at-least-32-characters" \
     php server/migrate.php
 )"
-[[ "$cli_output" == *"Applied 34 migrations"* && "$cli_output" == *"202608120002"* ]] || {
+[[ "$cli_output" == *"Applied 35 migrations"* && "$cli_output" == *"202608120003"* ]] || {
   echo "The migration CLI did not initialize and report a new database." >&2
   exit 1
 }
@@ -237,9 +245,9 @@ php -r '
   $response = json_decode(file_get_contents($argv[1]), true, 512, JSON_THROW_ON_ERROR);
   if (
       ($response["status"] ?? null) !== "ok"
-      || count($response["appliedMigrations"] ?? []) !== 34
-      || ($response["currentVersion"] ?? null) !== "202608120002"
-      || ($response["migrationCount"] ?? null) !== 34
+      || count($response["appliedMigrations"] ?? []) !== 35
+      || ($response["currentVersion"] ?? null) !== "202608120003"
+      || ($response["migrationCount"] ?? null) !== 35
   ) {
       fwrite(STDERR, "The HTTP migration response was invalid.\n");
       exit(1);
@@ -384,7 +392,7 @@ before_counts="$(sqlite3 "$existing_db" \
 existing_run="$(run_migrations "$existing_db")"
 after_counts="$(sqlite3 "$existing_db" \
   "SELECT (SELECT COUNT(*) FROM tasks) || ':' || (SELECT COUNT(*) FROM entries);")"
-[[ "$existing_run" == "202608050001,202608050002,202608050003,202608060001,202608060002,202608060003,202608060004,202608070001,202608070002,202608070003,202608070004,202608070005,202608070006,202608080001,202608080003,202608090001,202608090002,202608100001,202608100002,202608110001,202608120001,202608120002" ]] || {
+[[ "$existing_run" == "202608050001,202608050002,202608050003,202608060001,202608060002,202608060003,202608060004,202608070001,202608070002,202608070003,202608070004,202608070005,202608070006,202608080001,202608080003,202608090001,202608090002,202608100001,202608100002,202608110001,202608120001,202608120002,202608120003" ]] || {
   echo "An existing PHP database did not apply only the pending feature migrations." >&2
   exit 1
 }

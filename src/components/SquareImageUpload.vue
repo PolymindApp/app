@@ -12,12 +12,14 @@ const props = withDefaults(defineProps<{
   title?: string
   description?: string
   saveLabel?: string
+  outputSize?: number
 }>(), {
   loading: false,
   subject: 'image',
   title: 'Adjust image',
   description: 'Move the image, then use the slider to resize it.',
   saveLabel: 'Use image',
+  outputSize: 256,
 })
 
 const emit = defineEmits<{
@@ -63,6 +65,7 @@ const imageStyle = computed(() => {
     transform: `translate(calc(-50% + ${offsetX.value}px), calc(-50% + ${offsetY.value}px))`,
   }
 })
+const outputSize = computed(() => Math.min(512, Math.max(1, Math.round(props.outputSize))))
 
 watch(zoom, (nextZoom, previousZoom) => {
   if (previousZoom > 0 && nextZoom !== previousZoom) {
@@ -171,7 +174,7 @@ async function saveCrop() {
   compressing.value = true
   cropError.value = ''
   try {
-    const blob = await compressSquareImage(cropImage.value, crop.value, 256)
+    const blob = await compressSquareImage(cropImage.value, crop.value, outputSize.value)
     emit('upload', blob)
     closeCrop(true)
   } catch (cause) {

@@ -559,6 +559,7 @@ export interface JournalEntry {
   id: string
   title: string
   body: string
+  image: string
   occurredAt: string
   localDate: string
   timezoneOffset: number

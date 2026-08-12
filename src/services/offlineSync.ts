@@ -290,7 +290,9 @@ async function warmMediaCache(resources: SyncBootstrapResponse['resources']) {
     if (!data) continue
     add(data.avatar)
     if (typeof data.image_file === 'string' && data.image_file) {
-      add(`/flashcard-images/${data.image_file}`)
+      add(resource.resource === 'journal_entries'
+        ? `/journal-images/${data.image_file}`
+        : `/flashcard-images/${data.image_file}`)
     } else {
       add(data.image_url)
     }

@@ -1,8 +1,9 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   avatarCropMetrics,
   avatarCropSourceRect,
   clampAvatarCrop,
+  compressSquareImage,
   squareImageSourceIsValid,
   squareImageSourceSignature,
 } from './avatarImage'
@@ -59,6 +60,43 @@ describe('avatar cropping', () => {
 
     expect(normal.maxOffsetX).toBe(0)
     expect(zoomed.maxOffsetX).toBe(128)
+  })
+
+  it('renders a reflection upload into a 512 × 512 JPEG before persistence', async () => {
+    const drawImage = vi.fn()
+    const canvas = {
+      width: 0,
+      height: 0,
+      getContext: () => ({
+        imageSmoothingEnabled: false,
+        imageSmoothingQuality: 'low',
+        drawImage,
+      }),
+      toBlob: (callback: BlobCallback) => callback(new Blob(['image'], { type: 'image/jpeg' })),
+    }
+    const originalCreateElement = document.createElement.bind(document)
+    vi.spyOn(document, 'createElement').mockImplementation((tagName: string) => (
+      tagName === 'canvas'
+        ? canvas as unknown as HTMLCanvasElement
+        : originalCreateElement(tagName)
+    ))
+
+    await compressSquareImage({} as HTMLImageElement, {
+      viewportSize: 256,
+      imageWidth: 800,
+      imageHeight: 400,
+      zoom: 1,
+      offsetX: 0,
+      offsetY: 0,
+    }, 512)
+
+    expect(canvas.width).toBe(512)
+    expect(canvas.height).toBe(512)
+    expect(drawImage).toHaveBeenCalledWith(
+      expect.anything(),
+      200, 0, 400, 400,
+      0, 0, 512, 512,
+    )
   })
 
   it('accepts uploaded images and safe remote image URLs', () => {

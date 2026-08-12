@@ -497,6 +497,9 @@ final class SyncService
         if ($resource === 'flashcards') {
             $payload = $this->prepareFlashcardImagePayload($payload);
         }
+        if ($resource === 'journal_entries') {
+            $payload = $this->prepareJournalImagePayload($payload);
+        }
         if ($resource === 'flashcard_review_events' && ($payload['outcome'] ?? null) === 'eject') {
             $payload['outcome'] = 'ejected';
         }
@@ -563,6 +566,9 @@ final class SyncService
         if ($resource === 'flashcards') {
             $payload = $this->prepareFlashcardImagePayload($payload);
         }
+        if ($resource === 'journal_entries') {
+            $payload = $this->prepareJournalImagePayload($payload);
+        }
         if ($resource === 'flashcard_review_events' && ($payload['outcome'] ?? null) === 'eject') {
             $payload['outcome'] = 'ejected';
         }
@@ -613,6 +619,13 @@ final class SyncService
         $parameters['id'] = $recordId;
         $parameters['owner'] = $account;
         $statement->execute($parameters);
+        if ($resource === 'journal_entries' && array_key_exists('image_file', $accepted)) {
+            $oldFilename = $this->validSquareImageFilename($current['image_file'] ?? null);
+            $newFilename = $this->validSquareImageFilename($accepted['image_file'] ?? null);
+            if ($oldFilename !== null && $oldFilename !== $newFilename) {
+                $this->removeJournalImageFile($oldFilename);
+            }
+        }
         if ($resource === 'flashcard_review_sets') {
             $this->saveReviewSetPreferences(
                 $recordId,
@@ -630,8 +643,14 @@ final class SyncService
 
     private function deleteOwnedRecord(string $resource, array $config, string $recordId, string $account): array
     {
-        $this->ownedRecord($resource, $recordId, $account);
+        $current = $this->ownedRecord($resource, $recordId, $account);
         $this->cascadeDelete($resource, $recordId, $account);
+        if ($resource === 'journal_entries') {
+            $filename = $this->validSquareImageFilename($current['image_file'] ?? null);
+            if ($filename !== null) {
+                $this->removeJournalImageFile($filename);
+            }
+        }
         return [
             'status' => 'applied',
             'resource' => $this->deletedEnvelope($resource, $recordId, $account),
@@ -797,7 +816,11 @@ final class SyncService
             $values += ['created_at' => $now, 'updated_at' => $now];
         }
         if ($resource === 'journal_entries') {
-            $values += ['task_snapshot' => '', 'tracker_snapshot' => [], 'created_at' => $now, 'updated_at' => $now];
+            $values += [
+                'image_url' => '', 'image_file' => '',
+                'task_snapshot' => '', 'tracker_snapshot' => [],
+                'created_at' => $now, 'updated_at' => $now,
+            ];
         }
     }
 
@@ -1001,7 +1024,32 @@ final class SyncService
         ];
     }
 
-    private function storeSyncSquareJpeg(string $encoded, string $directory, string $label): string
+    private function prepareJournalImagePayload(array $payload): array
+    {
+        $encoded = $payload['image_url'] ?? null;
+        if (!is_string($encoded) || !str_starts_with($encoded, 'data:image/jpeg;base64,')) {
+            return $payload;
+        }
+        $filename = $this->storeSyncSquareJpeg(
+            $encoded,
+            dirname($this->config->databasePath) . DIRECTORY_SEPARATOR . 'journal-images',
+            'reflection image',
+            512,
+        );
+
+        return [
+            ...$payload,
+            'image_url' => '',
+            'image_file' => $filename,
+        ];
+    }
+
+    private function storeSyncSquareJpeg(
+        string $encoded,
+        string $directory,
+        string $label,
+        int $maxDimension = 256,
+    ): string
     {
         if (!str_starts_with($encoded, 'data:image/jpeg;base64,')) {
             throw new ApiException(422, "Upload a valid compressed JPEG {$label}.");
@@ -1014,9 +1062,12 @@ final class SyncService
         if (!is_array($details)
             || ($details['mime'] ?? null) !== 'image/jpeg'
             || ($details[0] ?? 0) < 1
-            || ($details[0] ?? 0) > 256
+            || ($details[0] ?? 0) > $maxDimension
             || ($details[1] ?? 0) !== ($details[0] ?? 0)) {
-            throw new ApiException(422, "The {$label} must be a square JPEG no larger than 256×256.");
+            throw new ApiException(
+                422,
+                "The {$label} must be a square JPEG no larger than {$maxDimension}×{$maxDimension}.",
+            );
         }
 
         if (!is_dir($directory) && !mkdir($directory, 0700, true) && !is_dir($directory)) {
@@ -1046,6 +1097,22 @@ final class SyncService
         }
 
         return $filename;
+    }
+
+    private function validSquareImageFilename(mixed $value): ?string
+    {
+        return is_string($value) && preg_match('/^[a-f0-9]{48}\.jpg$/', $value) === 1
+            ? $value
+            : null;
+    }
+
+    private function removeJournalImageFile(string $filename): void
+    {
+        $path = dirname($this->config->databasePath) . DIRECTORY_SEPARATOR . 'journal-images'
+            . DIRECTORY_SEPARATOR . $filename;
+        if (is_file($path)) {
+            @unlink($path);
+        }
     }
 
     private function changesAfter(string $account, int $cursor): array

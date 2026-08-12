@@ -31,7 +31,7 @@ self.addEventListener('fetch', event => {
   const url = new URL(request.url)
   if (request.method !== 'GET') return
   const mediaRequest = request.destination === 'image'
-    || /\/(?:avatars|flashcard-images)\/[a-f0-9]{48}\.jpg$/i.test(url.pathname)
+    || /\/(?:avatars|flashcard-images|journal-images)\/[a-f0-9]{48}\.jpg$/i.test(url.pathname)
   if (mediaRequest) {
     event.respondWith(staleWhileRevalidate(request, MEDIA_CACHE_NAME))
     return

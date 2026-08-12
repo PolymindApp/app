@@ -350,6 +350,8 @@ final class Schema
                 'fields' => [
                     'title' => self::text(160),
                     'body' => self::text(20000, true),
+                    'image_url' => self::text(2048),
+                    'image_file' => self::text(52),
                     'occurred_at' => self::timestamp(true),
                     'local_date' => self::dateKey(true),
                     'timezone_offset' => self::integer(-840, 840),

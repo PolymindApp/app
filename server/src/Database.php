@@ -113,7 +113,7 @@ final class Database
             'journal_entries' => [
                 'id', 'owner', 'title', 'body', 'occurred_at', 'local_date',
                 'timezone_offset', 'task', 'tracker', 'task_snapshot',
-                'tracker_snapshot', 'created_at', 'updated_at',
+                'tracker_snapshot', 'image_url', 'image_file', 'created_at', 'updated_at',
             ],
             'polymind_rate_limits' => ['rate_key', 'window_start', 'hits'],
             'polymind_auth_tokens' => [

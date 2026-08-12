@@ -751,6 +751,7 @@ describe('journaling task completion', () => {
       id,
       title: '',
       body: 'What went well today?',
+      image: '',
       occurredAt: `${localDate}T20:00:00.000Z`,
       localDate,
       timezoneOffset: 240,

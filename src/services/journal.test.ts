@@ -7,6 +7,7 @@ function entry(id: string, date: string, context: Partial<JournalEntry> = {}): J
     id,
     title: '',
     body: `Reflection ${id}`,
+    image: '',
     occurredAt: `${date}T12:00:00.000Z`,
     localDate: date,
     timezoneOffset: 240,

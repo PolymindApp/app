@@ -199,37 +199,50 @@ onMounted(async () => {
                   @keydown.enter="router.push({ name: 'journal-edit', params: { id: entry.id } })"
                   @keydown.space.prevent="router.push({ name: 'journal-edit', params: { id: entry.id } })"
                 >
-                  <div class="d-flex align-start justify-space-between ga-3">
+                  <div class="journal-entry__layout">
                     <div class="min-width-0">
-                      <h3 class="text-body-1 font-weight-black journal-entry__title">
-                        {{ journalEntryHeading(entry) }}
-                      </h3>
-                      <p v-if="entry.title" class="journal-entry__body mt-2">{{ entry.body }}</p>
+                      <div class="d-flex align-start justify-space-between ga-3">
+                        <div class="min-width-0">
+                          <h3 class="text-body-1 font-weight-black journal-entry__title">
+                            {{ journalEntryHeading(entry) }}
+                          </h3>
+                          <p v-if="entry.title" class="journal-entry__body mt-2">{{ entry.body }}</p>
+                        </div>
+                        <span class="text-caption muted flex-shrink-0">
+                          {{ format(new Date(entry.occurredAt), 'h:mm a') }}
+                        </span>
+                      </div>
+                      <div v-if="taskName(entry) || trackerContexts(entry).length" class="d-flex flex-wrap ga-2 mt-3">
+                        <v-chip
+                          v-if="taskName(entry)"
+                          size="small"
+                          variant="tonal"
+                          :color="sourceTask(entry)?.color || undefined"
+                          prepend-icon="mdi-lightning-bolt-outline"
+                        >
+                          {{ taskName(entry) }}
+                        </v-chip>
+                        <v-chip
+                          v-for="context in trackerContexts(entry)"
+                          :key="context.id"
+                          size="small"
+                          variant="tonal"
+                          :color="context.color"
+                          :prepend-icon="context.icon"
+                        >
+                          {{ context.name }}
+                        </v-chip>
+                      </div>
                     </div>
-                    <span class="text-caption muted flex-shrink-0">
-                      {{ format(new Date(entry.occurredAt), 'h:mm a') }}
-                    </span>
-                  </div>
-                  <div v-if="taskName(entry) || trackerContexts(entry).length" class="d-flex flex-wrap ga-2 mt-3">
-                    <v-chip
-                      v-if="taskName(entry)"
-                      size="small"
-                      variant="tonal"
-                      :color="sourceTask(entry)?.color || undefined"
-                      prepend-icon="mdi-lightning-bolt-outline"
-                    >
-                      {{ taskName(entry) }}
-                    </v-chip>
-                    <v-chip
-                      v-for="context in trackerContexts(entry)"
-                      :key="context.id"
-                      size="small"
-                      variant="tonal"
-                      :color="context.color"
-                      :prepend-icon="context.icon"
-                    >
-                      {{ context.name }}
-                    </v-chip>
+                    <v-img
+                      v-if="entry.image"
+                      class="journal-entry__image"
+                      :src="entry.image"
+                      :alt="`${journalEntryHeading(entry)} image`"
+                      width="88"
+                      aspect-ratio="1"
+                      cover
+                    />
                   </div>
                 </v-card>
               </div>
@@ -260,6 +273,8 @@ onMounted(async () => {
 .journal-entry-list { display: grid; gap: .75rem; }
 .journal-groups { gap: 1.25rem; }
 .journal-entry { overflow: hidden; cursor: pointer; }
+.journal-entry__layout { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: .875rem; }
+.journal-entry__image { overflow: hidden; border: .0625rem solid rgba(var(--v-theme-on-surface), .08); border-radius: .75rem; background: rgba(var(--v-theme-on-surface), .04); }
 .journal-entry:focus-visible { outline: .125rem solid rgba(var(--v-theme-secondary), .72); outline-offset: .1875rem; }
 .journal-entry__title,
 .journal-entry__body { overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; }

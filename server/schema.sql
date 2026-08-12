@@ -524,6 +524,8 @@ CREATE TABLE journal_entries (
     owner TEXT NOT NULL,
     title VARCHAR(160) NOT NULL DEFAULT '',
     body TEXT NOT NULL DEFAULT '',
+    image_url TEXT NOT NULL DEFAULT '',
+    image_file VARCHAR(52) NOT NULL DEFAULT '',
     occurred_at TEXT NOT NULL DEFAULT '',
     local_date TEXT NOT NULL DEFAULT '',
     timezone_offset INTEGER NOT NULL DEFAULT 0,

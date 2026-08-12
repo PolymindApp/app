@@ -132,6 +132,30 @@ final class Api
             ) {
                 $this->serveFlashcardImage($flashcardImageFileMatches[1]);
             }
+            if (
+                ($method === 'POST' || $method === 'DELETE')
+                && preg_match(
+                    '#^/journal-entries/([a-zA-Z0-9_-]{1,64})/image/?$#',
+                    $path,
+                    $journalImageMatches,
+                ) === 1
+            ) {
+                $this->journalImage(
+                    $method,
+                    $journalImageMatches[1],
+                    $this->authenticate(),
+                );
+            }
+            if (
+                $method === 'GET'
+                && preg_match(
+                    '#^/journal-images/([a-f0-9]{48}\.jpg)$#',
+                    $path,
+                    $journalImageFileMatches,
+                ) === 1
+            ) {
+                $this->serveJournalImage($journalImageFileMatches[1]);
+            }
             if ($method === 'GET' && $path === '/image-library/search') {
                 $this->searchImageLibrary($this->authenticate());
             }
@@ -1056,6 +1080,93 @@ final class Api
         exit;
     }
 
+    private function journalImage(string $method, string $id, array $user): never
+    {
+        $owner = (string) $user['id'];
+        $this->rateLimit('journal-image-update:' . $owner, 60, 900);
+        $entry = $this->ownedRecord('journal_entries', $id, $owner);
+        $oldFilename = $this->validAvatarFilename($entry['image_file'] ?? null);
+        $updated = $this->now();
+
+        if ($method === 'DELETE') {
+            $statement = $this->database->pdo->prepare(
+                "UPDATE journal_entries
+                 SET image_url = '', image_file = '', updated_at = :updated_at
+                 WHERE id = :id AND owner = :owner",
+            );
+            $statement->execute([
+                'updated_at' => $updated,
+                'id' => $id,
+                'owner' => $owner,
+            ]);
+            if ($oldFilename !== null) {
+                $this->removeJournalImageFile($oldFilename);
+            }
+            $this->respond($this->normalizeRecord(
+                $this->requireCollection('journal_entries'),
+                $this->ownedRecord('journal_entries', $id, $owner),
+            ));
+        }
+
+        $bytes = $this->compressedSquareJpegBytes(
+            $this->jsonBody(),
+            'reflection image',
+            512,
+        );
+        $directory = $this->journalImageDirectory();
+        $filename = $this->storeSquareJpeg($bytes, $directory, 'reflection image');
+        $destination = $directory . DIRECTORY_SEPARATOR . $filename;
+
+        try {
+            $statement = $this->database->pdo->prepare(
+                "UPDATE journal_entries
+                 SET image_url = '', image_file = :image_file, updated_at = :updated_at
+                 WHERE id = :id AND owner = :owner",
+            );
+            $statement->execute([
+                'image_file' => $filename,
+                'updated_at' => $updated,
+                'id' => $id,
+                'owner' => $owner,
+            ]);
+        } catch (Throwable $exception) {
+            @unlink($destination);
+            throw $exception;
+        }
+
+        if ($oldFilename !== null && !hash_equals($oldFilename, $filename)) {
+            $this->removeJournalImageFile($oldFilename);
+        }
+        $this->respond($this->normalizeRecord(
+            $this->requireCollection('journal_entries'),
+            $this->ownedRecord('journal_entries', $id, $owner),
+        ));
+    }
+
+    private function serveJournalImage(string $filename): never
+    {
+        $validated = $this->validAvatarFilename($filename);
+        if ($validated === null) {
+            throw new ApiException(404, 'Reflection image not found.');
+        }
+        $path = $this->journalImageDirectory() . DIRECTORY_SEPARATOR . $validated;
+        if (!is_file($path) || !is_readable($path)) {
+            throw new ApiException(404, 'Reflection image not found.');
+        }
+        $contents = file_get_contents($path);
+        if ($contents === false) {
+            throw new ApiException(404, 'Reflection image not found.');
+        }
+
+        header('Content-Type: image/jpeg');
+        header('Cache-Control: public, max-age=31536000, immutable');
+        header('Content-Length: ' . strlen($contents));
+        header('Content-Disposition: inline; filename="reflection.jpg"');
+        header('ETag: "' . substr($validated, 0, 48) . '"');
+        echo $contents;
+        exit;
+    }
+
     private function searchImageLibrary(array $user): never
     {
         $query = trim((string) ($_GET['query'] ?? ''));
@@ -1342,7 +1453,7 @@ final class Api
         ));
     }
 
-    private function compressedSquareJpegBytes(array $body, string $label): string
+    private function compressedSquareJpegBytes(array $body, string $label, int $maxDimension = 256): string
     {
         $encoded = $body['image'] ?? null;
         if (!is_string($encoded) || !str_starts_with($encoded, 'data:image/jpeg;base64,')) {
@@ -1361,13 +1472,13 @@ final class Api
             !is_array($details)
             || ($details['mime'] ?? null) !== 'image/jpeg'
             || ($details[0] ?? 0) < 1
-            || ($details[0] ?? 0) > 256
+            || ($details[0] ?? 0) > $maxDimension
             || ($details[1] ?? 0) !== ($details[0] ?? 0)
         ) {
             throw new ApiException(
                 422,
-                "The {$label} must be a square JPEG no larger than 256×256.",
-                ['image' => 'square:max:256'],
+                "The {$label} must be a square JPEG no larger than {$maxDimension}×{$maxDimension}.",
+                ['image' => 'square:max:' . $maxDimension],
             );
         }
         return $bytes;
@@ -1444,6 +1555,23 @@ final class Api
     private function flashcardImageDirectory(): string
     {
         return dirname($this->config->databasePath) . DIRECTORY_SEPARATOR . 'flashcard-images';
+    }
+
+    private function journalImageDirectory(): string
+    {
+        return dirname($this->config->databasePath) . DIRECTORY_SEPARATOR . 'journal-images';
+    }
+
+    private function removeJournalImageFile(string $filename): void
+    {
+        $validated = $this->validAvatarFilename($filename);
+        if ($validated === null) {
+            return;
+        }
+        $path = $this->journalImageDirectory() . DIRECTORY_SEPARATOR . $validated;
+        if (is_file($path)) {
+            @unlink($path);
+        }
     }
 
     private function removeFlashcardImageFileIfUnused(string $filename): void
@@ -2430,6 +2558,7 @@ final class Api
             $this->rejectFields($body, ['flashcard_snapshot']);
         }
         if ($collection['name'] === 'journal_entries') {
+            $this->rejectFields($body, ['image_url', 'image_file']);
             $body = $this->normalizeJournalTrackerInput($body);
             $body += ['tracker' => []];
         }
@@ -2502,7 +2631,12 @@ final class Api
             $values = array_merge(
                 $values,
                 $this->journalContextSnapshots($values, (string) $user['id']),
-                ['created_at' => $now, 'updated_at' => $now],
+                [
+                    'image_url' => '',
+                    'image_file' => '',
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ],
             );
         }
 
@@ -2575,6 +2709,7 @@ final class Api
             }
         }
         if ($collection['name'] === 'journal_entries') {
+            $this->rejectFields($body, ['image_url', 'image_file']);
             $body = $this->normalizeJournalTrackerInput($body);
         }
         $values = $this->validateRecordInput($collection, $body, false);
@@ -5329,7 +5464,7 @@ final class Api
     private function deleteRecord(array $collection, string $id, array $user): never
     {
         $owner = (string) $user['id'];
-        $this->ownedRecord($collection['name'], $id, $owner);
+        $existing = $this->ownedRecord($collection['name'], $id, $owner);
         if (in_array($collection['name'], ['flashcard_review_sessions', 'flashcard_review_events'], true)) {
             throw new ApiException(405, 'Flashcard review history cannot be deleted directly.');
         }
@@ -5354,6 +5489,13 @@ final class Api
                 $pdo->rollBack();
             }
             throw $exception;
+        }
+
+        if ($collection['name'] === 'journal_entries') {
+            $filename = $this->validAvatarFilename($existing['image_file'] ?? null);
+            if ($filename !== null) {
+                $this->removeJournalImageFile($filename);
+            }
         }
 
         $this->respond(null, 204);

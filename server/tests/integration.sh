@@ -116,7 +116,7 @@ suffix="$(php -r 'echo bin2hex(random_bytes(5));')"
 password="correct-horse-battery"
 
 migration_count="$(sqlite3 "$test_db" 'SELECT COUNT(*) FROM polymind_schema_migrations;')"
-[[ "$migration_count" == 35 ]] || {
+[[ "$migration_count" == 36 ]] || {
   echo "The API did not apply the complete database migration sequence." >&2
   exit 1
 }
@@ -1177,6 +1177,94 @@ php -r '
 ' "$tracker_id" "$second_tracker_id" <<<"$journal_response"
 [[ "$journal_task_snapshot" == "Secure task" && "$journal_created_at" =~ T ]] || {
   echo "A journal entry did not retain its task and tracker context snapshots." >&2
+  exit 1
+}
+
+journal_image_base64="$(php -r '
+  if (!function_exists("imagecreatetruecolor")) {
+      fwrite(STDERR, "The GD extension is required for journal image integration tests.\n");
+      exit(1);
+  }
+  $image = imagecreatetruecolor(512, 512);
+  $color = imagecolorallocate($image, 80, 120, 200);
+  imagefill($image, 0, 0, $color);
+  ob_start();
+  imagejpeg($image, null, 86);
+  $bytes = ob_get_clean();
+  imagedestroy($image);
+  echo base64_encode($bytes);
+')"
+sync_journal_image_body="$(php -r '
+  echo json_encode([
+      "clientId" => "integration-client",
+      "cursor" => 0,
+      "operations" => [[
+          "operationId" => "sync-journal-image",
+          "resource" => "journal_entries",
+          "recordId" => $argv[1],
+          "kind" => "patch",
+          "payload" => [
+              "image_url" => "data:image/jpeg;base64," . $argv[2],
+              "image_file" => "",
+          ],
+          "fieldClocks" => [
+              "image_url" => "9999999999999-000003-integration-client",
+              "image_file" => "9999999999999-000003-integration-client",
+          ],
+          "dependsOn" => [],
+      ]],
+  ], JSON_THROW_ON_ERROR);
+' "$journal_id" "$journal_image_base64")"
+sync_journal_image_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "$sync_journal_image_body" \
+  "$api_url/sync/exchange")"
+journal_image_file="$(php -r '
+  $response = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+  $ack = $response["acknowledgements"][0] ?? [];
+  if (!in_array(($ack["status"] ?? null), ["applied", "merged"], true)) {
+      fwrite(STDERR, "Offline sync did not attach the reflection image.\n");
+      exit(1);
+  }
+  echo $ack["resource"]["data"]["image_file"] ?? "";
+' <<<"$sync_journal_image_response")"
+[[ "$journal_image_file" =~ ^[a-f0-9]{48}\.jpg$ ]] || {
+  echo "Offline sync did not store a reflection image file." >&2
+  exit 1
+}
+curl --silent --show-error --fail \
+  --output "$test_dir/journal-image.jpg" \
+  "$api_url/journal-images/$journal_image_file"
+php -r '
+  $details = getimagesize($argv[1]);
+  if (!$details || $details[0] !== 512 || $details[1] !== 512) {
+      fwrite(STDERR, "The synced reflection image dimensions are invalid.\n");
+      exit(1);
+  }
+' "$test_dir/journal-image.jpg"
+
+journal_image_remove_response="$(curl --silent --show-error --fail \
+  -X DELETE -H "Authorization: Bearer $alice_token" \
+  "$api_url/journal-entries/$journal_id/image")"
+[[ -z "$(json_field image_file <<<"$journal_image_remove_response")" ]] || {
+  echo "Removing a reflection image did not clear the record." >&2
+  exit 1
+}
+removed_journal_image_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  "$api_url/journal-images/$journal_image_file")"
+[[ "$removed_journal_image_status" == 404 ]] || {
+  echo "A removed reflection image file is still available." >&2
+  exit 1
+}
+journal_image_response="$(curl --silent --show-error --fail \
+  -X POST -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "{\"image\":\"data:image/jpeg;base64,$journal_image_base64\"}" \
+  "$api_url/journal-entries/$journal_id/image")"
+journal_image_file="$(json_field image_file <<<"$journal_image_response")"
+[[ "$journal_image_file" =~ ^[a-f0-9]{48}\.jpg$ ]] || {
+  echo "The reflection image endpoint did not store its upload." >&2
   exit 1
 }
 
@@ -2813,6 +2901,12 @@ journal_delete_status="$(curl --silent --output /dev/null --write-out '%{http_co
   "$api_url/collections/journal_entries/records/$journal_id")"
 [[ "$journal_delete_status" == 204 ]] || {
   echo "Journal entry deletion failed." >&2
+  exit 1
+}
+deleted_journal_image_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  "$api_url/journal-images/$journal_image_file")"
+[[ "$deleted_journal_image_status" == 404 ]] || {
+  echo "Deleting a reflection did not remove its image file." >&2
   exit 1
 }
 

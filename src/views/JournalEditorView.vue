@@ -7,10 +7,12 @@ import AppForm from '@/components/AppForm.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import DateTimePickerField from '@/components/DateTimePickerField.vue'
 import FormActionBar from '@/components/FormActionBar.vue'
+import JournalImageField from '@/components/JournalImageField.vue'
+import { squareImageSourceSignature } from '@/services/avatarImage'
 import { useJournalStore } from '@/stores/journal'
 import { useTaskStore } from '@/stores/tasks'
 import { useTrackingStore } from '@/stores/tracking'
-import type { JournalEntry } from '@/types/domain'
+import type { JournalEntry, SquareImageSourceValue } from '@/types/domain'
 
 const route = useRoute()
 const router = useRouter()
@@ -23,6 +25,7 @@ const allowAutomaticFocus = Capacitor.getPlatform() !== 'android'
 const form = ref()
 const title = ref('')
 const body = ref('')
+const image = ref<SquareImageSourceValue>(reflectionImageValue())
 const occurredLocal = ref('')
 const task = ref<string>()
 const trackers = ref<string[]>([])
@@ -60,6 +63,7 @@ const trackerItems = computed(() => [...trackingStore.trackers]
 const signature = computed(() => JSON.stringify({
   title: title.value,
   body: body.value,
+  image: squareImageSourceSignature(image.value),
   occurredLocal: occurredLocal.value,
   task: task.value || '',
   trackers: trackers.value,
@@ -75,6 +79,16 @@ function defaultOccurredLocal() {
   const date = queryDate && isValid(queryDate) ? new Date(queryDate) : new Date()
   if (!isToday(date)) date.setHours(12, 0, 0, 0)
   return format(date, "yyyy-MM-dd'T'HH:mm")
+}
+
+function reflectionImageValue(existingUrl = ''): SquareImageSourceValue {
+  const source = existingUrl ? 'upload' : 'none'
+  return {
+    source,
+    url: '',
+    existingUrl,
+    existingSource: source,
+  }
 }
 
 function destinationQuery() {
@@ -95,6 +109,7 @@ function destinationRoute() {
 function applyEntry(entry: JournalEntry) {
   title.value = entry.title
   body.value = entry.body
+  image.value = reflectionImageValue(entry.image)
   occurredLocal.value = format(new Date(entry.occurredAt), "yyyy-MM-dd'T'HH:mm")
   task.value = entry.task
   trackers.value = [...entry.trackers]
@@ -157,7 +172,7 @@ async function save() {
       timezoneOffset: occurred.getTimezoneOffset(),
       task: task.value,
       trackers: trackers.value,
-    })
+    }, image.value)
     await router.replace(destinationRoute())
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Could not save this reflection.'
@@ -213,6 +228,11 @@ async function removeEntry() {
             label="Title (optional)"
             maxlength="160"
             counter
+          />
+          <JournalImageField
+            v-model="image"
+            :loading="saving"
+            @error="error = $event"
           />
           <DateTimePickerField v-model="occurredLocal" label="When" />
         </div>
