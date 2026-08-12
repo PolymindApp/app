@@ -28,6 +28,7 @@ const working = ref(false)
 const reorderingReviewSets = ref(false)
 const notice = ref('')
 const recentWeekStart = ref(startOfWeek(new Date(), { weekStartsOn: 1 }))
+const expandedRecentReviewDays = ref(new Set([format(new Date(), 'yyyy-MM-dd')]))
 const ownedReviewSets = computed(() => store.reviewSets.filter(set => set.accessRole === 'owner'))
 const sharedReviewSets = computed(() => store.reviewSets.filter(set => set.accessRole !== 'owner'))
 const selectedActions = computed(() => selectedReviewSet.value
@@ -56,6 +57,17 @@ function tagName(reviewSet: FlashcardReviewSet, id: string) {
 
 function recentReviewColor(session: FlashcardReviewSession) {
   return session.status === 'completed' ? 'success' : 'warning'
+}
+
+function isRecentReviewDayExpanded(dayKey: string) {
+  return expandedRecentReviewDays.value.has(dayKey)
+}
+
+function toggleRecentReviewDay(dayKey: string) {
+  const nextExpandedDays = new Set(expandedRecentReviewDays.value)
+  if (nextExpandedDays.has(dayKey)) nextExpandedDays.delete(dayKey)
+  else nextExpandedDays.add(dayKey)
+  expandedRecentReviewDays.value = nextExpandedDays
 }
 
 function openReviewSetActions(reviewSet: FlashcardReviewSet) {
@@ -393,51 +405,68 @@ async function reorderReviewSets(result: LongPressDragResult) {
             class="recent-review-group"
           >
             <v-divider v-if="groupIndex" />
-            <div class="recent-review-group__heading px-4 pt-3 pb-1">
+            <v-btn
+              block
+              variant="text"
+              class="recent-review-group__heading px-4"
+              :aria-expanded="isRecentReviewDayExpanded(group.key)"
+              :aria-controls="`recent-reviews-${group.key}`"
+              @click="toggleRecentReviewDay(group.key)"
+            >
               <h3>{{ group.label }}</h3>
-              <span>{{ group.sessions.length }}</span>
-            </div>
-            <v-list bg-color="transparent">
-              <v-list-item
-                v-for="session in group.sessions"
-                :key="session.id"
-                class="recent-review-item"
-                :title="session.name"
+              <span class="recent-review-group__count">{{ group.sessions.length }}</span>
+              <v-icon
+                :icon="isRecentReviewDayExpanded(group.key) ? 'mdi-chevron-up' : 'mdi-chevron-down'"
+                size="small"
+              />
+            </v-btn>
+            <v-expand-transition>
+              <v-list
+                v-show="isRecentReviewDayExpanded(group.key)"
+                :id="`recent-reviews-${group.key}`"
+                bg-color="transparent"
               >
-                <template #prepend>
-                  <v-icon
-                    :icon="session.status === 'completed' ? 'mdi-check-circle-outline' : 'mdi-stop-circle-outline'"
-                    :color="recentReviewColor(session)"
-                  />
-                </template>
-                <span class="recent-review-meta">
-                  {{ format(new Date(session.startedAt), 'h:mm a') }} · {{ session.mode === 'passive' ? 'Passive' : 'Manual' }}
-                </span>
-                <div class="recent-review-progress">
-                  <v-progress-linear
-                    :model-value="flashcardReviewProgressPercent(session)"
-                    :color="recentReviewColor(session)"
-                    bg-color="white"
-                    :bg-opacity="0.14"
-                    height="4"
-                    rounded
-                    :aria-label="`${session.name}: ${flashcardReviewProgressPercent(session)}% accomplished`"
-                  />
-                </div>
-                <div class="recent-review-stats">
-                  <span v-if="session.mode === 'passive'">{{ session.viewedCount }} viewed</span>
-                  <template v-else>
-                    <span>{{ session.successCount }} success</span>
-                    <span>{{ session.errorCount }} error</span>
+                <v-list-item
+                  v-for="session in group.sessions"
+                  :key="session.id"
+                  class="recent-review-item"
+                  :title="session.name"
+                >
+                  <template #prepend>
+                    <v-icon
+                      :icon="session.status === 'completed' ? 'mdi-check-circle-outline' : 'mdi-stop-circle-outline'"
+                      :color="recentReviewColor(session)"
+                    />
                   </template>
-                  <span v-if="sessionAccuracy(session) !== undefined">{{ sessionAccuracy(session) }}% accuracy</span>
-                  <span v-if="session.ejectedCount">{{ session.ejectedCount }} ejected</span>
-                </div>
-                <template #append>
-                  <strong class="recent-review-time text-caption">{{ formatReviewDuration(session.elapsedSeconds) }}</strong>
-                </template>
-              </v-list-item>
-            </v-list>
+                  <span class="recent-review-meta">
+                    {{ format(new Date(session.startedAt), 'h:mm a') }} · {{ session.mode === 'passive' ? 'Passive' : 'Manual' }}
+                  </span>
+                  <div class="recent-review-progress">
+                    <v-progress-linear
+                      :model-value="flashcardReviewProgressPercent(session)"
+                      :color="recentReviewColor(session)"
+                      bg-color="white"
+                      :bg-opacity="0.14"
+                      height="4"
+                      rounded
+                      :aria-label="`${session.name}: ${flashcardReviewProgressPercent(session)}% accomplished`"
+                    />
+                  </div>
+                  <div class="recent-review-stats">
+                    <span v-if="session.mode === 'passive'">{{ session.viewedCount }} viewed</span>
+                    <template v-else>
+                      <span>{{ session.successCount }} success</span>
+                      <span>{{ session.errorCount }} error</span>
+                    </template>
+                    <span v-if="sessionAccuracy(session) !== undefined">{{ sessionAccuracy(session) }}% accuracy</span>
+                    <span v-if="session.ejectedCount">{{ session.ejectedCount }} ejected</span>
+                  </div>
+                  <template #append>
+                    <strong class="recent-review-time text-caption">{{ formatReviewDuration(session.elapsedSeconds) }}</strong>
+                  </template>
+                </v-list-item>
+              </v-list>
+            </v-expand-transition>
           </section>
         </v-card>
         <v-card
@@ -543,9 +572,10 @@ async function reorderReviewSets(result: LongPressDragResult) {
 .shared-review-set__owner { display: flex; align-items: center; gap: .25rem; color: rgba(var(--v-theme-on-surface), .56); font-size: .7rem; font-weight: 800; }
 .review-history-content-enter-active { transition: opacity 180ms ease, transform 220ms cubic-bezier(.22, 1, .36, 1); }
 .review-history-content-enter-from { opacity: 0; transform: translateY(.75rem); }
-.recent-review-group__heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.recent-review-group__heading { min-height: 2.75rem; }
+.recent-review-group__heading :deep(.v-btn__content) { width: 100%; justify-content: flex-start; gap: .5rem; }
 .recent-review-group__heading h3 { font-size: .75rem; font-weight: 900; letter-spacing: .04em; }
-.recent-review-group__heading span { color: rgba(var(--v-theme-on-surface), .54); font-size: .68rem; font-weight: 800; }
+.recent-review-group__count { margin-left: auto; color: rgba(var(--v-theme-on-surface), .54); font-size: .68rem; font-weight: 800; }
 .recent-review-meta { display: block; margin-top: .25rem; overflow: hidden; color: rgba(var(--v-theme-on-surface), .62); font-size: .875rem; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
 .recent-review-progress { margin-top: .45rem; }
 .recent-review-stats { display: flex; flex-wrap: wrap; gap: .3rem .65rem; margin-top: .45rem; color: rgba(var(--v-theme-on-surface), .58); font-size: .7rem; }
