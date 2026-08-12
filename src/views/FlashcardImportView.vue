@@ -149,8 +149,9 @@ async function importCards() {
       class="mb-4"
     >
       <strong>Ask an AI to prepare the CSV</strong>
-      <p class="text-body-2 mt-2">Copy this prompt and adjust the topic, languages, or number of rows:</p>
-      <blockquote class="flashcard-import-prompt mt-3">“{{ activeAiPrompt }}”</blockquote>
+      <p class="text-body-2 mt-2">
+        Copy a ready-to-use prompt, paste it into your preferred AI, then adjust the topic, languages, or number of cards.
+      </p>
       <div class="flashcard-import-prompt-actions mt-3">
         <v-btn
           size="small"
@@ -261,7 +262,6 @@ async function importCards() {
 </template>
 
 <style scoped>
-.flashcard-import-prompt { padding-left: 1rem; border-left: .1875rem solid rgba(var(--v-theme-info), .62); color: rgba(var(--v-theme-on-surface), .82); font-size: .82rem; line-height: 1.55; }
 .flashcard-import-prompt-actions { display: flex; justify-content: flex-end; }
 .flashcard-import-prompt-actions :deep(.v-btn) { min-height: 2.75rem; }
 .flashcard-import-example { padding: .875rem; overflow-x: auto; border: .0625rem solid rgba(var(--v-theme-on-surface), .1); border-radius: .75rem; background: rgba(var(--v-theme-on-surface), .045); color: rgba(var(--v-theme-on-surface), .72); font-size: .72rem; line-height: 1.6; white-space: pre; }
