@@ -86,7 +86,7 @@ function selectKind(kind: IntervalStepKind | null) {
     option.title.localeCompare(currentName, undefined, { sensitivity: 'accent' }) === 0,
   )
   props.node.kind = kind
-  if (kind === 'train' || kind === 'prepare') props.node.flashcardReviewEnabled = false
+  props.node.flashcardReviewEnabled = kind !== 'train' && kind !== 'prepare'
   if (!currentName || hasTypeName) {
     props.node.name = INTERVAL_STEP_TYPES.find((option) => option.value === kind)?.title || kind
   }

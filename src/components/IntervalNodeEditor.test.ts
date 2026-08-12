@@ -151,6 +151,12 @@ describe('IntervalNodeEditor interval type select', () => {
 
     expect(node.kind).toBe('prepare')
     expect(node.flashcardReviewEnabled).toBe(false)
+
+    wrapper.findComponent(VSelectStub).vm.$emit('update:modelValue', 'work')
+    await wrapper.vm.$nextTick()
+
+    expect(node.kind).toBe('work')
+    expect(node.flashcardReviewEnabled).toBe(true)
   })
 
   it('shows the final-round skip option when the parent sequence allows it', async () => {
