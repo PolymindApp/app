@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Camera, CameraDirection, EncodingType } from '@capacitor/camera'
 import { Capacitor } from '@capacitor/core'
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
@@ -30,7 +31,6 @@ const emit = defineEmits<{
 }>()
 
 const existingImageInput = ref<HTMLInputElement>()
-const cameraInput = ref<HTMLInputElement>()
 const cropImage = ref<HTMLImageElement>()
 const cropViewport = ref<HTMLElement>()
 const sourceActions = ref(false)
@@ -44,6 +44,7 @@ const zoom = ref(1)
 const offsetX = ref(0)
 const offsetY = ref(0)
 const compressing = ref(false)
+const cameraOpening = ref(false)
 const mobilePlatform = ['android', 'ios'].includes(Capacitor.getPlatform())
 let resizeObserver: ResizeObserver | undefined
 let drag: {
@@ -94,9 +95,32 @@ function choose() {
   existingImageInput.value?.click()
 }
 
-function takePhoto() {
+async function takePhoto() {
   sourceActions.value = false
-  cameraInput.value?.click()
+  if (cameraOpening.value) return
+  cameraOpening.value = true
+  try {
+    const photo = await Camera.takePhoto({
+      quality: 90,
+      targetWidth: 2048,
+      targetHeight: 2048,
+      correctOrientation: true,
+      encodingType: EncodingType.JPEG,
+      saveToGallery: false,
+      cameraDirection: CameraDirection.Rear,
+    })
+    const response = await fetch(photo.webPath)
+    if (!response.ok) throw new Error('The captured photo could not be opened.')
+    const blob = await response.blob()
+    openImage(blob.type.startsWith('image/') ? blob : blob.slice(0, blob.size, 'image/jpeg'))
+  } catch (cause) {
+    if (cameraErrorCode(cause) === 'OS-PLUG-CAMR-0006') return
+    emit('error', cause instanceof Error
+      ? cause.message
+      : 'The camera could not be opened.')
+  } finally {
+    cameraOpening.value = false
+  }
 }
 
 function chooseExisting() {
@@ -109,6 +133,10 @@ function handleFile(event: Event) {
   const file = input.files?.[0]
   input.value = ''
   if (!file) return
+  openImage(file)
+}
+
+function openImage(file: Blob) {
   if (!file.type.startsWith('image/')) {
     emit('error', 'Choose an image file.')
     return
@@ -138,6 +166,11 @@ function handleFile(event: Event) {
     emit('error', 'This image format cannot be opened on this device.')
   }
   probe.src = objectUrl
+}
+
+function cameraErrorCode(cause: unknown) {
+  if (!cause || typeof cause !== 'object' || !('code' in cause)) return ''
+  return typeof cause.code === 'string' ? cause.code : ''
 }
 
 function observeViewport() {
@@ -230,16 +263,6 @@ defineExpose({ choose })
     :aria-label="`Choose a ${subject} image`"
     @change="handleFile"
   />
-  <input
-    ref="cameraInput"
-    class="square-image-file-input"
-    type="file"
-    accept="image/*"
-    capture="environment"
-    :aria-label="`Take a ${subject} photo`"
-    @change="handleFile"
-  />
-
   <ActionBottomSheet
     v-model="sourceActions"
     title="Add image"
