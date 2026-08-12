@@ -164,20 +164,20 @@ async function openReviewSet(reviewSet: FlashcardReviewSet) {
         </div>
         <div class="card-library-summary__actions">
           <v-btn
-            color="secondary"
-            size="large"
-            prepend-icon="mdi-card-plus-outline"
-            :to="{ name: 'flashcard-new' }"
-          >
-            Add card
-          </v-btn>
-          <v-btn
             variant="tonal"
             size="large"
             prepend-icon="mdi-card-multiple-outline"
             :to="{ name: 'flashcard-cards' }"
           >
-            Manage cards
+            Manage
+          </v-btn>
+          <v-btn
+            color="secondary"
+            size="large"
+            prepend-icon="mdi-card-plus-outline"
+            :to="{ name: 'flashcard-new' }"
+          >
+            Add new
           </v-btn>
         </div>
       </v-card>
