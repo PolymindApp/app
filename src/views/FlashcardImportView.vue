@@ -155,8 +155,6 @@ async function importCards() {
             Front and back are required. Note and tags are optional; separate multiple tags with a vertical bar (|).
           </template>
         </p>
-        <pre class="flashcard-import-example mb-4">{{ CSV_EXAMPLE }}</pre>
-
         <v-textarea
           v-model="csv"
           rows="12"
@@ -171,6 +169,8 @@ async function importCards() {
         >
           <template #label>CSV table <span class="required-mark">*</span></template>
         </v-textarea>
+
+        <pre class="flashcard-import-example mt-4">{{ CSV_EXAMPLE }}</pre>
 
         <v-alert
           v-if="parsed.errors.length"
