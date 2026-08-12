@@ -1117,7 +1117,7 @@ async function leaveRunner() {
           <div v-if="accuracy !== undefined"><strong>{{ accuracy }}%</strong><span>Accuracy</span></div>
           <div><strong>{{ session.ejectedCount }}</strong><span>Ejected</span></div>
         </div>
-        <v-btn class="completion-panel__done" size="large" color="secondary" @click="router.replace(exitDestination)">Done</v-btn>
+        <v-btn class="completion-panel__done" size="x-large" color="secondary" @click="router.replace(exitDestination)">Done</v-btn>
       </section>
 
       <section v-else-if="currentCard" class="runner-body">
@@ -1571,8 +1571,8 @@ async function leaveRunner() {
 .completion-panel__icon { display: grid; width: 6rem; height: 6rem; place-items: center; border-radius: 2rem; background: rgba(var(--v-theme-secondary), .16); color: rgb(var(--v-theme-secondary)); }
 .completion-panel h1 { font-size: clamp(2.6rem, 10vw, 5rem); }
 .completion-panel__done { width: 100%; flex: 0 0 auto; }
-.completion-stats { display: grid; width: 100%; margin: 1rem 0; grid-template-columns: repeat(auto-fit, minmax(6rem, 1fr)); gap: .6rem; }
-.completion-stats > div { display: flex; padding: 1rem .5rem; border-radius: 1rem; flex-direction: column; background: rgba(var(--v-theme-on-surface), .06); }
+.completion-stats { display: grid; width: 100%; margin: 1rem 0; grid-template-columns: repeat(auto-fit, minmax(6rem, 1fr)); align-items: stretch; gap: .6rem; }
+.completion-stats > div { display: flex; padding: 1rem .5rem; border-radius: 1rem; align-self: stretch; flex-direction: column; background: rgba(var(--v-theme-on-surface), .06); }
 .completion-stats strong { font-size: 1.25rem; }
 .completion-stats span { margin-top: .2rem; color: rgba(var(--v-theme-on-surface), .52); font-size: .65rem; font-weight: 800; text-transform: uppercase; }
 @media (prefers-reduced-motion: reduce) {
