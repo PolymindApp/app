@@ -186,11 +186,25 @@ const flashcardReviewElapsedMs = computed(() => {
   const review = item?.flashcardReview
   if (!item || !review) return 0
   if (!review.speechEnabled) return sessionElapsedMs.value
-  return intervalFlashcardReviewElapsedMs(
+  const measured = item.runtime.flashcardReviewAccumulatedMs
+  if (!Number.isFinite(measured)) {
+    return intervalFlashcardReviewElapsedMs(
+      item.definition,
+      item.runtime.stepIndex,
+      displayRemainingMs.value,
+    )
+  }
+  const persistedPosition = intervalFlashcardReviewElapsedMs(
+    item.definition,
+    item.runtime.stepIndex,
+    item.runtime.remainingMs,
+  )
+  const displayedPosition = intervalFlashcardReviewElapsedMs(
     item.definition,
     item.runtime.stepIndex,
     displayRemainingMs.value,
   )
+  return Math.max(0, measured! + Math.max(0, displayedPosition - persistedPosition))
 })
 const flashcardPhase = computed(() => session.value?.flashcardReview
   ? intervalFlashcardPhase(session.value.flashcardReview, flashcardReviewElapsedMs.value)

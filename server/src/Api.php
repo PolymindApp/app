@@ -5153,6 +5153,12 @@ final class Api
             return 0;
         }
 
+        if (is_numeric($runtime['flashcardReviewAccumulatedMs'] ?? null)) {
+            $reviewElapsedMs = max(0.0, (float) $runtime['flashcardReviewAccumulatedMs']);
+            $sessionElapsedMs = max(0.0, (float) ($session['elapsed_seconds'] ?? 0) * 1000);
+            return (int) round(min($reviewElapsedMs, $sessionElapsedMs) / 1000);
+        }
+
         $steps = [];
         $nodes = isset($definition['children']) && is_array($definition['children'])
             ? $definition['children']

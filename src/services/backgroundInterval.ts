@@ -82,11 +82,14 @@ export async function syncBackgroundInterval(session: IntervalSession) {
       steps: nativeSteps(session),
       stepIndex: runtime.stepIndex,
       remainingMs: Math.max(1, Math.round(runtime.remainingMs)),
-      elapsedMs: Math.max(0, Math.round(intervalFlashcardReviewElapsedMs(
-        session.definition,
-        runtime.stepIndex,
-        runtime.remainingMs,
-      ))),
+      elapsedMs: Math.max(0, Math.round(
+        runtime.flashcardReviewAccumulatedMs
+          ?? intervalFlashcardReviewElapsedMs(
+            session.definition,
+            runtime.stepIndex,
+            runtime.remainingMs,
+          ),
+      )),
       soundEnabled: session.cues.soundEnabled,
       vibrationEnabled: session.cues.vibrationEnabled,
       ...(session.flashcardReview?.speechEnabled

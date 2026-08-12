@@ -2284,7 +2284,7 @@ hybrid_interval_session_id="$(json_field id <<<"$hybrid_interval_response")"
 hybrid_interval_completion="$(curl --silent --show-error --fail \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $alice_token" \
-  --data "{\"runtime_state\":{\"stepIndex\":1,\"remainingMs\":0,\"accumulatedMs\":7000,\"updatedAt\":\"${flashcard_today}T14:00:07Z\"},\"elapsed_seconds\":7,\"ended_at\":\"${flashcard_today}T14:00:07Z\"}" \
+  --data "{\"runtime_state\":{\"stepIndex\":1,\"remainingMs\":0,\"accumulatedMs\":7000,\"flashcardReviewAccumulatedMs\":1000,\"updatedAt\":\"${flashcard_today}T14:00:07Z\"},\"elapsed_seconds\":7,\"ended_at\":\"${flashcard_today}T14:00:07Z\"}" \
   "$api_url/interval-sessions/$hybrid_interval_session_id/complete")"
 hybrid_interval_entry="$(php -r '
   $data = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
@@ -2301,7 +2301,7 @@ hybrid_interval_entry="$(php -r '
 curl --silent --show-error --fail \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $alice_token" \
-  --data "{\"runtime_state\":{\"stepIndex\":1,\"remainingMs\":0,\"accumulatedMs\":7000,\"updatedAt\":\"${flashcard_today}T14:00:07Z\"},\"elapsed_seconds\":7,\"ended_at\":\"${flashcard_today}T14:00:07Z\"}" \
+  --data "{\"runtime_state\":{\"stepIndex\":1,\"remainingMs\":0,\"accumulatedMs\":7000,\"flashcardReviewAccumulatedMs\":1000,\"updatedAt\":\"${flashcard_today}T14:00:07Z\"},\"elapsed_seconds\":7,\"ended_at\":\"${flashcard_today}T14:00:07Z\"}" \
   "$api_url/interval-sessions/$hybrid_interval_session_id/complete" >/dev/null
 
 linked_review_session_response="$(curl --silent --show-error --fail \

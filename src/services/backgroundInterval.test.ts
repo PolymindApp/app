@@ -74,6 +74,7 @@ function session(): IntervalSession {
       stepIndex: 1,
       remainingMs: 10_000,
       accumulatedMs: 20_000,
+      flashcardReviewAccumulatedMs: 1_250,
       updatedAt: '2026-08-10T12:00:20.000Z',
     },
     updated: '2026-08-10T12:00:20.000Z',
@@ -91,7 +92,7 @@ describe('background interval Review set playback', () => {
     await syncBackgroundInterval(session())
 
     expect(nativeMocks.plugin.start).toHaveBeenCalledWith(expect.objectContaining({
-      elapsedMs: 2_000,
+      elapsedMs: 1_250,
       stepIndex: 1,
       remainingMs: 10_000,
       steps: [

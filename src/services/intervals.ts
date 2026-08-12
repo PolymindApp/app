@@ -399,14 +399,17 @@ export function intervalFlashcardReviewElapsedMs(
 
 export function completedIntervalFlashcardReviewSeconds(
   definition: IntervalDefinition,
-  runtime: Pick<IntervalRuntimeState, 'stepIndex' | 'remainingMs'>,
+  runtime: Pick<IntervalRuntimeState, 'stepIndex' | 'remainingMs' | 'flashcardReviewAccumulatedMs'>,
   elapsedSeconds: number,
 ) {
-  const reviewSeconds = Math.round(intervalFlashcardReviewElapsedMs(
-    definition,
-    runtime.stepIndex,
-    runtime.remainingMs,
-  ) / 1000)
+  const measuredReviewMs = runtime.flashcardReviewAccumulatedMs
+  const reviewSeconds = Number.isFinite(measuredReviewMs)
+    ? Math.round(Math.max(0, measuredReviewMs!) / 1000)
+    : Math.round(intervalFlashcardReviewElapsedMs(
+        definition,
+        runtime.stepIndex,
+        runtime.remainingMs,
+      ) / 1000)
   return Math.min(
     Math.max(0, Math.round(Number(elapsedSeconds) || 0)),
     Math.max(0, reviewSeconds),
@@ -661,6 +664,7 @@ export function createRuntimeState(definition: IntervalDefinition, now = new Dat
     remainingMs: first ? intervalStepDurationSeconds(first.step) * 1000 : 0,
     stepStartedAt: first && !waitsForConfirmation ? now.toISOString() : undefined,
     accumulatedMs: 0,
+    flashcardReviewAccumulatedMs: 0,
     updatedAt: now.toISOString(),
   }
 }
@@ -686,6 +690,14 @@ export function reconcileIntervalRuntime(
   }
   let elapsedMs = Math.max(0, now.getTime() - new Date(runtime.stepStartedAt).getTime())
   const activeElapsed = elapsedMs
+  const startingReviewElapsedMs = intervalFlashcardReviewElapsedMs(
+    definition,
+    runtime.stepIndex,
+    runtime.remainingMs,
+  )
+  const reviewAccumulatedMs = Number.isFinite(runtime.flashcardReviewAccumulatedMs)
+    ? Math.max(0, runtime.flashcardReviewAccumulatedMs!)
+    : startingReviewElapsedMs
   let remainingMs = runtime.remainingMs
   let stepIndex = runtime.stepIndex
   let transitions = 0
@@ -696,11 +708,16 @@ export function reconcileIntervalRuntime(
     transitions += 1
     const next = resolveIntervalStep(definition, stepIndex)
     if (!next) {
+      const endingReviewElapsedMs = intervalFlashcardReviewElapsedMs(definition, stepIndex, 0)
       return {
         runtime: {
           stepIndex,
           remainingMs: 0,
           accumulatedMs: runtime.accumulatedMs + (activeElapsed - elapsedMs),
+          flashcardReviewAccumulatedMs: safeAdd(
+            reviewAccumulatedMs,
+            Math.max(0, endingReviewElapsedMs - startingReviewElapsedMs),
+          ),
           updatedAt: now.toISOString(),
         },
         completed: true,
@@ -708,12 +725,17 @@ export function reconcileIntervalRuntime(
       }
     }
     if (next.step.kind === 'confirmation') {
+      const endingReviewElapsedMs = intervalFlashcardReviewElapsedMs(definition, stepIndex, 0)
       return {
         runtime: {
           stepIndex,
           remainingMs: 0,
           stepStartedAt: undefined,
           accumulatedMs: runtime.accumulatedMs + (activeElapsed - elapsedMs),
+          flashcardReviewAccumulatedMs: safeAdd(
+            reviewAccumulatedMs,
+            Math.max(0, endingReviewElapsedMs - startingReviewElapsedMs),
+          ),
           updatedAt: now.toISOString(),
         },
         completed: false,
@@ -729,6 +751,14 @@ export function reconcileIntervalRuntime(
       remainingMs: Math.max(0, remainingMs - elapsedMs),
       stepStartedAt: now.toISOString(),
       accumulatedMs: runtime.accumulatedMs + activeElapsed,
+      flashcardReviewAccumulatedMs: safeAdd(
+        reviewAccumulatedMs,
+        Math.max(
+          0,
+          intervalFlashcardReviewElapsedMs(definition, stepIndex, Math.max(0, remainingMs - elapsedMs))
+            - startingReviewElapsedMs,
+        ),
+      ),
       updatedAt: now.toISOString(),
     },
     completed: false,

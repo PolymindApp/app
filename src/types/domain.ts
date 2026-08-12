@@ -214,6 +214,7 @@ export interface IntervalRuntimeState {
   remainingMs: number
   stepStartedAt?: string
   accumulatedMs: number
+  flashcardReviewAccumulatedMs?: number
   updatedAt: string
 }
 

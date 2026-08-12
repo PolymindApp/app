@@ -400,6 +400,35 @@ describe('interval definitions', () => {
     )).toBe(24)
   })
 
+  it('credits measured Review set time when Review-enabled steps are skipped', () => {
+    const review = createIntervalStep('Review', 'work', 20)
+    const silent = createIntervalStep('Silent', 'rest', 20)
+    silent.flashcardReviewEnabled = false
+    const definition: IntervalDefinition = { version: 1, children: [review, silent] }
+    const started = createRuntimeState(definition, new Date('2026-08-12T12:00:00.000Z'))
+    const beforeSkip = reconcileIntervalRuntime(
+      definition,
+      started,
+      new Date('2026-08-12T12:00:06.000Z'),
+    ).runtime
+    const skipped = {
+      ...beforeSkip,
+      stepIndex: 1,
+      remainingMs: 20_000,
+      stepStartedAt: '2026-08-12T12:00:06.000Z',
+      updatedAt: '2026-08-12T12:00:06.000Z',
+    }
+    const completed = reconcileIntervalRuntime(
+      definition,
+      skipped,
+      new Date('2026-08-12T12:00:26.000Z'),
+    ).runtime
+
+    expect(beforeSkip.flashcardReviewAccumulatedMs).toBe(2_000)
+    expect(completed.flashcardReviewAccumulatedMs).toBe(2_000)
+    expect(completedIntervalFlashcardReviewSeconds(definition, completed, 26)).toBe(2)
+  })
+
   it('plays a Review set only between the four-second step buffers', () => {
     const step = createIntervalStep('Read', 'work', 10)
 
