@@ -1570,6 +1570,23 @@ final class SyncService
             $id = $statement->fetchColumn();
             return is_string($id) ? $id : null;
         }
+        if ($resource === 'entries' && ($values['source_session'] ?? '') !== '') {
+            $statement = $this->database->pdo->prepare(
+                'SELECT id FROM entries
+                 WHERE owner = :owner AND task = :task AND program_step = :step
+                   AND source_type = :source_type AND source_session = :source_session
+                 LIMIT 1',
+            );
+            $statement->execute([
+                'owner' => $account,
+                'task' => $values['task'] ?? '',
+                'step' => $values['program_step'] ?? '',
+                'source_type' => $values['source_type'] ?? '',
+                'source_session' => $values['source_session'],
+            ]);
+            $id = $statement->fetchColumn();
+            return is_string($id) ? $id : null;
+        }
         return null;
     }
 

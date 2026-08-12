@@ -738,6 +738,56 @@ entry_created_at="$(json_field created_at <<<"$entry_response")"
   exit 1
 }
 
+session_entry_source="sync-session-$suffix"
+session_entry_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "{\"task\":\"$task_id\",\"occurrence\":\"\",\"program_step\":\"\",\"entry_date\":\"2026-08-02\",\"value\":1,\"kind\":\"duration\",\"unit\":\"seconds\",\"note\":\"\",\"source_type\":\"interval\",\"source_session\":\"$session_entry_source\"}" \
+  "$api_url/collections/entries/records")"
+session_entry_id="$(json_field id <<<"$session_entry_response")"
+sync_duplicate_entry_body="$(php -r '
+  echo json_encode([
+      "clientId" => "integration-client",
+      "cursor" => 0,
+      "operations" => [[
+          "operationId" => "sync-duplicate-session-entry",
+          "resource" => "entries",
+          "recordId" => "local-session-entry-" . $argv[1],
+          "kind" => "create",
+          "payload" => [
+              "task" => $argv[2],
+              "occurrence" => "",
+              "program_step" => "",
+              "entry_date" => "2026-08-02",
+              "value" => 1,
+              "kind" => "duration",
+              "unit" => "seconds",
+              "note" => "",
+              "source_type" => "interval",
+              "source_session" => $argv[3],
+          ],
+          "fieldClocks" => ["*" => "9999999999999-000003-integration-client"],
+          "dependsOn" => [],
+      ]],
+  ], JSON_THROW_ON_ERROR);
+' "$suffix" "$task_id" "$session_entry_source")"
+sync_duplicate_entry_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "$sync_duplicate_entry_body" \
+  "$api_url/sync/exchange")"
+php -r '
+  $response = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+  $ack = $response["acknowledgements"][0] ?? [];
+  if (($ack["status"] ?? null) !== "merged"
+      || ($ack["replacementId"] ?? null) !== $argv[1]
+      || ($ack["resource"]["id"] ?? null) !== $argv[1]
+      || ($ack["resource"]["data"]["source_session"] ?? null) !== $argv[2]) {
+      fwrite(STDERR, "Offline sync did not reconcile a duplicate session-derived entry.\n");
+      exit(1);
+  }
+' "$session_entry_id" "$session_entry_source" <<<"$sync_duplicate_entry_response"
+
 long_entry_note="$(php -r 'echo str_repeat("x", 256);')"
 long_entry_note_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
   -H "Content-Type: application/json" \
