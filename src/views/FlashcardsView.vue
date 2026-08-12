@@ -147,7 +147,7 @@ async function openReviewSet(reviewSet: FlashcardReviewSet) {
 
     <section class="card-library-action-bar page-action-area">
       <v-card
-        class="card-library-summary pa-3"
+        class="card-library-summary"
         aria-labelledby="card-library-summary-title"
       >
         <div class="card-library-summary__details">
@@ -499,7 +499,7 @@ async function openReviewSet(reviewSet: FlashcardReviewSet) {
 .card-library-summary__stat { display: flex; align-items: baseline; gap: .4rem; margin-top: .15rem; }
 .card-library-summary__stat strong { font-family: Impact, "Arial Narrow", sans-serif; font-size: 2rem; letter-spacing: -.03em; line-height: 1; }
 .card-library-summary__stat span { color: rgba(var(--v-theme-on-surface), .56); font-size: .72rem; font-weight: 800; }
-.card-library-summary__actions { display: grid; min-width: 0; flex: 1 1 0; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
+.card-library-summary__actions { display: grid; width: 8.5rem; flex: 0 0 8.5rem; grid-template-columns: minmax(0, 1fr); gap: .5rem; }
 .card-library-summary__actions :deep(.v-btn) { width: 100%; }
 .review-set-list { display: grid; gap: .75rem; }
 .review-set { overflow: hidden; cursor: pointer; }
@@ -535,9 +535,5 @@ async function openReviewSet(reviewSet: FlashcardReviewSet) {
 @media (min-width: 60rem) {
   .flashcards-page:not(.flashcards-page--active) { padding-bottom: 7rem; }
   .card-library-action-bar { bottom: 0; left: 14rem; }
-}
-@media (max-width: 37.5rem) {
-  .card-library-summary { align-items: stretch; flex-direction: column; gap: 1rem; }
-  .card-library-summary__actions { width: 100%; }
 }
 </style>
