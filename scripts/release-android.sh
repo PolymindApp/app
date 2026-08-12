@@ -129,7 +129,7 @@ while IFS= read -r candidate_tag; do
   fi
 done < <(git tag --merged HEAD --list 'v*' --sort=-version:refname)
 
-release_temp_dir="$(mktemp -d "${TMPDIR:-/tmp}/mom-release.XXXXXX")"
+release_temp_dir="$(mktemp -d "${TMPDIR:-/tmp}/polymind-release.XXXXXX")"
 release_notes_file="$release_temp_dir/release-notes.md"
 tag_message_file="$release_temp_dir/tag-message.md"
 cleanup_release_files() {

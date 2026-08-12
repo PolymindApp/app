@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Mom\Api;
+namespace Polymind\Api;
 
 use PDO;
 use PDOException;
@@ -115,20 +115,20 @@ final class Database
                 'timezone_offset', 'task', 'tracker', 'task_snapshot',
                 'tracker_snapshot', 'created_at', 'updated_at',
             ],
-            'mom_rate_limits' => ['rate_key', 'window_start', 'hits'],
-            'mom_auth_tokens' => [
+            'polymind_rate_limits' => ['rate_key', 'window_start', 'hits'],
+            'polymind_auth_tokens' => [
                 'token_hash', 'user_id', 'purpose', 'expires_at', 'created_at',
             ],
-            'mom_passkey_challenges' => [
+            'polymind_passkey_challenges' => [
                 'id', 'purpose', 'user_id', 'user_handle', 'challenge',
                 'expires_at', 'created_at',
             ],
-            'mom_passkeys' => [
+            'polymind_passkeys' => [
                 'credential_id', 'user_id', 'user_handle', 'public_key',
                 'signature_counter', 'transports', 'backup_eligible', 'backed_up',
                 'created', 'last_used',
             ],
-            'mom_schema_migrations' => ['version', 'name', 'checksum', 'applied_at'],
+            'polymind_schema_migrations' => ['version', 'name', 'checksum', 'applied_at'],
         ];
         $tableNames = array_keys($required);
         $placeholders = implode(',', array_fill(0, count($tableNames), '?'));

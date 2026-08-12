@@ -4,7 +4,7 @@ set -euo pipefail
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 apk_path="$repository_root/android/app/build/outputs/apk/release/app-release.apk"
-application_id="dev.coulombe.mom"
+application_id="app.polymind.android"
 
 usage() {
   cat <<'EOF'
@@ -74,10 +74,10 @@ esac
 
 cd "$repository_root"
 
-if [[ ! -r private/android-signing.properties || ! -r private/mom-release.jks ]]; then
+if [[ ! -r private/android-signing.properties || ! -r private/polymind-release.jks ]]; then
   echo "Release signing files are missing:" >&2
   echo "  private/android-signing.properties" >&2
-  echo "  private/mom-release.jks" >&2
+  echo "  private/polymind-release.jks" >&2
   echo "Restore them from backup before building a release." >&2
   exit 1
 fi

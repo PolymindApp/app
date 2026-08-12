@@ -237,7 +237,7 @@ export async function notifyIntervalTransition(title: string, body: string) {
     body,
     icon: '/brand/polymind-mark.png',
     badge: '/brand/polymind-mark.png',
-    tag: 'mom-interval',
+    tag: 'polymind-interval',
     renotify: true,
   }
   const registration = await navigator.serviceWorker?.getRegistration()

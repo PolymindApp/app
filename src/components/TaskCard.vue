@@ -6,7 +6,7 @@ import { taskCanLogAmounts } from '@/services/taskCardActions'
 import { TASK_TYPE_PRESENTATION } from '@/services/taskTypes'
 import type { TaskProgress, TrackingTaskTracker } from '@/types/domain'
 
-const TASK_CARD_EXPANSION_STORAGE_PREFIX = 'mom-task-card-expanded'
+const TASK_CARD_EXPANSION_STORAGE_PREFIX = 'polymind-task-card-expanded'
 
 function expansionStorageKey(progress: TaskProgress) {
   const taskId = encodeURIComponent(progress.task.id)

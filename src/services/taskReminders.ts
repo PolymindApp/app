@@ -6,8 +6,8 @@ import { isTaskScheduled, toDateKey } from '@/services/schedule'
 import type { Task } from '@/types/domain'
 
 const CHANNEL_ID = 'task-reminders'
-const TASK_EXTRA_KIND = 'mom-task-reminder'
-const LEGACY_TRACKING_EXTRA_KIND = 'mom-tracking-reminder'
+const TASK_EXTRA_KIND = 'polymind-task-reminder'
+const LEGACY_TRACKING_EXTRA_KIND = 'polymind-tracking-reminder'
 const TASK_REMINDER_LOOKAHEAD_DAYS = 30
 const MAX_SCHEDULED_TASK_REMINDERS = 400
 

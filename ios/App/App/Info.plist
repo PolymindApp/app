@@ -28,7 +28,7 @@
 	<string>LaunchScreen</string>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
-		<string>dev.coulombe.mom.sync</string>
+		<string>app.polymind.sync</string>
 	</array>
 	<key>UIBackgroundModes</key>
 	<array>

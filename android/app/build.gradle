@@ -14,10 +14,10 @@ def hasReleaseSigning = [
 ].every { releaseSigning.getProperty(it) }
 
 android {
-    namespace = "dev.coulombe.mom"
+    namespace = "app.polymind.android"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "dev.coulombe.mom"
+        applicationId "app.polymind.android"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 14

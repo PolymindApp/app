@@ -36,7 +36,7 @@ import {
 } from '@/services/syncPolling'
 
 const baseUrl = (import.meta.env.VITE_API_URL || '/api').replace(/\/+$/, '')
-const STATUS_EVENT = 'mom-sync-status-changed'
+const STATUS_EVENT = 'polymind-sync-status-changed'
 
 export const offlineSyncStatus = reactive<SyncStatusSnapshot>({
   phase: 'idle',

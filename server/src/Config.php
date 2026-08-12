@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Mom\Api;
+namespace Polymind\Api;
 
 final class Config
 {
@@ -57,46 +57,46 @@ final class Config
         };
 
         $databasePath = (string) $value(
-            'MOM_DB_PATH',
+            'POLYMIND_DB_PATH',
             'private/data.db',
         );
         if (!self::isAbsolutePath($databasePath)) {
             $databasePath = $projectRoot . '/' . ltrim($databasePath, '/\\');
         }
-        $secret = (string) $value('MOM_API_SECRET', '');
-        $migrationKey = trim((string) $value('MOM_MIGRATION_KEY', ''));
+        $secret = (string) $value('POLYMIND_API_SECRET', '');
+        $migrationKey = trim((string) $value('POLYMIND_MIGRATION_KEY', ''));
         $origins = array_values(array_filter(array_map(
             'trim',
-            explode(',', (string) $value('MOM_ALLOWED_ORIGINS', '')),
+            explode(',', (string) $value('POLYMIND_ALLOWED_ORIGINS', '')),
         )));
-        $tokenTtl = (int) $value('MOM_TOKEN_TTL', 604800);
-        $maxBodyBytes = (int) $value('MOM_MAX_BODY_BYTES', 2500000);
-        $passkeyRpId = strtolower(trim((string) $value('MOM_PASSKEY_RP_ID', '')));
-        $passkeyAndroidPackage = trim((string) $value('MOM_PASSKEY_ANDROID_PACKAGE', ''));
+        $tokenTtl = (int) $value('POLYMIND_TOKEN_TTL', 604800);
+        $maxBodyBytes = (int) $value('POLYMIND_MAX_BODY_BYTES', 2500000);
+        $passkeyRpId = strtolower(trim((string) $value('POLYMIND_PASSKEY_RP_ID', '')));
+        $passkeyAndroidPackage = trim((string) $value('POLYMIND_PASSKEY_ANDROID_PACKAGE', ''));
         $passkeyAndroidKeyHashes = array_values(array_unique(array_filter(array_map(
             'trim',
-            explode(',', (string) $value('MOM_PASSKEY_ANDROID_KEY_HASHES', '')),
+            explode(',', (string) $value('POLYMIND_PASSKEY_ANDROID_KEY_HASHES', '')),
         ))));
-        $pexelsApiKey = trim((string) $value('MOM_PEXELS_API_KEY', ''));
+        $pexelsApiKey = trim((string) $value('POLYMIND_PEXELS_API_KEY', ''));
         if ($pexelsApiKey === '') {
             $productionDotenv = self::readDotenv($projectRoot . '/.env.prod');
-            $pexelsApiKey = trim((string) ($productionDotenv['MOM_PEXELS_API_KEY'] ?? ''));
+            $pexelsApiKey = trim((string) ($productionDotenv['POLYMIND_PEXELS_API_KEY'] ?? ''));
         }
-        $appUrl = rtrim(trim((string) $value('MOM_APP_URL', '')), '/');
-        $mailHost = trim((string) $value('MOM_MAIL_HOST', ''));
-        $mailPort = (int) $value('MOM_MAIL_PORT', 587);
-        $mailUsername = trim((string) $value('MOM_MAIL_USERNAME', ''));
-        $mailPassword = (string) $value('MOM_MAIL_PASSWORD', '');
-        $mailEncryption = strtolower(trim((string) $value('MOM_MAIL_ENCRYPTION', 'tls')));
+        $appUrl = rtrim(trim((string) $value('POLYMIND_APP_URL', '')), '/');
+        $mailHost = trim((string) $value('POLYMIND_MAIL_HOST', ''));
+        $mailPort = (int) $value('POLYMIND_MAIL_PORT', 587);
+        $mailUsername = trim((string) $value('POLYMIND_MAIL_USERNAME', ''));
+        $mailPassword = (string) $value('POLYMIND_MAIL_PASSWORD', '');
+        $mailEncryption = strtolower(trim((string) $value('POLYMIND_MAIL_ENCRYPTION', 'tls')));
         if ($mailEncryption === 'none') {
             $mailEncryption = '';
         }
-        $mailFromAddress = strtolower(trim((string) $value('MOM_MAIL_FROM_ADDRESS', '')));
-        $mailFromName = trim((string) $value('MOM_MAIL_FROM_NAME', 'Polymind'));
+        $mailFromAddress = strtolower(trim((string) $value('POLYMIND_MAIL_FROM_ADDRESS', '')));
+        $mailFromName = trim((string) $value('POLYMIND_MAIL_FROM_NAME', 'Polymind'));
         $debug = strtolower(trim((string) $value('DEBUG', ''))) === 'dev';
 
         if ($secret === '' || strlen($secret) < 32) {
-            throw new ApiException(500, 'MOM_API_SECRET must contain at least 32 characters.');
+            throw new ApiException(500, 'POLYMIND_API_SECRET must contain at least 32 characters.');
         }
         if (!is_file($databasePath) || !is_readable($databasePath) || !is_writable($databasePath)) {
             throw new ApiException(500, 'The configured SQLite database is not readable and writable.');
@@ -106,10 +106,10 @@ final class Config
             throw new ApiException(500, 'The SQLite database directory must be writable.');
         }
         if ($tokenTtl < 300 || $tokenTtl > 2592000) {
-            throw new ApiException(500, 'MOM_TOKEN_TTL must be between 300 and 2592000 seconds.');
+            throw new ApiException(500, 'POLYMIND_TOKEN_TTL must be between 300 and 2592000 seconds.');
         }
         if ($maxBodyBytes < 1024 || $maxBodyBytes > 10000000) {
-            throw new ApiException(500, 'MOM_MAX_BODY_BYTES must be between 1024 and 10000000 bytes.');
+            throw new ApiException(500, 'POLYMIND_MAX_BODY_BYTES must be between 1024 and 10000000 bytes.');
         }
         $configuredPasskeyValues = [
             $passkeyRpId !== '',
@@ -129,19 +129,19 @@ final class Config
                 || filter_var($passkeyRpId, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME) === false
             )
         ) {
-            throw new ApiException(500, 'MOM_PASSKEY_RP_ID must be a valid domain name.');
+            throw new ApiException(500, 'POLYMIND_PASSKEY_RP_ID must be a valid domain name.');
         }
         if (
             $passkeyAndroidPackage !== ''
             && preg_match('/^[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+$/', $passkeyAndroidPackage) !== 1
         ) {
-            throw new ApiException(500, 'MOM_PASSKEY_ANDROID_PACKAGE must be a valid Android package name.');
+            throw new ApiException(500, 'POLYMIND_PASSKEY_ANDROID_PACKAGE must be a valid Android package name.');
         }
         foreach ($passkeyAndroidKeyHashes as $keyHash) {
             if (preg_match('/^[A-Za-z0-9_-]{43}$/', $keyHash) !== 1) {
                 throw new ApiException(
                     500,
-                    'MOM_PASSKEY_ANDROID_KEY_HASHES contains an invalid signing certificate hash.',
+                    'POLYMIND_PASSKEY_ANDROID_KEY_HASHES contains an invalid signing certificate hash.',
                 );
             }
         }
@@ -166,29 +166,29 @@ final class Config
                 || isset($appUrlParts['query'])
                 || isset($appUrlParts['fragment'])
             ) {
-                throw new ApiException(500, 'MOM_APP_URL must be an HTTPS application URL.');
+                throw new ApiException(500, 'POLYMIND_APP_URL must be an HTTPS application URL.');
             }
         }
         if ($mailPort < 1 || $mailPort > 65535) {
-            throw new ApiException(500, 'MOM_MAIL_PORT must be between 1 and 65535.');
+            throw new ApiException(500, 'POLYMIND_MAIL_PORT must be between 1 and 65535.');
         }
         if (!in_array($mailEncryption, ['', 'tls', 'ssl'], true)) {
-            throw new ApiException(500, 'MOM_MAIL_ENCRYPTION must be tls, ssl, or none.');
+            throw new ApiException(500, 'POLYMIND_MAIL_ENCRYPTION must be tls, ssl, or none.');
         }
         if (($mailUsername === '') !== ($mailPassword === '')) {
             throw new ApiException(
                 500,
-                'MOM_MAIL_USERNAME and MOM_MAIL_PASSWORD must be configured together.',
+                'POLYMIND_MAIL_USERNAME and POLYMIND_MAIL_PASSWORD must be configured together.',
             );
         }
         if (
             $mailFromAddress !== ''
             && filter_var($mailFromAddress, FILTER_VALIDATE_EMAIL) === false
         ) {
-            throw new ApiException(500, 'MOM_MAIL_FROM_ADDRESS must be a valid email address.');
+            throw new ApiException(500, 'POLYMIND_MAIL_FROM_ADDRESS must be a valid email address.');
         }
         if (strlen($mailFromName) > 160) {
-            throw new ApiException(500, 'MOM_MAIL_FROM_NAME is too long.');
+            throw new ApiException(500, 'POLYMIND_MAIL_FROM_NAME is too long.');
         }
 
         return new self(

@@ -33,7 +33,7 @@ const reviewSet = (
   tags: [],
   tagDetails: [],
   owner: 'user-1',
-  ownerName: 'Mom User',
+  ownerName: 'Polymind User',
   ownerAvatar: '',
   accessRole: 'owner',
   matchingCardCount: 12,

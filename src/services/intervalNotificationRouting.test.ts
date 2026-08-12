@@ -8,9 +8,9 @@ import {
 
 describe('interval notification routing', () => {
   it('accepts only interval notification URLs with a session ID', () => {
-    expect(intervalSessionIdFromNotificationUrl('mom://interval?sessionId=session-1')).toBe('session-1')
-    expect(intervalSessionIdFromNotificationUrl('mom://interval')).toBeUndefined()
-    expect(intervalSessionIdFromNotificationUrl('mom://tracking?sessionId=session-1')).toBeUndefined()
+    expect(intervalSessionIdFromNotificationUrl('polymind://interval?sessionId=session-1')).toBe('session-1')
+    expect(intervalSessionIdFromNotificationUrl('polymind://interval')).toBeUndefined()
+    expect(intervalSessionIdFromNotificationUrl('polymind://tracking?sessionId=session-1')).toBeUndefined()
     expect(intervalSessionIdFromNotificationUrl('/intervals/run/session-1')).toBeUndefined()
   })
 
@@ -21,7 +21,7 @@ describe('interval notification routing', () => {
     })
     let urlListener: ((event: { url: string }) => void) | undefined
     const appUrlSource = {
-      getLaunchUrl: vi.fn(async () => ({ url: 'mom://interval?sessionId=cold-session' })),
+      getLaunchUrl: vi.fn(async () => ({ url: 'polymind://interval?sessionId=cold-session' })),
       addListener: vi.fn(async (_eventName: 'appUrlOpen', listener: (event: { url: string }) => void) => {
         urlListener = listener
       }),
@@ -35,7 +35,7 @@ describe('interval notification routing', () => {
     })
 
     currentRoute.value = { name: 'tracking', params: {} }
-    urlListener?.({ url: 'mom://interval?sessionId=running-session' })
+    urlListener?.({ url: 'polymind://interval?sessionId=running-session' })
     await vi.waitFor(() => expect(replace).toHaveBeenLastCalledWith({
       name: 'interval-runner',
       params: { sessionId: 'running-session' },

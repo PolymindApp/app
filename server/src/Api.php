@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Mom\Api;
+namespace Polymind\Api;
 
 use DateTimeImmutable;
 use DateTimeZone;
@@ -442,7 +442,7 @@ final class Api
             $this->respond($body, $exception->status);
         } catch (Throwable $exception) {
             error_log(sprintf(
-                '[mom-api] %s in %s:%d',
+                '[polymind-api] %s in %s:%d',
                 $exception->getMessage(),
                 $exception->getFile(),
                 $exception->getLine(),
@@ -764,7 +764,7 @@ final class Api
                 'updated' => $this->now(),
                 'id' => $authToken['user_id'],
             ]);
-            $statement = $pdo->prepare('DELETE FROM mom_auth_tokens WHERE user_id = :user_id');
+            $statement = $pdo->prepare('DELETE FROM polymind_auth_tokens WHERE user_id = :user_id');
             $statement->execute(['user_id' => $authToken['user_id']]);
             $pdo->exec('COMMIT');
             $transactionOpen = false;
@@ -1189,7 +1189,7 @@ final class Api
             $conceptId = $this->createImageSearchConcept($query);
         }
 
-        $configuredApiUrl = getenv('MOM_PEXELS_API_BASE_URL');
+        $configuredApiUrl = getenv('POLYMIND_PEXELS_API_BASE_URL');
         $apiUrl = is_string($configuredApiUrl) && trim($configuredApiUrl) !== ''
             ? trim($configuredApiUrl)
             : null;
@@ -1201,7 +1201,7 @@ final class Api
         );
         $summary = $fetcher->fetchConcept((int) $conceptId);
         if (($summary['stopped'] ?? false) && (int) ($summary['searched_concepts'] ?? 0) === 0) {
-            error_log('[mom-api/image-library] ' . (string) ($summary['stop_reason'] ?? 'Unknown error'));
+            error_log('[polymind-api/image-library] ' . (string) ($summary['stop_reason'] ?? 'Unknown error'));
             throw new ApiException(502, 'The image search could not be fetched from Pexels.');
         }
     }
@@ -1209,7 +1209,7 @@ final class Api
     private function createImageSearchConcept(string $query): int
     {
         $normalized = trim((string) preg_replace('/\s+/u', ' ', $query));
-        $sourceId = 'mom-on-demand-searches-1';
+        $sourceId = 'polymind-on-demand-searches-1';
         $sourceKey = 'on-demand:' . hash('sha256', mb_strtolower($normalized, 'UTF-8'));
         $pdo = $this->database->pdo;
         $pdo->beginTransaction();
@@ -1223,7 +1223,7 @@ final class Api
             );
             $source->execute([
                 'id' => $sourceId,
-                'name' => 'Mom on-demand image searches',
+                'name' => 'Polymind on-demand image searches',
                 'language' => 'und',
                 'source_url' => '',
                 'license_name' => 'User-entered search terms',
@@ -1709,7 +1709,7 @@ final class Api
         $webAuthn = $this->passkeyWebAuthn();
 
         $statement = $this->database->pdo->prepare(
-            'SELECT user_handle FROM mom_passkeys WHERE user_id = :user_id LIMIT 1',
+            'SELECT user_handle FROM polymind_passkeys WHERE user_id = :user_id LIMIT 1',
         );
         $statement->execute(['user_id' => $user['id']]);
         $encodedUserHandle = $statement->fetchColumn();
@@ -1718,7 +1718,7 @@ final class Api
             : random_bytes(32);
 
         $statement = $this->database->pdo->prepare(
-            'SELECT credential_id FROM mom_passkeys WHERE user_id = :user_id',
+            'SELECT credential_id FROM polymind_passkeys WHERE user_id = :user_id',
         );
         $statement->execute(['user_id' => $user['id']]);
         $excludeCredentialIds = array_map(
@@ -1808,7 +1808,7 @@ final class Api
         $now = $this->now();
         try {
             $statement = $this->database->pdo->prepare(
-                'INSERT INTO mom_passkeys (
+                'INSERT INTO polymind_passkeys (
                     credential_id, user_id, user_handle, public_key, signature_counter,
                     transports, backup_eligible, backed_up, created, last_used
                 ) VALUES (
@@ -1849,7 +1849,7 @@ final class Api
         $this->passkeyWebAuthn();
 
         $statement = $this->database->pdo->prepare(
-            'SELECT 1 FROM mom_passkeys WHERE user_id = :user_id LIMIT 1',
+            'SELECT 1 FROM polymind_passkeys WHERE user_id = :user_id LIMIT 1',
         );
         $statement->execute(['user_id' => $user['id']]);
 
@@ -1867,13 +1867,13 @@ final class Api
 
         try {
             $statement = $pdo->prepare(
-                'DELETE FROM mom_passkeys WHERE user_id = :user_id',
+                'DELETE FROM polymind_passkeys WHERE user_id = :user_id',
             );
             $statement->execute(['user_id' => $user['id']]);
             $removed = $statement->rowCount();
 
             $statement = $pdo->prepare(
-                'DELETE FROM mom_passkey_challenges
+                'DELETE FROM polymind_passkey_challenges
                  WHERE user_id = :user_id AND purpose = \'register\'',
             );
             $statement->execute(['user_id' => $user['id']]);
@@ -1946,12 +1946,12 @@ final class Api
         $statement = $this->database->pdo->prepare(
             'SELECT
                 users.*,
-                mom_passkeys.user_handle AS passkey_user_handle,
-                mom_passkeys.public_key AS passkey_public_key,
-                mom_passkeys.signature_counter AS passkey_signature_counter
-             FROM mom_passkeys
-             INNER JOIN users ON users.id = mom_passkeys.user_id
-             WHERE mom_passkeys.credential_id = :credential_id
+                polymind_passkeys.user_handle AS passkey_user_handle,
+                polymind_passkeys.public_key AS passkey_public_key,
+                polymind_passkeys.signature_counter AS passkey_signature_counter
+             FROM polymind_passkeys
+             INNER JOIN users ON users.id = polymind_passkeys.user_id
+             WHERE polymind_passkeys.credential_id = :credential_id
              LIMIT 1',
         );
         $statement->execute(['credential_id' => $credentialId]);
@@ -1991,7 +1991,7 @@ final class Api
         }
 
         $statement = $this->database->pdo->prepare(
-            'UPDATE mom_passkeys
+            'UPDATE polymind_passkeys
              SET signature_counter = :signature_counter, last_used = :last_used
              WHERE credential_id = :credential_id',
         );
@@ -2033,12 +2033,12 @@ final class Api
     ): string {
         $now = time();
         $this->database->pdo->prepare(
-            'DELETE FROM mom_passkey_challenges WHERE expires_at < :now',
+            'DELETE FROM polymind_passkey_challenges WHERE expires_at < :now',
         )->execute(['now' => $now]);
 
         $id = $this->base64UrlEncode(random_bytes(24));
         $statement = $this->database->pdo->prepare(
-            'INSERT INTO mom_passkey_challenges (
+            'INSERT INTO polymind_passkey_challenges (
                 id, purpose, user_id, user_handle, challenge, expires_at, created_at
              ) VALUES (
                 :id, :purpose, :user_id, :user_handle, :challenge, :expires_at, :created_at
@@ -2070,7 +2070,7 @@ final class Api
         try {
             $statement = $pdo->prepare(
                 'SELECT challenge, user_id, user_handle, expires_at
-                 FROM mom_passkey_challenges
+                 FROM polymind_passkey_challenges
                  WHERE id = :id AND purpose = :purpose
                  LIMIT 1',
             );
@@ -2082,7 +2082,7 @@ final class Api
             }
 
             $delete = $pdo->prepare(
-                'DELETE FROM mom_passkey_challenges WHERE id = :id AND purpose = :purpose',
+                'DELETE FROM polymind_passkey_challenges WHERE id = :id AND purpose = :purpose',
             );
             $delete->execute(['id' => $id, 'purpose' => $purpose]);
             if ($delete->rowCount() !== 1) {
@@ -7112,10 +7112,10 @@ final class Api
         $token = bin2hex(random_bytes(32));
         $now = time();
         $this->database->pdo->prepare(
-            'DELETE FROM mom_auth_tokens WHERE expires_at < :now',
+            'DELETE FROM polymind_auth_tokens WHERE expires_at < :now',
         )->execute(['now' => $now]);
         $statement = $this->database->pdo->prepare(
-            'INSERT INTO mom_auth_tokens (
+            'INSERT INTO polymind_auth_tokens (
                 token_hash, user_id, purpose, expires_at, created_at
              ) VALUES (
                 :token_hash, :user_id, :purpose, :expires_at, :created_at
@@ -7146,7 +7146,7 @@ final class Api
     private function requireAuthToken(string $token, string $purpose): array
     {
         $statement = $this->database->pdo->prepare(
-            'SELECT user_id FROM mom_auth_tokens
+            'SELECT user_id FROM polymind_auth_tokens
              WHERE token_hash = :token_hash
                AND purpose = :purpose
                AND expires_at >= :now
@@ -7167,7 +7167,7 @@ final class Api
     private function deleteAuthToken(string $token, string $purpose): void
     {
         $statement = $this->database->pdo->prepare(
-            'DELETE FROM mom_auth_tokens WHERE token_hash = :token_hash AND purpose = :purpose',
+            'DELETE FROM polymind_auth_tokens WHERE token_hash = :token_hash AND purpose = :purpose',
         );
         $statement->execute([
             'token_hash' => $this->authTokenHash($token),
@@ -7215,7 +7215,7 @@ final class Api
         $cutoff = $now - $windowSeconds;
         $rateKey = hash_hmac('sha256', $key, $this->config->secret);
         $statement = $this->database->pdo->prepare(
-            'INSERT INTO mom_rate_limits (rate_key, window_start, hits)
+            'INSERT INTO polymind_rate_limits (rate_key, window_start, hits)
              VALUES (:rate_key, :now, 1)
              ON CONFLICT(rate_key) DO UPDATE SET
                 hits = CASE WHEN window_start <= :cutoff THEN 1 ELSE hits + 1 END,
@@ -7224,7 +7224,7 @@ final class Api
         $statement->execute(['rate_key' => $rateKey, 'now' => $now, 'cutoff' => $cutoff]);
 
         $statement = $this->database->pdo->prepare(
-            'SELECT window_start, hits FROM mom_rate_limits WHERE rate_key = :rate_key',
+            'SELECT window_start, hits FROM polymind_rate_limits WHERE rate_key = :rate_key',
         );
         $statement->execute(['rate_key' => $rateKey]);
         $limit = $statement->fetch();
@@ -7235,7 +7235,7 @@ final class Api
 
         if (random_int(1, 100) === 1) {
             $cleanup = $this->database->pdo->prepare(
-                'DELETE FROM mom_rate_limits WHERE window_start < :expired',
+                'DELETE FROM polymind_rate_limits WHERE window_start < :expired',
             );
             $cleanup->execute(['expired' => $now - 86400]);
         }

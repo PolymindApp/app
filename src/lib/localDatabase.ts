@@ -7,9 +7,9 @@ import type {
   SyncResource,
 } from '@/types/sync'
 
-const CLIENT_ID_KEY = 'mom-sync-client-id'
-const SYNC_DATA_CHANGED_EVENT = 'mom-sync-data-changed'
-const SYNC_OUTBOX_CHANGED_EVENT = 'mom-sync-outbox-changed'
+const CLIENT_ID_KEY = 'polymind-sync-client-id'
+const SYNC_DATA_CHANGED_EVENT = 'polymind-sync-data-changed'
+const SYNC_OUTBOX_CHANGED_EVENT = 'polymind-sync-outbox-changed'
 
 interface LocalMediaBlob {
   id: string
@@ -27,7 +27,7 @@ interface LocalAlias {
   remoteId: string
 }
 
-class MomLocalDatabase extends Dexie {
+class PolymindLocalDatabase extends Dexie {
   resources!: EntityTable<LocalSyncResource, 'key'>
   outbox!: EntityTable<SyncOperation, 'operationId'>
   metadata!: EntityTable<SyncMetadata, 'accountId'>
@@ -48,7 +48,7 @@ class MomLocalDatabase extends Dexie {
   }
 }
 
-export const localDatabase = new MomLocalDatabase()
+export const localDatabase = new PolymindLocalDatabase()
 
 let logicalCounter = 0
 let operationCounter = 0

@@ -112,7 +112,7 @@ describe('TaskTimerView duration trackers', () => {
       complete: true,
       status: 'completed',
     })
-    localStorage.setItem('mom-task-timer:tracking-task:tracker:focus-time:2026-08-06', JSON.stringify({
+    localStorage.setItem('polymind-task-timer:tracking-task:tracker:focus-time:2026-08-06', JSON.stringify({
       version: 1,
       taskId: 'tracking-task:tracker:focus-time',
       dateKey: '2026-08-06',
@@ -150,7 +150,7 @@ describe('TaskTimerView duration trackers', () => {
     }))
     expect(mocks.taskStore.addEntry).not.toHaveBeenCalled()
     expect(mocks.router.replace).toHaveBeenCalledWith('/tasks')
-    expect(localStorage.getItem('mom-task-timer:tracking-task:tracker:focus-time:2026-08-06')).toBeNull()
+    expect(localStorage.getItem('polymind-task-timer:tracking-task:tracker:focus-time:2026-08-06')).toBeNull()
 
     wrapper.unmount()
   })

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 test_root="${TMPDIR:-/tmp}"
-test_dir="$(mktemp -d "$test_root/mom-migrations-test.XXXXXX")"
+test_dir="$(mktemp -d "$test_root/polymind-migrations-test.XXXXXX")"
 empty_db="$test_dir/empty.db"
 existing_db="$test_dir/existing.db"
 email_invite_db="$test_dir/email-invite.db"
@@ -19,7 +19,7 @@ cleanup() {
     wait "$http_server_pid" >/dev/null 2>&1 || true
   fi
   case "$test_dir" in
-    "$test_root"/mom-migrations-test.*) rm -rf -- "$test_dir" ;;
+    "$test_root"/polymind-migrations-test.*) rm -rf -- "$test_dir" ;;
   esac
 }
 trap cleanup EXIT
@@ -37,14 +37,14 @@ run_migrations() {
     require "server/src/ApiException.php";
     require "server/src/MigrationRunner.php";
     require "server/src/Database.php";
-    $database = new Mom\Api\Database($argv[1]);
+    $database = new Polymind\Api\Database($argv[1]);
     echo implode(",", $database->migrationsApplied);
   ' "$database_path"
 }
 
 sqlite3 "$empty_db" 'VACUUM'
 first_run="$(run_migrations "$empty_db")"
-[[ "$first_run" == "202607290001,202607290002,202607290003,202607300001,202607310001,202607310002,202607310003,202608010001,202608020001,202608020002,202608020003,202608020004,202608050001,202608050002,202608050003,202608060001,202608060002,202608060003,202608060004,202608070001,202608070002,202608070003,202608070004,202608070005,202608070006,202608080001,202608080003,202608090001,202608090002,202608100001,202608100002,202608110001,202608120001" ]] || {
+[[ "$first_run" == "202607290001,202607290002,202607290003,202607300001,202607310001,202607310002,202607310003,202608010001,202608020001,202608020002,202608020003,202608020004,202608050001,202608050002,202608050003,202608060001,202608060002,202608060003,202608060004,202608070001,202608070002,202608070003,202608070004,202608070005,202608070006,202608080001,202608080003,202608090001,202608090002,202608100001,202608100002,202608110001,202608120001,202608120002" ]] || {
   echo "An empty database did not apply the complete migration sequence." >&2
   exit 1
 }
@@ -75,15 +75,15 @@ expected_tables=(
   tracking_trackers
   tracking_entries
   journal_entries
-  mom_rate_limits
-  mom_auth_tokens
-  mom_passkey_challenges
-  mom_passkeys
+  polymind_rate_limits
+  polymind_auth_tokens
+  polymind_passkey_challenges
+  polymind_passkeys
   sync_record_versions
   sync_change_log
   sync_operation_receipts
   sync_clients
-  mom_schema_migrations
+  polymind_schema_migrations
 )
 for table in "${expected_tables[@]}"; do
   exists="$(sqlite3 "$empty_db" \
@@ -94,8 +94,8 @@ for table in "${expected_tables[@]}"; do
   }
 done
 
-migration_count="$(sqlite3 "$empty_db" 'SELECT COUNT(*) FROM mom_schema_migrations;')"
-[[ "$migration_count" == 33 ]] || {
+migration_count="$(sqlite3 "$empty_db" 'SELECT COUNT(*) FROM polymind_schema_migrations;')"
+[[ "$migration_count" == 34 ]] || {
   echo "Migration history does not contain all migrations." >&2
   exit 1
 }
@@ -138,15 +138,15 @@ preserved="$(sqlite3 "$empty_db" \
 
 sqlite3 "$empty_db" ".backup $email_auth_db"
 sqlite3 "$email_auth_db" \
-  "DELETE FROM mom_schema_migrations WHERE version = '202608100001';
-   DROP TABLE mom_auth_tokens;
+  "DELETE FROM polymind_schema_migrations WHERE version = '202608100001';
+   DROP TABLE polymind_auth_tokens;
    INSERT INTO users (id, email, password, token_key, created, updated, verified)
      VALUES ('legacy-unverified', 'legacy-unverified@example.test', 'hash', 'legacy-token-key', '', '', FALSE);"
 email_auth_run="$(run_migrations "$email_auth_db")"
 email_auth_backfill="$(sqlite3 "$email_auth_db" \
   "SELECT (SELECT verified FROM users WHERE id = 'legacy-unverified') || ':' ||
           (SELECT COUNT(*) FROM sqlite_schema
-             WHERE type = 'table' AND name = 'mom_auth_tokens');")"
+             WHERE type = 'table' AND name = 'polymind_auth_tokens');")"
 [[ "$email_auth_run" == "202608100001" && "$email_auth_backfill" == "1:1" ]] || {
   echo "The email authentication migration did not preserve and verify a legacy account." >&2
   exit 1
@@ -154,7 +154,7 @@ email_auth_backfill="$(sqlite3 "$email_auth_db" \
 
 sqlite3 "$empty_db" ".backup $email_invite_db"
 sqlite3 "$email_invite_db" \
-  "DELETE FROM mom_schema_migrations WHERE version = '202608080001';
+  "DELETE FROM polymind_schema_migrations WHERE version = '202608080001';
    INSERT INTO users (id, email, password, token_key, created, updated)
      VALUES ('invite-user', 'invite@example.test', 'hash', 'token-key', '', '');
    INSERT INTO flashcard_review_sets (id, owner, name)
@@ -174,21 +174,21 @@ email_invite_backfill="$(sqlite3 "$email_invite_db" \
 
 sqlite3 "$cli_db" 'VACUUM'
 cli_output="$(
-  MOM_DB_PATH="$cli_db" \
-  MOM_API_SECRET="mom-migration-test-secret-at-least-32-characters" \
+  POLYMIND_DB_PATH="$cli_db" \
+  POLYMIND_API_SECRET="polymind-migration-test-secret-at-least-32-characters" \
     php server/migrate.php
 )"
-[[ "$cli_output" == *"Applied 33 migrations"* && "$cli_output" == *"202608120001"* ]] || {
+[[ "$cli_output" == *"Applied 34 migrations"* && "$cli_output" == *"202608120002"* ]] || {
   echo "The migration CLI did not initialize and report a new database." >&2
   exit 1
 }
 
 sqlite3 "$http_db" 'VACUUM'
-http_port="${MOM_MIGRATION_TEST_PORT:-$((18900 + RANDOM % 800))}"
-http_key="mom-http-migration-key-at-least-32-characters"
-MOM_DB_PATH="$http_db" \
-MOM_API_SECRET="mom-migration-test-secret-at-least-32-characters" \
-MOM_MIGRATION_KEY="$http_key" \
+http_port="${POLYMIND_MIGRATION_TEST_PORT:-$((18900 + RANDOM % 800))}"
+http_key="polymind-http-migration-key-at-least-32-characters"
+POLYMIND_DB_PATH="$http_db" \
+POLYMIND_API_SECRET="polymind-migration-test-secret-at-least-32-characters" \
+POLYMIND_MIGRATION_KEY="$http_key" \
   php -S "127.0.0.1:$http_port" -t . >"$http_server_log" 2>&1 &
 http_server_pid="$!"
 
@@ -211,7 +211,7 @@ done
 
 http_status="$(
   curl --silent --request POST \
-    --header "X-Mom-Migration-Key: $http_key" \
+    --header "X-Polymind-Migration-Key: $http_key" \
     --output "$http_response" \
     --write-out '%{http_code}' \
     "http://127.0.0.1:$http_port/server/migrate.php"
@@ -223,7 +223,7 @@ http_status="$(
 
 http_status="$(
   curl --silent \
-    --header "X-Mom-Migration-Key: $http_key" \
+    --header "X-Polymind-Migration-Key: $http_key" \
     --output "$http_response" \
     --write-out '%{http_code}' \
     "http://127.0.0.1:$http_port/server/migrate.php"
@@ -237,9 +237,9 @@ php -r '
   $response = json_decode(file_get_contents($argv[1]), true, 512, JSON_THROW_ON_ERROR);
   if (
       ($response["status"] ?? null) !== "ok"
-      || count($response["appliedMigrations"] ?? []) !== 33
-      || ($response["currentVersion"] ?? null) !== "202608120001"
-      || ($response["migrationCount"] ?? null) !== 33
+      || count($response["appliedMigrations"] ?? []) !== 34
+      || ($response["currentVersion"] ?? null) !== "202608120002"
+      || ($response["migrationCount"] ?? null) !== 34
   ) {
       fwrite(STDERR, "The HTTP migration response was invalid.\n");
       exit(1);
@@ -247,7 +247,7 @@ php -r '
 ' "$http_response"
 
 curl --silent \
-  --header "X-Mom-Migration-Key: $http_key" \
+  --header "X-Polymind-Migration-Key: $http_key" \
   --output "$http_response" \
   "http://127.0.0.1:$http_port/server/migrate.php"
 php -r '
@@ -262,12 +262,19 @@ kill "$http_server_pid"
 wait "$http_server_pid" || true
 http_server_pid=""
 
-source_db="${MOM_TEST_SOURCE_DB:-private/data.db}"
+source_db="${POLYMIND_TEST_SOURCE_DB:-private/data.db}"
 [[ -f "$source_db" ]] || {
   echo "Source database not found: $source_db" >&2
   exit 1
 }
 sqlite3 "$source_db" ".backup $existing_db"
+legacy_migration_table_exists="$(sqlite3 "$existing_db" \
+  "SELECT COUNT(*) FROM sqlite_schema
+   WHERE type = 'table' AND name = 'mom_schema_migrations';")"
+if [[ "$legacy_migration_table_exists" == 1 ]]; then
+  sqlite3 "$existing_db" \
+    'ALTER TABLE mom_schema_migrations RENAME TO polymind_schema_migrations;'
+fi
 php -r '
   $pdo = new PDO("sqlite:" . $argv[1]);
   $triggers = $pdo->query(
@@ -279,7 +286,7 @@ php -r '
   $pdo->exec("DROP TABLE IF EXISTS image_concepts_fts");
 ' "$existing_db"
 sqlite3 "$existing_db" \
-  "DELETE FROM mom_schema_migrations WHERE version IN ('202608050001', '202608050002', '202608050003', '202608060001', '202608060002', '202608060003', '202608060004', '202608070001', '202608070002', '202608070003', '202608070004', '202608070005', '202608070006', '202608080001', '202608080003', '202608090001', '202608090002', '202608100001', '202608100002', '202608110001', '202608120001');
+  "DELETE FROM polymind_schema_migrations WHERE version IN ('202608050001', '202608050002', '202608050003', '202608060001', '202608060002', '202608060003', '202608060004', '202608070001', '202608070002', '202608070003', '202608070004', '202608070005', '202608070006', '202608080001', '202608080003', '202608090001', '202608090002', '202608100001', '202608100002', '202608110001', '202608120001', '202608120002', '202608120003');
    DROP INDEX IF EXISTS idx_entries_task_source_session;
    DROP INDEX IF EXISTS idx_interval_templates_owner_flashcard_review_set;
    DROP INDEX IF EXISTS idx_tasks_owner_flashcard_review_set;
@@ -293,6 +300,7 @@ sqlite3 "$existing_db" \
    DROP TABLE IF EXISTS image_concepts;
    DROP TABLE IF EXISTS image_sources;
    DROP TABLE IF EXISTS mom_auth_tokens;
+   DROP TABLE IF EXISTS polymind_auth_tokens;
    DROP TABLE IF EXISTS sync_record_versions;
    DROP TABLE IF EXISTS sync_change_log;
    DROP TABLE IF EXISTS sync_operation_receipts;
@@ -376,7 +384,7 @@ before_counts="$(sqlite3 "$existing_db" \
 existing_run="$(run_migrations "$existing_db")"
 after_counts="$(sqlite3 "$existing_db" \
   "SELECT (SELECT COUNT(*) FROM tasks) || ':' || (SELECT COUNT(*) FROM entries);")"
-[[ "$existing_run" == "202608050001,202608050002,202608050003,202608060001,202608060002,202608060003,202608060004,202608070001,202608070002,202608070003,202608070004,202608070005,202608070006,202608080001,202608080003,202608090001,202608090002,202608100001,202608100002,202608110001,202608120001" ]] || {
+[[ "$existing_run" == "202608050001,202608050002,202608050003,202608060001,202608060002,202608060003,202608060004,202608070001,202608070002,202608070003,202608070004,202608070005,202608070006,202608080001,202608080003,202608090001,202608090002,202608100001,202608100002,202608110001,202608120001,202608120002" ]] || {
   echo "An existing PHP database did not apply only the pending feature migrations." >&2
   exit 1
 }

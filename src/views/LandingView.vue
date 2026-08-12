@@ -68,7 +68,7 @@ function scrollToFeatures() {
           <v-btn
             variant="outlined"
             size="large"
-            href="https://github.com/dannycoulombe/mom/releases/latest"
+            href="https://github.com/dannycoulombe/polymind/releases/latest"
             target="_blank"
             rel="noopener noreferrer"
             prepend-icon="mdi-cellphone-arrow-down"

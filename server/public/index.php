@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-use Mom\Api\Api;
-use Mom\Api\ApiException;
-use Mom\Api\Config;
-use Mom\Api\Database;
+use Polymind\Api\Api;
+use Polymind\Api\ApiException;
+use Polymind\Api\Config;
+use Polymind\Api\Database;
 
 require dirname(__DIR__) . '/src/ApiException.php';
 
@@ -40,7 +40,7 @@ try {
     }
     echo json_encode($body, JSON_UNESCAPED_SLASHES);
 } catch (Throwable $exception) {
-    error_log('[mom-api/bootstrap] ' . $exception->getMessage());
+    error_log('[polymind-api/bootstrap] ' . $exception->getMessage());
     header('Content-Type: application/json; charset=utf-8');
     header('Cache-Control: no-store');
     http_response_code(500);

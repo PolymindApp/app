@@ -57,19 +57,19 @@ For a separate API subdomain or a native app build, set an absolute HTTPS URL:
 
 ```dotenv
 VITE_API_URL=https://api.your-domain.example
-MOM_ALLOWED_ORIGINS=https://your-domain.example,http://localhost,capacitor://localhost
-MOM_APP_URL=https://your-domain.example
+POLYMIND_ALLOWED_ORIGINS=https://your-domain.example,http://localhost,capacitor://localhost
+POLYMIND_APP_URL=https://your-domain.example
 ```
 
-Generate a different `MOM_API_SECRET` for each production installation:
+Generate a different `POLYMIND_API_SECRET` for each production installation:
 
 ```bash
 php -r 'echo bin2hex(random_bytes(32)), PHP_EOL;'
 ```
 
-Generate a second, independent value for `MOM_MIGRATION_KEY`. Store it in the host's root `.env` and as the `MOM_MIGRATION_KEY` secret in the GitHub `Web` environment so the release workflow can run migrations after uploading the server.
+Generate a second, independent value for `POLYMIND_MIGRATION_KEY`. Store it in the host's root `.env` and as the `POLYMIND_MIGRATION_KEY` secret in the GitHub `Web` environment so the release workflow can run migrations after uploading the server.
 
-The PHP server reads the root `.env` itself. Vite exposes only variables beginning with `VITE_`, so `MOM_API_SECRET`, `MOM_DB_PATH`, and other server settings are not embedded in browser JavaScript.
+The PHP server reads the root `.env` itself. Vite exposes only variables beginning with `VITE_`, so `POLYMIND_API_SECRET`, `POLYMIND_DB_PATH`, and other server settings are not embedded in browser JavaScript.
 
 Prepare the web build with:
 
@@ -116,11 +116,13 @@ On the host, place a copy of `.env.prod` named `.env` at the project root becaus
 
 The Capacitor iOS project targets iOS 15 or newer and requires Xcode 26 or newer. Tag releases and `ios` manual workflow runs build a signed IPA on the `macos-26` GitHub runner and retain it as a workflow artifact for 30 days.
 
+The native applications use `app.polymind.android` on Android and `app.polymind.ios` on iOS. The Capacitor configuration selects the matching identifier from the platform argument so iOS export options and Android project syncs stay aligned with their signing profiles.
+
 Create a GitHub environment named `iOS` with these secrets:
 
 - `IOS_CERTIFICATE_BASE64` — the base64-encoded Apple distribution `.p12` certificate
 - `IOS_CERTIFICATE_PASSWORD` — the `.p12` password
-- `IOS_PROVISIONING_PROFILE_BASE64` — a base64-encoded distribution provisioning profile for `dev.coulombe.mom`
+- `IOS_PROVISIONING_PROFILE_BASE64` — a base64-encoded distribution provisioning profile for `app.polymind.ios`
 
 The environment may also define `VITE_API_URL` and `IOS_EXPORT_METHOD`. The API defaults to `https://mom.coulombe.dev/server`; the export method defaults to `app-store-connect` and may instead be `release-testing`, `enterprise`, or `debugging` when it matches the provisioning profile.
 
@@ -184,11 +186,11 @@ DELETE /collections/{collection}/records/{id}
 
 Only the application’s known collections, fields, sorts, and filters are accepted. Every data request requires a signed bearer token, and `owner` is always derived from that token. Related task, occurrence, program-step, tag, and interval records are checked for matching ownership before writes. The interval flashcard route updates only the existing Review set snapshot of an active, owned session; generic interval writes still reject client-authored snapshots.
 
-Passwords are stored as bcrypt hashes. Signed tokens are bound to a per-user `token_key`, and `mom_rate_limits` provides login and registration throttling.
+Passwords are stored as bcrypt hashes. Signed tokens are bound to a per-user `token_key`, and `polymind_rate_limits` provides login and registration throttling.
 
 Passkeys are exposed only by the native Android client. A signed-in user creates one from the account menu, then can use “Sign in with passkey” without entering an email. The PHP API stores only the credential public key, requires Android user verification, and issues the same bearer session used by password login.
 
-The web build publishes `/.well-known/assetlinks.json`, which binds `mom.coulombe.dev` to the Android package and the configured release/debug signing certificates. It must remain reachable over HTTPS with status `200`, no redirect, and an `application/json` content type. If the signing key changes, update both that file’s SHA-256 fingerprint and `MOM_PASSKEY_ANDROID_KEY_HASHES` in `.env.prod` before installing the newly signed app.
+The web build publishes `/.well-known/assetlinks.json`, which binds `mom.coulombe.dev` to the Android package and the configured release/debug signing certificates. It must remain reachable over HTTPS with status `200`, no redirect, and an `application/json` content type. If the signing key changes, update both that file’s SHA-256 fingerprint and `POLYMIND_PASSKEY_ANDROID_KEY_HASHES` in `.env.prod` before installing the newly signed app.
 
 ## Client API URL
 
@@ -204,7 +206,7 @@ pnpm android:bundle
 
 Both builds embed `https://mom.coulombe.dev/server`. The debug APK is written to `android/app/build/outputs/apk/debug/app-debug.apk`, the signed release APK to `android/app/build/outputs/apk/release/app-release.apk`, and the signed AAB to `android/app/build/outputs/bundle/release/app-release.aab`.
 
-Release signing uses `private/mom-release.jks` and `private/android-signing.properties`. Both files are ignored by Git and required for every future update. Back them up together in a secure password manager or encrypted archive; losing the keystore prevents signing updates as the same Android application.
+Release signing uses `private/polymind-release.jks` and `private/android-signing.properties`. Both files are ignored by Git and required for every future update. Back them up together in a secure password manager or encrypted archive; losing the keystore prevents signing updates as the same Android application.
 
 ## Android live development
 

@@ -25,24 +25,24 @@ Configuration may be supplied through the root `.env`, process environment varia
 
 | Setting | Purpose | Default |
 | --- | --- | --- |
-| `MOM_DB_PATH` | Absolute path to `data.db` | Local `private/data.db` |
-| `MOM_API_SECRET` | HMAC signing secret, at least 32 characters | Required in production |
-| `MOM_MIGRATION_KEY` | Dedicated key for authenticated HTTP migrations, at least 32 characters | HTTP migration disabled |
-| `MOM_ALLOWED_ORIGINS` | Comma-separated exact browser/Capacitor origins | Same-origin only |
-| `MOM_TOKEN_TTL` | Token lifetime in seconds, 5 minutes–30 days | 604800 |
-| `MOM_MAX_BODY_BYTES` | Maximum JSON request size | 2500000 |
-| `MOM_APP_URL` | Public browser URL used in account email links | Required for account email |
-| `MOM_MAIL_HOST` | SMTP host used by PHPMailer | Required for account email |
-| `MOM_MAIL_PORT` | SMTP port | 587 |
-| `MOM_MAIL_USERNAME` | SMTP username; configure with the password | No authentication |
-| `MOM_MAIL_PASSWORD` | SMTP password; configure with the username | No authentication |
-| `MOM_MAIL_ENCRYPTION` | `tls`, `ssl`, or `none` for trusted local development | `tls` |
-| `MOM_MAIL_FROM_ADDRESS` | Sender email address | Required for account email |
-| `MOM_MAIL_FROM_NAME` | Sender display name | Polymind |
-| `MOM_PEXELS_API_KEY` | Server-side Pexels API key used by batch and on-demand cache fills | Disabled |
-| `MOM_PASSKEY_RP_ID` | Android passkey relying-party domain | Disabled |
-| `MOM_PASSKEY_ANDROID_PACKAGE` | Trusted Android application ID | Disabled |
-| `MOM_PASSKEY_ANDROID_KEY_HASHES` | Comma-separated base64url SHA-256 signing-certificate hashes | Disabled |
+| `POLYMIND_DB_PATH` | Absolute path to `data.db` | Local `private/data.db` |
+| `POLYMIND_API_SECRET` | HMAC signing secret, at least 32 characters | Required in production |
+| `POLYMIND_MIGRATION_KEY` | Dedicated key for authenticated HTTP migrations, at least 32 characters | HTTP migration disabled |
+| `POLYMIND_ALLOWED_ORIGINS` | Comma-separated exact browser/Capacitor origins | Same-origin only |
+| `POLYMIND_TOKEN_TTL` | Token lifetime in seconds, 5 minutes–30 days | 604800 |
+| `POLYMIND_MAX_BODY_BYTES` | Maximum JSON request size | 2500000 |
+| `POLYMIND_APP_URL` | Public browser URL used in account email links | Required for account email |
+| `POLYMIND_MAIL_HOST` | SMTP host used by PHPMailer | Required for account email |
+| `POLYMIND_MAIL_PORT` | SMTP port | 587 |
+| `POLYMIND_MAIL_USERNAME` | SMTP username; configure with the password | No authentication |
+| `POLYMIND_MAIL_PASSWORD` | SMTP password; configure with the username | No authentication |
+| `POLYMIND_MAIL_ENCRYPTION` | `tls`, `ssl`, or `none` for trusted local development | `tls` |
+| `POLYMIND_MAIL_FROM_ADDRESS` | Sender email address | Required for account email |
+| `POLYMIND_MAIL_FROM_NAME` | Sender display name | Polymind |
+| `POLYMIND_PEXELS_API_KEY` | Server-side Pexels API key used by batch and on-demand cache fills | Disabled |
+| `POLYMIND_PASSKEY_RP_ID` | Android passkey relying-party domain | Disabled |
+| `POLYMIND_PASSKEY_ANDROID_PACKAGE` | Trusted Android application ID | Disabled |
+| `POLYMIND_PASSKEY_ANDROID_KEY_HASHES` | Comma-separated base64url SHA-256 signing-certificate hashes | Disabled |
 
 Generate a production secret:
 
@@ -50,19 +50,19 @@ Generate a production secret:
 php -r 'echo bin2hex(random_bytes(32)), PHP_EOL;'
 ```
 
-Generate separate values for `MOM_API_SECRET` and `MOM_MIGRATION_KEY`. Never commit either secret.
+Generate separate values for `POLYMIND_API_SECRET` and `POLYMIND_MIGRATION_KEY`. Never commit either secret.
 
-Only `VITE_API_URL` is exposed to the browser build. Variables beginning with `MOM_` remain PHP-only.
+Only `VITE_API_URL` is exposed to the browser build. Variables beginning with `POLYMIND_` remain PHP-only.
 
 For a native Android client, the allowed origins normally include `http://localhost`. For iOS Capacitor, include `capacitor://localhost`. Include the exact HTTPS origin of every browser client.
 
-Registration and password recovery require SMTP delivery. `MOM_APP_URL` must point to the deployed browser application rather than the API, so confirmation links open `/verify-email` and reset links open `/reset-password`. Use authenticated TLS in production. `none` is intended only for a trusted loopback development SMTP server.
+Registration and password recovery require SMTP delivery. `POLYMIND_APP_URL` must point to the deployed browser application rather than the API, so confirmation links open `/verify-email` and reset links open `/reset-password`. Use authenticated TLS in production. `none` is intended only for a trusted loopback development SMTP server.
 
 ## Database placement
 
 1. Keep `data.db` in a directory outside the public web root. The repository default is `private/data.db`.
 2. Give the PHP/web-server user read and write access to both the database file and its directory. SQLite needs directory access for WAL and shared-memory files.
-3. Set `MOM_DB_PATH` when the production path differs from the default.
+3. Set `POLYMIND_DB_PATH` when the production path differs from the default.
 4. Make a verified backup before schema or application upgrades.
 
 On a single-user hosting account, restrictive local permissions can be applied with:
@@ -87,17 +87,17 @@ The API applies pending migrations automatically before handling a request. For 
 php server/migrate.php
 ```
 
-On a host without CLI access, configure a dedicated `MOM_MIGRATION_KEY` and invoke the same runner over HTTPS:
+On a host without CLI access, configure a dedicated `POLYMIND_MIGRATION_KEY` and invoke the same runner over HTTPS:
 
 ```bash
 curl --fail-with-body \
-  --header "X-Mom-Migration-Key: $MOM_MIGRATION_KEY" \
+  --header "X-Polymind-Migration-Key: $POLYMIND_MIGRATION_KEY" \
   https://example.com/server/migrate.php
 ```
 
 The HTTP endpoint accepts only `GET`, is disabled when the key is missing or shorter than 32 characters, uses a constant-time comparison, and never returns internal exception details. Send the key in the header rather than the URL so it is not stored in normal URL or query-string logs.
 
-Applied versions are stored in `mom_schema_migrations` with the migration filename checksum and application time. All pending migrations run inside one SQLite `BEGIN IMMEDIATE` transaction, so concurrent PHP requests cannot apply the same migration and a failed batch is rolled back.
+Applied versions are stored in `polymind_schema_migrations` with the migration filename checksum and application time. All pending migrations run inside one SQLite `BEGIN IMMEDIATE` transaction, so concurrent PHP requests cannot apply the same migration and a failed batch is rolled back.
 
 The reconstructed PHP-era history is:
 
@@ -133,7 +133,7 @@ Recommended deployment order:
 4. Run `php server/migrate.php`, or call its authenticated HTTPS endpoint.
 5. Verify `/health`, then deploy or enable the client.
 
-The release workflow calls the authenticated endpoint after its upload job succeeds. Configure the same `MOM_MIGRATION_KEY` value in the host's root `.env` and the GitHub `Web` environment secret. `MIGRATION_URL` may be set as a `Web` environment variable when the default deployment URL is not appropriate. The first ordinary API request also applies pending migrations as a fallback. Keep the backup: migrations are forward-only and do not perform automatic rollbacks after a successful deployment.
+The release workflow calls the authenticated endpoint after its upload job succeeds. Configure the same `POLYMIND_MIGRATION_KEY` value in the host's root `.env` and the GitHub `Web` environment secret. `MIGRATION_URL` may be set as a `Web` environment variable when the default deployment URL is not appropriate. The first ordinary API request also applies pending migrations as a fallback. Keep the backup: migrations are forward-only and do not perform automatic rollbacks after a successful deployment.
 
 ## Flashcard image library
 
@@ -145,7 +145,7 @@ php scripts/seed-image-concepts.php
 
 The seed is idempotent. Existing Pexels results remain flagged as searched unless a concept's English search query changes. To rebuild the committed artifact from the upstream WordNet and OMW archives, run `php scripts/build-image-concept-seed.php`; this development-only command downloads its sources and requires cURL and Zip.
 
-Create a Pexels API key and set `MOM_PEXELS_API_KEY` in the server environment. Local API runs also use that one value from the root `.env.prod` when it is absent from the environment, local server configuration, and `.env`; other production settings are not imported. Fill the cache in bounded batches:
+Create a Pexels API key and set `POLYMIND_PEXELS_API_KEY` in the server environment. Local API runs also use that one value from the root `.env.prod` when it is absent from the environment, local server configuration, and `.env`; other production settings are not imported. Fill the cache in bounded batches:
 
 ```bash
 php scripts/fetch-pexels-images.php --limit=100
@@ -210,7 +210,7 @@ Use the PHP-FPM socket configured by the host.
 
 ## Security behavior
 
-- HS256 bearer tokens are signed with `MOM_API_SECRET`, expire automatically, and are bound to each user’s `token_key`.
+- HS256 bearer tokens are signed with `POLYMIND_API_SECRET`, expire automatically, and are bound to each user’s `token_key`.
 - Passwords use PHP’s password hashing API and are rehashed after a successful login when PHP recommends it.
 - New password accounts cannot sign in until their emailed address is confirmed.
 - Email confirmation and password reset tokens are stored only as HMAC hashes, expire after 24 hours and 1 hour respectively, and are consumed once.
@@ -229,7 +229,7 @@ Use the PHP-FPM socket configured by the host.
 
 ## Android passkey deployment
 
-The three `MOM_PASSKEY_*` settings must either all be configured or all be empty. `MOM_PASSKEY_RP_ID` is the domain that serves the app’s Digital Asset Link, without a scheme or path. The signing hashes use unpadded base64url SHA-256; they are intentionally a different representation from the colon-separated hexadecimal fingerprints in `assetlinks.json`.
+The three `POLYMIND_PASSKEY_*` settings must either all be configured or all be empty. `POLYMIND_PASSKEY_RP_ID` is the domain that serves the app’s Digital Asset Link, without a scheme or path. The signing hashes use unpadded base64url SHA-256; they are intentionally a different representation from the colon-separated hexadecimal fingerprints in `assetlinks.json`.
 
 The client publishes `public/.well-known/assetlinks.json` into the web build. After deployment, verify:
 
@@ -246,7 +246,7 @@ Serve the API only over HTTPS. The client stores its bearer token in local stora
 Back up the database with SQLite’s online backup operation instead of copying only `data.db` while the API is active:
 
 ```bash
-sqlite3 /private/path/data.db ".backup /private/backups/mom-$(date +%F).db"
+sqlite3 /private/path/data.db ".backup /private/backups/polymind-$(date +%F).db"
 ```
 
 Store backups outside the hosting account and periodically test a restore.

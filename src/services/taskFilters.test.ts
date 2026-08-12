@@ -42,7 +42,7 @@ describe('task filters', () => {
 
   it('ignores unknown filters left in session storage', () => {
     sessionStorage.setItem(
-      'mom-task-filter-selection',
+      'polymind-task-filter-selection',
       JSON.stringify(['completed', 'retired']),
     )
 

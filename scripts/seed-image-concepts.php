@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-use Mom\Api\Config;
-use Mom\Api\Database;
-use Mom\Api\ImageConceptSeeder;
+use Polymind\Api\Config;
+use Polymind\Api\Database;
+use Polymind\Api\ImageConceptSeeder;
 
 $projectRoot = dirname(__DIR__);
 $serverRoot = $projectRoot . '/server';

@@ -9,7 +9,7 @@ const OMW_ARCHIVE_URL = 'https://github.com/omwn/omw-data/archive/refs/heads/mai
 
 $projectRoot = dirname(__DIR__);
 $output = $projectRoot . '/server/seeds/image-concepts.jsonl';
-$temporaryRoot = sys_get_temp_dir() . '/mom-image-concepts-' . bin2hex(random_bytes(8));
+$temporaryRoot = sys_get_temp_dir() . '/polymind-image-concepts-' . bin2hex(random_bytes(8));
 
 if (!extension_loaded('curl') || !extension_loaded('zip')) {
     fwrite(STDERR, "The cURL and Zip PHP extensions are required.\n");
@@ -47,13 +47,13 @@ try {
             'attribution' => 'WordNet Core, WordNet 2.1 and WordNet 3.0, Princeton University.',
         ],
         ...$sources,
-        'mom-prepositions-1' => [
-            'name' => 'Mom common English preposition supplement',
+        'polymind-prepositions-1' => [
+            'name' => 'Polymind common English preposition supplement',
             'language' => 'en',
             'source_url' => '',
             'license_name' => 'Project data',
             'license_url' => '',
-            'attribution' => 'Curated for the Mom image concept catalog.',
+            'attribution' => 'Curated for the Polymind image concept catalog.',
         ],
     ];
 
@@ -119,7 +119,7 @@ function downloadFile(string $url, string $path): void
         CURLOPT_CONNECTTIMEOUT => 15,
         CURLOPT_TIMEOUT => 180,
         CURLOPT_FAILONERROR => true,
-        CURLOPT_USERAGENT => 'Mom image concept seed builder',
+        CURLOPT_USERAGENT => 'Polymind image concept seed builder',
     ]);
     try {
         if (curl_exec($curl) !== true) {
@@ -436,7 +436,7 @@ function prepositionConcepts(): array
         'up', 'upon', 'with', 'within', 'without',
     ];
     return array_map(static fn (string $word): array => [
-        'source_key' => 'mom:preposition:' . $word,
+        'source_key' => 'polymind:preposition:' . $word,
         'canonical_name' => $word,
         'part_of_speech' => 'preposition',
         'semantic_category' => 'function word',
@@ -445,7 +445,7 @@ function prepositionConcepts(): array
         'terms' => [[
             'language' => 'en',
             'term' => $word,
-            'source_id' => 'mom-prepositions-1',
+            'source_id' => 'polymind-prepositions-1',
         ]],
     ], $words);
 }
@@ -485,7 +485,7 @@ function writeJsonLine(mixed $stream, array $value): void
 function removeTemporaryTree(string $path): void
 {
     $expectedPrefix = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR)
-        . DIRECTORY_SEPARATOR . 'mom-image-concepts-';
+        . DIRECTORY_SEPARATOR . 'polymind-image-concepts-';
     if (!str_starts_with($path, $expectedPrefix) || !is_dir($path)) {
         return;
     }

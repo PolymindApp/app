@@ -91,8 +91,8 @@ beforeEach(() => {
   })
   mocks.getPending.mockResolvedValue({
     notifications: [
-      { id: 1, extra: { kind: 'mom-tracking-reminder' } },
-      { id: 2, extra: { kind: 'mom-task-reminder' } },
+      { id: 1, extra: { kind: 'polymind-tracking-reminder' } },
+      { id: 2, extra: { kind: 'polymind-task-reminder' } },
       { id: 3, extra: { kind: 'another-feature' } },
     ],
   })
@@ -209,7 +209,7 @@ describe('task reminders', () => {
     })
 
     await installTaskNotificationRouting({ push } as never)
-    listener?.({ notification: { extra: { kind: 'mom-task-reminder', route: '/tasks' } } })
+    listener?.({ notification: { extra: { kind: 'polymind-task-reminder', route: '/tasks' } } })
     listener?.({ notification: { extra: { kind: 'another-feature', route: '/tasks' } } })
 
     expect(push).toHaveBeenCalledTimes(1)

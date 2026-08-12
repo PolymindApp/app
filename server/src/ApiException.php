@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Mom\Api;
+namespace Polymind\Api;
 
 use RuntimeException;
 use Throwable;

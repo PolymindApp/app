@@ -1,6 +1,6 @@
 import type { RouteLocationNormalized, Router } from 'vue-router'
 
-export const ANDROID_ROUTE_STORAGE_KEY = 'mom-android-route-v1'
+export const ANDROID_ROUTE_STORAGE_KEY = 'polymind-android-route-v1'
 
 interface SavedAndroidRoute {
   fullPath: string

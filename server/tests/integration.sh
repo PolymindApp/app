@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-source_db="${MOM_TEST_SOURCE_DB:-private/data.db}"
-test_port="${MOM_TEST_PORT:-$((18100 + RANDOM % 800))}"
+source_db="${POLYMIND_TEST_SOURCE_DB:-private/data.db}"
+test_port="${POLYMIND_TEST_PORT:-$((18100 + RANDOM % 800))}"
 pexels_port="$((test_port + 1000))"
 smtp_port="$((test_port + 3000))"
-test_secret="mom-api-integration-secret-at-least-32-characters"
+test_secret="polymind-api-integration-secret-at-least-32-characters"
 test_root="${TMPDIR:-/tmp}"
-test_dir="$(mktemp -d "$test_root/mom-api-test.XXXXXX")"
+test_dir="$(mktemp -d "$test_root/polymind-api-test.XXXXXX")"
 test_db="$test_dir/data.db"
 test_log="$test_dir/server.log"
 pexels_log="$test_dir/pexels.log"
@@ -35,7 +35,7 @@ cleanup() {
     sed -n '1,240p' "$test_log" >&2
   fi
   case "$test_dir" in
-    "$test_root"/mom-api-test.*) rm -rf -- "$test_dir" ;;
+    "$test_root"/polymind-api-test.*) rm -rf -- "$test_dir" ;;
   esac
 }
 trap cleanup EXIT
@@ -83,22 +83,22 @@ for _attempt in {1..50}; do
   sleep .1
 done
 
-MOM_DB_PATH="$test_db" \
-MOM_API_SECRET="$test_secret" \
-MOM_ALLOWED_ORIGINS="http://localhost:5173" \
-MOM_PEXELS_API_KEY="test-pexels-key" \
-MOM_PEXELS_API_BASE_URL="http://127.0.0.1:$pexels_port/v1/search" \
-MOM_APP_URL="http://127.0.0.1:$test_port" \
-MOM_MAIL_HOST="127.0.0.1" \
-MOM_MAIL_PORT="$smtp_port" \
-MOM_MAIL_USERNAME="" \
-MOM_MAIL_PASSWORD="" \
-MOM_MAIL_ENCRYPTION="none" \
-MOM_MAIL_FROM_ADDRESS="polymind@example.test" \
-MOM_MAIL_FROM_NAME="Polymind" \
-MOM_PASSKEY_RP_ID="mom.example.test" \
-MOM_PASSKEY_ANDROID_PACKAGE="dev.coulombe.mom" \
-MOM_PASSKEY_ANDROID_KEY_HASHES="q9nLBq6siknwb9S8EaFfsZ-C1d5y_mHhbfaYSRnGE0k" \
+POLYMIND_DB_PATH="$test_db" \
+POLYMIND_API_SECRET="$test_secret" \
+POLYMIND_ALLOWED_ORIGINS="http://localhost:5173" \
+POLYMIND_PEXELS_API_KEY="test-pexels-key" \
+POLYMIND_PEXELS_API_BASE_URL="http://127.0.0.1:$pexels_port/v1/search" \
+POLYMIND_APP_URL="http://127.0.0.1:$test_port" \
+POLYMIND_MAIL_HOST="127.0.0.1" \
+POLYMIND_MAIL_PORT="$smtp_port" \
+POLYMIND_MAIL_USERNAME="" \
+POLYMIND_MAIL_PASSWORD="" \
+POLYMIND_MAIL_ENCRYPTION="none" \
+POLYMIND_MAIL_FROM_ADDRESS="polymind@example.test" \
+POLYMIND_MAIL_FROM_NAME="Polymind" \
+POLYMIND_PASSKEY_RP_ID="polymind.example.test" \
+POLYMIND_PASSKEY_ANDROID_PACKAGE="app.polymind.android" \
+POLYMIND_PASSKEY_ANDROID_KEY_HASHES="q9nLBq6siknwb9S8EaFfsZ-C1d5y_mHhbfaYSRnGE0k" \
   php -S "127.0.0.1:$test_port" -t server/public server/router.php >"$test_log" 2>&1 &
 server_pid=$!
 
@@ -115,7 +115,7 @@ api_url="http://127.0.0.1:$test_port"
 suffix="$(php -r 'echo bin2hex(random_bytes(5));')"
 password="correct-horse-battery"
 
-migration_count="$(sqlite3 "$test_db" 'SELECT COUNT(*) FROM mom_schema_migrations;')"
+migration_count="$(sqlite3 "$test_db" 'SELECT COUNT(*) FROM polymind_schema_migrations;')"
 [[ "$migration_count" == 35 ]] || {
   echo "The API did not apply the complete database migration sequence." >&2
   exit 1
@@ -203,7 +203,7 @@ grep -q 'background:#C7F464;color:#192113' "$smtp_mailbox" || {
   exit 1
 }
 raw_verification_tokens="$(sqlite3 "$test_db" \
-  "SELECT COUNT(*) FROM mom_auth_tokens WHERE token_hash = '$alice_verification_token';")"
+  "SELECT COUNT(*) FROM polymind_auth_tokens WHERE token_hash = '$alice_verification_token';")"
 [[ "$raw_verification_tokens" == 0 ]] || {
   echo "The raw email verification token was stored in the database." >&2
   exit 1
@@ -234,7 +234,7 @@ reset_token="$(mail_token reset-password)"
   exit 1
 }
 raw_reset_tokens="$(sqlite3 "$test_db" \
-  "SELECT COUNT(*) FROM mom_auth_tokens WHERE token_hash = '$reset_token';")"
+  "SELECT COUNT(*) FROM polymind_auth_tokens WHERE token_hash = '$reset_token';")"
 [[ "$raw_reset_tokens" == 0 ]] || {
   echo "The raw password reset token was stored in the database." >&2
   exit 1
@@ -605,7 +605,7 @@ passkey_ceremony="$(json_field ceremonyId <<<"$passkey_options")"
 passkey_request_json="$(json_field requestJson <<<"$passkey_options")"
 php -r '
   $request = json_decode($argv[1], true, 512, JSON_THROW_ON_ERROR);
-  if (($request["rp"]["id"] ?? null) !== "mom.example.test"
+  if (($request["rp"]["id"] ?? null) !== "polymind.example.test"
       || ($request["authenticatorSelection"]["residentKey"] ?? null) !== "required"
       || ($request["authenticatorSelection"]["userVerification"] ?? null) !== "required") {
       fwrite(STDERR, "Passkey registration options are invalid.\n");
@@ -614,7 +614,7 @@ php -r '
 ' "$passkey_request_json"
 
 stored_challenge_count="$(sqlite3 "$test_db" \
-  "SELECT COUNT(*) FROM mom_passkey_challenges WHERE id = '$passkey_ceremony' AND purpose = 'register';")"
+  "SELECT COUNT(*) FROM polymind_passkey_challenges WHERE id = '$passkey_ceremony' AND purpose = 'register';")"
 [[ "$stored_challenge_count" == 1 ]] || {
   echo "The passkey registration challenge was not stored." >&2
   exit 1
@@ -629,7 +629,7 @@ fake_client_data="$(php -r '
     "type" => "webauthn.create",
     "challenge" => $argv[1],
     "origin" => "android:apk-key-hash:q9nLBq6siknwb9S8EaFfsZ-C1d5y_mHhbfaYSRnGE0k",
-    "androidPackageName" => "dev.coulombe.mom",
+    "androidPackageName" => "app.polymind.android",
     "crossOrigin" => false,
   ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
   echo rtrim(strtr(base64_encode($data), "+/", "-_"), "=");
@@ -644,14 +644,14 @@ invalid_passkey_status="$(curl --silent --output /dev/null --write-out '%{http_c
   exit 1
 }
 consumed_challenge_count="$(sqlite3 "$test_db" \
-  "SELECT COUNT(*) FROM mom_passkey_challenges WHERE id = '$passkey_ceremony';")"
+  "SELECT COUNT(*) FROM polymind_passkey_challenges WHERE id = '$passkey_ceremony';")"
 [[ "$consumed_challenge_count" == 0 ]] || {
   echo "A used passkey challenge was not consumed." >&2
   exit 1
 }
 
 sqlite3 "$test_db" "
-  INSERT INTO mom_passkeys (
+  INSERT INTO polymind_passkeys (
     credential_id, user_id, user_handle, public_key, signature_counter,
     transports, backup_eligible, backed_up, created, last_used
   ) VALUES (
@@ -685,9 +685,9 @@ disconnected_removed="$(json_field removed <<<"$disconnect_response")"
   exit 1
 }
 remaining_passkeys="$(sqlite3 "$test_db" \
-  "SELECT COUNT(*) FROM mom_passkeys WHERE user_id = '$alice_id';")"
+  "SELECT COUNT(*) FROM polymind_passkeys WHERE user_id = '$alice_id';")"
 remaining_registration_challenges="$(sqlite3 "$test_db" \
-  "SELECT COUNT(*) FROM mom_passkey_challenges WHERE id = '$pending_passkey_ceremony';")"
+  "SELECT COUNT(*) FROM polymind_passkey_challenges WHERE id = '$pending_passkey_ceremony';")"
 [[ "$remaining_passkeys" == 0 && "$remaining_registration_challenges" == 0 ]] || {
   echo "Disconnecting biometrics did not revoke all account credentials and pending setup requests." >&2
   exit 1

@@ -39,7 +39,7 @@ interface FlashcardSpeechPlugin {
 }
 
 const NativeFlashcardSpeech = registerPlugin<FlashcardSpeechPlugin>('FlashcardSpeech')
-const SPEECH_OVER_AMPLIFICATION_STORAGE_KEY = 'mom-flashcard-speech:over-amplification'
+const SPEECH_OVER_AMPLIFICATION_STORAGE_KEY = 'polymind-flashcard-speech:over-amplification'
 let nativeBackgroundActive = false
 let activeBrowserUtterance: SpeechSynthesisUtterance | undefined
 let browserVoiceLoad: Promise<SpeechSynthesisVoice[]> | undefined

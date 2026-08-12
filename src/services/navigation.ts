@@ -11,12 +11,12 @@ export type MainNavItemId = MainNavItem['id']
 export type MainMenuTransitionDirection = 'forward' | 'back'
 
 export const DEFAULT_MAIN_MENU_ORDER: MainNavItemId[] = MAIN_NAV_ITEMS.map(item => item.id)
-export const MAIN_MENU_ORDER_CHANGED_EVENT = 'mom-main-menu-order-changed'
-export const MAIN_MENU_VISIBILITY_CHANGED_EVENT = 'mom-main-menu-visibility-changed'
+export const MAIN_MENU_ORDER_CHANGED_EVENT = 'polymind-main-menu-order-changed'
+export const MAIN_MENU_VISIBILITY_CHANGED_EVENT = 'polymind-main-menu-visibility-changed'
 
 const mainNavIds = new Set<string>(DEFAULT_MAIN_MENU_ORDER)
-const mainMenuOrderStorageKey = 'mom-main-menu-order'
-const mainMenuHiddenStorageKey = 'mom-main-menu-hidden'
+const mainMenuOrderStorageKey = 'polymind-main-menu-order'
+const mainMenuHiddenStorageKey = 'polymind-main-menu-hidden'
 
 export function bottomNavigationFontSize(itemCount: number) {
   const count = Number.isFinite(itemCount) ? Math.max(0, Math.floor(itemCount)) : 0

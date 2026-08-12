@@ -24,7 +24,7 @@ import type {
   QuickIntervalSettings,
 } from '@/types/domain'
 
-const RECOVERY_KEY = 'mom-active-interval'
+const RECOVERY_KEY = 'polymind-active-interval'
 
 function mapTemplate(record: Record<string, any>): IntervalTemplate {
   return {

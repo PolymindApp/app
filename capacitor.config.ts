@@ -1,12 +1,16 @@
 import type { CapacitorConfig } from '@capacitor/cli'
 
+const nativeAppId = process.argv.includes('ios')
+  ? 'app.polymind.ios'
+  : 'app.polymind.android'
+
 const config: CapacitorConfig = {
-  appId: 'dev.coulombe.mom',
+  appId: nativeAppId,
   appName: 'Polymind',
   webDir: 'dist',
   plugins: {
     BackgroundRunner: {
-      label: 'dev.coulombe.mom.sync',
+      label: 'app.polymind.sync',
       src: 'runners/background.js',
       event: 'backgroundSync',
       repeat: true,

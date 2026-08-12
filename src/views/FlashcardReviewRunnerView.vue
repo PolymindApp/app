@@ -345,7 +345,7 @@ function initializeLocalState(value: FlashcardReviewSession) {
 }
 
 function passiveStorageKey(id: string) {
-  return `mom-flashcard-passive:${id}`
+  return `polymind-flashcard-passive:${id}`
 }
 
 function restorePassiveState(value: FlashcardReviewSession) {

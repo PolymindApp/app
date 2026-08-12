@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-use Mom\Api\Config;
-use Mom\Api\Database;
-use Mom\Api\PexelsImageFetcher;
+use Polymind\Api\Config;
+use Polymind\Api\Database;
+use Polymind\Api\PexelsImageFetcher;
 
 $limit = 100;
 foreach (array_slice($argv, 1) as $argument) {
@@ -28,7 +28,7 @@ require $serverRoot . '/src/PexelsImageFetcher.php';
 try {
     $config = Config::load($serverRoot);
     $database = new Database($config->databasePath);
-    $testApiUrl = getenv('MOM_PEXELS_API_BASE_URL');
+    $testApiUrl = getenv('POLYMIND_PEXELS_API_BASE_URL');
     $fetcher = new PexelsImageFetcher(
         $database->pdo,
         $config->pexelsApiKey,

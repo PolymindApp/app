@@ -6,7 +6,7 @@
     ],
     "target": {
       "namespace": "android_app",
-      "package_name": "dev.coulombe.mom",
+      "package_name": "app.polymind.android",
       "sha256_cert_fingerprints": [
         "AB:D9:CB:06:AE:AC:8A:49:F0:6F:D4:BC:11:A1:5F:B1:9F:82:D5:DE:72:FE:61:E1:6D:F6:98:49:19:C6:13:49",
         "D0:A1:45:AD:65:99:00:F6:08:58:D8:55:E8:11:81:E9:BF:CB:E7:1A:F7:70:10:A4:FA:6B:16:44:ED:1C:77:1E"

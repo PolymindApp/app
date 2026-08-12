@@ -1,9 +1,9 @@
 ---
 name: default
-description: Preserve and extend the Mom application's established UI direction. Use when designing, implementing, reviewing, or refining Vue and Vuetify views, components, navigation, cards, forms, dialogs, bottom sheets, transitions, responsive layouts, Android interactions, or other user-facing interface work in this repository.
+description: Preserve and extend the Polymind application's established UI direction. Use when designing, implementing, reviewing, or refining Vue and Vuetify views, components, navigation, cards, forms, dialogs, bottom sheets, transitions, responsive layouts, Android interactions, or other user-facing interface work in this repository.
 ---
 
-# Mom UI Direction
+# Polymind UI Direction
 
 ## After each tasks
 

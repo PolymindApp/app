@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Mom\Api;
+namespace Polymind\Api;
 
 use JsonException;
 use PDO;
@@ -26,7 +26,7 @@ final class PexelsImageFetcher
         ?string $apiUrl = null,
     ) {
         if ($apiKey === '') {
-            throw new RuntimeException('MOM_PEXELS_API_KEY is required.');
+            throw new RuntimeException('POLYMIND_PEXELS_API_KEY is required.');
         }
         $this->imageDirectory = dirname($databasePath) . DIRECTORY_SEPARATOR . 'flashcard-images';
         $this->apiUrl = $apiUrl ?: self::API_URL;
@@ -188,7 +188,7 @@ final class PexelsImageFetcher
             CURLOPT_CONNECTTIMEOUT => 10,
             CURLOPT_TIMEOUT => 30,
             CURLOPT_FOLLOWLOCATION => false,
-            CURLOPT_USERAGENT => 'Mom flashcard image library',
+            CURLOPT_USERAGENT => 'Polymind flashcard image library',
             CURLOPT_HEADERFUNCTION => static function ($curl, string $line) use (&$headers): int {
                 $separator = strpos($line, ':');
                 if ($separator !== false) {
@@ -305,7 +305,7 @@ final class PexelsImageFetcher
             CURLOPT_FOLLOWLOCATION => false,
             CURLOPT_MAXFILESIZE => self::MAX_DOWNLOAD_BYTES,
             CURLOPT_HTTPHEADER => ['Accept: image/*'],
-            CURLOPT_USERAGENT => 'Mom flashcard image library',
+            CURLOPT_USERAGENT => 'Polymind flashcard image library',
         ]);
         try {
             $bytes = curl_exec($curl);

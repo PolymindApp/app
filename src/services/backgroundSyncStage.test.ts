@@ -68,7 +68,7 @@ describe('background sync staging', () => {
 
     expect(mocks.set).not.toHaveBeenCalled()
     expect(mocks.dispatchEvent).toHaveBeenCalledWith({
-      label: 'dev.coulombe.mom.sync',
+      label: 'app.polymind.sync',
       event: 'stageSync',
       details,
     })

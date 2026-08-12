@@ -2,7 +2,7 @@
 set -euo pipefail
 
 test_root="${TMPDIR:-/tmp}"
-test_dir="$(mktemp -d "$test_root/mom-image-library-test.XXXXXX")"
+test_dir="$(mktemp -d "$test_root/polymind-image-library-test.XXXXXX")"
 test_db="$test_dir/data.db"
 mock_log="$test_dir/pexels.log"
 mock_pid=""
@@ -13,7 +13,7 @@ cleanup() {
     wait "$mock_pid" >/dev/null 2>&1 || true
   fi
   case "$test_dir" in
-    "$test_root"/mom-image-library-test.*) rm -rf -- "$test_dir" ;;
+    "$test_root"/polymind-image-library-test.*) rm -rf -- "$test_dir" ;;
   esac
 }
 trap cleanup EXIT
@@ -32,8 +32,8 @@ fi
 
 sqlite3 "$test_db" 'VACUUM'
 seed_output="$(
-  MOM_DB_PATH="$test_db" \
-  MOM_API_SECRET="mom-image-library-test-secret-at-least-32-characters" \
+  POLYMIND_DB_PATH="$test_db" \
+  POLYMIND_API_SECRET="polymind-image-library-test-secret-at-least-32-characters" \
     php scripts/seed-image-concepts.php
 )"
 [[ "$seed_output" =~ Seeded\ ([5-9][0-9]{3}|[1-9][0-9]{4,})\ image\ concepts ]] || {
@@ -55,7 +55,7 @@ IFS=: read -r concept_count term_count language_count pending_count <<<"$seed_su
 
 first_concept_id="$(sqlite3 "$test_db" \
   'SELECT id FROM image_concepts WHERE active = TRUE AND pexels_searched = FALSE ORDER BY id LIMIT 1;')"
-mock_port="${MOM_PEXELS_TEST_PORT:-$((19700 + RANDOM % 800))}"
+mock_port="${POLYMIND_PEXELS_TEST_PORT:-$((19700 + RANDOM % 800))}"
 php -S "127.0.0.1:$mock_port" server/tests/fixtures/pexels-router.php >"$mock_log" 2>&1 &
 mock_pid=$!
 
@@ -69,10 +69,10 @@ for _attempt in {1..50}; do
 done
 
 fetch_output="$(
-  MOM_DB_PATH="$test_db" \
-  MOM_API_SECRET="mom-image-library-test-secret-at-least-32-characters" \
-  MOM_PEXELS_API_KEY="test-pexels-key" \
-  MOM_PEXELS_API_BASE_URL="http://127.0.0.1:$mock_port/v1/search" \
+  POLYMIND_DB_PATH="$test_db" \
+  POLYMIND_API_SECRET="polymind-image-library-test-secret-at-least-32-characters" \
+  POLYMIND_PEXELS_API_KEY="test-pexels-key" \
+  POLYMIND_PEXELS_API_BASE_URL="http://127.0.0.1:$mock_port/v1/search" \
     php scripts/fetch-pexels-images.php --limit=1
 )"
 [[ "$fetch_output" == *"Searched 1/1 concepts; 1 new and 0 reused assets"* ]] || {

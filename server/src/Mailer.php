@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Mom\Api;
+namespace Polymind\Api;
 
 use PHPMailer\PHPMailer\PHPMailer;
 use Throwable;
@@ -83,7 +83,7 @@ final class Mailer
             $mail->AltBody = implode("\n\n", [$heading, $message, $action . ': ' . $url, $footer]);
             $mail->send();
         } catch (Throwable $exception) {
-            error_log('[mom-api/mail] ' . $exception->getMessage());
+            error_log('[polymind-api/mail] ' . $exception->getMessage());
             throw new ApiException(
                 503,
                 'We could not send the email. Please try again.',

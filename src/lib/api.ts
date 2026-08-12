@@ -94,7 +94,7 @@ interface ImageLibrarySearchResponse {
   items: ImageLibraryAsset[]
 }
 
-const AUTH_STORAGE_KEY = 'mom-api-auth'
+const AUTH_STORAGE_KEY = 'polymind-api-auth'
 const baseUrl = (import.meta.env.VITE_API_URL || '/api').replace(/\/+$/, '')
 
 export function apiAssetUrl(value: string) {
