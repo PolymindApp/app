@@ -1,6 +1,6 @@
 import { defineComponent } from 'vue'
 import { mount } from '@vue/test-utils'
-import { beforeEach } from 'vitest'
+import { beforeEach, vi } from 'vitest'
 import TaskCard from '@/components/TaskCard.vue'
 import type { TaskProgress } from '@/types/domain'
 
@@ -296,6 +296,50 @@ describe('TaskCard amount actions', () => {
       & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(wrapper.text()).not.toContain('Syncing steps')
     expect(headerActions.find('.task-health-connect-icon').exists()).toBe(false)
+  })
+
+  it('keeps fast step sync progress visible long enough to be perceived', async () => {
+    vi.useFakeTimers()
+    const stepProgress: TaskProgress = {
+      ...progress,
+      task: {
+        ...progress.task,
+        id: 'steps',
+        name: 'Daily steps',
+        type: 'step_counter',
+        targetValue: 10000,
+        unit: 'steps',
+      },
+    }
+    const wrapper = mount(TaskCard, {
+      props: { progress: stepProgress, syncing: true },
+      global: {
+        stubs: {
+          VBtn: VBtnStub,
+          VCard: { template: '<div><slot /></div>' },
+          VExpandTransition: { template: '<div><slot /></div>' },
+          ExpandTransition: { template: '<div><slot /></div>' },
+          VIcon: true,
+          VProgressCircular: { template: '<div class="stub-progress-circular"><slot /></div>' },
+          VProgressLinear: true,
+        },
+      },
+    })
+
+    try {
+      await wrapper.setProps({ syncing: false })
+
+      expect(wrapper.find('.task-sync-progress').exists()).toBe(true)
+      expect(wrapper.find('.task-health-connect-icon').exists()).toBe(false)
+
+      await vi.advanceTimersByTimeAsync(700)
+
+      expect(wrapper.find('.task-sync-progress').exists()).toBe(false)
+      expect(wrapper.find('.task-health-connect-icon').exists()).toBe(true)
+    } finally {
+      wrapper.unmount()
+      vi.useRealTimers()
+    }
   })
 
   it('shows interval duration beside its type without a nested interval card', () => {

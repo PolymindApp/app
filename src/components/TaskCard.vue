@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, useId, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, useId, watch } from 'vue'
 import { formatIntervalDuration } from '@/services/intervals'
 import { goalState } from '@/services/schedule'
 import { taskCanLogAmounts } from '@/services/taskCardActions'
@@ -7,6 +7,7 @@ import { TASK_TYPE_PRESENTATION } from '@/services/taskTypes'
 import type { TaskProgress, TrackingTaskTracker } from '@/types/domain'
 
 const TASK_CARD_EXPANSION_STORAGE_PREFIX = 'polymind-task-card-expanded'
+const MIN_STEP_SYNC_INDICATOR_MS = 700
 
 function expansionStorageKey(progress: TaskProgress) {
   const taskId = encodeURIComponent(progress.task.id)
@@ -72,9 +73,12 @@ const optimisticComplete = ref<boolean>()
 const togglePending = ref(false)
 const expanded = ref(storedExpansionState(props.progress) ?? !props.progress.complete)
 const valueAnimating = ref(false)
+const stepSyncIndicatorVisible = ref(Boolean(props.syncing))
 const detailsId = useId()
 const expansionKey = computed(() => expansionStorageKey(props.progress))
 let valueAnimationVersion = 0
+let stepSyncStartedAt = props.syncing ? Date.now() : 0
+let stepSyncHideTimer: ReturnType<typeof setTimeout> | undefined
 const displayedComplete = computed(() => optimisticComplete.value ?? props.progress.complete)
 const isCheck = computed(() => (step.value ? step.value.completionType === 'check' : task.value.type === 'check'))
 const isInterval = computed(() =>
@@ -264,6 +268,30 @@ watch(() => props.valuePulse, async (pulse, previousPulse) => {
   await nextTick()
   if (version === valueAnimationVersion) valueAnimating.value = true
 })
+
+watch(() => props.syncing, (syncing) => {
+  clearTimeout(stepSyncHideTimer)
+  stepSyncHideTimer = undefined
+
+  if (syncing) {
+    stepSyncStartedAt = Date.now()
+    stepSyncIndicatorVisible.value = true
+    return
+  }
+
+  const remaining = MIN_STEP_SYNC_INDICATOR_MS - (Date.now() - stepSyncStartedAt)
+  if (!stepSyncIndicatorVisible.value || remaining <= 0) {
+    stepSyncIndicatorVisible.value = false
+    return
+  }
+
+  stepSyncHideTimer = setTimeout(() => {
+    stepSyncIndicatorVisible.value = false
+    stepSyncHideTimer = undefined
+  }, remaining)
+})
+
+onBeforeUnmount(() => clearTimeout(stepSyncHideTimer))
 </script>
 
 <template>
@@ -316,7 +344,7 @@ watch(() => props.valuePulse, async (pulse, previousPulse) => {
 
       <div class="task-card-header-actions d-flex align-center ga-1 flex-shrink-0">
         <v-progress-circular
-          v-if="isStepCounter && syncing"
+          v-if="isStepCounter && stepSyncIndicatorVisible"
           class="task-sync-progress"
           indeterminate
           color="secondary"
