@@ -123,7 +123,7 @@ const RunnerSessionActionsStub = defineComponent({
   `,
 })
 
-function intervalSession(status: 'running' | 'paused', image = ''): IntervalSession {
+function intervalSession(status: IntervalSession['status'], image = ''): IntervalSession {
   const now = new Date().toISOString()
   return {
     id: 'session-1',
@@ -303,6 +303,23 @@ describe('IntervalRunnerView flashcard area', () => {
       .not.toContain('interval-review-card__face--hidden')
     expect(wrapper.getComponent({ name: 'FlashcardResponseText' }).classes())
       .toContain('interval-review-card__face--hidden')
+
+    wrapper.unmount()
+  })
+
+  it('makes Done the large primary action after the interval is completed', async () => {
+    const completed = intervalSession('completed')
+    completed.elapsedSeconds = completed.plannedSeconds
+    completed.runtime.stepIndex = 1
+    completed.endedAt = new Date().toISOString()
+    mocks.intervalStore.sessions = reactive([completed])
+
+    const wrapper = mountRunner()
+    await flushPromises()
+
+    const doneButton = wrapper.get('.finish-actions__done')
+    expect(doneButton.attributes('size')).toBe('x-large')
+    expect(doneButton.attributes('color')).toBe('secondary')
 
     wrapper.unmount()
   })

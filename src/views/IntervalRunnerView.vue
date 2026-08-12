@@ -1247,11 +1247,19 @@ async function runAgain(repetitions?: number) {
           <p>{{ session.note }}</p>
         </div>
         <div class="finish-actions">
-          <v-btn color="secondary" size="large" prepend-icon="mdi-replay" :loading="starting" @click="runAgain()">Run again</v-btn>
-          <v-btn variant="tonal" size="large" prepend-icon="mdi-note-plus-outline" @click="openNoteDialog">
+          <v-btn
+            class="finish-actions__done"
+            color="secondary"
+            size="x-large"
+            prepend-icon="mdi-check-bold"
+            :to="returnTo"
+          >
+            Done
+          </v-btn>
+          <v-btn variant="tonal" size="large" prepend-icon="mdi-replay" :loading="starting" @click="runAgain()">Run again</v-btn>
+          <v-btn variant="outlined" size="large" prepend-icon="mdi-note-plus-outline" @click="openNoteDialog">
             {{ session.note ? 'Edit note' : 'Add note' }}
           </v-btn>
-          <v-btn variant="outlined" size="large" :to="returnTo">Done</v-btn>
         </div>
       </section>
 
@@ -1915,6 +1923,7 @@ async function runAgain(repetitions?: number) {
 .finish-note :deep(.v-icon) { flex: 0 0 auto; color: rgb(var(--v-theme-secondary)); }
 .finish-note p { overflow-wrap: anywhere; white-space: pre-wrap; }
 .finish-actions { display: grid; gap: .75rem; }
+.finish-actions__done { min-height: 4rem; }
 .note-dialog-heading { display: flex; align-items: center; gap: 12px; }
 .note-dialog-icon {
   display: grid;
@@ -1948,7 +1957,10 @@ async function runAgain(repetitions?: number) {
   font-weight: 750;
   text-align: center;
 }
-@media (min-width: 700px) { .finish-actions { grid-template-columns: repeat(3, 1fr); } }
+@media (min-width: 700px) {
+  .finish-actions { grid-template-columns: repeat(2, 1fr); }
+  .finish-actions__done { grid-column: 1 / -1; }
+}
 
 @media (orientation: portrait) {
   .runner-page {
