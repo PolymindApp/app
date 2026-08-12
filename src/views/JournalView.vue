@@ -264,6 +264,7 @@ onMounted(async () => {
 
 <style scoped>
 .journal-page { padding-bottom: 2rem; }
+.new-reflection-action { position: sticky; z-index: 3; top: calc(4.5rem + max(env(safe-area-inset-top, 0rem), var(--safe-area-inset-top, 0rem))); }
 .journal-date-stage { display: grid; min-width: 0; overflow-x: clip; }
 .journal-date-content { min-width: 0; grid-area: 1 / 1; align-self: start; }
 .journal-loading { display: flex; align-items: center; justify-content: center; gap: .75rem; }
