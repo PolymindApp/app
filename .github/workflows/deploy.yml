@@ -135,7 +135,7 @@ jobs:
     steps:
       - name: Run server migrations
         env:
-          MIGRATION_URL: ${{ vars.MIGRATION_URL || 'https://mom.coulombe.dev/server/migrate.php' }}
+          MIGRATION_URL: ${{ vars.MIGRATION_URL || 'https://polymind.app/server/migrate.php' }}
           POLYMIND_MIGRATION_KEY: ${{ secrets.POLYMIND_MIGRATION_KEY }}
         run: |
           if [[ "$MIGRATION_URL" != https://* ]]; then
@@ -223,7 +223,7 @@ jobs:
 
       - name: Prepare production environment
         env:
-          VITE_API_URL: ${{ vars.VITE_API_URL || 'https://mom.coulombe.dev/server' }}
+          VITE_API_URL: ${{ vars.VITE_API_URL || 'https://polymind.app/server' }}
         run: printf 'VITE_API_URL=%s\n' "$VITE_API_URL" > .env.prod
 
       - name: Restore Android signing files
@@ -371,7 +371,7 @@ jobs:
 
       - name: Prepare production environment
         env:
-          VITE_API_URL: ${{ vars.VITE_API_URL || 'https://mom.coulombe.dev/server' }}
+          VITE_API_URL: ${{ vars.VITE_API_URL || 'https://polymind.app/server' }}
         run: printf 'VITE_API_URL=%s\n' "$VITE_API_URL" > .env.prod
 
       - name: Restore iOS signing files

@@ -79,7 +79,7 @@ composer install --no-dev --optimize-autoloader
 pnpm build:prod
 ```
 
-For the prepared `mom.coulombe.dev` deployment, this loads `.env.prod` and embeds `https://mom.coulombe.dev/server` as the browser API URL. Upload the contents of `dist` as the web application, then upload the `server` and Composer-generated `vendor` directories. Back up the database before releasing. The GitHub release workflow calls the authenticated migration endpoint after its upload job succeeds. The generated `dist/.htaccess` routes `/server/*` to the protected PHP front controller without exposing `/public` in the URL.
+For the prepared `polymind.app` deployment, this loads `.env.prod` and embeds `https://polymind.app/server` as the browser API URL. Upload the contents of `dist` as the web application, then upload the `server` and Composer-generated `vendor` directories. Back up the database before releasing. The GitHub release workflow calls the authenticated migration endpoint after its upload job succeeds. The generated `dist/.htaccess` routes `/server/*` to the protected PHP front controller without exposing `/public` in the URL.
 
 On the host, place a copy of `.env.prod` named `.env` at the project root because the PHP runtime reads `.env`. Prefer keeping both environment files and `private` outside the public document root. When shared hosting requires them at the deployment root, the included Apache rules deny browser access to `.env`, `private`, and the server implementation. The PHP process must be able to read the root `.env` and read/write `private/data.db`.
 
@@ -124,7 +124,7 @@ Create a GitHub environment named `iOS` with these secrets:
 - `IOS_CERTIFICATE_PASSWORD` — the `.p12` password
 - `IOS_PROVISIONING_PROFILE_BASE64` — a base64-encoded distribution provisioning profile for `app.polymind.ios`
 
-The environment may also define `VITE_API_URL` and `IOS_EXPORT_METHOD`. The API defaults to `https://mom.coulombe.dev/server`; the export method defaults to `app-store-connect` and may instead be `release-testing`, `enterprise`, or `debugging` when it matches the provisioning profile.
+The environment may also define `VITE_API_URL` and `IOS_EXPORT_METHOD`. The API defaults to `https://polymind.app/server`; the export method defaults to `app-store-connect` and may instead be `release-testing`, `enterprise`, or `debugging` when it matches the provisioning profile.
 
 Encode each binary signing file without line breaks before saving it as a GitHub secret:
 
@@ -190,7 +190,7 @@ Passwords are stored as bcrypt hashes. Signed tokens are bound to a per-user `to
 
 Passkeys are exposed only by the native Android client. A signed-in user creates one from the account menu, then can use “Sign in with passkey” without entering an email. The PHP API stores only the credential public key, requires Android user verification, and issues the same bearer session used by password login.
 
-The web build publishes `/.well-known/assetlinks.json`, which binds `mom.coulombe.dev` to the Android package and the configured release/debug signing certificates. It must remain reachable over HTTPS with status `200`, no redirect, and an `application/json` content type. If the signing key changes, update both that file’s SHA-256 fingerprint and `POLYMIND_PASSKEY_ANDROID_KEY_HASHES` in `.env.prod` before installing the newly signed app.
+The web build publishes `/.well-known/assetlinks.json`, which binds `polymind.app` to the Android package and the configured release/debug signing certificates. It must remain reachable over HTTPS with status `200`, no redirect, and an `application/json` content type. If the signing key changes, update both that file’s SHA-256 fingerprint and `POLYMIND_PASSKEY_ANDROID_KEY_HASHES` in `.env.prod` before installing the newly signed app.
 
 ## Client API URL
 
@@ -204,7 +204,7 @@ pnpm android:build
 pnpm android:bundle
 ```
 
-Both builds embed `https://mom.coulombe.dev/server`. The debug APK is written to `android/app/build/outputs/apk/debug/app-debug.apk`, the signed release APK to `android/app/build/outputs/apk/release/app-release.apk`, and the signed AAB to `android/app/build/outputs/bundle/release/app-release.aab`.
+Both builds embed `https://polymind.app/server`. The debug APK is written to `android/app/build/outputs/apk/debug/app-debug.apk`, the signed release APK to `android/app/build/outputs/apk/release/app-release.apk`, and the signed AAB to `android/app/build/outputs/bundle/release/app-release.aab`.
 
 Release signing uses `private/polymind-release.jks` and `private/android-signing.properties`. Both files are ignored by Git and required for every future update. Back them up together in a secure password manager or encrypted archive; losing the keystore prevents signing updates as the same Android application.
 

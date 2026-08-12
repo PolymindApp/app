@@ -171,7 +171,7 @@ Review preferences and card statistics are keyed by account, so one recipient’
 
 ## Apache/shared hosting
 
-For the prepared shared-hosting layout, upload the `server` directory at `/server` and the Composer-generated `vendor` directory beside it. Its included `.htaccess` routes requests through the root `index.php`, preserves the bearer authorization header, disables directory listing, and prevents direct access to implementation files except for the authenticated migration endpoint. The public API remains `https://mom.coulombe.dev/server`; `/public` is not part of the URL.
+For the prepared shared-hosting layout, upload the `server` directory at `/server` and the Composer-generated `vendor` directory beside it. Its included `.htaccess` routes requests through the root `index.php`, preserves the bearer authorization header, disables directory listing, and prevents direct access to implementation files except for the authenticated migration endpoint. The public API remains `https://polymind.app/server`; `/public` is not part of the URL.
 
 When the provider supports aliases or custom document roots, pointing `/server` directly at `server/public` remains the preferred alternative.
 
@@ -234,7 +234,7 @@ The three `POLYMIND_PASSKEY_*` settings must either all be configured or all be 
 The client publishes `public/.well-known/assetlinks.json` into the web build. After deployment, verify:
 
 ```bash
-curl -i https://mom.coulombe.dev/.well-known/assetlinks.json
+curl -i https://polymind.app/.well-known/assetlinks.json
 ```
 
 The response must be HTTPS status `200`, must not redirect, and should use `Content-Type: application/json`. The production configuration currently trusts the project’s release certificate and this workstation’s debug certificate so both APK variants can enroll and use passkeys. Remove the debug fingerprint from both configuration locations if production should accept release builds only.
