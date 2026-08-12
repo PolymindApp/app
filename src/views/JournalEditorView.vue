@@ -229,13 +229,16 @@ async function removeEntry() {
             maxlength="160"
             counter
           />
-          <JournalImageField
-            v-model="image"
-            :loading="saving"
-            @error="error = $event"
-          />
           <DateTimePickerField v-model="occurredLocal" label="When" />
         </div>
+      </v-card>
+
+      <v-card class="surface-card pa-5 mb-4">
+        <JournalImageField
+          v-model="image"
+          :loading="saving"
+          @error="error = $event"
+        />
       </v-card>
 
       <v-card class="surface-card pa-5 mb-4">
