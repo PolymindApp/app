@@ -243,6 +243,7 @@ jobs:
           printf '%s' "$ANDROID_SIGNING_PROPERTIES_BASE64" \
             | base64 --decode > private/android-signing.properties
           chmod 600 private/polymind-release.jks private/android-signing.properties
+          sed -i $'s/\r$//' private/android-signing.properties
 
           keystore_sha256="$(
             sha256sum private/polymind-release.jks \
@@ -269,6 +270,12 @@ jobs:
             sed -n 's/^keyAlias=//p' private/android-signing.properties \
               | tr -d '\r'
           )"
+          if [[ "$signing_store_file" == "mom-release.jks" ]]; then
+            sed -i \
+              's/^storeFile=mom-release\.jks$/storeFile=polymind-release.jks/' \
+              private/android-signing.properties
+            signing_store_file="polymind-release.jks"
+          fi
           if [[
             "$signing_store_file" != "polymind-release.jks"
             || -z "$signing_store_password"
