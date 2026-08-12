@@ -1,4 +1,4 @@
-import { defineComponent, reactive } from 'vue'
+import { defineComponent, h, reactive } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import FlashcardReviewRunnerView from '@/views/FlashcardReviewRunnerView.vue'
 import type { Flashcard, FlashcardReviewSession, FlashcardReviewSet } from '@/types/domain'
@@ -21,7 +21,10 @@ const mocks = vi.hoisted(() => ({
     load: vi.fn(),
     loadSession: vi.fn(),
     loadReviewSetCards: vi.fn(),
+    saveReviewSet: vi.fn(),
+    saveReviewSetPreferences: vi.fn(),
     startReview: vi.fn(),
+    updateSessionSettings: vi.fn(),
     act: vi.fn(),
   },
 }))
@@ -58,6 +61,7 @@ const ButtonStub = defineComponent({
   emits: ['click'],
   template: `
     <button
+      v-bind="$attrs"
       :aria-label="ariaLabel"
       :aria-pressed="ariaPressed"
       :disabled="disabled || loading"
@@ -76,6 +80,11 @@ const FlashcardContextActionsStub = defineComponent({
   template: `
     <div v-if="modelValue" class="flashcard-context-actions">
       <button
+        type="button"
+        data-context-action="settings"
+        @click="$emit('update:modelValue', false); $emit('action', 'settings')"
+      >Settings</button>
+      <button
         v-if="showUndoEject"
         type="button"
         data-context-action="undo_eject"
@@ -84,6 +93,47 @@ const FlashcardContextActionsStub = defineComponent({
       >Undo last eject</button>
     </div>
   `,
+})
+
+const AppFormStub = defineComponent({
+  setup(_, { expose, slots }) {
+    expose({ validate: async () => ({ valid: true }) })
+    return () => h('form', slots.default?.())
+  },
+})
+
+const FlashcardReviewSettingsFieldsStub = defineComponent({
+  props: { modelValue: { type: Object, required: true } },
+  setup(props) {
+    return () => h('button', {
+      class: 'change-session-settings',
+      type: 'button',
+      onClick: () => { props.modelValue.frontSeconds = 9 },
+    }, 'Change settings')
+  },
+})
+
+const ActionBottomSheetStub = defineComponent({
+  props: { modelValue: Boolean },
+  emits: ['update:modelValue'],
+  setup(props, { slots }) {
+    return () => props.modelValue
+      ? h('div', { class: 'action-bottom-sheet-stub' }, slots.default?.())
+      : undefined
+  },
+})
+
+const VListItemStub = defineComponent({
+  inheritAttrs: false,
+  props: { title: String },
+  emits: ['click'],
+  setup(props, { attrs, emit }) {
+    return () => h('button', {
+      ...attrs,
+      type: 'button',
+      onClick: () => emit('click'),
+    }, props.title)
+  },
 })
 
 const RunnerSessionActionsStub = defineComponent({
@@ -104,6 +154,17 @@ const RunnerSessionActionsStub = defineComponent({
         :aria-pressed="item.toggle ? item.active : undefined"
         @click="$emit('update:modelValue', false); $emit('action', item.action)"
       >{{ item.title }}</button>
+    </div>
+  `,
+})
+
+const SnackbarStub = defineComponent({
+  props: { modelValue: Boolean },
+  emits: ['update:modelValue'],
+  template: `
+    <div v-if="modelValue" class="test-snackbar">
+      <slot />
+      <slot name="actions" />
     </div>
   `,
 })
@@ -186,12 +247,13 @@ function mountRunner() {
     global: {
       directives: { ripple: {} },
       stubs: {
-        AppForm: { template: '<form><slot /></form>' },
+        ActionBottomSheet: ActionBottomSheetStub,
+        AppForm: AppFormStub,
         ConfirmDialog: true,
         FlashcardCardDialog: true,
         FlashcardContextActions: FlashcardContextActionsStub,
         FlashcardResponseText: true,
-        FlashcardReviewSettingsFields: true,
+        FlashcardReviewSettingsFields: FlashcardReviewSettingsFieldsStub,
         RunnerSessionActions: RunnerSessionActionsStub,
         VAlert: true,
         VBtn: ButtonStub,
@@ -202,8 +264,10 @@ function mountRunner() {
         VDialog: { template: '<div><slot /></div>' },
         VDivider: true,
         VIcon: true,
+        VListItem: VListItemStub,
         VProgressCircular: true,
         VProgressLinear: true,
+        VSnackbar: SnackbarStub,
         VSpacer: true,
       },
     },
@@ -224,7 +288,14 @@ describe('FlashcardReviewRunnerView Review set preview', () => {
     mocks.store.load.mockReset().mockResolvedValue(undefined)
     mocks.store.loadSession.mockReset()
     mocks.store.loadReviewSetCards.mockReset()
+    mocks.store.saveReviewSet.mockReset().mockImplementation(async value => value)
+    mocks.store.saveReviewSetPreferences.mockReset().mockImplementation(async (_id, value) => value)
     mocks.store.act.mockReset()
+    mocks.store.updateSessionSettings.mockReset().mockImplementation(async (_id, settings) => {
+      const session = runningSession()
+      Object.assign(session, settings)
+      return session
+    })
     mocks.store.startReview.mockReset().mockImplementation(async () => {
       const session = runningSession()
       mocks.store.sessions.unshift(session)
@@ -237,13 +308,16 @@ describe('FlashcardReviewRunnerView Review set preview', () => {
     await flushPromises()
 
     expect(mocks.store.startReview).not.toHaveBeenCalled()
-    expect(wrapper.get('[aria-label="Start review"]').attributes('disabled')).toBeUndefined()
-    expect(wrapper.get('[aria-label="Eject current card"]').attributes('disabled')).toBeDefined()
-    expect(wrapper.get('.review-card-actions').element.previousElementSibling)
-      .toBe(wrapper.get('.review-navigation').element)
-    expect(wrapper.findAll('button').filter(button => button.text() === 'Options')).toHaveLength(1)
-    expect(wrapper.findAll('button').find(button => button.text() === 'Options')?.attributes('disabled'))
-      .toBeDefined()
+    expect(wrapper.get('.runner-start-screen__title').text()).toBe('Vocabulary.')
+    expect(wrapper.get('.runner-start-screen__summary').text()).toBe('1 card')
+    expect(wrapper.get('.runner-start-screen__icon').getComponent({ name: 'VIcon' }).attributes('icon'))
+      .toBe('mdi-cards-playing-outline')
+    expect(wrapper.get('.runner-start-screen').classes()).toContain('px-4')
+    expect(wrapper.get('[aria-label="Start review"]').text()).toBe('Start review')
+    expect(wrapper.get('[aria-label="Cancel review"]').text()).toBe('Cancel')
+    expect(wrapper.find('.runner-header').exists()).toBe(false)
+    expect(wrapper.find('.review-card').exists()).toBe(false)
+    expect(wrapper.find('.review-navigation').exists()).toBe(false)
     expect(wrapper.findComponent(RunnerSessionActionsStub).exists()).toBe(false)
     expect(wrapper.findComponent(FlashcardContextActionsStub).exists()).toBe(false)
 
@@ -268,6 +342,19 @@ describe('FlashcardReviewRunnerView Review set preview', () => {
       expect.objectContaining({ action: 'restart', disabled: false }),
       expect.objectContaining({ action: 'end', disabled: false }),
     ])
+
+    wrapper.unmount()
+  })
+
+  it('returns to Flashcards when the start screen is cancelled', async () => {
+    const wrapper = mountRunner()
+    await flushPromises()
+
+    await wrapper.get('[aria-label="Cancel review"]').trigger('click')
+    await flushPromises()
+
+    expect(mocks.store.startReview).not.toHaveBeenCalled()
+    expect(mocks.router.replace).toHaveBeenCalledWith('/flashcards')
 
     wrapper.unmount()
   })
@@ -314,6 +401,49 @@ describe('FlashcardReviewRunnerView Review set preview', () => {
     wrapper.unmount()
   })
 
+  it('applies Session settings to either the current session or Review set', async () => {
+    const active = runningSession()
+    mocks.route.params = { sessionId: active.id }
+    mocks.store.sessions = reactive([active])
+    mocks.store.loadSession.mockResolvedValue(active)
+
+    const wrapper = mountRunner()
+    await flushPromises()
+
+    await wrapper.findAll('button').find(button => button.text() === 'Options')!.trigger('click')
+    await wrapper.get('[data-context-action="settings"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('.change-session-settings').trigger('click')
+
+    expect(wrapper.get('.session-settings-actions__cancel').text()).toBe('Cancel')
+    expect(wrapper.get('.session-settings-actions__primary').text()).toBe('Apply to...')
+    await wrapper.get('.apply-settings-menu').trigger('click')
+    expect(wrapper.get('.action-bottom-sheet-stub').findAll('button').map(item => item.text()))
+      .toEqual(['Current session', 'Review set'])
+
+    await wrapper.get('.apply-settings-target--session').trigger('click')
+    await flushPromises()
+    expect(mocks.store.updateSessionSettings).toHaveBeenCalledWith(
+      active.id,
+      expect.objectContaining({ frontSeconds: 9 }),
+    )
+    expect(mocks.store.saveReviewSet).not.toHaveBeenCalled()
+
+    await wrapper.findAll('button').find(button => button.text() === 'Options')!.trigger('click')
+    await wrapper.get('[data-context-action="settings"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('.change-session-settings').trigger('click')
+    await wrapper.get('.apply-settings-menu').trigger('click')
+    await wrapper.get('.apply-settings-target--review-set').trigger('click')
+    await flushPromises()
+
+    expect(mocks.store.saveReviewSet).toHaveBeenCalledWith(
+      expect.objectContaining({ id: reviewSet.id, frontSeconds: 9 }),
+    )
+    expect(mocks.store.updateSessionSettings).toHaveBeenCalledOnce()
+    wrapper.unmount()
+  })
+
   it.each([
     { mode: 'manual' as const, selector: '.review-card' },
     { mode: 'passive' as const, selector: '.passive-card' },
@@ -343,6 +473,34 @@ describe('FlashcardReviewRunnerView Review set preview', () => {
     expect(mocks.speakFlashcardText).toHaveBeenCalledWith('House', 'en-CA')
     expect(active.status).toBe('paused')
     expect(mocks.store.act).not.toHaveBeenCalled()
+
+    wrapper.unmount()
+  })
+
+  it('shows a card speech failure as a warning snackbar only once per session', async () => {
+    const active = {
+      ...runningSession(),
+      speechEnabled: true,
+      frontLanguage: 'en-CA',
+    }
+    mocks.route.params = { sessionId: active.id }
+    mocks.store.sessions = reactive([active])
+    mocks.store.loadSession.mockResolvedValue(active)
+    mocks.speakFlashcardText.mockRejectedValue(new Error('Speech unavailable'))
+
+    const wrapper = mountRunner()
+    await flushPromises()
+
+    expect(wrapper.find('.runner-alert--speech').exists()).toBe(false)
+    expect(wrapper.get('.test-snackbar').text())
+      .toContain('This card could not be spoken in the selected language.')
+
+    await wrapper.get('[aria-label="Dismiss speech warning"]').trigger('click')
+    await wrapper.get('.review-card').trigger('click')
+    await flushPromises()
+
+    expect(mocks.speakFlashcardText).toHaveBeenCalledTimes(2)
+    expect(wrapper.find('.test-snackbar').exists()).toBe(false)
 
     wrapper.unmount()
   })

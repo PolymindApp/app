@@ -269,6 +269,29 @@ function intervalSession(status: IntervalSession['status'], image = ''): Interva
   }
 }
 
+function intervalTemplate() {
+  return {
+    id: 'template-1',
+    name: 'Morning movement',
+    description: '',
+    color: '#FF5C6C',
+    definition: {
+      version: 1 as const,
+      children: [{
+        id: 'warm-up',
+        type: 'step' as const,
+        name: 'Warm up',
+        kind: 'work' as const,
+        durationSeconds: 60,
+      }],
+    },
+    cues: { soundEnabled: true, vibrationEnabled: true },
+    sortOrder: 0,
+    createdAt: '2026-08-01T00:00:00.000Z',
+    updatedAt: '2026-08-01T00:00:00.000Z',
+  }
+}
+
 function mountRunner() {
   return mount(IntervalRunnerView, {
     global: {
@@ -305,6 +328,9 @@ function mountRunner() {
 
 describe('IntervalRunnerView flashcard area', () => {
   beforeEach(() => {
+    mocks.route.params = { sessionId: 'session-1' }
+    mocks.route.query = {}
+    mocks.intervalStore.templates = []
     mocks.intervalStore.sessions = reactive([intervalSession('running')])
     mocks.intervalStore.updateSession.mockReset().mockImplementation(async (id, updates) => {
       const session = mocks.intervalStore.sessions.find(item => item.id === id)
@@ -739,4 +765,38 @@ describe('IntervalRunnerView flashcard area', () => {
     wrapper.unmount()
   })
 
+})
+
+describe('IntervalRunnerView start screen', () => {
+  beforeEach(() => {
+    mocks.route.params = { templateId: 'template-1' }
+    mocks.route.query = {}
+    mocks.intervalStore.sessions = reactive([])
+    mocks.intervalStore.templates = [intervalTemplate()]
+    mocks.intervalStore.activeSession = undefined
+    mocks.intervalStore.load.mockReset().mockResolvedValue(undefined)
+    mocks.flashcardStore.load.mockReset().mockResolvedValue(undefined)
+    mocks.flashcardStore.reviewSets = []
+    mocks.taskStore.load.mockReset().mockResolvedValue(undefined)
+    mocks.taskStore.tasks = []
+    mocks.taskStore.steps = []
+  })
+
+  it('shows only the interval name and Play and Cancel actions before starting', async () => {
+    const wrapper = mountRunner()
+    await flushPromises()
+
+    expect(wrapper.get('.runner-start-screen__title').text()).toBe('Morning movement.')
+    expect(wrapper.get('.runner-start-screen__summary').text()).toBe('1m total')
+    expect(wrapper.get('.runner-start-screen__icon').attributes('style')).toContain('background: rgb(255, 92, 108)')
+    expect(wrapper.get('.runner-start-screen__icon').getComponent({ name: 'VIcon' }).attributes('icon'))
+      .toBe('mdi-timer-outline')
+    expect(wrapper.get('[aria-label="Start interval"]').exists()).toBe(true)
+    expect(wrapper.get('[aria-label="Cancel interval"]').exists()).toBe(true)
+    expect(wrapper.find('.runner-step').exists()).toBe(false)
+    expect(wrapper.find('.runner-progress').exists()).toBe(false)
+    expect(wrapper.find('.runner-controls').exists()).toBe(false)
+
+    wrapper.unmount()
+  })
 })

@@ -201,7 +201,7 @@ alice_verification_token="$(mail_token verify-email)"
 grep -q 'bgcolor=3D' "$smtp_mailbox" \
   && grep -q 'background-color:#C7F464' "$smtp_mailbox" \
   && grep -q 'border:12px solid #C7F464' "$smtp_mailbox" \
-  && grep -q 'color:#ffffff' "$smtp_mailbox" || {
+  && grep -q 'color:#191c19' "$smtp_mailbox" || {
   echo "The account email did not use the Polymind action button colors." >&2
   exit 1
 }

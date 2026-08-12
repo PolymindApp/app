@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
+import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import AppForm from '@/components/AppForm.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import FlashcardCardDialog from '@/components/FlashcardCardDialog.vue'
 import FlashcardContextActions from '@/components/FlashcardContextActions.vue'
 import FlashcardResponseText from '@/components/FlashcardResponseText.vue'
 import FlashcardReviewSettingsFields from '@/components/FlashcardReviewSettingsFields.vue'
+import RunnerStartScreen from '@/components/RunnerStartScreen.vue'
 import RunnerSessionActions from '@/components/RunnerSessionActions.vue'
 import {
   backgroundFlashcardReviewState,
@@ -28,6 +30,7 @@ import { reviewRunnerSessionMenuItems } from '@/services/runnerSessionActions'
 import { requestScreenWakeLock, type ScreenWakeLock } from '@/services/screenWakeLock'
 import {
   createFlashcardReviewPreviewSession,
+  FLASHCARD_SETTINGS_APPLY_MENU_ITEMS,
   firstFlashcardReviewSide,
   flashcardBackDurationMs,
   flashcardReviewShowsSide,
@@ -48,6 +51,7 @@ import type {
   FlashcardReviewSession,
   FlashcardReviewSettings,
   FlashcardReviewSide,
+  FlashcardSettingsApplyTarget,
   FlashcardSpeechSupport,
   RunnerSessionAction,
 } from '@/types/domain'
@@ -68,6 +72,7 @@ const deleteCardDialog = ref(false)
 const deleteCardId = ref('')
 const deletingCard = ref(false)
 const sessionSettingsDialog = ref(false)
+const sessionSettingsApplyMenu = ref(false)
 const sessionSettingsForm = ref()
 const sessionSettingsSaving = ref(false)
 const sessionSettingsError = ref('')
@@ -98,6 +103,7 @@ const visibilityPaused = ref(false)
 const nativeBackgroundReady = ref(false)
 const speechPlaybackWarning = ref('')
 const backgroundSpeechWarning = ref('')
+const speechFailureSnackbar = ref(false)
 const reconcilingBackground = ref(false)
 let tickTimer: ReturnType<typeof setInterval> | undefined
 let lastTickAt = 0
@@ -115,6 +121,7 @@ let suppressManualCardTap = false
 let manualCardTapResetTimer: number | undefined
 let resumeAfterSessionSettings = false
 let resumeAfterCardEditor = false
+const speechFailureWarnedSessionIds = new Set<string>()
 
 const currentSessionId = ref('')
 const previewSession = ref<FlashcardReviewSession>()
@@ -625,8 +632,9 @@ async function speakCurrentSide(allowPaused = false) {
     )
     if (request === speechRequest) speechPlaybackWarning.value = ''
   } catch {
-    if (request === speechRequest) {
-      speechPlaybackWarning.value = 'This card could not be spoken in the selected language.'
+    if (request === speechRequest && !speechFailureWarnedSessionIds.has(value.id)) {
+      speechFailureWarnedSessionIds.add(value.id)
+      speechFailureSnackbar.value = true
     }
   }
 }
@@ -834,6 +842,7 @@ async function openSessionSettings() {
 }
 
 async function closeSessionSettings() {
+  sessionSettingsApplyMenu.value = false
   sessionSettingsDialog.value = false
   sessionSettingsError.value = ''
   if (resumeAfterSessionSettings && session.value?.status === 'paused') {
@@ -842,12 +851,25 @@ async function closeSessionSettings() {
   resumeAfterSessionSettings = false
 }
 
-async function saveSessionSettings() {
+async function saveSessionSettings(target: FlashcardSettingsApplyTarget = 'session') {
   const result = await sessionSettingsForm.value?.validate()
   if (!result?.valid || !canSaveSessionSettings.value || !session.value) return
   sessionSettingsSaving.value = true
   sessionSettingsError.value = ''
   try {
+    if (target === 'review-set') {
+      const reviewSet = currentReviewSet.value
+      if (!reviewSet) throw new Error('This review session is not linked to a Review set.')
+      const settings = { ...reviewSet, ...sessionSettingsDraft }
+      if (reviewSet.accessRole === 'owner') {
+        await store.saveReviewSet(settings)
+      } else {
+        await store.saveReviewSetPreferences(reviewSet.id, settings)
+      }
+      await closeSessionSettings()
+      return
+    }
+
     const updated = await store.updateSessionSettings(session.value.id, sessionSettingsDraft)
     localElapsedMs.value = updated.elapsedSeconds * 1000
     lastTickAt = Date.now()
@@ -862,6 +884,11 @@ async function saveSessionSettings() {
   } finally {
     sessionSettingsSaving.value = false
   }
+}
+
+function applySessionSettingsTo(target: FlashcardSettingsApplyTarget) {
+  sessionSettingsApplyMenu.value = false
+  void saveSessionSettings(target)
 }
 
 async function openCardEditor(action: 'add' | 'edit') {
@@ -1004,7 +1031,7 @@ async function leaveRunner() {
     </div>
 
     <template v-else-if="session">
-      <header class="runner-header">
+      <header v-if="!isReviewSetPreview" class="runner-header">
         <v-btn
           icon="mdi-chevron-down"
           variant="text"
@@ -1031,6 +1058,7 @@ async function leaveRunner() {
       </header>
 
       <v-progress-linear
+        v-if="!isReviewSetPreview"
         :model-value="progress"
         color="primary"
         bg-color="surface-variant"
@@ -1044,7 +1072,7 @@ async function leaveRunner() {
         {{ error }}
       </v-alert>
       <v-alert
-        v-else-if="speechWarning"
+        v-else-if="!isReviewSetPreview && speechWarning"
         type="warning"
         variant="tonal"
         density="compact"
@@ -1056,7 +1084,20 @@ async function leaveRunner() {
         </template>
       </v-alert>
 
-      <section v-if="isFinished" class="completion-panel">
+      <RunnerStartScreen
+        v-if="isReviewSetPreview"
+        class="px-4"
+        :title="session.name"
+        :summary="`${session.totalCards} ${session.totalCards === 1 ? 'card' : 'cards'}${session.indefinite ? ' · looping' : ''}`"
+        icon="mdi-cards-playing-outline"
+        primary-label="Start review"
+        cancel-label="Cancel review"
+        :busy="busy"
+        @start="startPreviewReview"
+        @cancel="leaveRunner"
+      />
+
+      <section v-else-if="isFinished" class="completion-panel">
         <div class="completion-panel__icon">
           <v-icon :icon="session.status === 'completed' ? 'mdi-check-bold' : 'mdi-stop'" size="48" />
         </div>
@@ -1341,6 +1382,27 @@ async function leaveRunner() {
       @saved="handleCardSaved"
     />
 
+    <v-snackbar
+      v-model="speechFailureSnackbar"
+      class="runner-speech-snackbar"
+      color="warning"
+      location="bottom"
+      :timeout="5000"
+    >
+      <div class="d-flex align-center ga-2">
+        <v-icon icon="mdi-alert-outline" />
+        <span>This card could not be spoken in the selected language.</span>
+      </div>
+      <template #actions>
+        <v-btn
+          icon="mdi-close"
+          variant="text"
+          aria-label="Dismiss speech warning"
+          @click="speechFailureSnackbar = false"
+        />
+      </template>
+    </v-snackbar>
+
     <v-dialog
       v-model="sessionSettingsDialog"
       persistent
@@ -1375,20 +1437,40 @@ async function leaveRunner() {
         </v-card-text>
         <v-divider />
         <v-card-actions class="session-settings-actions ga-2">
-          <v-spacer />
-          <v-btn variant="text" :disabled="sessionSettingsSaving" @click="closeSessionSettings">
+          <v-btn
+            class="session-settings-actions__cancel"
+            variant="text"
+            :disabled="sessionSettingsSaving"
+            @click="closeSessionSettings"
+          >
             Cancel
           </v-btn>
           <v-btn
+            class="session-settings-actions__primary apply-settings-menu"
             color="secondary"
-            size="large"
+            variant="flat"
             :loading="sessionSettingsSaving"
-            :disabled="!canSaveSessionSettings"
-            @click="saveSessionSettings"
+            :disabled="!canSaveSessionSettings || sessionSettingsSaving"
+            @click="sessionSettingsApplyMenu = true"
           >
-            Save
+            Apply to...
           </v-btn>
         </v-card-actions>
+        <ActionBottomSheet
+          v-model="sessionSettingsApplyMenu"
+          title="Apply to..."
+          aria-label="Choose where to apply session settings"
+        >
+          <v-list-item
+            v-for="item in FLASHCARD_SETTINGS_APPLY_MENU_ITEMS"
+            :key="item.target"
+            :class="`apply-settings-target--${item.target}`"
+            :title="item.title"
+            :prepend-icon="item.icon"
+            rounded="lg"
+            @click="applySessionSettingsTo(item.target)"
+          />
+        </ActionBottomSheet>
       </v-card>
     </v-dialog>
 
@@ -1429,13 +1511,14 @@ async function leaveRunner() {
 .runner-alert--speech :deep(.v-alert__prepend) { min-height: 1rem; margin-inline-end: .4rem; }
 .runner-alert--speech :deep(.v-alert__prepend > .v-icon) { width: 1rem; height: 1rem; font-size: 1rem; }
 .runner-alert--speech :deep(.v-alert__append) { align-self: center; margin-inline-start: .5rem; }
+.runner-speech-snackbar { z-index: 1004 !important; }
 .runner-body { display: flex; width: 100%; max-width: 44rem; min-height: 0; margin: 0 auto; padding: 1rem 1rem .5rem; flex: 1 1 auto; flex-direction: column; gap: .875rem; overflow-y: auto; overscroll-behavior: contain; }
 .runner-meta { display: flex; align-items: center; justify-content: space-between; gap: 1rem; color: rgba(var(--v-theme-on-surface), .68); font-size: .75rem; font-weight: 850; }
 .runner-meta > div { display: flex; align-items: center; gap: .4rem; }
 .review-card { position: relative; width: 100%; min-height: min(38dvh, 22rem); border: 0; border-radius: 1.5rem; flex: 1 1 auto; overflow: hidden; background: transparent; color: inherit; cursor: pointer; perspective: 80rem; touch-action: pan-y; }
 .review-card :deep(.v-ripple__container) { z-index: 2; }
 .review-card:focus-visible { outline: .1875rem solid rgba(var(--v-theme-secondary), .72); outline-offset: .25rem; }
-.review-card__inner { position: relative; display: grid; min-height: inherit; transform-style: preserve-3d; transition: transform 240ms cubic-bezier(.22, 1, .36, 1); }
+.review-card__inner { position: relative; display: grid; height: 100%; min-height: inherit; transform-style: preserve-3d; transition: transform 240ms cubic-bezier(.22, 1, .36, 1); }
 .review-card--revealed .review-card__inner { transform: rotateY(180deg); }
 .review-card__face { display: flex; min-height: inherit; padding: 2rem; border: .0625rem solid rgba(var(--v-theme-on-surface), .1); border-radius: 1.5rem; grid-area: 1 / 1; align-items: center; justify-content: center; flex-direction: column; gap: 1.5rem; overflow: auto; background: rgb(var(--v-theme-surface)); box-shadow: 0 1rem 2.5rem rgba(0, 0, 0, .26); backface-visibility: hidden; }
 .review-card__face small,
@@ -1465,11 +1548,24 @@ async function leaveRunner() {
     calc(1.25rem + env(safe-area-inset-left, 0rem)) !important;
 }
 .session-settings-actions {
+  display: flex;
+  align-items: center;
   padding:
     1rem
     calc(1rem + env(safe-area-inset-right, 0rem))
     calc(1rem + max(env(safe-area-inset-bottom, 0rem), var(--safe-area-inset-bottom, 0rem)))
     calc(1rem + env(safe-area-inset-left, 0rem)) !important;
+}
+.session-settings-actions > .v-btn { height: 3rem; }
+.session-settings-actions__cancel,
+.session-settings-actions__primary {
+  min-width: 0;
+  flex: 1 1 0;
+}
+@media (min-width: 60rem) {
+  .session-settings-actions { justify-content: flex-end; }
+  .session-settings-actions__cancel,
+  .session-settings-actions__primary { max-width: 10rem; }
 }
 .completion-panel { display: flex; width: min(42rem, calc(100% - 2rem)); min-height: 0; margin: 0 auto; padding: 2rem 0; align-items: center; justify-content: center; flex: 1 1 auto; flex-direction: column; gap: 1.25rem; overflow-y: auto; text-align: center; }
 .completion-panel__icon { display: grid; width: 6rem; height: 6rem; place-items: center; border-radius: 2rem; background: rgba(var(--v-theme-secondary), .16); color: rgb(var(--v-theme-secondary)); }

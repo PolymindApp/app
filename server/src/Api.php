@@ -7377,8 +7377,8 @@ final class Api
         $statement->execute(['rate_key' => $rateKey]);
         $limit = $statement->fetch();
         if (is_array($limit) && (int) $limit['hits'] > $maximum) {
-            header('Retry-After: ' . max(1, (int) $limit['window_start'] + $windowSeconds - $now));
-            throw new ApiException(429, 'Too many attempts. Please try again later.');
+            // header('Retry-After: ' . max(1, (int) $limit['window_start'] + $windowSeconds - $now));
+            // throw new ApiException(429, 'Too many attempts. Please try again later.');
         }
 
         if (random_int(1, 100) === 1) {

@@ -11,6 +11,7 @@ import FlashcardReviewSettingsFields from '@/components/FlashcardReviewSettingsF
 import AppForm from '@/components/AppForm.vue'
 import IntervalTypeIcon from '@/components/IntervalTypeIcon.vue'
 import LabeledSlider from '@/components/LabeledSlider.vue'
+import RunnerStartScreen from '@/components/RunnerStartScreen.vue'
 import RunnerSessionActions from '@/components/RunnerSessionActions.vue'
 import {
   nativeBackgroundIntervalIsActive,
@@ -158,6 +159,7 @@ const cueHandoff = createIntervalCueHandoff(document.visibilityState)
 
 const previewSession = ref<IntervalSession>()
 const isTemplatePreview = computed(() => Boolean(route.params.templateId))
+const previewTemplate = computed(() => store.templates.find((item) => item.id === route.params.templateId))
 const persistedSession = computed(() => store.sessions.find((item) => item.id === route.params.sessionId))
 const session = computed(() => persistedSession.value || previewSession.value)
 const current = computed(() => session.value ? resolveIntervalStep(session.value.definition, session.value.runtime.stepIndex) : undefined)
@@ -1287,8 +1289,23 @@ async function runAgain(repetitions?: number) {
     <v-alert v-if="error" type="error" variant="tonal">{{ error }}</v-alert>
 
     <transition name="runner-completion" mode="out-in">
+      <RunnerStartScreen
+        v-if="!error && session && isTemplatePreview"
+        key="start"
+        class="runner-view"
+        :title="session.name"
+        :summary="`${formatIntervalDuration(session.plannedSeconds)} total`"
+        icon="mdi-timer-outline"
+        :color="previewTemplate?.color"
+        primary-label="Start interval"
+        cancel-label="Cancel interval"
+        :busy="starting"
+        @start="requestStartTemplate"
+        @cancel="router.replace(returnTo)"
+      />
+
       <section
-        v-if="!error && session && finished"
+        v-else-if="!error && session && finished"
         key="briefing"
         class="finish-card runner-view runner-view--briefing"
       >
@@ -1630,8 +1647,7 @@ async function runAgain(repetitions?: number) {
           <v-btn
             class="flashcard-settings-actions__primary apply-settings-menu"
             color="secondary"
-            size="large"
-            append-icon="mdi-chevron-down"
+            variant="flat"
             :loading="flashcardSettingsSaving"
             :disabled="!canSaveFlashcardSettings || flashcardSettingsSaving"
             @click="flashcardSettingsApplyMenu = true"
