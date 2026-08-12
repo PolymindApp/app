@@ -315,7 +315,7 @@ async function signInWithPasskey() {
               block
               size="large"
               color="secondary"
-              class="mt-6"
+              class="mt-6 text-white"
               :loading="auth.loading"
               append-icon="mdi-arrow-right"
             >
