@@ -818,6 +818,31 @@ describe('step-counter task progress', () => {
       complete: true,
     })
   })
+
+  it('exposes loading through a Vue update before a fast Health Connect read completes', async () => {
+    const store = useTaskStore()
+    const stepTask: Task = {
+      ...task,
+      id: 'step-task',
+      name: 'Daily steps',
+      type: 'step_counter',
+      targetValue: 8000,
+      targetOperator: 'gte',
+      unit: 'steps',
+    }
+    store.tasks = [stepTask]
+    healthMocks.readHealthConnectSteps.mockResolvedValue(9234)
+
+    const refresh = store.refreshStepCount(selectedDate)
+
+    expect(store.stepCountLoading).toBe(true)
+    expect(healthMocks.readHealthConnectSteps).not.toHaveBeenCalled()
+
+    await refresh
+
+    expect(healthMocks.readHealthConnectSteps).toHaveBeenCalledWith(selectedDate)
+    expect(store.stepCountLoading).toBe(false)
+  })
 })
 
 describe('interval task completion', () => {

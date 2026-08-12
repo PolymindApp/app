@@ -1,4 +1,4 @@
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { addDays, endOfWeek, format, parseISO, startOfWeek, subDays } from 'date-fns'
 import { api } from '@/lib/api'
@@ -388,6 +388,7 @@ export const useTaskStore = defineStore('tasks', () => {
 
     stepCountLoading.value = true
     stepCountError.value = ''
+    await nextTick()
     try {
       const steps = await readHealthConnectSteps(date)
       if (request !== stepCountRequest) return
