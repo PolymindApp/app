@@ -315,6 +315,15 @@ watch(() => props.valuePulse, async (pulse, previousPulse) => {
       </div>
 
       <div class="task-card-header-actions d-flex align-center ga-1 flex-shrink-0">
+        <v-progress-circular
+          v-if="isStepCounter && syncing"
+          class="task-sync-progress"
+          indeterminate
+          color="secondary"
+          size="1rem"
+          :width="2"
+          aria-label="Syncing steps"
+        />
         <v-btn
           class="task-menu-button"
           icon="mdi-dots-horizontal"
@@ -541,10 +550,9 @@ watch(() => props.valuePulse, async (pulse, previousPulse) => {
               <span>{{ stepCountError }}</span>
             </div>
 
-            <div v-if="isStepCounter" class="step-source" :class="stepCountError ? 'mt-2' : 'mt-3'">
-              <v-progress-circular v-if="syncing" indeterminate color="secondary" :size="16" :width="2" />
-              <v-icon v-else icon="mdi-heart-pulse" color="secondary" size="17" />
-              <span>{{ syncing ? 'Syncing steps…' : 'Health Connect' }}</span>
+            <div v-if="isStepCounter && !syncing" class="step-source" :class="stepCountError ? 'mt-2' : 'mt-3'">
+              <v-icon icon="mdi-heart-pulse" color="secondary" size="17" />
+              <span>Health Connect</span>
             </div>
 
             <div v-if="canLogAmount" class="task-action-stack mt-4">

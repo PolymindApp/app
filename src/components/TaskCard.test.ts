@@ -255,6 +255,44 @@ describe('TaskCard amount actions', () => {
       & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
+  it('shows step syncing as an unlabeled header spinner before the actions menu', () => {
+    const stepProgress: TaskProgress = {
+      ...progress,
+      task: {
+        ...progress.task,
+        id: 'steps',
+        name: 'Daily steps',
+        type: 'step_counter',
+        targetValue: 10000,
+        unit: 'steps',
+      },
+    }
+    const wrapper = mount(TaskCard, {
+      props: { progress: stepProgress, syncing: true },
+      global: {
+        stubs: {
+          VBtn: VBtnStub,
+          VCard: { template: '<div><slot /></div>' },
+          VExpandTransition: { template: '<div><slot /></div>' },
+          ExpandTransition: { template: '<div><slot /></div>' },
+          VIcon: true,
+          VProgressCircular: { template: '<div class="stub-progress-circular"><slot /></div>' },
+          VProgressLinear: true,
+        },
+      },
+    })
+
+    const headerActions = wrapper.get('.task-card-header-actions')
+    const spinner = headerActions.get('.task-sync-progress')
+    const menuButton = headerActions.get('.task-menu-button')
+
+    expect(spinner.attributes('aria-label')).toBe('Syncing steps')
+    expect(spinner.element.compareDocumentPosition(menuButton.element)
+      & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(wrapper.text()).not.toContain('Syncing steps')
+    expect(wrapper.find('.step-source').exists()).toBe(false)
+  })
+
   it('shows interval duration beside its type without a nested interval card', () => {
     const intervalProgress: TaskProgress = {
       ...progress,
