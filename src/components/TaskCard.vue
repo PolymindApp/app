@@ -64,6 +64,7 @@ const emit = defineEmits<{
   logTracking: [progress: TaskProgress, trackerId: string]
   logTrackingTime: [progress: TaskProgress, trackerId: string]
   writeJournal: [progress: TaskProgress]
+  syncSteps: [progress: TaskProgress]
   actions: [progress: TaskProgress]
 }>()
 
@@ -343,23 +344,33 @@ onBeforeUnmount(() => clearTimeout(stepSyncHideTimer))
       </div>
 
       <div class="task-card-header-actions d-flex align-center ga-1 flex-shrink-0">
-        <v-progress-circular
-          v-if="isStepCounter && stepSyncIndicatorVisible"
-          class="task-sync-progress"
-          indeterminate
+        <v-btn
+          v-if="isStepCounter"
+          class="task-health-connect-button"
           color="secondary"
-          size="1rem"
-          :width="2"
-          aria-label="Syncing steps"
-        />
-        <v-icon
-          v-else-if="isStepCounter"
-          class="task-health-connect-icon"
-          icon="mdi-heart-pulse"
-          color="secondary"
-          size="1.0625rem"
-          aria-label="Health Connect"
-        />
+          icon
+          variant="text"
+          size="small"
+          :disabled="stepSyncIndicatorVisible"
+          :aria-label="stepSyncIndicatorVisible ? 'Syncing Health Connect steps' : 'Sync Health Connect steps'"
+          @touchstart.stop
+          @click.stop="emit('syncSteps', progress)"
+        >
+          <v-progress-circular
+            v-if="stepSyncIndicatorVisible"
+            class="task-sync-progress"
+            indeterminate
+            size="1rem"
+            :width="2"
+            aria-hidden="true"
+          />
+          <v-icon
+            v-else
+            class="task-health-connect-icon"
+            icon="mdi-heart-pulse"
+            size="1.0625rem"
+          />
+        </v-btn>
         <v-btn
           class="task-menu-button"
           icon="mdi-dots-horizontal"
@@ -678,6 +689,7 @@ onBeforeUnmount(() => clearTimeout(stepSyncHideTimer))
   outline-offset: .25rem;
 }
 
+.task-health-connect-button,
 .task-menu-button {
   min-width: 2.75rem;
   min-height: 2.75rem;

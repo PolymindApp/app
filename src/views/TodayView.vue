@@ -257,6 +257,10 @@ async function run(action: () => Promise<void>) {
   try { await action() } finally { busy.value = false }
 }
 
+function syncStepCount() {
+  void store.refreshStepCount(selectedDate.value)
+}
+
 function progressKey(progress: TaskProgress) {
   return taskProgressDragKey(progress)
 }
@@ -941,6 +945,7 @@ async function saveTaskLogEntry() {
               @log-tracking="openTrackingLogger"
               @log-tracking-time="openTrackingTimeLogger"
               @write-journal="openJournalTask"
+              @sync-steps="syncStepCount"
               @actions="openTaskActions"
             />
           </div>
@@ -1013,6 +1018,7 @@ async function saveTaskLogEntry() {
               @log-tracking="openTrackingLogger"
               @log-tracking-time="openTrackingTimeLogger"
               @write-journal="openJournalTask"
+              @sync-steps="syncStepCount"
               @actions="openTaskActions"
             />
           </div>

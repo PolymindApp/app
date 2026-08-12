@@ -214,7 +214,7 @@ describe('TaskCard amount actions', () => {
     expect(wrapper.emitted('logAmount')).toEqual([[progress]])
   })
 
-  it('shows the Health Connect icon in the header without manual amount actions for step counters', () => {
+  it('syncs Health Connect steps from the header without manual amount actions', async () => {
     const stepProgress: TaskProgress = {
       ...progress,
       task: {
@@ -250,12 +250,14 @@ describe('TaskCard amount actions', () => {
     expect(wrapper.text()).not.toContain('Log amount')
     const sourceMessage = wrapper.get('.step-source-message')
     const headerActions = wrapper.get('.task-card-header-actions')
-    const healthConnectIcon = headerActions.get('.task-health-connect-icon')
+    const healthConnectButton = headerActions.get('.task-health-connect-button')
     const menuButton = headerActions.get('.task-menu-button')
 
-    expect(healthConnectIcon.attributes('aria-label')).toBe('Health Connect')
-    expect(healthConnectIcon.element.compareDocumentPosition(menuButton.element)
+    expect(healthConnectButton.attributes('aria-label')).toBe('Sync Health Connect steps')
+    expect(healthConnectButton.element.compareDocumentPosition(menuButton.element)
       & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    await healthConnectButton.trigger('click')
+    expect(wrapper.emitted('syncSteps')).toEqual([[stepProgress]])
     expect(sourceMessage.text()).toContain('Open Polymind on a supported Android device')
     expect(wrapper.find('.step-source').exists()).toBe(false)
   })
@@ -288,14 +290,15 @@ describe('TaskCard amount actions', () => {
     })
 
     const headerActions = wrapper.get('.task-card-header-actions')
-    const spinner = headerActions.get('.task-sync-progress')
+    const healthConnectButton = headerActions.get('.task-health-connect-button')
     const menuButton = headerActions.get('.task-menu-button')
 
-    expect(spinner.attributes('aria-label')).toBe('Syncing steps')
-    expect(spinner.element.compareDocumentPosition(menuButton.element)
+    expect(healthConnectButton.attributes('aria-label')).toBe('Syncing Health Connect steps')
+    expect(healthConnectButton.attributes()).toHaveProperty('disabled')
+    expect(healthConnectButton.get('.task-sync-progress').attributes('aria-hidden')).toBe('true')
+    expect(healthConnectButton.element.compareDocumentPosition(menuButton.element)
       & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(wrapper.text()).not.toContain('Syncing steps')
-    expect(headerActions.find('.task-health-connect-icon').exists()).toBe(false)
   })
 
   it('keeps fast step sync progress visible long enough to be perceived', async () => {
@@ -330,12 +333,13 @@ describe('TaskCard amount actions', () => {
       await wrapper.setProps({ syncing: false })
 
       expect(wrapper.find('.task-sync-progress').exists()).toBe(true)
-      expect(wrapper.find('.task-health-connect-icon').exists()).toBe(false)
+      expect(wrapper.get('.task-health-connect-button').attributes()).toHaveProperty('disabled')
 
       await vi.advanceTimersByTimeAsync(1000)
 
       expect(wrapper.find('.task-sync-progress').exists()).toBe(false)
       expect(wrapper.find('.task-health-connect-icon').exists()).toBe(true)
+      expect(wrapper.get('.task-health-connect-button').attributes()).not.toHaveProperty('disabled')
     } finally {
       wrapper.unmount()
       vi.useRealTimers()
