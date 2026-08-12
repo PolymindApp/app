@@ -8,6 +8,9 @@ project(':capacitor-app').projectDir = new File('../node_modules/.pnpm/@capacito
 include ':capacitor-background-runner'
 project(':capacitor-background-runner').projectDir = new File('../node_modules/.pnpm/@capacitor+background-runner@3.0.0_@capacitor+core@8.4.2/node_modules/@capacitor/background-runner/android')
 
+include ':capacitor-camera'
+project(':capacitor-camera').projectDir = new File('../node_modules/.pnpm/@capacitor+camera@8.2.2_@capacitor+core@8.4.2/node_modules/@capacitor/camera/android')
+
 include ':capacitor-haptics'
 project(':capacitor-haptics').projectDir = new File('../node_modules/.pnpm/@capacitor+haptics@8.0.2_@capacitor+core@8.4.2/node_modules/@capacitor/haptics/android')
 
