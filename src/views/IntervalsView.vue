@@ -10,6 +10,7 @@ import type { IntervalSession } from '@/types/domain'
 
 const store = useIntervalStore()
 const recentWeekStart = ref(startOfWeek(new Date(), { weekStartsOn: 1 }))
+const expandedRecentRunDays = ref(new Set([format(new Date(), 'yyyy-MM-dd')]))
 const intervalColors = computed(() =>
   new Map(store.templates.map((template) => [template.id, template.color])),
 )
@@ -23,6 +24,17 @@ const recentSessionGroups = computed(() => groupIntervalSessionsByDate(recentSes
 const recentWeekIsCurrent = computed(() =>
   isSameWeek(recentWeekStart.value, new Date(), { weekStartsOn: 1 }),
 )
+
+function isRecentRunDayExpanded(dayKey: string) {
+  return expandedRecentRunDays.value.has(dayKey)
+}
+
+function toggleRecentRunDay(dayKey: string) {
+  const nextExpandedDays = new Set(expandedRecentRunDays.value)
+  if (nextExpandedDays.has(dayKey)) nextExpandedDays.delete(dayKey)
+  else nextExpandedDays.add(dayKey)
+  expandedRecentRunDays.value = nextExpandedDays
+}
 
 function recentRunColor(session: IntervalSession) {
   if (session.status !== 'completed') return 'warning'
@@ -91,44 +103,61 @@ onBeforeUnmount(() => {
           class="recent-run-group"
         >
           <v-divider v-if="groupIndex" />
-          <div class="recent-run-group__heading px-4 pt-3 pb-1">
+          <v-btn
+            block
+            variant="text"
+            class="recent-run-group__heading px-4"
+            :aria-expanded="isRecentRunDayExpanded(group.key)"
+            :aria-controls="`recent-runs-${group.key}`"
+            @click="toggleRecentRunDay(group.key)"
+          >
             <h3>{{ group.label }}</h3>
-            <span>{{ group.sessions.length }}</span>
-          </div>
-          <v-list bg-color="transparent">
-            <v-list-item
-              v-for="session in group.sessions"
-              :key="session.id"
-              class="recent-run-item"
-              :title="session.name"
+            <span class="recent-run-group__count">{{ group.sessions.length }}</span>
+            <v-icon
+              :icon="isRecentRunDayExpanded(group.key) ? 'mdi-chevron-up' : 'mdi-chevron-down'"
+              size="small"
+            />
+          </v-btn>
+          <v-expand-transition>
+            <v-list
+              v-show="isRecentRunDayExpanded(group.key)"
+              :id="`recent-runs-${group.key}`"
+              bg-color="transparent"
             >
-              <template #prepend>
-                <v-icon
-                  :icon="session.status === 'completed' ? 'mdi-check-circle-outline' : 'mdi-stop-circle-outline'"
-                  :color="recentRunColor(session)"
-                />
-              </template>
-              <span class="recent-run-meta">
-                {{ format(new Date(session.startedAt), 'h:mm a') }} · {{ session.source === 'quick' ? 'Quick' : 'Template' }}
-              </span>
-              <div class="recent-run-progress">
-                <v-progress-linear
-                  :model-value="intervalRunProgressPercent(session)"
-                  :color="recentRunColor(session)"
-                  bg-color="surface-variant"
-                  height="4"
-                  rounded
-                  :aria-label="`${session.name}: ${intervalRunProgressPercent(session)}% accomplished`"
-                />
-              </div>
-              <div v-if="session.note" class="recent-run-note">
-                <span>{{ session.note }}</span>
-              </div>
-              <template #append>
-                <strong class="recent-run-time text-caption">{{ formatIntervalDuration(session.elapsedSeconds) }}</strong>
-              </template>
-            </v-list-item>
-          </v-list>
+              <v-list-item
+                v-for="session in group.sessions"
+                :key="session.id"
+                class="recent-run-item"
+                :title="session.name"
+              >
+                <template #prepend>
+                  <v-icon
+                    :icon="session.status === 'completed' ? 'mdi-check-circle-outline' : 'mdi-stop-circle-outline'"
+                    :color="recentRunColor(session)"
+                  />
+                </template>
+                <span class="recent-run-meta">
+                  {{ format(new Date(session.startedAt), 'h:mm a') }} · {{ session.source === 'quick' ? 'Quick' : 'Template' }}
+                </span>
+                <div class="recent-run-progress">
+                  <v-progress-linear
+                    :model-value="intervalRunProgressPercent(session)"
+                    :color="recentRunColor(session)"
+                    bg-color="surface-variant"
+                    height="4"
+                    rounded
+                    :aria-label="`${session.name}: ${intervalRunProgressPercent(session)}% accomplished`"
+                  />
+                </div>
+                <div v-if="session.note" class="recent-run-note">
+                  <span>{{ session.note }}</span>
+                </div>
+                <template #append>
+                  <strong class="recent-run-time text-caption">{{ formatIntervalDuration(session.elapsedSeconds) }}</strong>
+                </template>
+              </v-list-item>
+            </v-list>
+          </v-expand-transition>
         </section>
       </v-card>
       <v-card
@@ -172,9 +201,10 @@ onBeforeUnmount(() => {
 .active-session__name { font-size: 1.5rem; }
 .interval-content-enter-active { transition: opacity 180ms ease, transform 220ms cubic-bezier(.22, 1, .36, 1); }
 .interval-content-enter-from { opacity: 0; transform: translateY(.75rem); }
-.recent-run-group__heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.recent-run-group__heading { min-height: 2.75rem; }
+.recent-run-group__heading :deep(.v-btn__content) { width: 100%; justify-content: flex-start; gap: .5rem; }
 .recent-run-group__heading h3 { font-size: .75rem; font-weight: 900; letter-spacing: .04em; }
-.recent-run-group__heading span { color: rgba(var(--v-theme-on-surface), .54); font-size: .68rem; font-weight: 800; }
+.recent-run-group__count { margin-left: auto; color: rgba(var(--v-theme-on-surface), .54); font-size: .68rem; font-weight: 800; }
 .recent-run-progress { margin-top: .45rem; }
 .recent-run-note { min-width: 0; margin-top: .5rem; color: rgba(var(--v-theme-on-surface), .68); font-size: .75rem; line-height: 1.45; }
 .recent-run-note span { min-width: 0; overflow-wrap: anywhere; white-space: pre-line; }
