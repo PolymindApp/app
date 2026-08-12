@@ -142,32 +142,6 @@ async function importCards() {
 
 <template>
   <main class="app-page app-page--editor flashcard-import-page">
-    <v-alert
-      type="info"
-      variant="tonal"
-      icon="mdi-creation-outline"
-      class="mb-4"
-    >
-      <strong>Ask an AI to prepare the CSV</strong>
-      <p class="text-body-2 mt-2">
-        Copy a ready-to-use prompt, paste it into your preferred AI, then adjust the topic, languages, or number of cards.
-      </p>
-      <div class="flashcard-import-prompt-actions mt-3">
-        <v-btn
-          size="small"
-          variant="tonal"
-          :color="promptCopied ? 'success' : 'info'"
-          :prepend-icon="promptCopied ? 'mdi-check' : 'mdi-content-copy'"
-          @click="copyAiPrompt"
-        >
-          {{ promptCopied ? 'Copied' : 'Copy prompt' }}
-        </v-btn>
-      </div>
-      <p v-if="promptCopyError" class="text-caption text-error mt-2" role="alert">
-        {{ promptCopyError }}
-      </p>
-    </v-alert>
-
     <v-alert v-if="error" type="error" variant="tonal" class="mb-4">{{ error }}</v-alert>
 
     <AppForm ref="form" @submit.prevent="importCards">
@@ -250,6 +224,32 @@ async function importCards() {
         </template>
       </v-card>
     </AppForm>
+
+    <v-alert
+      type="info"
+      variant="tonal"
+      icon="mdi-creation-outline"
+      class="mt-4"
+    >
+      <strong>Ask an AI to prepare the CSV</strong>
+      <p class="text-body-2 mt-2">
+        Copy a ready-to-use prompt, paste it into your preferred AI, then adjust the topic, languages, or number of cards.
+      </p>
+      <div class="flashcard-import-prompt-actions mt-3">
+        <v-btn
+          size="small"
+          variant="tonal"
+          :color="promptCopied ? 'success' : 'info'"
+          :prepend-icon="promptCopied ? 'mdi-check' : 'mdi-content-copy'"
+          @click="copyAiPrompt"
+        >
+          {{ promptCopied ? 'Copied' : 'Copy prompt' }}
+        </v-btn>
+      </div>
+      <p v-if="promptCopyError" class="text-caption text-error mt-2" role="alert">
+        {{ promptCopyError }}
+      </p>
+    </v-alert>
 
     <FormActionBar
       :primary-text="parsed.rows.length ? `Import ${parsed.rows.length}` : 'Import'"
