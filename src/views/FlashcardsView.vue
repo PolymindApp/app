@@ -390,7 +390,8 @@ async function openReviewSet(reviewSet: FlashcardReviewSet) {
                   <v-progress-linear
                     :model-value="flashcardReviewProgressPercent(session)"
                     :color="recentReviewColor(session)"
-                    bg-color="surface-variant"
+                    bg-color="white"
+                    :bg-opacity="0.14"
                     height="4"
                     rounded
                     :aria-label="`${session.name}: ${flashcardReviewProgressPercent(session)}% accomplished`"
