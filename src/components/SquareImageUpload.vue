@@ -1,5 +1,7 @@
 <script setup lang="ts">
+import { Capacitor } from '@capacitor/core'
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import {
   clampSquareImageCrop,
   compressSquareImage,
@@ -27,9 +29,11 @@ const emit = defineEmits<{
   error: [message: string]
 }>()
 
-const fileInput = ref<HTMLInputElement>()
+const existingImageInput = ref<HTMLInputElement>()
+const cameraInput = ref<HTMLInputElement>()
 const cropImage = ref<HTMLImageElement>()
 const cropViewport = ref<HTMLElement>()
+const sourceActions = ref(false)
 const cropDialog = ref(false)
 const cropError = ref('')
 const sourceUrl = ref('')
@@ -40,6 +44,7 @@ const zoom = ref(1)
 const offsetX = ref(0)
 const offsetY = ref(0)
 const compressing = ref(false)
+const mobilePlatform = ['android', 'ios'].includes(Capacitor.getPlatform())
 let resizeObserver: ResizeObserver | undefined
 let drag: {
   pointerId: number
@@ -82,7 +87,21 @@ onBeforeUnmount(() => {
 })
 
 function choose() {
-  fileInput.value?.click()
+  if (mobilePlatform) {
+    sourceActions.value = true
+    return
+  }
+  existingImageInput.value?.click()
+}
+
+function takePhoto() {
+  sourceActions.value = false
+  cameraInput.value?.click()
+}
+
+function chooseExisting() {
+  sourceActions.value = false
+  existingImageInput.value?.click()
 }
 
 function handleFile(event: Event) {
@@ -204,13 +223,42 @@ defineExpose({ choose })
 
 <template>
   <input
-    ref="fileInput"
+    ref="existingImageInput"
     class="square-image-file-input"
     type="file"
     accept="image/*"
     :aria-label="`Choose a ${subject} image`"
     @change="handleFile"
   />
+  <input
+    ref="cameraInput"
+    class="square-image-file-input"
+    type="file"
+    accept="image/*"
+    capture="environment"
+    :aria-label="`Take a ${subject} photo`"
+    @change="handleFile"
+  />
+
+  <ActionBottomSheet
+    v-model="sourceActions"
+    title="Add image"
+    :description="`Take a new ${subject} photo or choose one already on this device.`"
+    :aria-label="`Choose ${subject} image source`"
+  >
+    <v-list-item
+      prepend-icon="mdi-camera-outline"
+      title="Take photo"
+      rounded="lg"
+      @click="takePhoto"
+    />
+    <v-list-item
+      prepend-icon="mdi-image-outline"
+      title="Choose existing"
+      rounded="lg"
+      @click="chooseExisting"
+    />
+  </ActionBottomSheet>
 
   <v-dialog :model-value="cropDialog" max-width="520" persistent>
     <v-card class="crop-card">
