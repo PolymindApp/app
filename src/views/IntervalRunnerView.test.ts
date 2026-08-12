@@ -1,8 +1,8 @@
-import { defineComponent, reactive } from 'vue'
+import { defineComponent, h, reactive } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { speakFlashcardText } from '@/services/flashcardSpeech'
 import IntervalRunnerView from '@/views/IntervalRunnerView.vue'
-import type { IntervalSession } from '@/types/domain'
+import type { FlashcardReviewSet, IntervalSession } from '@/types/domain'
 
 const mocks = vi.hoisted(() => ({
   route: {
@@ -33,6 +33,8 @@ const mocks = vi.hoisted(() => ({
     loadReviewSetCards: vi.fn(),
     deleteCard: vi.fn(),
     deleteReviewSetCard: vi.fn(),
+    saveReviewSet: vi.fn(),
+    saveReviewSetPreferences: vi.fn(),
   },
   taskStore: {
     tasks: [],
@@ -87,6 +89,10 @@ const FlashcardContextActionsStub = defineComponent({
         type="button"
         @click="$emit('update:modelValue', false); $emit('action', 'eject')"
       >Eject</button>
+      <button
+        type="button"
+        @click="$emit('update:modelValue', false); $emit('action', 'settings')"
+      >Settings</button>
     </div>
   `,
 })
@@ -123,6 +129,67 @@ const RunnerSessionActionsStub = defineComponent({
     </div>
   `,
 })
+
+const AppFormStub = defineComponent({
+  setup(_, { expose, slots }) {
+    expose({ validate: async () => ({ valid: true }) })
+    return () => h('form', slots.default?.())
+  },
+})
+
+const VDialogStub = defineComponent({
+  name: 'VDialog',
+  props: { modelValue: Boolean },
+  setup(props, { slots }) {
+    return () => props.modelValue ? h('div', { class: 'dialog-stub' }, slots.default?.()) : undefined
+  },
+})
+
+const PassThroughStub = defineComponent({
+  setup(_, { slots }) {
+    return () => h('div', slots.default?.())
+  },
+})
+
+const FlashcardReviewSettingsFieldsStub = defineComponent({
+  props: { modelValue: { type: Object, required: true } },
+  setup(props) {
+    return () => h('button', {
+      class: 'change-flashcard-settings',
+      type: 'button',
+      onClick: () => { props.modelValue.frontSeconds = 9 },
+    }, 'Change settings')
+  },
+})
+
+function reviewSet(accessRole: FlashcardReviewSet['accessRole'] = 'owner'): FlashcardReviewSet {
+  return {
+    id: 'set-1',
+    name: 'Vocabulary',
+    tags: [],
+    tagDetails: [],
+    owner: 'owner-1',
+    ownerName: 'Owner',
+    ownerAvatar: '',
+    accessRole,
+    matchingCardCount: 1,
+    mode: 'manual',
+    cardSides: 'both',
+    indefinite: false,
+    maxCards: 20,
+    frontSeconds: 5,
+    backSeconds: 5,
+    backSpeechRepeatCount: 1,
+    noteBeforeBack: false,
+    speechEnabled: false,
+    frontLanguage: '',
+    backLanguage: '',
+    sortMode: 'difficult',
+    sortOrder: 0,
+    createdAt: '2026-08-01T00:00:00.000Z',
+    updatedAt: '2026-08-01T00:00:00.000Z',
+  }
+}
 
 function intervalSession(status: IntervalSession['status'], image = ''): IntervalSession {
   const now = new Date().toISOString()
@@ -185,22 +252,22 @@ function mountRunner() {
       directives: { ripple: {} },
       stubs: {
         ActionBottomSheet: true,
-        AppForm: true,
+        AppForm: AppFormStub,
         ConfirmDialog: ConfirmDialogStub,
         FlashcardCardDialog: true,
         FlashcardContextActions: FlashcardContextActionsStub,
         FlashcardResponseText: true,
-        FlashcardReviewSettingsFields: true,
+        FlashcardReviewSettingsFields: FlashcardReviewSettingsFieldsStub,
         IntervalTypeIcon: true,
         LabeledSlider: true,
         RunnerSessionActions: RunnerSessionActionsStub,
         VAlert: true,
         VBtn: true,
-        VCard: true,
-        VCardActions: true,
-        VCardText: true,
-        VCardTitle: true,
-        VDialog: true,
+        VCard: PassThroughStub,
+        VCardActions: PassThroughStub,
+        VCardText: PassThroughStub,
+        VCardTitle: PassThroughStub,
+        VDialog: VDialogStub,
         VDivider: true,
         VIcon: true,
         VProgressCircular: true,
@@ -224,6 +291,27 @@ describe('IntervalRunnerView flashcard area', () => {
     mocks.intervalStore.load.mockReset().mockResolvedValue(undefined)
     mocks.intervalStore.endSession.mockReset().mockResolvedValue(undefined)
     mocks.flashcardStore.load.mockReset().mockResolvedValue(undefined)
+    mocks.flashcardStore.reviewSets = [reviewSet()]
+    mocks.flashcardStore.cards = [{
+      id: 'card-1',
+      owner: 'owner-1',
+      front: 'House',
+      back: 'Maison',
+      note: '',
+      image: '',
+      tags: [],
+      difficulty: 0,
+      createdAt: '2026-08-01T00:00:00.000Z',
+      updatedAt: '2026-08-01T00:00:00.000Z',
+    }]
+    mocks.flashcardStore.saveReviewSet.mockReset().mockImplementation(async value => value)
+    mocks.flashcardStore.saveReviewSetPreferences.mockReset().mockImplementation(async (_id, value) => value)
+    mocks.intervalStore.updateSessionFlashcardReview.mockReset().mockImplementation(async (id, review) => {
+      const active = mocks.intervalStore.sessions.find(item => item.id === id)
+      if (!active) throw new Error('Missing session')
+      active.flashcardReview = review
+      return active
+    })
     mocks.taskStore.load.mockReset().mockResolvedValue(undefined)
     mocks.speechOverAmplificationIsEnabled.mockReset().mockReturnValue(false)
     mocks.speakFlashcardText.mockReset().mockResolvedValue(undefined)
@@ -306,6 +394,55 @@ describe('IntervalRunnerView flashcard area', () => {
     expect(wrapper.getComponent({ name: 'FlashcardResponseText' }).classes())
       .toContain('interval-review-card__face--hidden')
 
+    wrapper.unmount()
+  })
+
+  it('applies edited Review set settings only to the current interval session', async () => {
+    const wrapper = mountRunner()
+    await flushPromises()
+
+    await wrapper.get('.interval-review-card').trigger('click')
+    await flushPromises()
+    await wrapper.findAll('.flashcard-context-actions button')[2]!.trigger('click')
+    await flushPromises()
+    await wrapper.get('.change-flashcard-settings').trigger('click')
+    await wrapper.vm.$nextTick()
+
+    const applyButton = wrapper.get('.apply-session-settings')
+    await applyButton.trigger('click')
+    await flushPromises()
+
+    expect(mocks.intervalStore.updateSessionFlashcardReview).toHaveBeenCalledOnce()
+    expect(mocks.intervalStore.updateSessionFlashcardReview).toHaveBeenCalledWith(
+      'session-1',
+      expect.objectContaining({ frontSeconds: 9 }),
+    )
+    expect(mocks.flashcardStore.saveReviewSet).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('applies edited interval settings to the Review set without changing the current snapshot', async () => {
+    const wrapper = mountRunner()
+    await flushPromises()
+
+    await wrapper.get('.interval-review-card').trigger('click')
+    await flushPromises()
+    await wrapper.findAll('.flashcard-context-actions button')[2]!.trigger('click')
+    await flushPromises()
+    await wrapper.get('.change-flashcard-settings').trigger('click')
+    await wrapper.vm.$nextTick()
+
+    const applyButton = wrapper.get('.apply-review-set-settings')
+    await applyButton.trigger('click')
+    await flushPromises()
+
+    expect(mocks.flashcardStore.saveReviewSet).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'set-1',
+      mode: 'manual',
+      indefinite: false,
+      frontSeconds: 9,
+    }))
+    expect(mocks.intervalStore.updateSessionFlashcardReview).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 

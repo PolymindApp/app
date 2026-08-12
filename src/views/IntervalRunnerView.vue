@@ -112,7 +112,7 @@ const flashcardEjectDialog = ref(false)
 const flashcardEjecting = ref(false)
 const flashcardSettingsDialog = ref(false)
 const flashcardSettingsForm = ref()
-const flashcardSettingsSaving = ref(false)
+const flashcardSettingsSaveTarget = ref<'session' | 'review-set'>()
 const flashcardSettingsError = ref('')
 const flashcardSettingsOriginal = ref('')
 const flashcardSpeechLoading = ref(false)
@@ -220,6 +220,7 @@ const flashcardSettingsChanged = computed(() => flashcardSettingsDialog.value
   && flashcardReviewSettingsSignature(flashcardSettingsDraft) !== flashcardSettingsOriginal.value)
 const canSaveFlashcardSettings = computed(() => flashcardSettingsChanged.value
   && flashcardReviewSettingsAreValid(flashcardSettingsDraft))
+const flashcardSettingsSaving = computed(() => Boolean(flashcardSettingsSaveTarget.value))
 const remainingLabel = computed(() => {
   const totalSeconds = Math.max(0, Math.ceil(displayRemainingMs.value / 1000))
   const minutes = Math.floor(totalSeconds / 60)
@@ -1125,16 +1126,45 @@ async function closeFlashcardSettings() {
   await finishFlashcardModal()
 }
 
-async function saveFlashcardSettings() {
+async function validateFlashcardSettings() {
   const validation = await flashcardSettingsForm.value?.validate()
   const review = session.value?.flashcardReview
   const reviewSet = flashcardReviewSet.value
   if (!validation?.valid || !canSaveFlashcardSettings.value || !review || !reviewSet) return
-  flashcardSettingsSaving.value = true
+  return { review, reviewSet }
+}
+
+async function saveFlashcardSettings(target: 'session' | 'review-set' = 'session') {
+  const context = await validateFlashcardSettings()
+  if (!context) return
+  flashcardSettingsSaveTarget.value = target
   flashcardSettingsError.value = ''
   try {
+    if (target === 'review-set') {
+      const settings = {
+        ...context.reviewSet,
+        cardSides: flashcardSettingsDraft.cardSides,
+        maxCards: flashcardSettingsDraft.maxCards,
+        frontSeconds: flashcardSettingsDraft.frontSeconds,
+        backSeconds: flashcardSettingsDraft.backSeconds,
+        backSpeechRepeatCount: flashcardSettingsDraft.backSpeechRepeatCount,
+        noteBeforeBack: flashcardSettingsDraft.noteBeforeBack,
+        speechEnabled: flashcardSettingsDraft.speechEnabled,
+        frontLanguage: flashcardSettingsDraft.frontLanguage,
+        backLanguage: flashcardSettingsDraft.backLanguage,
+        sortMode: flashcardSettingsDraft.sortMode,
+      }
+      if (context.reviewSet.accessRole === 'owner') {
+        await flashcardStore.saveReviewSet(settings)
+      } else {
+        await flashcardStore.saveReviewSetPreferences(context.reviewSet.id, settings)
+      }
+      await closeFlashcardSettings()
+      return
+    }
+
     const snapshot = createIntervalFlashcardReviewSnapshot(
-      { ...reviewSet, ...flashcardSettingsDraft },
+      { ...context.reviewSet, ...flashcardSettingsDraft },
       intervalFlashcardSource.value,
     )
     if (!snapshot) throw new Error('These settings do not match any available cards.')
@@ -1145,7 +1175,7 @@ async function saveFlashcardSettings() {
       ? cause.message
       : 'Could not update the flashcard settings.'
   } finally {
-    flashcardSettingsSaving.value = false
+    flashcardSettingsSaveTarget.value = undefined
   }
 }
 
@@ -1553,7 +1583,7 @@ async function runAgain(repetitions?: number) {
           >
             {{ flashcardSettingsError }}
           </v-alert>
-          <AppForm ref="flashcardSettingsForm" @submit.prevent="saveFlashcardSettings">
+          <AppForm ref="flashcardSettingsForm" @submit.prevent="saveFlashcardSettings('session')">
             <FlashcardReviewSettingsFields
               :model-value="flashcardSettingsDraft"
               :speech-support="flashcardSpeechSupport"
@@ -1566,19 +1596,31 @@ async function runAgain(repetitions?: number) {
         </v-card-text>
         <v-divider />
         <v-card-actions class="flashcard-settings-actions ga-2">
-          <v-spacer />
           <v-btn variant="text" :disabled="flashcardSettingsSaving" @click="closeFlashcardSettings">
             Cancel
           </v-btn>
-          <v-btn
-            color="secondary"
-            size="large"
-            :loading="flashcardSettingsSaving"
-            :disabled="!canSaveFlashcardSettings"
-            @click="saveFlashcardSettings"
-          >
-            Save
-          </v-btn>
+          <div class="flashcard-settings-save-actions">
+            <v-btn
+              class="apply-review-set-settings"
+              variant="outlined"
+              size="large"
+              :loading="flashcardSettingsSaveTarget === 'review-set'"
+              :disabled="!canSaveFlashcardSettings || flashcardSettingsSaving"
+              @click="saveFlashcardSettings('review-set')"
+            >
+              Apply to Review set
+            </v-btn>
+            <v-btn
+              class="apply-session-settings"
+              color="secondary"
+              size="large"
+              :loading="flashcardSettingsSaveTarget === 'session'"
+              :disabled="!canSaveFlashcardSettings || flashcardSettingsSaving"
+              @click="saveFlashcardSettings('session')"
+            >
+              Apply to current session
+            </v-btn>
+          </div>
         </v-card-actions>
       </v-card>
     </v-dialog>
@@ -1950,11 +1992,25 @@ async function runAgain(repetitions?: number) {
     calc(1.25rem + env(safe-area-inset-left, 0rem)) !important;
 }
 .flashcard-settings-actions {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
   padding:
     1rem
     calc(1rem + env(safe-area-inset-right, 0rem))
     calc(1rem + max(env(safe-area-inset-bottom, 0rem), var(--safe-area-inset-bottom, 0rem)))
     calc(1rem + env(safe-area-inset-left, 0rem)) !important;
+}
+.flashcard-settings-save-actions {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .5rem;
+}
+.flashcard-settings-save-actions .v-btn { min-height: 3rem; }
+@media (max-width: 31.25rem) {
+  .flashcard-settings-actions { grid-template-columns: 1fr; }
+  .flashcard-settings-actions > .v-btn { justify-self: start; }
+  .flashcard-settings-save-actions { grid-template-columns: 1fr; }
 }
 .repetition-summary {
   color: rgb(var(--v-theme-on-surface) / .62);
