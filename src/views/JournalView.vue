@@ -201,16 +201,14 @@ onMounted(async () => {
                 >
                   <div class="journal-entry__layout">
                     <div class="min-width-0">
-                      <div class="d-flex align-start justify-space-between ga-3">
-                        <div class="min-width-0">
-                          <h3 class="text-body-1 font-weight-black journal-entry__title">
-                            {{ journalEntryHeading(entry) }}
-                          </h3>
-                          <p v-if="entry.title" class="journal-entry__body mt-2">{{ entry.body }}</p>
-                        </div>
-                        <span class="text-caption muted flex-shrink-0">
+                      <div class="min-width-0">
+                        <h3 class="text-body-1 font-weight-black journal-entry__title">
+                          {{ journalEntryHeading(entry) }}
+                        </h3>
+                        <span class="d-block text-caption muted mt-1">
                           {{ format(new Date(entry.occurredAt), 'h:mm a') }}
                         </span>
+                        <p v-if="entry.title" class="journal-entry__body mt-2">{{ entry.body }}</p>
                       </div>
                       <div v-if="taskName(entry) || trackerContexts(entry).length" class="d-flex flex-wrap ga-2 mt-3">
                         <v-chip
