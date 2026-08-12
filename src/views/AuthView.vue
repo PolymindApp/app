@@ -389,7 +389,7 @@ async function signInWithPasskey() {
   position: relative;
   z-index: 1;
   min-height: 100dvh;
-  padding-block: 0;
+  padding-block: 1rem;
   display: grid;
   align-content: center;
   gap: 2.5rem;
@@ -399,8 +399,8 @@ async function signInWithPasskey() {
 :global(html.platform-android .auth-wrap),
 :global(html.platform-ios .auth-wrap) {
   padding-block:
-    max(env(safe-area-inset-top, 0rem), var(--safe-area-inset-top, 0rem))
-    max(env(safe-area-inset-bottom, 0rem), var(--safe-area-inset-bottom, 0rem));
+    calc(1rem + max(env(safe-area-inset-top, 0rem), var(--safe-area-inset-top, 0rem)))
+    calc(1rem + max(env(safe-area-inset-bottom, 0rem), var(--safe-area-inset-bottom, 0rem)));
 }
 
 .logo-box {
