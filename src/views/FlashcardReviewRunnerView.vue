@@ -1571,8 +1571,11 @@ async function leaveRunner() {
 .completion-panel__icon { display: grid; width: 6rem; height: 6rem; place-items: center; border-radius: 2rem; background: rgba(var(--v-theme-secondary), .16); color: rgb(var(--v-theme-secondary)); }
 .completion-panel h1 { font-size: clamp(2.6rem, 10vw, 5rem); }
 .completion-panel__done { width: 100%; flex: 0 0 auto; }
-.completion-stats { display: grid; width: 100%; margin: 1rem 0; grid-template-columns: repeat(auto-fit, minmax(6rem, 1fr)); align-items: stretch; gap: .6rem; }
-.completion-stats > div { display: flex; padding: 1rem .5rem; border-radius: 1rem; align-self: stretch; flex-direction: column; background: rgba(var(--v-theme-on-surface), .06); }
+.completion-stats { display: grid; width: 100%; margin: 1rem 0; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: .6rem; }
+.completion-stats > div { display: flex; padding: 1rem .5rem; border-radius: 1rem; grid-column: span 2; flex-direction: column; background: rgba(var(--v-theme-on-surface), .06); }
+.completion-stats > div:last-child:nth-child(3n + 1) { grid-column: 1 / -1; }
+.completion-stats > div:nth-last-child(2):nth-child(3n + 1),
+.completion-stats > div:last-child:nth-child(3n + 2) { grid-column: span 3; }
 .completion-stats strong { font-size: 1.25rem; }
 .completion-stats span { margin-top: .2rem; color: rgba(var(--v-theme-on-surface), .52); font-size: .65rem; font-weight: 800; text-transform: uppercase; }
 @media (prefers-reduced-motion: reduce) {
