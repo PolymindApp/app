@@ -389,7 +389,7 @@ async function signInWithPasskey() {
   position: relative;
   z-index: 1;
   min-height: 100dvh;
-  padding-block: 5rem;
+  padding-block: 0;
   display: grid;
   align-content: center;
   gap: 2.5rem;
