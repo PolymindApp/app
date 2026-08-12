@@ -16,6 +16,10 @@ function usesAndroidStageBridge() {
 
 export async function writeBackgroundSyncStage(details: Record<string, unknown>) {
   if (!Capacitor.isNativePlatform()) return
+  if (Array.isArray(details.operations) && details.operations.length === 0) {
+    await removeBackgroundSyncStage()
+    return
+  }
   const value = JSON.stringify(details)
   if (value === lastStagedValue) return
 

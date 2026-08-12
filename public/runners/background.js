@@ -27,7 +27,15 @@ addEventListener('backgroundSync', async (resolve) => {
       resolve()
       return
     }
-    await fetch(staged.url, {
+    const operations = Array.isArray(staged.operations) ? staged.operations : []
+    if (!operations.length) {
+      if (CapacitorKV.get(STAGED_SYNC_KEY)?.value === stored.value) {
+        CapacitorKV.remove(STAGED_SYNC_KEY)
+      }
+      resolve()
+      return
+    }
+    const response = await fetch(staged.url, {
       method: 'POST',
       headers: {
         Accept: 'application/json',
@@ -37,9 +45,17 @@ addEventListener('backgroundSync', async (resolve) => {
       body: JSON.stringify({
         clientId: staged.clientId,
         cursor: Number(staged.cursor || 0),
-        operations: Array.isArray(staged.operations) ? staged.operations : [],
+        operations,
       }),
     })
+    const terminalFailure = response.status >= 400
+      && response.status < 500
+      && response.status !== 408
+      && response.status !== 429
+    if ((response.ok || terminalFailure)
+      && CapacitorKV.get(STAGED_SYNC_KEY)?.value === stored.value) {
+      CapacitorKV.remove(STAGED_SYNC_KEY)
+    }
     resolve()
   } catch {
     // The same idempotent batch remains staged for a later OS opportunity.

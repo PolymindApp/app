@@ -98,9 +98,11 @@ function notifyDataChanged(accountId: string, resource: string) {
   }))
 }
 
-function notifyOutboxChanged(accountId: string) {
+function notifyOutboxChanged(accountId: string, source: 'local' | 'reconciliation' = 'local') {
   if (typeof window === 'undefined') return
-  window.dispatchEvent(new CustomEvent(SYNC_OUTBOX_CHANGED_EVENT, { detail: { accountId } }))
+  window.dispatchEvent(new CustomEvent(SYNC_OUTBOX_CHANGED_EVENT, {
+    detail: { accountId, source },
+  }))
 }
 
 export async function hasLocalBootstrap(accountId: string) {
@@ -648,7 +650,9 @@ export async function applyExchangeResults(
     },
   )
   for (const resource of changedResources) notifyDataChanged(accountId, resource)
-  if (acknowledgements.length || changes.length) notifyOutboxChanged(accountId)
+  if (acknowledgements.length || changes.length) {
+    notifyOutboxChanged(accountId, 'reconciliation')
+  }
 }
 
 async function mergeRemoteResource(accountId: string, remote: SyncResource) {

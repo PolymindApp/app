@@ -138,6 +138,29 @@ describe('offline local database', () => {
     }
   })
 
+  it('identifies server reconciliation separately from a new local mutation', async () => {
+    await completeLocalBootstrap(accountId, 0, [])
+    await putLocalCreate(accountId, 'journal_entries', { title: 'Synced reflection' })
+    const operation = (await pendingOperations(accountId))[0]!
+    const listener = vi.fn()
+    window.addEventListener(localOutboxChangedEvent, listener)
+
+    try {
+      await applyExchangeResults(accountId, 1, '2026-08-10T12:00:00.000Z', [{
+        operationId: operation.operationId,
+        status: 'applied',
+      }], [])
+
+      expect(listener).toHaveBeenCalledOnce()
+      expect((listener.mock.calls[0]?.[0] as CustomEvent).detail).toEqual({
+        accountId,
+        source: 'reconciliation',
+      })
+    } finally {
+      window.removeEventListener(localOutboxChangedEvent, listener)
+    }
+  })
+
   it('lists newest issues first and discards all rejected local changes together', async () => {
     await completeLocalBootstrap(accountId, 0, [])
     for (let index = 0; index < 6; index += 1) {

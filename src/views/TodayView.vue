@@ -757,7 +757,7 @@ function pressKeypad(key: typeof keypadKeys[number]) {
 }
 
 async function submitExact(mode: 'add' | 'subtract' | 'set') {
-  if (!exactProgress.value || exactAmount.value === null) return
+  if (!exactProgress.value || exactAmount.value === null || busy.value) return
   const progress = exactProgress.value
   exactAction.value = mode
   const amount = mode === 'set'
@@ -784,7 +784,7 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
 async function saveTaskLogEntry() {
   const progress = exactProgress.value
   const entry = exactEditingEntry.value
-  if (!progress || !entry || exactAmount.value === null) return
+  if (!progress || !entry || exactAmount.value === null || busy.value) return
   exactAction.value = 'save'
   exactError.value = ''
   try {
@@ -1101,7 +1101,7 @@ async function saveTaskLogEntry() {
           size="large"
           color="secondary"
           :loading="busy && exactAction === 'save'"
-          :disabled="exactAmount === null || (busy && exactAction !== 'save')"
+          :disabled="exactAmount === null || busy"
           @click="saveTaskLogEntry"
         >
           Save
@@ -1114,7 +1114,7 @@ async function saveTaskLogEntry() {
             color="secondary"
             aria-label="Add"
             :loading="busy && exactAction === 'add'"
-            :disabled="exactAmount === null || (busy && exactAction !== 'add')"
+            :disabled="exactAmount === null || busy"
             @click="submitExact('add')"
           >
             Add
@@ -1127,7 +1127,7 @@ async function saveTaskLogEntry() {
             color="error"
             aria-label="Subtract"
             :loading="busy && exactAction === 'subtract'"
-            :disabled="exactAmount === null || (busy && exactAction !== 'subtract')"
+            :disabled="exactAmount === null || busy"
             @click="submitExact('subtract')"
           >
               Subtract
@@ -1139,7 +1139,7 @@ async function saveTaskLogEntry() {
             class="exact-action exact-action--set"
             variant="tonal"
             :loading="busy && exactAction === 'set'"
-            :disabled="exactAmount === null || (busy && exactAction !== 'set')"
+            :disabled="exactAmount === null || busy"
             @click="submitExact('set')"
           >
             Set

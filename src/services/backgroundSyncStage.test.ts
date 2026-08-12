@@ -36,7 +36,11 @@ describe('background sync staging', () => {
     mocks.platform.mockReturnValue('android')
     mocks.native.mockReturnValue(true)
     const { writeBackgroundSyncStage } = await import('./backgroundSyncStage')
-    const details = { url: '/sync/exchange', cursor: 12, operations: [] }
+    const details = {
+      url: '/sync/exchange',
+      cursor: 12,
+      operations: [{ operationId: 'operation-1' }],
+    }
 
     await writeBackgroundSyncStage(details)
     await writeBackgroundSyncStage(details)
@@ -44,6 +48,18 @@ describe('background sync staging', () => {
     expect(mocks.registerPlugin).toHaveBeenCalledWith('BackgroundSyncStage')
     expect(mocks.set).toHaveBeenCalledOnce()
     expect(mocks.set).toHaveBeenCalledWith({ value: JSON.stringify(details) })
+    expect(mocks.dispatchEvent).not.toHaveBeenCalled()
+  })
+
+  it('clears a native stage when foreground synchronization drains the outbox', async () => {
+    mocks.platform.mockReturnValue('android')
+    mocks.native.mockReturnValue(true)
+    const { writeBackgroundSyncStage } = await import('./backgroundSyncStage')
+
+    await writeBackgroundSyncStage({ url: '/sync/exchange', cursor: 12, operations: [] })
+
+    expect(mocks.set).not.toHaveBeenCalled()
+    expect(mocks.clear).toHaveBeenCalledOnce()
     expect(mocks.dispatchEvent).not.toHaveBeenCalled()
   })
 

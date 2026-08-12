@@ -37,6 +37,7 @@ import {
 
 const baseUrl = (import.meta.env.VITE_API_URL || '/api').replace(/\/+$/, '')
 const STATUS_EVENT = 'polymind-sync-status-changed'
+const MUTATION_SYNC_DELAY_MS = 50
 
 export const offlineSyncStatus = reactive<SyncStatusSnapshot>({
   phase: 'idle',
@@ -49,6 +50,8 @@ export const offlineSyncStatus = reactive<SyncStatusSnapshot>({
 let started = false
 let currentAccountId = ''
 let syncPromise: Promise<boolean> | undefined
+let syncRequested = false
+let mutationTimer: number | undefined
 let retryTimer: number | undefined
 let pullTimer: number | undefined
 let retryAttempt = 0
@@ -118,8 +121,13 @@ export async function stopOfflineSync() {
   window.removeEventListener('pointerdown', handleUserActivity)
   window.removeEventListener('keydown', handleUserActivity)
   document.removeEventListener('visibilitychange', handleVisibilityChange)
+  if (mutationTimer !== undefined) window.clearTimeout(mutationTimer)
   if (retryTimer !== undefined) window.clearTimeout(retryTimer)
   if (pullTimer !== undefined) window.clearTimeout(pullTimer)
+  mutationTimer = undefined
+  retryTimer = undefined
+  pullTimer = undefined
+  syncRequested = false
 }
 
 async function switchAccount(accountId: string) {
@@ -136,11 +144,24 @@ async function switchAccount(accountId: string) {
 }
 
 function handleOutboxChanged(event: Event) {
-  const accountId = (event as CustomEvent<{ accountId?: string }>).detail?.accountId
+  const detail = (event as CustomEvent<{
+    accountId?: string
+    source?: 'local' | 'reconciliation'
+  }>).detail
+  const accountId = detail?.accountId
   if (accountId && accountId !== currentAccountId) return
   void refreshCounts()
+  if (detail?.source === 'reconciliation') return
   void registerWebBackgroundSync()
-  void syncNow('mutation')
+  scheduleMutationSync()
+}
+
+function scheduleMutationSync() {
+  if (mutationTimer !== undefined) window.clearTimeout(mutationTimer)
+  mutationTimer = window.setTimeout(() => {
+    mutationTimer = undefined
+    void syncNow('mutation')
+  }, MUTATION_SYNC_DELAY_MS)
 }
 
 function handleReconnect() {
@@ -176,11 +197,23 @@ function resetPullCadence() {
 
 export function syncNow(reason = 'manual') {
   if (reason !== 'poll' && reason !== 'retry') resetPullCadence()
-  if (syncPromise) return syncPromise
-  syncPromise = performSync().finally(() => {
+  if (syncPromise) {
+    if (reason === 'mutation') syncRequested = true
+    return syncPromise
+  }
+  syncPromise = performRequestedSyncs().finally(() => {
     syncPromise = undefined
   })
   return syncPromise
+}
+
+async function performRequestedSyncs() {
+  let succeeded = false
+  do {
+    syncRequested = false
+    succeeded = await performSync()
+  } while (succeeded && syncRequested)
+  return succeeded
 }
 
 export async function flushBeforeSignOut(accountId: string) {
@@ -244,6 +277,9 @@ async function performSync() {
     let loops = 0
     while (hasMore && loops < 20) {
       const result = await exchange(accountId)
+      if (result.hasMore && !result.cursorAdvanced) {
+        throw new Error('Synchronization did not advance the server cursor.')
+      }
       hasMore = result.hasMore
       lastSyncHadActivity ||= result.hadActivity
       loops += 1
@@ -334,7 +370,7 @@ async function exchange(accountId: string) {
     })
     if (response.resetRequired) {
       await bootstrap(accountId)
-      return { hasMore: true, hadActivity: true }
+      return { hasMore: true, hadActivity: true, cursorAdvanced: true }
     }
     await applyExchangeResults(
       accountId,
@@ -346,6 +382,7 @@ async function exchange(accountId: string) {
     await stageNativeBackgroundBatch(accountId)
     return {
       hasMore: response.hasMore,
+      cursorAdvanced: response.cursor > metadata.cursor,
       hadActivity: operations.length > 0
         || response.acknowledgements.length > 0
         || response.changes.length > 0,
