@@ -34,8 +34,8 @@ const DialogStub = defineComponent({
 })
 
 const ButtonStub = defineComponent({
-  props: { disabled: Boolean, loading: Boolean },
-  template: '<button :disabled="disabled || loading"><slot /></button>',
+  props: { disabled: Boolean, loading: Boolean, size: String },
+  template: '<button :data-size="size" :disabled="disabled || loading"><slot /></button>',
 })
 
 function card(id: string, front: string, back: string): Flashcard {
@@ -100,6 +100,7 @@ describe('FlashcardBulkImageAssignmentDialog', () => {
     await wrapper.get('.select-proposal').trigger('click')
     const assignButton = wrapper.findAll('button').find(button => button.text().includes('Assign & next'))
     expect(assignButton).toBeTruthy()
+    expect(assignButton!.attributes('data-size')).toBe('large')
     await assignButton!.trigger('click')
     await flushPromises()
 

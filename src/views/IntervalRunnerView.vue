@@ -1559,6 +1559,7 @@ async function runAgain(repetitions?: number) {
           </v-btn>
           <v-btn
             color="secondary"
+            size="large"
             :loading="flashcardSettingsSaving"
             :disabled="!canSaveFlashcardSettings"
             @click="saveFlashcardSettings"
@@ -1628,7 +1629,7 @@ async function runAgain(repetitions?: number) {
         />
         <div class="note-dialog-actions mt-5">
           <v-btn variant="text" :disabled="noteSaving" @click="noteDialog = false">Cancel</v-btn>
-          <v-btn color="secondary" :loading="noteSaving" :disabled="!noteChanged" @click="saveSessionNote">Save note</v-btn>
+          <v-btn color="secondary" size="large" :loading="noteSaving" :disabled="!noteChanged" @click="saveSessionNote">Save note</v-btn>
         </div>
       </v-card>
     </v-dialog>
@@ -1664,7 +1665,7 @@ async function runAgain(repetitions?: number) {
         </p>
         <div class="note-dialog-actions mt-5">
           <v-btn variant="text" :disabled="starting" @click="cancelRepetitionStart">Cancel</v-btn>
-          <v-btn color="secondary" prepend-icon="mdi-play" :loading="starting" @click="confirmRepetitionStart">Start</v-btn>
+          <v-btn color="secondary" size="large" prepend-icon="mdi-play" :loading="starting" @click="confirmRepetitionStart">Start</v-btn>
         </div>
       </v-card>
     </v-dialog>

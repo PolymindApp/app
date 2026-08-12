@@ -1381,6 +1381,7 @@ async function leaveRunner() {
           </v-btn>
           <v-btn
             color="secondary"
+            size="large"
             :loading="sessionSettingsSaving"
             :disabled="!canSaveSessionSettings"
             @click="saveSessionSettings"

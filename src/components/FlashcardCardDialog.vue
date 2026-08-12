@@ -163,7 +163,7 @@ async function save() {
       <v-card-actions class="flashcard-card-dialog__actions ga-2">
         <v-spacer />
         <v-btn variant="text" :disabled="saving" @click="emit('update:modelValue', false)">Cancel</v-btn>
-        <v-btn color="secondary" :loading="saving" :disabled="!canSave" @click="save">
+        <v-btn color="secondary" size="large" :loading="saving" :disabled="!canSave" @click="save">
           {{ isEditing ? 'Save' : 'Create' }}
         </v-btn>
       </v-card-actions>

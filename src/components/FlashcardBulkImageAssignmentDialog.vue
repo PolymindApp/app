@@ -234,6 +234,7 @@ function finish() {
             </v-btn>
             <v-btn
               color="secondary"
+              size="large"
               :loading="saving"
               :disabled="!selectedImage"
               prepend-icon="mdi-image-check-outline"
