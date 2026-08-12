@@ -432,6 +432,10 @@ describe('IntervalRunnerView flashcard area', () => {
     await wrapper.get('.change-flashcard-settings').trigger('click')
     await wrapper.vm.$nextTick()
 
+    expect(wrapper.get('.flashcard-settings-actions__cancel').classes())
+      .toContain('flashcard-settings-actions__cancel')
+    expect(wrapper.get('.flashcard-settings-actions__primary').classes())
+      .toContain('flashcard-settings-actions__primary')
     await wrapper.get('.apply-settings-menu').trigger('click')
     expect(wrapper.get('.action-bottom-sheet-stub').findAll('button').map(item => item.text()))
       .toEqual(['Current session', 'Review set'])

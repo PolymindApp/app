@@ -1619,12 +1619,16 @@ async function runAgain(repetitions?: number) {
         </v-card-text>
         <v-divider />
         <v-card-actions class="flashcard-settings-actions ga-2">
-          <v-btn variant="text" :disabled="flashcardSettingsSaving" @click="closeFlashcardSettings">
+          <v-btn
+            class="flashcard-settings-actions__cancel"
+            variant="text"
+            :disabled="flashcardSettingsSaving"
+            @click="closeFlashcardSettings"
+          >
             Cancel
           </v-btn>
-          <v-spacer />
           <v-btn
-            class="apply-settings-menu"
+            class="flashcard-settings-actions__primary apply-settings-menu"
             color="secondary"
             size="large"
             append-icon="mdi-chevron-down"
@@ -2020,13 +2024,25 @@ async function runAgain(repetitions?: number) {
     calc(1.25rem + env(safe-area-inset-left, 0rem)) !important;
 }
 .flashcard-settings-actions {
+  display: flex;
+  align-items: center;
   padding:
     1rem
     calc(1rem + env(safe-area-inset-right, 0rem))
     calc(1rem + max(env(safe-area-inset-bottom, 0rem), var(--safe-area-inset-bottom, 0rem)))
     calc(1rem + env(safe-area-inset-left, 0rem)) !important;
 }
-.apply-settings-menu { min-width: 9rem; min-height: 3rem; }
+.flashcard-settings-actions > .v-btn { height: 3rem; }
+.flashcard-settings-actions__cancel,
+.flashcard-settings-actions__primary {
+  min-width: 0;
+  flex: 1 1 0;
+}
+@media (min-width: 60rem) {
+  .flashcard-settings-actions { justify-content: flex-end; }
+  .flashcard-settings-actions__cancel,
+  .flashcard-settings-actions__primary { max-width: 10rem; }
+}
 .repetition-summary {
   color: rgb(var(--v-theme-on-surface) / .62);
   font-size: .75rem;
