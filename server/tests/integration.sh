@@ -2110,14 +2110,14 @@ invalid_speech_status="$(curl --silent --output /dev/null --write-out '%{http_co
 passive_view_response="$(curl --silent --show-error --fail \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $alice_token" \
-  --data '{"action":"view","elapsed_seconds":8}' \
+  --data '{"action":"view","elapsed_seconds":8,"view_count":7}' \
   "$api_url/flashcard-review-sessions/$passive_session_id/actions")"
 passive_loop_summary="$(php -r '
   $data=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR)["session"];
   echo $data["status"] . ":" . count($data["queue_state"]) . ":" . $data["viewed_count"];
 ' <<<"$passive_view_response")"
-[[ "$passive_loop_summary" == "running:1:1" ]] || {
-  echo "An indefinite Passive review did not rotate its card back into the queue." >&2
+[[ "$passive_loop_summary" == "running:1:7" ]] || {
+  echo "An indefinite Passive review did not reconcile multiple views atomically." >&2
   exit 1
 }
 curl --silent --show-error --fail \
@@ -2432,7 +2432,7 @@ flashcard_event_count="$(sqlite3 "$test_db" \
   "SELECT COUNT(*) FROM flashcard_review_events WHERE card = '$flashcard_id';")"
 flashcard_ejected_event_count="$(sqlite3 "$test_db" \
   "SELECT COUNT(*) FROM flashcard_review_events WHERE card = '$flashcard_id' AND outcome = 'ejected';")"
-[[ "$flashcard_counts" == "1:0:2" && "$flashcard_event_count" == 4 && "$flashcard_ejected_event_count" == 1 ]] || {
+[[ "$flashcard_counts" == "1:0:8" && "$flashcard_event_count" == 10 && "$flashcard_ejected_event_count" == 1 ]] || {
   echo "Flashcard aggregate and immutable event statistics drifted apart." >&2
   exit 1
 }
@@ -2883,7 +2883,7 @@ flashcard_delete_status="$(curl --silent --output /dev/null --write-out '%{http_
   "$api_url/collections/flashcards/records/$flashcard_id")"
 flashcard_history_snapshot="$(sqlite3 "$test_db" \
   "SELECT COUNT(*) FROM flashcard_review_events WHERE card = '' AND front_snapshot = 'What is 2 + 2?' AND back_snapshot = '4';")"
-[[ "$flashcard_delete_status" == 204 && "$flashcard_history_snapshot" == 5 ]] || {
+[[ "$flashcard_delete_status" == 204 && "$flashcard_history_snapshot" == 11 ]] || {
   echo "Deleting a flashcard did not preserve and detach its review history snapshots." >&2
   exit 1
 }

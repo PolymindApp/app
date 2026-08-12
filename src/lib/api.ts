@@ -1312,6 +1312,7 @@ class ApiClient {
     sessionId: string,
     action: FlashcardReviewAction,
     elapsedSeconds: number,
+    viewCount = 1,
   ) {
     return request<FlashcardReviewActionResponse>(
       `/flashcard-review-sessions/${encodeURIComponent(sessionId)}/actions`,
@@ -1320,6 +1321,9 @@ class ApiClient {
         body: {
           action,
           elapsed_seconds: Math.max(0, Math.round(elapsedSeconds)),
+          ...(action === 'view' && viewCount > 1
+            ? { view_count: Math.max(1, Math.round(viewCount)) }
+            : {}),
         },
       },
       this.authStore,

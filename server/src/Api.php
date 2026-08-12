@@ -4080,7 +4080,7 @@ final class Api
     private function actOnFlashcardReviewSession(string $id, array $user): never
     {
         $body = $this->jsonBody();
-        $this->allowOnlyFields($body, ['action', 'elapsed_seconds']);
+        $this->allowOnlyFields($body, ['action', 'elapsed_seconds', 'view_count']);
         if (!array_key_exists('action', $body) || !array_key_exists('elapsed_seconds', $body)) {
             throw new ApiException(422, 'The action and elapsed_seconds fields are required.');
         }
@@ -4100,6 +4100,12 @@ final class Api
             'elapsed_seconds',
             ['min' => 0, 'max' => null],
         );
+        $viewCount = array_key_exists('view_count', $body)
+            ? $this->validateInteger($body['view_count'], 'view_count', ['min' => 1, 'max' => 100000])
+            : 1;
+        if ($action !== 'view' && array_key_exists('view_count', $body)) {
+            throw new ApiException(422, 'The view_count field is only valid for passive views.');
+        }
 
         $owner = (string) $user['id'];
         $pdo = $this->database->pdo;
@@ -4225,40 +4231,43 @@ final class Api
                         $queue[] = $current;
                     }
                 } else {
-                    $current = array_shift($queue);
-                    if (!is_array($current)) {
-                        throw new ApiException(500, 'The current review card is invalid.');
-                    }
-                    if ($action === 'eject') {
-                        $ejectedCount++;
-                        $this->recordFlashcardReviewEvent(
-                            $id,
-                            $current,
-                            'ejected',
-                            $now,
-                            $owner,
-                        );
-                    } else {
-                        $viewedCount++;
-                        if ($action === 'success') {
-                            $successCount++;
-                        } elseif ($action === 'error') {
-                            $errorCount++;
+                    $iterations = $action === 'view' ? $viewCount : 1;
+                    for ($index = 0; $index < $iterations && $queue !== []; $index++) {
+                        $current = array_shift($queue);
+                        if (!is_array($current)) {
+                            throw new ApiException(500, 'The current review card is invalid.');
                         }
-                        $this->recordFlashcardReviewEvent(
-                            $id,
-                            $current,
-                            $action === 'view' ? 'passive' : $action,
-                            $now,
-                            $owner,
-                        );
-                        if ($action === 'view' && $indefinite) {
-                            $queue[] = $current;
+                        if ($action === 'eject') {
+                            $ejectedCount++;
+                            $this->recordFlashcardReviewEvent(
+                                $id,
+                                $current,
+                                'ejected',
+                                $now,
+                                $owner,
+                            );
+                        } else {
+                            $viewedCount++;
+                            if ($action === 'success') {
+                                $successCount++;
+                            } elseif ($action === 'error') {
+                                $errorCount++;
+                            }
+                            $this->recordFlashcardReviewEvent(
+                                $id,
+                                $current,
+                                $action === 'view' ? 'passive' : $action,
+                                $now,
+                                $owner,
+                            );
+                            if ($action === 'view' && $indefinite) {
+                                $queue[] = $current;
+                            }
                         }
-                    }
-                    if ($queue === []) {
-                        $status = 'completed';
-                        $endedAt = $now;
+                        if ($queue === []) {
+                            $status = 'completed';
+                            $endedAt = $now;
+                        }
                     }
                 }
             }

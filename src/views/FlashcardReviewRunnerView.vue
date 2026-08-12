@@ -449,7 +449,7 @@ async function navigateRight() {
 
 async function performAction(
   action: FlashcardReviewAction,
-  options: { syncNative?: boolean; playCompletionCue?: boolean } = {},
+  options: { syncNative?: boolean; playCompletionCue?: boolean; viewCount?: number } = {},
 ) {
   if (!session.value || busy.value) return false
   const previousStatus = session.value.status
@@ -459,7 +459,9 @@ async function performAction(
   let succeeded = false
   if (action === 'eject') void prepareFlashcardEjectCue()
   try {
-    const updated = await store.act(session.value.id, action, elapsedSeconds.value)
+    const updated = options.viewCount === undefined
+      ? await store.act(session.value.id, action, elapsedSeconds.value)
+      : await store.act(session.value.id, action, elapsedSeconds.value, options.viewCount)
     localElapsedMs.value = updated.elapsedSeconds * 1000
     lastTickAt = Date.now()
     if (['success', 'error', 'view', 'previous', 'next', 'push', 'eject', 'undo_eject', 'restart'].includes(action)) resetCurrentCardPhase()
@@ -772,31 +774,26 @@ async function reconcileBackgroundReview(
   localElapsedMs.value = Math.max(localElapsedMs.value, state.elapsedMs)
   lastTickAt = Date.now()
 
-  let replayedAll = true
   const completed = value.indefinite
     ? Math.max(0, state.completedCards)
     : Math.min(Math.max(0, state.completedCards), value.queue.length)
-  for (let index = 0; index < completed; index += 1) {
-    if (session.value?.status !== 'running') break
-    const queueLength = session.value.queue.length
-    const succeeded = await performAction('view', {
-      syncNative: false,
-      playCompletionCue: false,
-    })
-    if (!succeeded || (!value.indefinite && session.value?.queue.length === queueLength)) {
-      replayedAll = false
-      break
-    }
-  }
+  const previousViewedCount = value.viewedCount
+  const replayedAll = completed === 0 || await performAction('view', {
+    syncNative: false,
+    playCompletionCue: false,
+    viewCount: completed,
+  })
+  const reconciledAllViews = replayedAll
+    && (session.value?.viewedCount || 0) >= previousViewedCount + completed
 
-  if (replayedAll && session.value?.status === 'running' && currentCard.value) {
+  if (reconciledAllViews && session.value?.status === 'running' && currentCard.value) {
     passiveSide.value = state.side
     passiveRemainingMs.value = Math.max(1, state.remainingMs)
     savePassiveState()
   }
   reconcilingBackground.value = false
 
-  if (!replayedAll) return true
+  if (!reconciledAllViews) return true
   await stopBackgroundFlashcardReview()
   if (session.value?.status === 'running') {
     lastSpokenKey = speechKey()

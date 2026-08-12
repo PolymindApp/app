@@ -11,6 +11,10 @@ const mocks = vi.hoisted(() => ({
   router: { replace: vi.fn() },
   speechOverAmplificationIsEnabled: vi.fn(),
   speakFlashcardText: vi.fn(),
+  backgroundFlashcardReviewState: vi.fn(),
+  nativeFlashcardBackgroundIsAvailable: vi.fn(),
+  stopBackgroundFlashcardReview: vi.fn(),
+  syncBackgroundFlashcardReview: vi.fn(),
   toggleSpeechOverAmplification: vi.fn(),
   store: {
     loaded: true,
@@ -36,14 +40,14 @@ vi.mock('vue-router', () => ({
 }))
 vi.mock('@/stores/flashcards', () => ({ useFlashcardStore: () => mocks.store }))
 vi.mock('@/services/flashcardSpeech', () => ({
-  backgroundFlashcardReviewState: vi.fn().mockResolvedValue(undefined),
+  backgroundFlashcardReviewState: mocks.backgroundFlashcardReviewState,
   flashcardSpeechOverAmplificationIsEnabled: mocks.speechOverAmplificationIsEnabled,
   loadFlashcardSpeechSupport: vi.fn().mockResolvedValue({ available: false, languages: [] }),
-  nativeFlashcardBackgroundIsAvailable: vi.fn().mockReturnValue(false),
+  nativeFlashcardBackgroundIsAvailable: mocks.nativeFlashcardBackgroundIsAvailable,
   speakFlashcardText: mocks.speakFlashcardText,
-  stopBackgroundFlashcardReview: vi.fn().mockResolvedValue(undefined),
+  stopBackgroundFlashcardReview: mocks.stopBackgroundFlashcardReview,
   stopFlashcardSpeech: vi.fn().mockResolvedValue(undefined),
-  syncBackgroundFlashcardReview: vi.fn().mockResolvedValue(false),
+  syncBackgroundFlashcardReview: mocks.syncBackgroundFlashcardReview,
   toggleFlashcardSpeechOverAmplification: mocks.toggleSpeechOverAmplification,
 }))
 vi.mock('@/services/intervalCues', () => ({
@@ -281,6 +285,10 @@ describe('FlashcardReviewRunnerView Review set preview', () => {
     mocks.router.replace.mockReset().mockResolvedValue(undefined)
     mocks.speechOverAmplificationIsEnabled.mockReset().mockReturnValue(false)
     mocks.speakFlashcardText.mockReset().mockResolvedValue(undefined)
+    mocks.backgroundFlashcardReviewState.mockReset().mockResolvedValue(undefined)
+    mocks.nativeFlashcardBackgroundIsAvailable.mockReset().mockReturnValue(false)
+    mocks.stopBackgroundFlashcardReview.mockReset().mockResolvedValue(undefined)
+    mocks.syncBackgroundFlashcardReview.mockReset().mockResolvedValue(false)
     mocks.toggleSpeechOverAmplification.mockReset().mockResolvedValue(true)
     mocks.store.reviewSets = [reviewSet]
     mocks.store.cards = [card]
@@ -539,6 +547,57 @@ describe('FlashcardReviewRunnerView Review set preview', () => {
     expect(mocks.store.act).toHaveBeenCalledWith('session-1', 'restart', expect.any(Number))
     expect(active.elapsedSeconds).toBe(0)
     expect(active.viewedCount).toBe(0)
+
+    wrapper.unmount()
+  })
+
+  it('reconciles background playback with one atomic card update', async () => {
+    const active = {
+      ...runningSession(),
+      mode: 'passive' as const,
+      indefinite: true,
+      speechEnabled: true,
+      frontLanguage: 'en-CA',
+      backLanguage: 'fr-CA',
+      queue: [
+        { id: 'card-1', front: 'House', back: 'Maison', note: '', image: '', tags: [] },
+        { id: 'card-2', front: 'Tree', back: 'Arbre', note: '', image: '', tags: [] },
+        { id: 'card-3', front: 'Book', back: 'Livre', note: '', image: '', tags: [] },
+      ],
+      totalCards: 3,
+    }
+    mocks.route.params = { sessionId: active.id }
+    mocks.store.sessions = reactive([active])
+    mocks.store.loadSession.mockResolvedValue(active)
+    mocks.nativeFlashcardBackgroundIsAvailable.mockReturnValue(true)
+    mocks.backgroundFlashcardReviewState.mockResolvedValue({
+      sessionId: active.id,
+      running: true,
+      finished: false,
+      completedCards: 8,
+      side: 'back',
+      remainingMs: 3200,
+      elapsedMs: 83_000,
+    })
+    mocks.store.act.mockImplementation(async (_id, action, elapsed, viewCount = 1) => {
+      const stored = mocks.store.sessions[0]!
+      if (action !== 'view') return stored
+      const offset = viewCount % stored.queue.length
+      stored.queue.push(...stored.queue.splice(0, offset))
+      stored.viewedCount += viewCount
+      stored.elapsedSeconds = elapsed
+      return stored
+    })
+
+    const wrapper = mountRunner()
+    await flushPromises()
+
+    expect(mocks.store.act).toHaveBeenCalledOnce()
+    expect(mocks.store.act).toHaveBeenCalledWith(active.id, 'view', 83, 8)
+    expect(mocks.store.sessions[0]?.queue[0]?.id).toBe('card-3')
+    expect(mocks.store.sessions[0]?.viewedCount).toBe(8)
+    expect(wrapper.get('.review-card__front-reference').text()).toBe('Book')
+    expect(wrapper.get('flashcard-response-text-stub').attributes('back')).toBe('Livre')
 
     wrapper.unmount()
   })

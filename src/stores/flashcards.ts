@@ -736,26 +736,43 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     return session
   }
 
-  async function act(sessionId: string, action: FlashcardReviewAction, elapsedSeconds: number) {
-    const current = sessions.value.find(session => session.id === sessionId)?.queue[0]
+  async function act(
+    sessionId: string,
+    action: FlashcardReviewAction,
+    elapsedSeconds: number,
+    viewCount = 1,
+  ) {
+    const currentSession = sessions.value.find(session => session.id === sessionId)
+    const normalizedViewCount = action === 'view' ? Math.max(1, Math.round(viewCount)) : 1
+    const reviewedCards = currentSession?.queue.length
+      ? Array.from(
+          {
+            length: action === 'view' && currentSession.indefinite
+              ? normalizedViewCount
+              : Math.min(normalizedViewCount, currentSession.queue.length),
+          },
+          (_, index) => currentSession.queue[index % currentSession.queue.length]!,
+        )
+      : []
     const accountId = api.authStore.record?.id || ''
     const usingLocalDatabase = Boolean(accountId && await hasLocalBootstrap(accountId))
     const response = usingLocalDatabase
-      ? await actOnLocalSession(sessionId, action, elapsedSeconds)
-      : await api.actOnFlashcardReviewSession(sessionId, action, elapsedSeconds)
+      ? await actOnLocalSession(sessionId, action, elapsedSeconds, normalizedViewCount)
+      : await api.actOnFlashcardReviewSession(sessionId, action, elapsedSeconds, normalizedViewCount)
     const session = mapSession(response.session)
     const index = sessions.value.findIndex(item => item.id === session.id)
     if (index >= 0) sessions.value.splice(index, 1, session)
     else sessions.value.unshift(session)
 
-    if (current && ['success', 'error', 'view'].includes(action)) {
-      const card = cards.value.find(item => item.id === current.id)
-      if (card) {
+    if (['success', 'error', 'view'].includes(action)) {
+      reviewedCards.forEach((reviewedCard) => {
+        const card = cards.value.find(item => item.id === reviewedCard.id)
+        if (!card) return
         card.lastReviewedAt = new Date().toISOString()
         if (action === 'success') card.successCount += 1
         else if (action === 'error') card.errorCount += 1
         else card.passiveViews += 1
-      }
+      })
     }
     const taskStore = useTaskStore()
     const progressOccurrences = response.occurrences || []
@@ -812,6 +829,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     sessionId: string,
     action: FlashcardReviewAction,
     elapsedSeconds: number,
+    viewCount = 1,
   ) {
     const current = sessions.value.find(session => session.id === sessionId)
     if (!current) throw new Error('Flashcard review not found.')
@@ -828,7 +846,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     let errorCount = current.errorCount
     let ejectedCount = current.ejectedCount
     let totalCards = current.totalCards
-    let event: Record<string, unknown> | undefined
+    const events: Record<string, unknown>[] = []
     let undoneEjectEventId = ''
 
     if (action === 'restart') {
@@ -896,33 +914,36 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       } else if (action === 'next' || action === 'push') {
         if (queue.length > 1) queue.push(queue.shift()!)
       } else {
-        const card = queue.shift()!
-        const outcome = action === 'view' ? 'passive' : action === 'eject' ? 'ejected' : action
-        if (action === 'eject') ejectedCount += 1
-        else {
-          viewedCount += 1
-          if (action === 'success') successCount += 1
-          if (action === 'error') errorCount += 1
-          if (action === 'view' && current.indefinite) queue.push(card)
-        }
-        event = {
-          session: sessionId,
-          card: card.id,
-          outcome,
-          reviewed_at: now,
-          front_snapshot: card.front,
-          back_snapshot: card.back,
-          tags_snapshot: card.tags,
-        }
-        if (!queue.length) {
-          status = 'completed'
-          endedAt = now
+        const iterations = action === 'view' ? Math.max(1, Math.round(viewCount)) : 1
+        for (let index = 0; index < iterations && queue.length; index += 1) {
+          const card = queue.shift()!
+          const outcome = action === 'view' ? 'passive' : action === 'eject' ? 'ejected' : action
+          if (action === 'eject') ejectedCount += 1
+          else {
+            viewedCount += 1
+            if (action === 'success') successCount += 1
+            if (action === 'error') errorCount += 1
+            if (action === 'view' && current.indefinite) queue.push(card)
+          }
+          events.push({
+            session: sessionId,
+            card: card.id,
+            outcome,
+            reviewed_at: now,
+            front_snapshot: card.front,
+            back_snapshot: card.back,
+            tags_snapshot: card.tags,
+          })
+          if (!queue.length) {
+            status = 'completed'
+            endedAt = now
+          }
         }
       }
     }
     if (current.indefinite) totalCards = queue.length
 
-    if (event) await api.collection('flashcard_review_events').create(event)
+    await Promise.all(events.map(event => api.collection('flashcard_review_events').create(event)))
     if (undoneEjectEventId) {
       await api.collection('flashcard_review_events').delete(undoneEjectEventId)
     }
