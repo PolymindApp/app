@@ -259,39 +259,40 @@ onBeforeUnmount(() => {
     </v-card>
   </v-menu>
 
-  <v-navigation-drawer
-    v-else
-    :id="sheetId"
-    v-model="model"
-    temporary
-    location="bottom"
-    touchless
-    :width="430"
-    class="action-bottom-sheet"
-    :aria-label="ariaLabel"
-  >
-    <div
-      class="action-bottom-sheet__header"
-      :class="{ 'action-bottom-sheet__header--handle-only': hideTitle }"
-      @pointerdown="onPointerDown"
+  <Teleport v-else to="body">
+    <v-navigation-drawer
+      :id="sheetId"
+      v-model="model"
+      temporary
+      location="bottom"
+      touchless
+      :width="430"
+      class="action-bottom-sheet"
+      :aria-label="ariaLabel"
     >
-      <div class="action-bottom-sheet__handle" aria-hidden="true" />
-      <div v-if="!hideTitle" class="px-4 pt-2 pb-2">
-        <strong class="d-block text-truncate">{{ title }}</strong>
-        <p v-if="description" class="action-bottom-sheet__description mt-1 mb-0">
-          {{ description }}
-        </p>
+      <div
+        class="action-bottom-sheet__header"
+        :class="{ 'action-bottom-sheet__header--handle-only': hideTitle }"
+        @pointerdown="onPointerDown"
+      >
+        <div class="action-bottom-sheet__handle" aria-hidden="true" />
+        <div v-if="!hideTitle" class="px-4 pt-2 pb-2">
+          <strong class="d-block text-truncate">{{ title }}</strong>
+          <p v-if="description" class="action-bottom-sheet__description mt-1 mb-0">
+            {{ description }}
+          </p>
+        </div>
       </div>
-    </div>
-    <div class="action-bottom-sheet__scroll">
-      <div v-if="$slots.content" class="action-bottom-sheet__content px-4 pt-2 pb-4">
-        <slot name="content" />
+      <div class="action-bottom-sheet__scroll">
+        <div v-if="$slots.content" class="action-bottom-sheet__content px-4 pt-2 pb-4">
+          <slot name="content" />
+        </div>
+        <v-list v-if="$slots.default" class="action-bottom-sheet__content px-2 pb-4">
+          <slot />
+        </v-list>
       </div>
-      <v-list v-if="$slots.default" class="action-bottom-sheet__content px-2 pb-4">
-        <slot />
-      </v-list>
-    </div>
-  </v-navigation-drawer>
+    </v-navigation-drawer>
+  </Teleport>
 </template>
 
 <style scoped>

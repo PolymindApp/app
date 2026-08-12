@@ -138,10 +138,10 @@ describe('ActionBottomSheet', () => {
       },
     })
 
-    const scroll = wrapper.get('.action-bottom-sheet__scroll')
+    const scroll = document.querySelector<HTMLElement>('.action-bottom-sheet__scroll')!
 
-    expect(scroll.element.parentElement?.classList.contains('v-navigation-drawer__content')).toBe(true)
-    expect(scroll.find('.oversized-content').exists()).toBe(true)
+    expect(scroll.parentElement?.classList.contains('v-navigation-drawer__content')).toBe(true)
+    expect(scroll.querySelector('.oversized-content')).not.toBeNull()
     wrapper.unmount()
   })
 
