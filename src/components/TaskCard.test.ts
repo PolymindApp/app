@@ -332,7 +332,7 @@ describe('TaskCard amount actions', () => {
       expect(wrapper.find('.task-sync-progress').exists()).toBe(true)
       expect(wrapper.find('.task-health-connect-icon').exists()).toBe(false)
 
-      await vi.advanceTimersByTimeAsync(700)
+      await vi.advanceTimersByTimeAsync(1000)
 
       expect(wrapper.find('.task-sync-progress').exists()).toBe(false)
       expect(wrapper.find('.task-health-connect-icon').exists()).toBe(true)

@@ -40,6 +40,7 @@ import { useTrackingStore } from '@/stores/tracking'
 import type { Entry, TaskProgress, TrackingTracker } from '@/types/domain'
 
 const allowAutomaticFocus = Capacitor.getPlatform() !== 'android'
+const HEALTH_CONNECT_RESUME_DELAY_MS = 500
 const store = useTaskStore()
 const intervalStore = useIntervalStore()
 const flashcardStore = useFlashcardStore()
@@ -167,6 +168,7 @@ const reviewItems = computed(() => store.reviewProgressForDate(selectedDate.valu
 const doneCount = computed(() => selectedProgress.value.filter((item) => item.complete).length)
 const taskFiltersActive = computed(() => showCompleted.value || showNotScheduled.value)
 let appStateListener: Awaited<ReturnType<typeof App.addListener>> | undefined
+let stepCountResumeTimer: ReturnType<typeof setTimeout> | undefined
 
 watch([showCompleted, showNotScheduled], ([completed, notScheduled]) => {
   const filters: TaskFilterId[] = []
@@ -184,13 +186,23 @@ onMounted(async () => {
 
   if (Capacitor.isNativePlatform()) {
     appStateListener = await App.addListener('appStateChange', ({ isActive }) => {
-      if (isActive) void store.refreshStepCount(selectedDate.value)
+      clearTimeout(stepCountResumeTimer)
+      stepCountResumeTimer = undefined
+      if (!isActive) return
+
+      // Android emits the active event just before Health Connect recognizes
+      // the app as foregrounded. Let that transition settle before reading.
+      stepCountResumeTimer = setTimeout(() => {
+        stepCountResumeTimer = undefined
+        void store.refreshStepCount(selectedDate.value)
+      }, HEALTH_CONNECT_RESUME_DELAY_MS)
     })
   }
 })
 
 onBeforeUnmount(() => {
   void appStateListener?.remove()
+  clearTimeout(stepCountResumeTimer)
   completedVisibilityTimers.forEach(timer => clearTimeout(timer))
   completedVisibilityTimers.clear()
 })
