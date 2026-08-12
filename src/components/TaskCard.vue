@@ -324,6 +324,14 @@ watch(() => props.valuePulse, async (pulse, previousPulse) => {
           :width="2"
           aria-label="Syncing steps"
         />
+        <v-icon
+          v-else-if="isStepCounter"
+          class="task-health-connect-icon"
+          icon="mdi-heart-pulse"
+          color="secondary"
+          size="1.0625rem"
+          aria-label="Health Connect"
+        />
         <v-btn
           class="task-menu-button"
           icon="mdi-dots-horizontal"
@@ -550,11 +558,6 @@ watch(() => props.valuePulse, async (pulse, previousPulse) => {
               <span>{{ stepCountError }}</span>
             </div>
 
-            <div v-if="isStepCounter && !syncing" class="step-source" :class="stepCountError ? 'mt-2' : 'mt-3'">
-              <v-icon icon="mdi-heart-pulse" color="secondary" size="17" />
-              <span>Health Connect</span>
-            </div>
-
             <div v-if="canLogAmount" class="task-action-stack mt-4">
               <v-btn
                 block
@@ -753,16 +756,6 @@ watch(() => props.valuePulse, async (pulse, previousPulse) => {
 
 .metric-value--updated {
   animation: metric-value-pulse 560ms cubic-bezier(.22, 1, .36, 1);
-}
-
-.step-source {
-  display: flex;
-  min-height: 24px;
-  align-items: center;
-  gap: .45rem;
-  color: rgb(var(--v-theme-on-surface) / .56);
-  font-size: .7rem;
-  font-weight: 800;
 }
 
 .step-source-message {

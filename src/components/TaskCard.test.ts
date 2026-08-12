@@ -214,7 +214,7 @@ describe('TaskCard amount actions', () => {
     expect(wrapper.emitted('logAmount')).toEqual([[progress]])
   })
 
-  it('shows Health Connect progress without manual amount actions for step counters', () => {
+  it('shows the Health Connect icon in the header without manual amount actions for step counters', () => {
     const stepProgress: TaskProgress = {
       ...progress,
       task: {
@@ -247,12 +247,17 @@ describe('TaskCard amount actions', () => {
     })
 
     expect(wrapper.text()).toContain('4,200 steps')
-    expect(wrapper.text()).toContain('Health Connect')
     expect(wrapper.text()).not.toContain('Log amount')
     const sourceMessage = wrapper.get('.step-source-message')
-    expect(sourceMessage.text()).toContain('Open Polymind on a supported Android device')
-    expect(sourceMessage.element.compareDocumentPosition(wrapper.get('.step-source').element)
+    const headerActions = wrapper.get('.task-card-header-actions')
+    const healthConnectIcon = headerActions.get('.task-health-connect-icon')
+    const menuButton = headerActions.get('.task-menu-button')
+
+    expect(healthConnectIcon.attributes('aria-label')).toBe('Health Connect')
+    expect(healthConnectIcon.element.compareDocumentPosition(menuButton.element)
       & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(sourceMessage.text()).toContain('Open Polymind on a supported Android device')
+    expect(wrapper.find('.step-source').exists()).toBe(false)
   })
 
   it('shows step syncing as an unlabeled header spinner before the actions menu', () => {
@@ -290,7 +295,7 @@ describe('TaskCard amount actions', () => {
     expect(spinner.element.compareDocumentPosition(menuButton.element)
       & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(wrapper.text()).not.toContain('Syncing steps')
-    expect(wrapper.find('.step-source').exists()).toBe(false)
+    expect(headerActions.find('.task-health-connect-icon').exists()).toBe(false)
   })
 
   it('shows interval duration beside its type without a nested interval card', () => {
