@@ -126,16 +126,20 @@ onMounted(async () => {
       class="mb-3"
     />
 
-    <v-btn
-      block
-      size="large"
-      class="new-reflection-action mt-3"
-      color="secondary"
-      prepend-icon="mdi-notebook-plus-outline"
-      :to="{ name: 'journal-new', query: newEntryQuery() }"
-    >
-      New reflection
-    </v-btn>
+    <div class="journal-action-bar page-action-area">
+      <div class="journal-action-bar__inner">
+        <v-btn
+          block
+          size="large"
+          class="new-reflection-action"
+          color="secondary"
+          prepend-icon="mdi-notebook-plus-outline"
+          :to="{ name: 'journal-new', query: newEntryQuery() }"
+        >
+          New reflection
+        </v-btn>
+      </div>
+    </div>
 
     <div class="journal-date-stage">
       <transition :name="`page-level-${dateDirection}`">
@@ -181,7 +185,7 @@ onMounted(async () => {
             <span class="text-body-2 muted">Loading reflections…</span>
           </div>
 
-          <div v-else-if="hasLoadedSelectedRange && groups.length" class="journal-groups mt-5">
+          <div v-else-if="hasLoadedSelectedRange && groups.length" class="journal-groups">
             <section v-for="group in groups" :key="group.date">
               <div class="section-heading">
                 <h2>{{ format(parseISO(group.date), 'EEEE, MMMM d') }}</h2>
@@ -263,8 +267,9 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.journal-page { padding-bottom: 2rem; }
-.new-reflection-action { position: sticky; z-index: 3; top: calc(4.5rem + max(env(safe-area-inset-top, 0rem), var(--safe-area-inset-top, 0rem))); }
+.journal-page { padding-bottom: 7rem; }
+.journal-action-bar { position: fixed; z-index: 20; right: 0; bottom: calc(4.5rem + env(safe-area-inset-bottom)); left: 0; padding: .75rem 1rem; border-top: .0625rem solid rgba(var(--v-theme-on-surface), .08); background: rgba(var(--v-theme-background), .86); -webkit-backdrop-filter: blur(1rem); backdrop-filter: blur(1rem); }
+.journal-action-bar__inner { width: 100%; max-width: 45.5rem; margin: 0 auto; }
 .journal-date-stage { display: grid; min-width: 0; overflow-x: clip; }
 .journal-date-content { min-width: 0; grid-area: 1 / 1; align-self: start; }
 .journal-loading { display: flex; align-items: center; justify-content: center; gap: .75rem; }
@@ -280,4 +285,7 @@ onMounted(async () => {
 .journal-entry__title { -webkit-line-clamp: 2; }
 .journal-entry__body { color: rgb(var(--v-theme-on-surface) / .66); font-size: .8rem; line-height: 1.55; white-space: pre-line; -webkit-line-clamp: 3; }
 .min-width-0 { min-width: 0; }
+@media (min-width: 60rem) {
+  .journal-action-bar { bottom: 0; left: 14rem; }
+}
 </style>
