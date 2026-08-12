@@ -116,7 +116,7 @@ suffix="$(php -r 'echo bin2hex(random_bytes(5));')"
 password="correct-horse-battery"
 
 migration_count="$(sqlite3 "$test_db" 'SELECT COUNT(*) FROM mom_schema_migrations;')"
-[[ "$migration_count" == 34 ]] || {
+[[ "$migration_count" == 35 ]] || {
   echo "The API did not apply the complete database migration sequence." >&2
   exit 1
 }
@@ -2399,6 +2399,13 @@ future_revoked_status="$(curl --silent --output /dev/null --write-out '%{http_co
   exit 1
 }
 
+bob_pre_share_bootstrap="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $bob_token" \
+  --data '{"clientId":"bob-shared-set-client"}' \
+  "$api_url/sync/bootstrap")"
+bob_pre_share_cursor="$(json_field watermark <<<"$bob_pre_share_bootstrap")"
+
 share_response="$(curl --silent --show-error --fail \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $alice_token" \
@@ -2419,6 +2426,33 @@ registered_share_keys="$(php -r '
   echo "Registered and pending Review set invitations did not return the same private shape." >&2
   exit 1
 }
+
+bob_share_sync_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $bob_token" \
+  --data "{\"clientId\":\"bob-shared-set-client\",\"cursor\":$bob_pre_share_cursor,\"operations\":[]}" \
+  "$api_url/sync/exchange")"
+php -r '
+  $response = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+  $hasSet = false;
+  $hasCard = false;
+  foreach ($response["changes"] ?? [] as $change) {
+      $hasSet = $hasSet || (
+          ($change["resource"] ?? "") === "accessible_flashcard_review_sets"
+          && ($change["id"] ?? "") === $argv[1]
+          && ($change["deleted"] ?? true) === false
+      );
+      $hasCard = $hasCard || (
+          ($change["resource"] ?? "") === "review_set_cards"
+          && ($change["id"] ?? "") === $argv[1] . ":" . $argv[2]
+          && ($change["deleted"] ?? true) === false
+      );
+  }
+  if (!$hasSet || !$hasCard) {
+      fwrite(STDERR, "Incremental sync did not deliver an existing shared Review set and its cards.\n");
+      exit(1);
+  }
+' "$manual_review_set_id" "$flashcard_id" <<<"$bob_share_sync_response"
 
 bob_review_sets_response="$(curl --silent --show-error --fail \
   -H "Authorization: Bearer $bob_token" \
