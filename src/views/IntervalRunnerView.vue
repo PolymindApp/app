@@ -1927,8 +1927,8 @@ async function runAgain(repetitions?: number) {
 }
 .finish-note :deep(.v-icon) { flex: 0 0 auto; color: rgb(var(--v-theme-secondary)); }
 .finish-note p { overflow-wrap: anywhere; white-space: pre-wrap; }
-.finish-actions { display: grid; gap: .75rem; }
-.finish-actions__done { min-height: 4rem; }
+.finish-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
+.finish-actions__done { min-height: 4rem; grid-column: 1 / -1; }
 .note-dialog-heading { display: flex; align-items: center; gap: 12px; }
 .note-dialog-icon {
   display: grid;
@@ -1962,11 +1962,6 @@ async function runAgain(repetitions?: number) {
   font-weight: 750;
   text-align: center;
 }
-@media (min-width: 700px) {
-  .finish-actions { grid-template-columns: repeat(2, 1fr); }
-  .finish-actions__done { grid-column: 1 / -1; }
-}
-
 @media (orientation: portrait) {
   .runner-page {
     padding-bottom: max(2rem, calc(env(safe-area-inset-bottom, 0px) + 1rem));
@@ -2283,10 +2278,10 @@ async function runAgain(repetitions?: number) {
   }
 
   .finish-actions {
-    min-width: 9rem;
+    width: clamp(13rem, 40vw, 18rem);
+    min-width: 0;
     grid-column: 3;
     grid-row: 1 / -1;
-    grid-template-columns: 1fr;
     align-self: center;
     gap: .5rem;
   }
