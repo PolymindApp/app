@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-vite_port=5173
+vite_port=5183
 api_port=8090
 vite_pid=""
 api_pid=""

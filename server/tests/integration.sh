@@ -85,7 +85,7 @@ done
 
 POLYMIND_DB_PATH="$test_db" \
 POLYMIND_API_SECRET="$test_secret" \
-POLYMIND_ALLOWED_ORIGINS="http://localhost:5173" \
+POLYMIND_ALLOWED_ORIGINS="http://localhost:5183" \
 POLYMIND_PEXELS_API_KEY="test-pexels-key" \
 POLYMIND_PEXELS_API_BASE_URL="http://127.0.0.1:$pexels_port/v1/search" \
 POLYMIND_APP_URL="http://127.0.0.1:$test_port" \

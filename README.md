@@ -30,7 +30,7 @@ composer install
 pnpm dev:all
 ```
 
-Open `http://localhost:5173`. Vite proxies `/api` to the PHP server at `http://127.0.0.1:8090`.
+Open `http://localhost:5183`. Vite proxies `/api` to the PHP server at `http://127.0.0.1:8090`.
 
 The database is intentionally ignored by Git. For a new empty installation only:
 
@@ -216,7 +216,7 @@ Connect one phone with USB or wireless debugging enabled, then run:
 pnpm android:dev
 ```
 
-The command starts the PHP API and Vite when needed, forwards ports `5173` and `8090`, installs Polymind, and stays attached for hot updates. Press `Ctrl+C` to stop it.
+The command starts the PHP API and Vite when needed, forwards ports `5183` and `8090`, installs Polymind, and stays attached for hot updates. Press `Ctrl+C` to stop it.
 
 If more than one device is connected, select one explicitly:
 
