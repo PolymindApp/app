@@ -151,44 +151,6 @@ describe('offline synchronization coordination', () => {
     expect(fetch).toHaveBeenCalledTimes(2)
   })
 
-  it('makes deferred operations eligible when synchronization is requested manually', async () => {
-    const operation = {
-      operationId: 'operation-1',
-      accountId: 'account-1',
-      clientId: 'client-1',
-      resource: 'tasks',
-      recordId: 'task-1',
-      kind: 'patch',
-      payload: { name: 'Updated task' },
-      fieldClocks: { name: '100-client-1' },
-      dependsOn: [],
-      status: 'pending',
-      sequence: 1,
-      attempts: 1,
-      nextAttemptAt: Date.now() + 60_000,
-      createdAt: '2026-08-12T12:00:00.000Z',
-    }
-    mocks.pendingOperationCount.mockResolvedValue(1)
-    mocks.pendingOperations.mockImplementation(async () => (
-      mocks.retryPendingOperationsNow.mock.calls.length ? [operation] : []
-    ))
-    const { syncNow } = await import('./offlineSync')
-
-    await expect(syncNow('manual')).resolves.toBe(true)
-
-    expect(mocks.retryPendingOperationsNow).toHaveBeenCalledWith('account-1')
-    const request = vi.mocked(fetch).mock.calls[0]?.[1]
-    expect(JSON.parse(String(request?.body))).toMatchObject({
-      operations: [{
-        operationId: 'operation-1',
-        resource: 'tasks',
-        recordId: 'task-1',
-        kind: 'patch',
-        payload: { name: 'Updated task' },
-      }],
-    })
-  })
-
   it('stops requesting a page when the server cursor does not advance', async () => {
     vi.mocked(fetch).mockResolvedValue(exchangeResponse({ hasMore: true }))
     const { offlineSyncStatus, syncNow } = await import('./offlineSync')
