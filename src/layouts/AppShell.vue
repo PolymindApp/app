@@ -21,6 +21,7 @@ import {
   formatRunningSessionTitle,
   RUNNING_SESSION_TITLE_INTERVAL_MS,
 } from '@/services/runningSessionTitle'
+import { mobileKeyboardVisible } from '@/services/mobileKeyboardViewport'
 import { UnsyncedChangesError, useAuthStore } from '@/stores/auth'
 import { useFlashcardStore } from '@/stores/flashcards'
 import { useIntervalStore } from '@/stores/intervals'
@@ -346,7 +347,7 @@ function releaseLeavingPage(element: Element) {
 
     <transition name="app-chrome">
       <header
-        v-if="!immersive"
+        v-if="!immersive && !mobileKeyboardVisible"
         class="app-bar"
         :class="{ 'app-bar--ios': isIos, 'app-bar--back': canGoBack }"
       >
@@ -401,8 +402,8 @@ function releaseLeavingPage(element: Element) {
       tag="div"
       class="app-scroll"
       :class="{
-        'app-scroll--with-nav': !mdAndUp && !immersive,
-        'app-scroll--with-bar': !immersive,
+        'app-scroll--with-nav': !mdAndUp && !immersive && !mobileKeyboardVisible,
+        'app-scroll--with-bar': !immersive && !mobileKeyboardVisible,
       }"
     >
       <div class="page-transition-stage">
@@ -419,9 +420,9 @@ function releaseLeavingPage(element: Element) {
       </div>
     </v-main>
 
-    <transition name="app-chrome">
+    <transition name="bottom-nav">
       <nav
-        v-if="!mdAndUp && !immersive"
+        v-if="!mdAndUp && !immersive && !mobileKeyboardVisible"
         class="bottom-nav"
         :style="{ '--bottom-nav-font-size': bottomNavigationFontSize(items.length) }"
         aria-label="Primary navigation"
@@ -719,6 +720,19 @@ function releaseLeavingPage(element: Element) {
   height: calc(72px + env(safe-area-inset-bottom)) !important;
   background: rgb(var(--v-theme-surface));
   box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.3) !important;
+}
+
+.bottom-nav-enter-active,
+.bottom-nav-leave-active {
+  transition:
+    opacity 160ms ease,
+    transform 200ms cubic-bezier(.22, 1, .36, 1);
+}
+
+.bottom-nav-enter-from,
+.bottom-nav-leave-to {
+  opacity: 0;
+  transform: translateY(100%);
 }
 
 .bottom-nav__link {

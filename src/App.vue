@@ -43,7 +43,7 @@ onBeforeUnmount(() => {
 <style>
 .session-transition-stage {
   display: grid;
-  min-height: 100dvh;
+  min-height: var(--app-viewport-height, 100dvh);
 }
 
 .session-transition-stage > * {

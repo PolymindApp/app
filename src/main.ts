@@ -7,10 +7,10 @@ import { longPressDrag, longPressDrop } from './directives/longPressDrag'
 import { api } from './lib/api'
 import router from './router'
 import { vuetify } from './plugins/vuetify'
-import { installAndroidFocusAutoScroll } from './services/androidFocusAutoScroll'
 import { preloadIntervalCueAudio } from './services/intervalCues'
 import { installFlashcardNotificationRouting } from './services/flashcardNotificationRouting'
 import { installIntervalNotificationRouting } from './services/intervalNotificationRouting'
+import { installMobileKeyboardViewport } from './services/mobileKeyboardViewport'
 import { installTaskNotificationRouting } from './services/taskReminders'
 import { startOfflineSync } from './services/offlineSync'
 import {
@@ -50,8 +50,12 @@ if (
 app.mount('#app')
 void startOfflineSync()
 
+if (nativePlatform === 'android' || nativePlatform === 'ios') {
+  const removeMobileKeyboardViewport = installMobileKeyboardViewport()
+  window.addEventListener('pagehide', removeMobileKeyboardViewport, { once: true })
+}
+
 if (nativePlatform === 'android') {
-  installAndroidFocusAutoScroll()
   void router.isReady().then(() => {
     void installIntervalNotificationRouting(router)
     void installFlashcardNotificationRouting(router)

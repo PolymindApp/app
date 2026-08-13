@@ -64,13 +64,13 @@ html.platform-android *::-webkit-scrollbar {
 body {
   margin: 0;
   min-width: 320px;
-  min-height: 100dvh;
+  min-height: var(--app-viewport-height, 100dvh);
   overflow-x: clip;
   overflow-y: visible;
 }
 
 #app {
-  min-height: 100dvh;
+  min-height: var(--app-viewport-height, 100dvh);
   overflow-x: clip;
 }
 
@@ -95,16 +95,34 @@ html.platform-android body::after {
   height: max(env(safe-area-inset-bottom, 0px), var(--safe-area-inset-bottom, 0px));
 }
 
+html.platform-android.keyboard-open body::after {
+  height: 0;
+}
+
 .v-application {
-  min-height: 100dvh;
+  min-height: var(--app-viewport-height, 100dvh);
   overflow-x: clip;
   overflow-y: visible;
 }
 
 .app-scroll {
-  min-height: 100dvh;
+  min-height: var(--app-viewport-height, 100dvh);
   overflow-x: clip !important;
   overflow-y: visible !important;
+}
+
+html.keyboard-open {
+  scroll-padding-top: 1rem;
+  scroll-padding-bottom: var(--keyboard-scroll-bottom, 1rem);
+}
+
+html.keyboard-open .v-input {
+  scroll-margin-top: 1rem;
+  scroll-margin-bottom: var(--keyboard-scroll-bottom, 1rem);
+}
+
+html.keyboard-open .page-action-area {
+  display: none !important;
 }
 
 /* Android document scrolling stops cleanly at the viewport boundaries. */

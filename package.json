@@ -41,6 +41,7 @@
     "@capacitor/core": "8.4.2",
     "@capacitor/haptics": "8.0.2",
     "@capacitor/ios": "8.4.2",
+    "@capacitor/keyboard": "8.0.5",
     "@capacitor/local-notifications": "8.0.2",
     "@capacitor/network": "8.0.1",
     "@mdi/font": "^7.4.47",

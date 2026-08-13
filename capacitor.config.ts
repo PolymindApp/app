@@ -1,4 +1,5 @@
 import type { CapacitorConfig } from '@capacitor/cli'
+import { KeyboardResize } from '@capacitor/keyboard'
 
 const nativeAppId = process.argv.includes('ios')
   ? 'app.polymind.ios'
@@ -16,6 +17,10 @@ const config: CapacitorConfig = {
       repeat: true,
       interval: 15,
       autoStart: true,
+    },
+    Keyboard: {
+      resize: KeyboardResize.Native,
+      resizeOnFullScreen: true,
     },
     SystemBars: {
       insetsHandling: 'css',
