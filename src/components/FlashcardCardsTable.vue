@@ -12,10 +12,12 @@ const props = withDefaults(defineProps<{
   selectable?: boolean
   interactive?: boolean
   surface?: boolean
+  showLastColumn?: boolean
 }>(), {
   selectable: true,
   interactive: true,
   surface: true,
+  showLastColumn: true,
 })
 
 const emit = defineEmits<{
@@ -114,7 +116,10 @@ function cardTagNames(card: Flashcard) {
       <div class="card-library-header" aria-label="Flashcard table columns">
         <div
           class="card-library-header__track"
-          :class="{ 'card-library-header__track--without-selection': !selectable }"
+          :class="{
+            'card-library-header__track--without-selection': !selectable,
+            'card-library-header__track--without-last-column': !showLastColumn,
+          }"
           :style="{ transform: `translateX(-${horizontalScrollLeft}px)` }"
         >
           <div v-if="selectable" class="card-library-header__cell card-library-header__select">
@@ -132,7 +137,7 @@ function cardTagNames(card: Flashcard) {
             <slot name="image-column-heading">Image</slot>
           </div>
           <div class="card-library-header__cell" aria-hidden="true">Faces</div>
-          <div class="card-library-header__cell" aria-hidden="true">
+          <div v-if="showLastColumn" class="card-library-header__cell" aria-hidden="true">
             <slot name="last-column-heading">Tags</slot>
           </div>
         </div>
@@ -144,12 +149,16 @@ function cardTagNames(card: Flashcard) {
         tabindex="0"
         @scroll.passive="syncHeaderScroll"
       >
-        <v-table density="compact" class="card-library-table">
+        <v-table
+          density="compact"
+          class="card-library-table"
+          :class="{ 'card-library-table--without-last-column': !showLastColumn }"
+        >
           <colgroup>
             <col v-if="selectable" class="card-library-table__select-column">
             <col class="card-library-table__image-column">
             <col class="card-library-table__faces-column">
-            <col>
+            <col v-if="showLastColumn">
           </colgroup>
           <thead class="card-library-table__semantic-heading">
             <tr>
@@ -158,7 +167,7 @@ function cardTagNames(card: Flashcard) {
                 <slot name="image-column-heading">Image</slot>
               </th>
               <th scope="col" class="card-library-table__faces-heading">Faces</th>
-              <th scope="col" class="card-library-table__tags-heading">
+              <th v-if="showLastColumn" scope="col" class="card-library-table__tags-heading">
                 <slot name="last-column-heading">Tags</slot>
               </th>
             </tr>
@@ -195,24 +204,26 @@ function cardTagNames(card: Flashcard) {
                 />
               </td>
               <td class="card-library-table__image-cell">
-                <div class="flashcard-table__image-frame">
-                  <v-img
-                    v-if="card.image"
-                    :src="card.image"
-                    alt=""
-                    cover
-                    class="flashcard-table__image"
-                  >
-                    <template #error>
-                      <div class="flashcard-table__image-placeholder" aria-label="Image unavailable">
-                        <v-icon icon="mdi-image-off-outline" size="18" aria-hidden="true" />
-                      </div>
-                    </template>
-                  </v-img>
-                  <div v-else class="flashcard-table__image-placeholder" aria-label="No image">
-                    <v-icon icon="mdi-image-outline" size="18" aria-hidden="true" />
+                <slot name="image-column" :card="card">
+                  <div class="flashcard-table__image-frame">
+                    <v-img
+                      v-if="card.image"
+                      :src="card.image"
+                      alt=""
+                      cover
+                      class="flashcard-table__image"
+                    >
+                      <template #error>
+                        <div class="flashcard-table__image-placeholder" aria-label="Image unavailable">
+                          <v-icon icon="mdi-image-off-outline" size="18" aria-hidden="true" />
+                        </div>
+                      </template>
+                    </v-img>
+                    <div v-else class="flashcard-table__image-placeholder" aria-label="No image">
+                      <v-icon icon="mdi-image-outline" size="18" aria-hidden="true" />
+                    </div>
                   </div>
-                </div>
+                </slot>
               </td>
               <td class="card-library-table__faces-cell">
                 <span v-ripple class="card-library-table__row-ripple" aria-hidden="true" />
@@ -221,7 +232,7 @@ function cardTagNames(card: Flashcard) {
                   <span class="flashcard-table__text flashcard-table__back">{{ card.back }}</span>
                 </div>
               </td>
-              <td class="card-library-table__tags-cell">
+              <td v-if="showLastColumn" class="card-library-table__tags-cell">
                 <slot name="last-column" :card="card">
                   <span class="flashcard-table__text flashcard-table__tags" :title="cardTagNames(card)">
                     {{ cardTagNames(card) }}
@@ -264,17 +275,21 @@ function cardTagNames(card: Flashcard) {
 .card-library-header { position: sticky; z-index: 3; top: calc(3.75rem + max(env(safe-area-inset-top, 0rem), var(--safe-area-inset-top, 0rem))); width: 100%; height: 2.25rem; overflow: hidden; background: rgb(var(--v-theme-surface)); box-shadow: 0 .0625rem 0 rgba(var(--v-theme-on-surface), .1); }
 .card-library-header__track { display: grid; width: max(42rem, 100%); height: 100%; grid-template-columns: 3rem 3rem 54% minmax(0, 1fr); will-change: transform; }
 .card-library-header__track--without-selection { grid-template-columns: 3rem 54% minmax(0, 1fr); }
+.card-library-header__track--without-last-column { width: max(32rem, 100%); grid-template-columns: 3rem 5.5rem minmax(0, 1fr); }
+.card-library-header__track--without-selection.card-library-header__track--without-last-column { grid-template-columns: 5.5rem minmax(0, 1fr); }
 .card-library-header__cell { display: flex; min-width: 0; height: 2.25rem; padding: 0 .75rem; align-items: center; color: rgba(var(--v-theme-on-surface), .52); font-size: .64rem; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
 .card-library-header__select { justify-content: center; padding-right: .25rem; padding-left: .25rem; }
 .card-library-header__select :deep(.v-selection-control) { justify-content: center; }
 .card-library-scroll { max-width: 100%; overflow-x: auto; overscroll-behavior-inline: contain; }
 .card-library-scroll:focus-visible { outline: .125rem solid rgba(var(--v-theme-secondary), .72); outline-offset: -.125rem; }
 .card-library-table { min-width: 42rem; max-width: none; background: transparent; }
+.card-library-table--without-last-column { min-width: 32rem; }
 .card-library-table :deep(.v-table__wrapper) { overflow: visible; }
 .card-library-table :deep(table) { width: 100%; table-layout: fixed; }
 .card-library-table__semantic-heading { position: absolute; width: .0625rem; height: .0625rem; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
 .card-library-table__select-column { width: 3rem; }
 .card-library-table__image-column { width: 3rem; }
+.card-library-table--without-last-column .card-library-table__image-column { width: 5.5rem; }
 .card-library-table__faces-column { width: 54%; }
 .card-library-table th.card-library-table__select,
 .card-library-table td.card-library-table__select { padding-right: .25rem !important; padding-left: .25rem !important; text-align: center; }

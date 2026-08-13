@@ -265,12 +265,12 @@ async function remove() {
           :can-add="false"
           :show-search-filter="false"
           :table-surface="false"
+          :show-last-column="false"
           empty-title="No cards match this Review set"
           empty-description="Change the selected tags to include cards in this Review set."
         >
-          <template #image-column-heading><span class="d-sr-only">Image</span></template>
-          <template #last-column-heading><span class="d-sr-only">Included?</span></template>
-          <template #last-column="{ card }">
+          <template #image-column-heading>Included</template>
+          <template #image-column="{ card }">
             <div class="review-set-card-state">
               <v-icon
                 :icon="cardIsIncluded(card) ? 'mdi-check-circle' : 'mdi-minus-circle-outline'"

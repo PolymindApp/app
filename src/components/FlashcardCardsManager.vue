@@ -48,6 +48,7 @@ const props = withDefaults(defineProps<{
   firstCardLabel?: string
   showSearchFilter?: boolean
   tableSurface?: boolean
+  showLastColumn?: boolean
 }>(), {
   libraryActions: false,
   showImport: false,
@@ -62,6 +63,7 @@ const props = withDefaults(defineProps<{
   firstCardLabel: 'Add your first card',
   showSearchFilter: true,
   tableSurface: true,
+  showLastColumn: true,
 })
 
 const emit = defineEmits<{
@@ -387,10 +389,14 @@ async function deleteSelectedCards() {
       :selectable="selectable"
       :interactive="interactive"
       :surface="tableSurface"
+      :show-last-column="showLastColumn"
       @open-card="emit('open-card', $event)"
     >
       <template v-if="$slots['image-column-heading']" #image-column-heading>
         <slot name="image-column-heading" />
+      </template>
+      <template v-if="$slots['image-column']" #image-column="{ card }">
+        <slot name="image-column" :card="card" />
       </template>
       <template v-if="$slots['last-column-heading']" #last-column-heading>
         <slot name="last-column-heading" />
