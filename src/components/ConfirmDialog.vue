@@ -23,6 +23,7 @@ const emit = defineEmits<{
 <template>
   <v-dialog
     :model-value="modelValue"
+    :z-index="2600"
     max-width="400"
     @update:model-value="emit('update:modelValue', $event)"
   >
