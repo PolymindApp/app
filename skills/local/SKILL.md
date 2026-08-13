@@ -7,7 +7,7 @@ description: Preserve and extend the Polymind application's established UI direc
 
 ## After each tasks
 
-- Do a git commit and run android:push
+- Run android:push
 
 ## Tests
 
