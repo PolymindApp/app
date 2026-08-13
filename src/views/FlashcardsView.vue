@@ -207,7 +207,6 @@ async function reorderReviewSets(result: LongPressDragResult) {
         <div class="card-library-summary__actions">
           <v-btn
             color="secondary"
-            size="large"
             prepend-icon="mdi-card-plus-outline"
             :to="{ name: 'flashcard-new' }"
           >
@@ -215,7 +214,6 @@ async function reorderReviewSets(result: LongPressDragResult) {
           </v-btn>
           <v-btn
             variant="tonal"
-            size="large"
             prepend-icon="mdi-card-multiple-outline"
             :to="{ name: 'flashcard-cards' }"
           >
