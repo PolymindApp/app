@@ -250,9 +250,19 @@ async function loadVisibleWeekEntries() {
     </div>
 
     <template v-else-if="store.trackers.length">
-      <section v-if="factors.length">
-        <div class="section-heading"><h2>Things you did</h2></div>
-        <div class="tracker-grid">
+      <section>
+        <div class="section-heading">
+          <h2>Things you did</h2>
+          <v-btn
+            size="small"
+            variant="text"
+            prepend-icon="mdi-plus"
+            :to="{ path: '/tracking/new', query: { role: 'factor' } }"
+          >
+            New
+          </v-btn>
+        </div>
+        <div v-if="factors.length" class="tracker-grid">
           <TrackingTrackerCard
             v-for="tracker in factors"
             :key="tracker.id"
@@ -263,11 +273,22 @@ async function loadVisibleWeekEntries() {
             @entry="startLog(tracker, $event)"
           />
         </div>
+        <p v-else class="tracker-section-empty muted py-4 text-center">No things tracked yet.</p>
       </section>
 
-      <section v-if="outcomes.length">
-        <div class="section-heading"><h2>How you felt</h2></div>
-        <div class="tracker-grid">
+      <section>
+        <div class="section-heading">
+          <h2>How you felt</h2>
+          <v-btn
+            size="small"
+            variant="text"
+            prepend-icon="mdi-plus"
+            :to="{ path: '/tracking/new', query: { role: 'outcome' } }"
+          >
+            New
+          </v-btn>
+        </div>
+        <div v-if="outcomes.length" class="tracker-grid">
           <TrackingTrackerCard
             v-for="tracker in outcomes"
             :key="tracker.id"
@@ -278,18 +299,8 @@ async function loadVisibleWeekEntries() {
             @entry="startLog(tracker, $event)"
           />
         </div>
+        <p v-else class="tracker-section-empty muted py-4 text-center">No feelings tracked yet.</p>
       </section>
-
-      <v-btn
-        block
-        size="large"
-        class="mt-6"
-        color="secondary"
-        prepend-icon="mdi-plus"
-        to="/tracking/new"
-      >
-        New tracker
-      </v-btn>
 
       <section v-if="archivedTrackers.length">
         <div class="section-heading"><h2>Archived</h2></div>
@@ -377,6 +388,7 @@ async function loadVisibleWeekEntries() {
 .insight-card__chevron { display: grid; width: 2.75rem; height: 2.75rem; place-items: center; }
 .insight-card p { margin-top: .2rem; color: rgb(var(--v-theme-on-surface) / .58); font-size: .75rem; }
 .tracker-grid { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 270px), 1fr)); }
+.tracker-section-empty { font-size: .8rem; }
 .preset-grid { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); }
 .preset-card { display: grid; min-height: 150px; grid-template-rows: 1fr auto; align-items: start; gap: 1rem; }
 .preset-card__content { display: flex; align-items: flex-start; gap: .8rem; }

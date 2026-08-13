@@ -13,6 +13,7 @@ const props = defineProps<{
 }>()
 
 const selectedDayIndex = ref<number>()
+const inactiveTrackerIds = ref(new Set<string>())
 const { chartRoot, chartWidth } = useResponsiveChartWidth()
 const chartHeight = 125
 const plotLeft = 16
@@ -60,6 +61,7 @@ const series = computed(() => props.trackers
   })
   .filter((item) => item.hasValues)
   .sort((a, b) => a.tracker.sortOrder - b.tracker.sortOrder || a.tracker.name.localeCompare(b.tracker.name)))
+const activeSeries = computed(() => series.value.filter(item => !inactiveTrackerIds.value.has(item.tracker.id)))
 
 const fallbackDayIndex = computed(() => {
   const selectedKey = format(props.selectedDate, 'yyyy-MM-dd')
@@ -81,12 +83,12 @@ const ariaLabel = computed(() => {
 })
 
 function barWidth() {
-  if (!series.value.length) return 0
-  return Math.max(4, Math.min(18, (groupWidth.value - 16) / series.value.length - 2))
+  if (!activeSeries.value.length) return 0
+  return Math.max(4, Math.min(18, (groupWidth.value - 16) / activeSeries.value.length - 2))
 }
 
 function barsWidth() {
-  return series.value.length * barWidth() + Math.max(0, series.value.length - 1) * 2
+  return activeSeries.value.length * barWidth() + Math.max(0, activeSeries.value.length - 1) * 2
 }
 
 function barX(dayIndex: number, seriesIndex: number) {
@@ -107,6 +109,17 @@ function legendValue(tracker: TrackingTracker, value: number | null) {
   if (value === null) return 'Not logged'
   if (tracker.kind === 'rating') return `${formatNumber(value)}/${formatNumber(Math.max(1, tracker.scaleMax))}`
   return formatTrackingValue(tracker, value)
+}
+
+function trackerIsActive(trackerId: string) {
+  return !inactiveTrackerIds.value.has(trackerId)
+}
+
+function toggleTracker(trackerId: string) {
+  const next = new Set(inactiveTrackerIds.value)
+  if (next.has(trackerId)) next.delete(trackerId)
+  else next.add(trackerId)
+  inactiveTrackerIds.value = next
 }
 
 function selectFromPointer(event: PointerEvent) {
@@ -167,7 +180,7 @@ function onKeydown(event: KeyboardEvent) {
             class="selected-day"
           />
 
-          <template v-for="(item, seriesIndex) in series" :key="item.tracker.id">
+          <template v-for="(item, seriesIndex) in activeSeries" :key="item.tracker.id">
             <rect
               v-for="(value, dayIndex) in item.values"
               v-show="value !== null"
@@ -195,10 +208,19 @@ function onKeydown(event: KeyboardEvent) {
       </div>
 
       <div class="chart-legend" :aria-label="readoutDay ? `Trackers shown for ${format(readoutDay.date, 'EEEE, MMMM d')}` : 'Trackers shown'" aria-live="polite">
-        <span v-for="item in readoutValues" :key="item.tracker.id" class="chart-legend__item">
+        <v-btn
+          v-for="item in readoutValues"
+          :key="item.tracker.id"
+          size="x-small"
+          variant="text"
+          :class="['chart-legend__item', { 'chart-legend__item--inactive': !trackerIsActive(item.tracker.id) }]"
+          :aria-label="`${trackerIsActive(item.tracker.id) ? 'Hide' : 'Show'} ${item.tracker.name} in chart`"
+          :aria-pressed="trackerIsActive(item.tracker.id)"
+          @click="toggleTracker(item.tracker.id)"
+        >
           <i :style="{ background: item.tracker.color }" />
           {{ item.tracker.name }} <strong>({{ legendValue(item.tracker, item.value) }})</strong>
-        </span>
+        </v-btn>
       </div>
     </template>
 
@@ -213,12 +235,16 @@ function onKeydown(event: KeyboardEvent) {
 .chart-legend {
   display: flex;
   align-items: center;
-  gap: .5rem 1rem;
   flex-wrap: wrap;
 }
 
 .chart-legend { margin-top: .5rem; color: rgba(var(--v-theme-on-surface), .68); font-size: .72rem; font-weight: 800; }
-.chart-legend__item { display: inline-flex; align-items: center; gap: .4rem; }
+.chart-legend__item {
+  color: inherit;
+  transition: opacity 180ms ease;
+}
+.chart-legend__item :deep(.v-btn__content) { gap: .4rem; }
+.chart-legend__item--inactive { opacity: .42; text-decoration: line-through; }
 .chart-legend i { width: .65rem; height: .65rem; flex: 0 0 auto; border-radius: .2rem; }
 .chart-legend strong { color: rgb(var(--v-theme-on-surface) / .88); }
 .chart-plot { outline: none; }
@@ -231,6 +257,7 @@ svg { display: block; width: 100%; height: auto; touch-action: pan-y; }
 .weekly-chart-empty { color: rgba(var(--v-theme-on-surface), .58); font-size: .8rem; }
 
 @media (prefers-reduced-motion: reduce) {
-  .chart-bar { transition: none; }
+  .chart-bar,
+  .chart-legend__item { transition: none; }
 }
 </style>

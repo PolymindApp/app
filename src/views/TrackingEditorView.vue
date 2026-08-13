@@ -100,7 +100,10 @@ onMounted(async () => {
   const presetId = typeof route.query.preset === 'string' ? route.query.preset : ''
   const preset = TRACKING_PRESETS.find((item) => item.id === presetId)
   if (preset) Object.assign(draft, trackerDraftFromPreset(preset, store.trackers.length))
-  else draft.sortOrder = store.trackers.length
+  else {
+    draft.sortOrder = store.trackers.length
+    if (route.query.role === 'factor' || route.query.role === 'outcome') draft.role = route.query.role
+  }
 })
 
 async function save() {

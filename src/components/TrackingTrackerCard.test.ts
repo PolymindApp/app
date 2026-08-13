@@ -41,6 +41,7 @@ describe('TrackingTrackerCard', () => {
         stubs: {
           VBtn: { template: '<button><slot /></button>' },
           VCard: { template: '<div><slot /></div>' },
+          VDivider: true,
           VIcon: true,
           TrackingRatingValue: true,
         },
@@ -90,6 +91,7 @@ describe('TrackingTrackerCard', () => {
         stubs: {
           VBtn: { template: '<button><slot /></button>' },
           VCard: { template: '<div><slot /></div>' },
+          VDivider: true,
           VIcon: true,
           TrackingRatingValue: true,
         },
@@ -117,6 +119,7 @@ describe('TrackingTrackerCard', () => {
         stubs: {
           VBtn: { template: '<button><slot /></button>' },
           VCard: { template: '<div><slot /></div>' },
+          VDivider: true,
           VIcon: true,
         },
       },

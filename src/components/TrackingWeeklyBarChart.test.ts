@@ -1,5 +1,5 @@
 import { defineComponent } from 'vue'
-import { mount } from '@vue/test-utils'
+import { config, mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import TrackingWeeklyBarChart from '@/components/TrackingWeeklyBarChart.vue'
 import type { TrackingEntry, TrackingTracker } from '@/types/domain'
@@ -8,6 +8,12 @@ const VProgressLinearStub = defineComponent({
   props: { modelValue: Number },
   template: '<div class="v-progress-linear-stub" />',
 })
+const VBtnStub = defineComponent({
+  props: { size: String, variant: String },
+  template: '<button v-bind="$attrs"><slot /></button>',
+})
+
+config.global.stubs.VBtn = VBtnStub
 
 function tracker(overrides: Partial<TrackingTracker>): TrackingTracker {
   return {
@@ -113,6 +119,38 @@ describe('TrackingWeeklyBarChart', () => {
     expect(wrapper.find('.chart-legend').attributes('aria-label')).toContain('Tuesday, July 28')
     expect(wrapper.find('.chart-legend').text()).toContain('Meditation (Not occurred)')
     expect(wrapper.find('.chart-legend').text()).toContain('Mood (Not logged)')
+  })
+
+  it('starts with every tracker enabled and toggles chart series from the legend', async () => {
+    const wrapper = mount(TrackingWeeklyBarChart, {
+      props: {
+        weekStart: new Date(2026, 6, 27, 12),
+        selectedDate: new Date(2026, 6, 27, 12),
+        trackers: [
+          tracker({ id: 'meditation', name: 'Meditation' }),
+          tracker({ id: 'mood', name: 'Mood', kind: 'rating', scaleMax: 10, sortOrder: 1 }),
+        ],
+        entries: [
+          entry('one', 'meditation', '2026-07-27', 1),
+          entry('two', 'mood', '2026-07-27', 7),
+        ],
+      },
+    })
+
+    const legendItems = wrapper.findAll('.chart-legend__item')
+    expect(legendItems.map(item => item.attributes('aria-pressed'))).toEqual(['true', 'true'])
+    expect(wrapper.findAll('.chart-bar').filter(bar => bar.isVisible())).toHaveLength(8)
+
+    await legendItems[0]!.trigger('click')
+
+    expect(legendItems[0]!.attributes('aria-pressed')).toBe('false')
+    expect(legendItems[0]!.classes()).toContain('chart-legend__item--inactive')
+    expect(wrapper.findAll('.chart-bar').filter(bar => bar.isVisible())).toHaveLength(1)
+
+    await legendItems[0]!.trigger('click')
+
+    expect(legendItems[0]!.attributes('aria-pressed')).toBe('true')
+    expect(wrapper.findAll('.chart-bar').filter(bar => bar.isVisible())).toHaveLength(8)
   })
 
   it('shows unlogged event days as not occurred', () => {
