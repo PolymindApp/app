@@ -1,7 +1,7 @@
 {
   "name": "@polymind/app",
   "private": true,
-  "version": "0.4.12",
+  "version": "0.4.13",
   "type": "module",
   "scripts": {
     "dev": "bash scripts/dev.sh",
