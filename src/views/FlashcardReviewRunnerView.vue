@@ -1639,13 +1639,15 @@ async function leaveRunner() {
 .review-card:focus-visible { outline: .1875rem solid rgba(var(--v-theme-secondary), .72); outline-offset: .25rem; }
 .review-card__inner { position: relative; display: grid; height: 100%; min-height: inherit; transform-style: preserve-3d; transition: transform 240ms cubic-bezier(.22, 1, .36, 1); }
 .review-card--revealed .review-card__inner { transform: rotateY(180deg); }
-.review-card__face { display: flex; min-height: inherit; padding: 2rem 2rem 5.5rem; border: .0625rem solid rgba(var(--v-theme-on-surface), .1); border-radius: 1.5rem; grid-area: 1 / 1; align-items: center; justify-content: center; flex-direction: column; gap: 1.5rem; overflow: auto; background: rgb(var(--v-theme-surface)); box-shadow: 0 1rem 2.5rem rgba(0, 0, 0, .26); backface-visibility: hidden; }
+.review-card__face { position: relative; display: flex; min-height: inherit; padding: 2rem 2rem 5.5rem; border: .0625rem solid rgba(var(--v-theme-on-surface), .1); border-radius: 1.5rem; grid-area: 1 / 1; align-items: center; justify-content: center; flex-direction: column; gap: 1.5rem; overflow: auto; background: rgb(var(--v-theme-surface)); box-shadow: 0 1rem 2.5rem rgba(0, 0, 0, .26); backface-visibility: hidden; }
+.review-card__face > :not(.review-card__image),
+.passive-card__content > :not(.review-card__image) { position: relative; z-index: 1; }
 .review-card__face small,
 .passive-card small { color: rgba(var(--v-theme-on-surface), .48); font-size: .68rem; font-weight: 900; letter-spacing: .12em; text-transform: uppercase; }
 .review-card__face strong,
 .passive-card strong { max-width: 34rem; overflow-wrap: anywhere; font-size: clamp(1.3rem, 5vw, 2.1rem); font-weight: 850; line-height: 1.35; white-space: pre-wrap; }
 .review-card__answer { display: flex; align-items: center; flex-direction: column; gap: .45rem; }
-.review-card__image { width: min(100%, 16rem); height: auto; max-height: 16rem; flex: 0 1 auto; border-radius: 1rem; object-fit: contain; }
+.review-card__image { position: absolute; z-index: 0; inset: 0; width: 100%; height: 100%; max-height: none; border-radius: 1.5rem; object-fit: cover; opacity: .58; pointer-events: none; filter: brightness(.42) saturate(.82); }
 .review-card__front-reference { max-width: 30rem; overflow-wrap: anywhere; color: rgba(var(--v-theme-on-surface), .48); font-size: clamp(.72rem, 2.2vw, .88rem); line-height: 1.4; white-space: pre-wrap; }
 .review-card__back { border-color: rgba(var(--v-theme-secondary), .34); transform: rotateY(180deg); }
 .review-card__hint { display: flex; align-items: center; gap: .4rem; color: rgba(var(--v-theme-on-surface), .48); font-size: .72rem; font-weight: 800; }
