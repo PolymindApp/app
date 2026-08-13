@@ -6616,6 +6616,10 @@ final class Api
 
     private function programStepScheduledOnDate(array $task, array $step, string $dateKey): bool
     {
+        if (($step['completion_type'] ?? '') === 'day_off') {
+            return false;
+        }
+
         $startDate = (string) ($task['start_date'] ?? '');
         $endDate = (string) ($task['end_date'] ?? '');
         if ($startDate === '' || $dateKey < $startDate || ($endDate !== '' && $dateKey > $endDate)) {

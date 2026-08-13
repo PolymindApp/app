@@ -61,7 +61,7 @@ export interface ProgramStep {
   description: string
   sortOrder: number
   cycleDays: number[]
-  completionType: 'check' | 'quantity' | 'interval' | 'flashcards'
+  completionType: 'check' | 'quantity' | 'interval' | 'flashcards' | 'day_off'
   targetValue?: number
   targetOperator?: TargetOperator
   unit?: string

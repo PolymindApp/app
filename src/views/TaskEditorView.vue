@@ -87,7 +87,6 @@ const draft = reactive<TaskDraft>({
   steps: [],
 })
 
-const cycleDays = computed(() => Array.from({ length: Math.max(1, draft.cycleLength || 1) }, (_, index) => index + 1))
 const showTarget = computed(() =>
   draft.type === 'duration' || draft.type === 'daily_total' || draft.type === 'step_counter',
 )
@@ -163,6 +162,57 @@ function reviewSetSummary(reviewSetId?: string) {
   return `${reviewSet.mode === 'passive' ? 'Passive' : 'Manual'} · ${reviewSetCardCount(reviewSet)} cards`
 }
 
+function dayOffStep(sortOrder: number): ProgramStepDraft {
+  return {
+    name: 'Day off',
+    description: '',
+    sortOrder,
+    cycleDays: [sortOrder + 1],
+    completionType: 'day_off',
+    active: true,
+  }
+}
+
+function syncProgramSequence() {
+  draft.steps.forEach((step, index) => {
+    step.sortOrder = index
+    step.cycleDays = [index + 1]
+  })
+  draft.cycleLength = draft.steps.length
+}
+
+function orderedProgramItems(steps: ProgramStepDraft[], cycleLength: number) {
+  const sortedSteps = [...steps].sort((a, b) => a.sortOrder - b.sortOrder)
+  if (sortedSteps.some(step => step.completionType === 'day_off')) return sortedSteps
+
+  const stepsByDay = new Map<number, ProgramStepDraft[]>()
+  const unassigned: ProgramStepDraft[] = []
+  for (const step of sortedSteps) {
+    const assignedDays = [...new Set(step.cycleDays)]
+      .filter(day => Number.isInteger(day) && day > 0 && day <= cycleLength)
+      .sort((a, b) => a - b)
+    if (!assignedDays.length) {
+      unassigned.push(step)
+      continue
+    }
+    assignedDays.forEach((day, assignmentIndex) => {
+      const scheduledStep = assignmentIndex === 0 ? step : { ...step, id: undefined }
+      const daySteps = stepsByDay.get(day) || []
+      daySteps.push(scheduledStep)
+      stepsByDay.set(day, daySteps)
+    })
+  }
+
+  const items: ProgramStepDraft[] = []
+  for (let day = 1; day <= cycleLength; day += 1) {
+    const daySteps = stepsByDay.get(day)
+    if (daySteps?.length) items.push(...daySteps)
+    else items.push(dayOffStep(items.length))
+  }
+  items.push(...unassigned)
+  return items
+}
+
 watch(() => draft.type, (type) => {
   if (typeLocked.value) return
   if (type === 'duration') {
@@ -192,17 +242,23 @@ onMounted(async () => {
   }
   Object.assign(draft, {
     ...task,
-    steps: store.steps.filter((step) => step.active && step.task === task.id).map(({ task: _task, ...step }) => ({ ...step })),
+    steps: orderedProgramItems(
+      store.steps
+        .filter((step) => step.active && step.task === task.id)
+        .map(({ task: _task, ...step }) => ({ ...step })),
+      task.cycleLength || 0,
+    ),
   })
+  if (task.type === 'program') syncProgramSequence()
 })
 
 async function addStep(focusName = true) {
-  const nextDay = Math.min(draft.steps.length + 1, draft.cycleLength || 1)
+  if (draft.steps.length >= 365) return
   draft.steps.push({
     name: '',
     description: '',
     sortOrder: draft.steps.length,
-    cycleDays: [nextDay],
+    cycleDays: [draft.steps.length + 1],
     completionType: 'check',
     targetValue: 1,
     targetOperator: 'gte',
@@ -212,6 +268,7 @@ async function addStep(focusName = true) {
     intervalTemplate: undefined,
     flashcardReviewSet: undefined,
   })
+  syncProgramSequence()
   openStep.value = draft.steps.length - 1
   if (focusName && allowAutomaticFocus) {
     await nextTick()
@@ -219,11 +276,16 @@ async function addStep(focusName = true) {
   }
 }
 
+function addDayOff() {
+  if (draft.steps.length >= 365) return
+  draft.steps.push(dayOffStep(draft.steps.length))
+  syncProgramSequence()
+  openStep.value = undefined
+}
+
 function removeStep(index: number) {
   draft.steps.splice(index, 1)
-  draft.steps.forEach((step, stepIndex) => {
-    step.sortOrder = stepIndex
-  })
+  syncProgramSequence()
   if (openStep.value === index) openStep.value = undefined
   else if (openStep.value !== undefined && openStep.value > index) openStep.value -= 1
 }
@@ -234,9 +296,7 @@ function moveStep(index: number, direction: -1 | 1) {
   const [step] = draft.steps.splice(index, 1)
   if (!step) return
   draft.steps.splice(targetIndex, 0, step)
-  draft.steps.forEach((item, stepIndex) => {
-    item.sortOrder = stepIndex
-  })
+  syncProgramSequence()
 
   if (openStep.value === index) openStep.value = targetIndex
   else if (openStep.value === targetIndex) openStep.value = index
@@ -263,18 +323,17 @@ function reorderStepsByDrag(result: LongPressDragResult) {
   if (orderedSteps.length !== draft.steps.length) return
 
   draft.steps.splice(0, draft.steps.length, ...orderedSteps)
-  draft.steps.forEach((step, index) => {
-    step.sortOrder = index
-  })
+  syncProgramSequence()
   openStep.value = expandedStep
     ? draft.steps.indexOf(expandedStep)
     : undefined
 }
 
 async function save() {
+  if (draft.type === 'program') syncProgramSequence()
   const result = await form.value?.validate()
   if (!result?.valid) return
-  if (draft.type === 'program' && !draft.steps.length) {
+  if (draft.type === 'program' && !draft.steps.some(step => step.completionType !== 'day_off')) {
     error.value = 'Add at least one program step.'
     return
   }
@@ -624,15 +683,7 @@ async function removeTask() {
 
       <template v-if="draft.type === 'program'">
         <v-card class="surface-card pa-5 mb-4">
-          <div class="date-grid mb-4">
-            <v-number-input
-              v-model="draft.cycleLength"
-              label="Cycle length"
-              :min="1"
-              :max="365"
-              :step="1"
-              suffix="days"
-            />
+          <div class="mb-4">
             <DatePickerField v-model="draft.startDate" label="Starts" />
           </div>
           <div class="setting-row">
@@ -646,11 +697,34 @@ async function removeTask() {
           </div>
         </v-card>
 
-        <div class="section-heading"><h2>Program steps</h2><v-btn size="small" variant="tonal" prepend-icon="mdi-plus" @click="addStep()">Add step</v-btn></div>
+        <div class="section-heading">
+          <h2>Program steps</h2>
+          <div class="d-flex flex-wrap justify-end ga-2">
+            <v-btn
+              size="small"
+              variant="text"
+              prepend-icon="mdi-power-sleep"
+              :disabled="draft.steps.length >= 365"
+              @click="addDayOff"
+            >
+            Day off
+            </v-btn>
+            <v-btn
+              size="small"
+              variant="tonal"
+              prepend-icon="mdi-plus"
+              :disabled="draft.steps.length >= 365"
+              @click="addStep()"
+            >
+              Step
+            </v-btn>
+          </div>
+        </div>
         <v-expansion-panels v-model="openStep" variant="accordion" class="step-panels mb-4">
           <v-expansion-panel
             v-for="(step, index) in draft.steps"
             :key="stepDragId(step)"
+            :value="index"
             v-long-press-drag="{
               id: stepDragId(step),
               group: 'program-steps',
@@ -661,16 +735,41 @@ async function removeTask() {
             elevation="0"
             rounded="xl"
             class="surface-card program-step-panel"
-            :class="{ 'program-step-panel--draggable': draft.steps.length > 1 }"
+            :class="{
+              'program-step-panel--draggable': draft.steps.length > 1,
+              'program-step-panel--day-off': step.completionType === 'day_off',
+            }"
+            :readonly="step.completionType === 'day_off'"
           >
-            <v-expansion-panel-title class="program-step__drag-handle">
-              <div class="d-flex align-center ga-3">
+            <v-expansion-panel-title
+              class="program-step__drag-handle"
+              :hide-actions="step.completionType === 'day_off'"
+            >
+              <div v-if="step.completionType === 'day_off'" class="day-off-row">
+                <span class="step-number day-off-icon"><v-icon icon="mdi-power-sleep" size="18" /></span>
+                <div class="min-width-0 flex-grow-1">
+                  <strong>Day off</strong>
+                  <p class="text-caption muted">Day {{ index + 1 }} · No task scheduled</p>
+                </div>
+                <div class="d-flex" @touchstart.stop @click.stop>
+                  <v-btn
+                    icon="mdi-delete-outline"
+                    color="error"
+                    variant="text"
+                    size="small"
+                    class="mr-n4"
+                    aria-label="Remove day off"
+                    @click.stop="removeStep(index)"
+                  />
+                </div>
+              </div>
+              <div v-else class="d-flex align-center ga-3">
                 <span class="step-number">{{ index + 1 }}</span>
-                <div><strong>{{ step.name || `Step ${index + 1}` }}</strong><p class="text-caption muted">Day {{ step.cycleDays.join(', ') || 'not set' }}</p></div>
+                <div><strong>{{ step.name || `Step ${index + 1}` }}</strong><p class="text-caption muted">Day {{ index + 1 }}</p></div>
               </div>
             </v-expansion-panel-title>
-            <v-expansion-panel-text>
-              <div class="field-stack mb-4">
+            <v-expansion-panel-text v-if="step.completionType !== 'day_off'">
+              <div class="field-stack mt-2 mb-4">
                 <v-text-field
                   v-model="step.name"
                   :data-step-index="index"
@@ -748,43 +847,16 @@ async function removeTask() {
                   Create a Review set before using this completion style.
                 </v-alert>
               </div>
-              <label class="field-label">Place on cycle days</label>
-              <v-chip-group
-                v-model="step.cycleDays"
-                multiple
-                selected-class="day-picker--selected"
-                class="cycle-day-picker mt-2"
+              <v-btn
+                block
+                class="mt-3"
+                color="error"
+                variant="tonal"
+                prepend-icon="mdi-delete-outline"
+                @click="removeStep(index)"
               >
-                <v-chip v-for="day in cycleDays" :key="day" :value="day" filter>Day {{ day }}</v-chip>
-              </v-chip-group>
-              <div class="step-actions mt-3">
-                <div class="d-flex ga-2">
-                  <v-btn
-                    icon="mdi-arrow-up"
-                    variant="tonal"
-                    size="small"
-                    :disabled="index === 0"
-                    :aria-label="`Move ${step.name || `step ${index + 1}`} up`"
-                    @click="moveStep(index, -1)"
-                  />
-                  <v-btn
-                    icon="mdi-arrow-down"
-                    variant="tonal"
-                    size="small"
-                    :disabled="index === draft.steps.length - 1"
-                    :aria-label="`Move ${step.name || `step ${index + 1}`} down`"
-                    @click="moveStep(index, 1)"
-                  />
-                </div>
-                <v-btn
-                  icon="mdi-delete-outline"
-                  color="error"
-                  variant="text"
-                  size="small"
-                  :aria-label="`Remove ${step.name || `step ${index + 1}`}`"
-                  @click="removeStep(index)"
-                />
-              </div>
+                Remove step
+              </v-btn>
             </v-expansion-panel-text>
           </v-expansion-panel>
         </v-expansion-panels>
@@ -836,11 +908,6 @@ async function removeTask() {
   color: rgb(var(--v-theme-on-secondary)) !important;
   opacity: 1;
 }
-.cycle-day-picker :deep(.day-picker--selected) {
-  background: rgb(var(--v-theme-primary)) !important;
-  color: rgb(var(--v-theme-on-primary)) !important;
-  opacity: 1;
-}
 .field-stack { display: grid; gap: 1rem; }
 .date-grid, .target-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
 .date-range-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); }
@@ -848,6 +915,9 @@ async function removeTask() {
 .step-source-note p { color: rgb(var(--v-theme-on-surface) / .58); font-size: .72rem; line-height: 1.45; }
 .step-panels :deep(.v-expansion-panel) { border: 1px solid rgb(var(--v-theme-on-surface) / .08); }
 .step-panels :deep(.program-step-panel--draggable .program-step__drag-handle) { cursor: grab; }
+.step-panels :deep(.program-step-panel--day-off) { background: rgb(var(--v-theme-background)); }
+.day-off-row { display: flex; width: 100%; min-width: 0; align-items: center; gap: .75rem; }
+.step-number.day-off-icon { background: rgb(var(--v-theme-background)); color: rgb(var(--v-theme-on-surface) / .68); }
 .interval-attachment-summary { display: flex; align-items: center; gap: .75rem; padding: .85rem; border-radius: 16px; background: rgb(var(--v-theme-surface-variant)); }
 .interval-attachment-icon { display: grid; width: 42px; height: 42px; flex: 0 0 auto; place-items: center; border-radius: 14px; color: #17200f; }
 .flashcard-attachment-icon { display: grid; width: 42px; height: 42px; flex: 0 0 auto; place-items: center; border-radius: 14px; background: rgb(var(--v-theme-secondary)); color: rgb(var(--v-theme-on-secondary)); }
@@ -856,14 +926,12 @@ async function removeTask() {
 .journal-task-summary { display: flex; align-items: flex-start; gap: .75rem; }
 .journal-task-summary p { margin-top: .2rem; color: rgba(var(--v-theme-on-surface), .58); font-size: .72rem; line-height: 1.45; }
 .step-number { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 11px; background: rgb(var(--v-theme-secondary)); color: rgb(var(--v-theme-on-secondary)); font-size: .75rem; font-weight: 900; }
-.cycle-day-picker { max-height: 145px; overflow-y: auto; }
-.step-actions { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
 .editor-page,
-.editor-page--editing { padding-bottom: 6rem; }
+.editor-page--editing { padding-bottom: 5rem; }
 @media (min-width: 60rem) {
   .editor-type { padding: 2rem; }
   .editor-page,
-  .editor-page--editing { padding-bottom: 6rem; }
+  .editor-page--editing { padding-bottom: 5rem; }
 }
 @media (min-width: 37.5rem) {
   .type-selector { grid-template-columns: repeat(2, minmax(0, 1fr)); }

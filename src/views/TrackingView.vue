@@ -215,7 +215,7 @@ async function loadVisibleWeekEntries() {
       class="mb-5"
     />
 
-    <v-card v-if="store.trackers.length" class="weekly-chart-card surface-card pa-5 mb-3">
+    <v-card v-if="store.trackers.length" class="weekly-chart-card surface-card pa-5 mb-5">
       <v-alert v-if="weeklyChartError" type="error" variant="tonal" class="mb-4">
         {{ weeklyChartError }}
       </v-alert>
@@ -225,24 +225,17 @@ async function loadVisibleWeekEntries() {
         :week-start="visibleWeekStart"
         :selected-date="selectedDate"
       />
-    </v-card>
-
-    <v-card
-      v-if="store.trackers.length"
-      class="insight-card surface-card pa-4 mb-5"
-      to="/tracking/insights/compare"
-      aria-label="Open tracking insights"
-    >
-      <div class="insight-card__content">
-        <div class="insight-card__icon"><v-icon icon="mdi-chart-box-outline" /></div>
-        <div class="min-width-0">
-          <strong>Explore your patterns</strong>
-          <p>Compare trackers over time and see how they relate.</p>
-        </div>
-        <span class="insight-card__chevron" aria-hidden="true">
-          <v-icon icon="mdi-chevron-right" />
-        </span>
-      </div>
+      <v-btn
+        block
+        class="mt-4"
+        color="secondary"
+        variant="tonal"
+        prepend-icon="mdi-chart-box-outline"
+        append-icon="mdi-chevron-right"
+        to="/tracking/insights/compare"
+      >
+        Explore your patterns
+      </v-btn>
     </v-card>
 
     <div v-if="store.loading && !store.loaded" class="d-flex justify-center py-12">
@@ -381,12 +374,6 @@ async function loadVisibleWeekEntries() {
 </template>
 
 <style scoped>
-.insight-card { background: linear-gradient(135deg, rgb(var(--v-theme-surface)), rgba(var(--v-theme-secondary), .08)); color: inherit; text-decoration: none; }
-.insight-card:focus-visible { outline: .125rem solid rgba(var(--v-theme-secondary), .72); outline-offset: .1875rem; }
-.insight-card__content { display: grid; grid-template-columns: 2.75rem minmax(0, 1fr) 2.75rem; align-items: center; gap: 1rem; }
-.insight-card__icon { display: grid; width: 2.75rem; height: 2.75rem; place-items: center; border-radius: .875rem; background: rgb(var(--v-theme-secondary)); color: rgb(var(--v-theme-on-secondary)); }
-.insight-card__chevron { display: grid; width: 2.75rem; height: 2.75rem; place-items: center; }
-.insight-card p { margin-top: .2rem; color: rgb(var(--v-theme-on-surface) / .58); font-size: .75rem; }
 .tracker-grid { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 270px), 1fr)); }
 .tracker-section-empty { font-size: .8rem; }
 .preset-grid { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); }

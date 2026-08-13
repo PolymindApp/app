@@ -141,7 +141,7 @@ final class Schema
                     'sort_order' => self::integer(0),
                     'cycle_days' => self::numberArray(2000, true),
                     'completion_type' => self::choice(
-                        ['check', 'quantity', 'interval', 'flashcards'],
+                        ['check', 'quantity', 'interval', 'flashcards', 'day_off'],
                         true,
                     ),
                     'target_value' => self::number(0),

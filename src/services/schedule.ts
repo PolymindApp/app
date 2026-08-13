@@ -45,7 +45,11 @@ export function programCycleDay(task: Task, date: Date): number | null {
 export function stepsForDate(task: Task, steps: ProgramStep[], date: Date): ProgramStep[] {
   const cycleDay = programCycleDay(task, date)
   if (!cycleDay) return []
-  return steps.filter((step) => step.active && step.task === task.id && step.cycleDays.includes(cycleDay))
+  return steps.filter((step) =>
+    step.active
+    && step.completionType !== 'day_off'
+    && step.task === task.id
+    && step.cycleDays.includes(cycleDay))
 }
 
 export function meetsTarget(value: number, target: number, operator: TargetOperator = 'gte'): boolean {

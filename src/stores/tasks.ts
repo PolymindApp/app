@@ -230,7 +230,10 @@ export const useTaskStore = defineStore('tasks', () => {
     if (!currentDay) return false
     const cycleStart = addDays(date, -(currentDay - 1))
     const earlierSlots = steps.value
-      .filter((candidate) => candidate.active && candidate.task === task.id)
+      .filter((candidate) =>
+        candidate.active
+        && candidate.completionType !== 'day_off'
+        && candidate.task === task.id)
       .flatMap((candidate) => candidate.cycleDays.map((day) => ({ candidate, day })))
       .filter(({ candidate, day }) => day < currentDay || (day === currentDay && candidate.sortOrder < step.sortOrder))
     return earlierSlots.some(({ candidate, day }) => {
@@ -763,7 +766,7 @@ export const useTaskStore = defineStore('tasks', () => {
       unit: draft.type === 'step_counter' ? 'steps' : draft.unit || '',
       custom_unit: draft.type === 'step_counter' ? '' : draft.customUnit || '',
       goal_period: draft.goalPeriod || 'occurrence',
-      cycle_length: draft.cycleLength || 0,
+      cycle_length: draft.type === 'program' ? draft.steps.length : draft.cycleLength || 0,
       program_repeat: draft.programRepeat ?? true,
       program_strict: draft.programStrict ?? false,
       entry_notes_enabled: draft.entryNotesEnabled,
@@ -808,7 +811,7 @@ export const useTaskStore = defineStore('tasks', () => {
             name: step.name,
             description: step.description,
             sort_order: index,
-            cycle_days: step.cycleDays,
+            cycle_days: [index + 1],
             completion_type: step.completionType,
             target_value: step.targetValue || 0,
             target_operator: step.targetOperator || 'gte',

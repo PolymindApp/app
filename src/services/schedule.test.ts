@@ -63,6 +63,21 @@ describe('program cycles', () => {
   it('selects steps assigned to the current numbered day', () => {
     expect(stepsForDate(program, steps, new Date(2026, 6, 13)).map((step) => step.name)).toEqual(['Upper'])
   })
+
+  it('does not schedule day-off program items', () => {
+    const dayOff: ProgramStep = {
+      id: 'day-off',
+      task: 'task-1',
+      name: 'Day off',
+      description: '',
+      sortOrder: 0,
+      cycleDays: [1],
+      completionType: 'day_off',
+      active: true,
+    }
+
+    expect(stepsForDate(program, [dayOff], new Date(2026, 6, 6))).toEqual([])
+  })
 })
 
 describe('quantitative targets', () => {
