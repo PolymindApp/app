@@ -20,6 +20,11 @@ export const MAX_FLASHCARD_BACK_SPEECH_REPEATS = 5
 export const DEFAULT_FLASHCARD_BACK_SPEECH_REPEATS = 1
 export const DEFAULT_FLASHCARD_REVIEW_CARD_SIDES: FlashcardReviewCardSides = 'both'
 
+export const INTERVAL_FLASHCARD_QUICK_TAGS = [
+  { name: 'easy', color: 'success' },
+  { name: 'hard', color: 'error' },
+] as const
+
 export const FLASHCARD_REVIEW_CARD_SIDE_OPTIONS: Array<{
   title: string
   value: FlashcardReviewCardSides

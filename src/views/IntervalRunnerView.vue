@@ -33,6 +33,7 @@ import {
   flashcardReviewSettingsAreValid,
   flashcardReviewSettingsSignature,
   FLASHCARD_SETTINGS_APPLY_MENU_ITEMS,
+  INTERVAL_FLASHCARD_QUICK_TAGS,
 } from '@/services/flashcards'
 import { createIntervalCueHandoff } from '@/services/intervalCueHandoff'
 import {
@@ -71,6 +72,7 @@ import type {
   FlashcardReviewSettings,
   FlashcardSettingsApplyTarget,
   FlashcardSpeechSupport,
+  FlashcardTag,
   IntervalDefinition,
   IntervalFlashcardReviewSnapshot,
   IntervalRuntimeState,
@@ -107,6 +109,8 @@ const attributionSheet = ref(false)
 const activeSessionSheet = ref(false)
 const flashcardContextSheet = ref(false)
 const openingFlashcardContext = ref(false)
+const flashcardTagSheet = ref(false)
+const flashcardTagSaving = ref('')
 const flashcardEditorDialog = ref(false)
 const flashcardEditorCard = ref<Flashcard>()
 const flashcardDeleteDialog = ref(false)
@@ -235,6 +239,27 @@ const intervalFlashcardSource = computed(() => {
 })
 const currentFlashcardRecord = computed(() => intervalFlashcardSource.value
   .find(card => card.id === flashcardPhase.value?.card.id))
+const canTagCurrentFlashcard = computed(() => Boolean(
+  !isTemplatePreview.value
+  && flashcardReviewSet.value?.accessRole === 'owner'
+  && currentFlashcardRecord.value,
+))
+const intervalQuickTagNames = new Set(
+  INTERVAL_FLASHCARD_QUICK_TAGS.map(tag => tag.name.toLocaleLowerCase()),
+)
+const intervalQuickTags = computed(() => INTERVAL_FLASHCARD_QUICK_TAGS.map((quickTag) => {
+  const tag = flashcardStore.tags.find(
+    item => item.name.toLocaleLowerCase() === quickTag.name.toLocaleLowerCase(),
+  )
+  return {
+    ...quickTag,
+    id: tag?.id,
+    selected: Boolean(tag && flashcardPhase.value?.card.tags.includes(tag.id)),
+  }
+}))
+const intervalSelectableTags = computed(() => flashcardStore.tags.filter(
+  tag => !intervalQuickTagNames.has(tag.name.toLocaleLowerCase()),
+))
 const flashcardSettingsChanged = computed(() => flashcardSettingsDialog.value
   && flashcardReviewSettingsSignature(flashcardSettingsDraft) !== flashcardSettingsOriginal.value)
 const canSaveFlashcardSettings = computed(() => flashcardSettingsChanged.value
@@ -340,6 +365,10 @@ watch([
 
 watch(flashcardContextSheet, (open, wasOpen) => {
   if (wasOpen && !open) void finishFlashcardContext()
+})
+
+watch(flashcardTagSheet, (open, wasOpen) => {
+  if (wasOpen && !open) void finishFlashcardModal()
 })
 
 onMounted(async () => {
@@ -1034,6 +1063,35 @@ async function saveIntervalFlashcard(card: Flashcard) {
   await updateFlashcardSnapshot({ ...review, cards })
 }
 
+async function openFlashcardTagSheet() {
+  if (!canTagCurrentFlashcard.value || flashcardTagSaving.value || !intervalSelectableTags.value.length) return
+  await pauseForFlashcardModal()
+  if (session.value && !finished.value) flashcardTagSheet.value = true
+  else await finishFlashcardModal()
+}
+
+function intervalFlashcardHasTag(tagId: string) {
+  return Boolean(flashcardPhase.value?.card.tags.includes(tagId))
+}
+
+async function toggleIntervalFlashcardTag(tag: FlashcardTag | { name: string }) {
+  const cardId = flashcardPhase.value?.card.id
+  if (!cardId || !canTagCurrentFlashcard.value || flashcardTagSaving.value) return
+  flashcardTagSaving.value = 'id' in tag ? tag.id : tag.name
+  try {
+    const resolvedTag = 'id' in tag ? tag : await flashcardStore.createTag(tag.name)
+    const action = intervalFlashcardHasTag(resolvedTag.id) ? 'remove_tags' : 'add_tags'
+    const updatedCards = await flashcardStore.bulkUpdateCards(action, [cardId], [resolvedTag.id])
+    const updatedCard = updatedCards.find(card => card.id === cardId)
+    if (!updatedCard) throw new Error('The flashcard could not be updated.')
+    await saveIntervalFlashcard(updatedCard)
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : 'Could not update this flashcard tag.'
+  } finally {
+    flashcardTagSaving.value = ''
+  }
+}
+
 function handleIntervalFlashcardSaved(card: Flashcard) {
   flashcardSaveWork = saveIntervalFlashcard(card)
 }
@@ -1468,63 +1526,98 @@ async function runAgain(repetitions?: number) {
             <v-btn icon="mdi-skip-next" variant="tonal" size="large" aria-label="Skip interval" :disabled="isTemplatePreview || currentConfirmation" @click="skip" />
           </footer>
 
-          <button
+          <div
             v-if="flashcardPhase && session.flashcardReview"
-            v-ripple
-            type="button"
             class="interval-review-card"
             :class="{ 'interval-review-card--playback-paused': !flashcardReviewPlaybackEnabled }"
-            :aria-label="flashcardReviewPlaybackEnabled
-              ? `${session.flashcardReview.name}, ${flashcardPhase.side}, card ${flashcardPhase.cardIndex + 1} of ${session.flashcardReview.cards.length}`
-              : `${session.flashcardReview.name} paused for this step, card ${flashcardPhase.cardIndex + 1} of ${session.flashcardReview.cards.length}`"
-            :disabled="isTemplatePreview || syncing || openingFlashcardContext"
             @click="openFlashcardContext"
           >
-            <div class="interval-review-card__content">
-              <div class="interval-review-card__heading">
-                <span class="interval-review-card__set">
-                  <v-icon icon="mdi-cards-outline" size="17" />
-                  <span class="text-truncate">{{ session.flashcardReview.name }}</span>
-                </span>
-                <div class="interval-review-card__meta">
-                  <small>
-                    <v-icon
-                      v-if="!flashcardReviewPlaybackEnabled"
-                      icon="mdi-pause-circle-outline"
-                      size="14"
-                    />
-                    {{ flashcardReviewPlaybackEnabled ? (flashcardPhase.side === 'front' ? 'Front' : 'Back') : 'Paused' }}
-                  </small>
+            <button
+              v-ripple
+              type="button"
+              class="interval-review-card__main"
+              :aria-label="flashcardReviewPlaybackEnabled
+                ? `${session.flashcardReview.name}, ${flashcardPhase.side}, card ${flashcardPhase.cardIndex + 1} of ${session.flashcardReview.cards.length}`
+                : `${session.flashcardReview.name} paused for this step, card ${flashcardPhase.cardIndex + 1} of ${session.flashcardReview.cards.length}`"
+              :disabled="isTemplatePreview || syncing || openingFlashcardContext"
+            >
+              <div class="interval-review-card__content">
+                <div class="interval-review-card__heading">
+                  <span class="interval-review-card__set">
+                    <v-icon icon="mdi-cards-outline" size="17" />
+                    <span class="text-truncate">{{ session.flashcardReview.name }}</span>
+                  </span>
+                  <div class="interval-review-card__meta">
+                    <small>
+                      <v-icon
+                        v-if="!flashcardReviewPlaybackEnabled"
+                        icon="mdi-pause-circle-outline"
+                        size="14"
+                      />
+                      {{ flashcardReviewPlaybackEnabled ? (flashcardPhase.side === 'front' ? 'Front' : 'Back') : 'Paused' }}
+                    </small>
+                  </div>
+                </div>
+                <div class="interval-review-card__faces">
+                  <strong
+                    :class="{
+                      'interval-review-card__face--hidden': flashcardPhase.side !== 'front',
+                    }"
+                    :aria-hidden="flashcardPhase.side !== 'front' ? 'true' : undefined"
+                    :style="{
+                      fontSize: flashcardTextFontSize(
+                        flashcardPhase.card.front,
+                        'face',
+                        'compact',
+                      ),
+                    }"
+                  >
+                    {{ flashcardPhase.card.front }}
+                  </strong>
+                  <FlashcardResponseText
+                    :class="{
+                      'interval-review-card__face--hidden': flashcardPhase.side !== 'back',
+                    }"
+                    :aria-hidden="flashcardPhase.side !== 'back' ? 'true' : undefined"
+                    :back="flashcardPhase.card.back"
+                    :note="flashcardPhase.card.note"
+                    :note-before-back="session.flashcardReview.noteBeforeBack"
+                    density="compact"
+                  />
                 </div>
               </div>
-              <div class="interval-review-card__faces">
-                <strong
-                  :class="{
-                    'interval-review-card__face--hidden': flashcardPhase.side !== 'front',
-                  }"
-                  :aria-hidden="flashcardPhase.side !== 'front' ? 'true' : undefined"
-                  :style="{
-                    fontSize: flashcardTextFontSize(
-                      flashcardPhase.card.front,
-                      'face',
-                      'compact',
-                    ),
-                  }"
+            </button>
+            <footer class="interval-review-card__tag-actions" aria-label="Flashcard tags" @click.stop>
+              <div class="interval-review-card__quick-tags">
+                <v-chip
+                  v-for="tag in intervalQuickTags"
+                  :key="tag.name"
+                  class="interval-review-card__tag-control interval-review-card__quick-tag"
+                  :data-tag-name="tag.name"
+                  size="x-small"
+                  label
+                  :color="tag.selected ? tag.color : undefined"
+                  :variant="tag.selected ? 'flat' : 'outlined'"
+                  :prepend-icon="tag.selected ? 'mdi-check' : 'mdi-tag-outline'"
+                  :disabled="!canTagCurrentFlashcard"
+                  :aria-pressed="tag.selected"
+                  :aria-label="`${tag.selected ? 'Remove' : 'Add'} ${tag.name} tag`"
+                  @click.stop="toggleIntervalFlashcardTag({ name: tag.name })"
                 >
-                  {{ flashcardPhase.card.front }}
-                </strong>
-                <FlashcardResponseText
-                  :class="{
-                    'interval-review-card__face--hidden': flashcardPhase.side !== 'back',
-                  }"
-                  :aria-hidden="flashcardPhase.side !== 'back' ? 'true' : undefined"
-                  :back="flashcardPhase.card.back"
-                  :note="flashcardPhase.card.note"
-                  :note-before-back="session.flashcardReview.noteBeforeBack"
-                  density="compact"
-                />
+                  {{ tag.name }}
+                </v-chip>
               </div>
-            </div>
+              <v-btn
+                class="interval-review-card__tag-control interval-review-card__tag-menu-button"
+                size="x-small"
+                variant="text"
+                prepend-icon="mdi-tag-multiple-outline"
+                :disabled="!canTagCurrentFlashcard || !intervalSelectableTags.length"
+                @click.stop="openFlashcardTagSheet"
+              >
+                Tags
+              </v-btn>
+            </footer>
             <v-progress-linear
               :model-value="flashcardPhase.progress"
               color="surface-variant"
@@ -1535,7 +1628,7 @@ async function runAgain(repetitions?: number) {
                 ? `${Math.round(flashcardPhase.progress)}% through the ${flashcardPhase.side}`
                 : `Review set paused at ${Math.round(flashcardPhase.progress)}% through the ${flashcardPhase.side}`"
             />
-          </button>
+          </div>
 
           <footer class="runner-controls runner-controls--landscape">
             <v-btn
@@ -1592,6 +1685,32 @@ async function runAgain(repetitions?: number) {
       :can-eject-card="!isTemplatePreview && Boolean(flashcardPhase)"
       @action="handleFlashcardContextAction"
     />
+
+    <ActionBottomSheet
+      v-model="flashcardTagSheet"
+      title="Tag flashcard"
+      description="Choose any additional tags for this card. Easy and hard stay pinned on the card."
+      aria-label="Choose flashcard tags"
+    >
+      <v-list-item
+        v-for="tag in intervalSelectableTags"
+        :key="tag.id"
+        :data-tag-id="tag.id"
+        :title="tag.name"
+        :prepend-icon="intervalFlashcardHasTag(tag.id) ? 'mdi-check-circle' : 'mdi-tag-outline'"
+        :active="intervalFlashcardHasTag(tag.id)"
+        :disabled="Boolean(flashcardTagSaving)"
+        rounded="lg"
+        @click="toggleIntervalFlashcardTag(tag)"
+      />
+      <v-list-item
+        v-if="!intervalSelectableTags.length"
+        prepend-icon="mdi-tag-off-outline"
+        title="No other tags available"
+        disabled
+        rounded="lg"
+      />
+    </ActionBottomSheet>
 
     <FlashcardCardDialog
       :model-value="flashcardEditorDialog"
@@ -1900,9 +2019,10 @@ async function runAgain(repetitions?: number) {
 .group-breadcrumb { display: flex; flex-wrap: wrap; justify-content: center; gap: .35rem; margin-bottom: 1.25rem; }
 .group-breadcrumb span { padding: 4px 8px; border-radius: 999px; background: rgb(var(--v-theme-surface-variant)); color: rgb(var(--v-theme-on-surface) / .7); font-size: .65rem; }
 .runner-step { min-width: 0; max-width: 40rem; margin-top: .5rem; font-size: clamp(2rem, 10vw, 4.5rem); font-weight: 900; line-height: 1; }
-.interval-review-card { position: relative; width: min(100%, 34rem); padding: 0; overflow: hidden; border: 1px solid rgba(var(--v-theme-on-surface), .08); border-radius: .75rem; background: rgba(var(--v-theme-on-surface), .055); box-shadow: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
-.interval-review-card:focus-visible { outline: .1875rem solid rgba(var(--v-theme-secondary), .72); outline-offset: .25rem; }
-.interval-review-card:disabled { cursor: default; opacity: .72; }
+.interval-review-card { position: relative; width: min(100%, 34rem); overflow: hidden; border: 1px solid rgba(var(--v-theme-on-surface), .08); border-radius: .75rem; background: rgba(var(--v-theme-on-surface), .055); box-shadow: none; color: inherit; font: inherit; text-align: left; }
+.interval-review-card__main { display: block; width: 100%; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.interval-review-card__main:focus-visible { outline: .1875rem solid rgba(var(--v-theme-secondary), .72); outline-offset: -.1875rem; }
+.interval-review-card__main:disabled { cursor: default; opacity: .72; }
 .interval-review-card--playback-paused { border-style: dashed; background: rgba(var(--v-theme-on-surface), .025); opacity: .72; }
 .interval-review-card :deep(.v-ripple__container) { z-index: 2; }
 .interval-review-card__content { display: flex; box-sizing: border-box; min-height: 8rem; padding: 1rem; align-items: center; justify-content: flex-start; flex-direction: column; gap: .65rem; text-align: center; }
@@ -1916,6 +2036,12 @@ async function runAgain(repetitions?: number) {
 .interval-review-card__faces > * { grid-area: 1 / 1; max-width: 100%; }
 .interval-review-card__face--hidden { visibility: hidden; }
 .interval-review-card__content strong { overflow-wrap: anywhere; font-size: clamp(1.05rem, 4.5vw, 1.5rem); line-height: 1.3; white-space: pre-wrap; }
+.interval-review-card__tag-actions { display: grid; padding: 0 1rem .75rem; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: .3rem; }
+.interval-review-card__quick-tags { display: flex; grid-column: 2; justify-self: center; gap: .3rem; }
+.interval-review-card__tag-control { height: 1.5rem !important; min-height: 1.5rem !important; font-size: .625rem; }
+.interval-review-card__quick-tag { --v-chip-height: 1.5rem; }
+.interval-review-card__quick-tag.v-chip--variant-outlined { border-color: rgba(var(--v-theme-on-surface), .18); }
+.interval-review-card__tag-menu-button { min-width: 0; padding-inline: .65rem; grid-column: 3; justify-self: end; }
 .interval-review-card :deep(.v-progress-linear) { border-radius: 0; }
 .runner-progress {
   display: flex;
@@ -2190,6 +2316,10 @@ async function runAgain(repetitions?: number) {
   .interval-review-card__content {
     min-height: 6.75rem;
     padding: .65rem;
+  }
+
+  .interval-review-card__tag-actions {
+    padding: 0 .65rem .5rem;
   }
 
   .interval-review-card__heading,

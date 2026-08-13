@@ -26,11 +26,14 @@ const mocks = vi.hoisted(() => ({
   },
   flashcardStore: {
     loaded: true,
+    tags: [],
     reviewSets: [],
     cards: [],
     reviewSetCards: {},
     load: vi.fn(),
     loadReviewSetCards: vi.fn(),
+    createTag: vi.fn(),
+    bulkUpdateCards: vi.fn(),
     deleteCard: vi.fn(),
     deleteReviewSetCard: vi.fn(),
     saveReviewSet: vi.fn(),
@@ -185,6 +188,20 @@ const VListItemStub = defineComponent({
   },
 })
 
+const VChipStub = defineComponent({
+  inheritAttrs: false,
+  props: { disabled: Boolean },
+  emits: ['click'],
+  setup(props, { attrs, emit, slots }) {
+    return () => h('button', {
+      ...attrs,
+      type: 'button',
+      disabled: props.disabled,
+      onClick: event => emit('click', event),
+    }, slots.default?.())
+  },
+})
+
 function reviewSet(accessRole: FlashcardReviewSet['accessRole'] = 'owner'): FlashcardReviewSet {
   return {
     id: 'set-1',
@@ -313,6 +330,7 @@ function mountRunner() {
         VCardActions: PassThroughStub,
         VCardText: PassThroughStub,
         VCardTitle: PassThroughStub,
+        VChip: VChipStub,
         VDialog: VDialogStub,
         VDivider: true,
         VIcon: true,
@@ -341,6 +359,11 @@ describe('IntervalRunnerView flashcard area', () => {
     mocks.intervalStore.load.mockReset().mockResolvedValue(undefined)
     mocks.intervalStore.endSession.mockReset().mockResolvedValue(undefined)
     mocks.flashcardStore.load.mockReset().mockResolvedValue(undefined)
+    mocks.flashcardStore.tags = [
+      { id: 'tag-easy', name: 'easy' },
+      { id: 'tag-hard', name: 'hard' },
+      { id: 'tag-focus', name: 'focus' },
+    ]
     mocks.flashcardStore.reviewSets = [reviewSet()]
     mocks.flashcardStore.cards = [{
       id: 'card-1',
@@ -354,6 +377,19 @@ describe('IntervalRunnerView flashcard area', () => {
       createdAt: '2026-08-01T00:00:00.000Z',
       updatedAt: '2026-08-01T00:00:00.000Z',
     }]
+    mocks.flashcardStore.createTag.mockReset().mockImplementation(async name => {
+      const tag = { id: `tag-${name}`, name }
+      mocks.flashcardStore.tags.push(tag)
+      return tag
+    })
+    mocks.flashcardStore.bulkUpdateCards.mockReset().mockImplementation(async (action, cardIds, tagIds) => {
+      const updated = mocks.flashcardStore.cards.filter(card => cardIds.includes(card.id))
+      updated.forEach((card) => {
+        if (action === 'add_tags') card.tags = [...new Set([...card.tags, ...tagIds])]
+        if (action === 'remove_tags') card.tags = card.tags.filter(tag => !tagIds.includes(tag))
+      })
+      return updated
+    })
     mocks.flashcardStore.saveReviewSet.mockReset().mockImplementation(async value => value)
     mocks.flashcardStore.saveReviewSetPreferences.mockReset().mockImplementation(async (_id, value) => value)
     mocks.intervalStore.updateSessionFlashcardReview.mockReset().mockImplementation(async (id, review) => {
@@ -443,6 +479,48 @@ describe('IntervalRunnerView flashcard area', () => {
       .not.toContain('interval-review-card__face--hidden')
     expect(wrapper.getComponent({ name: 'FlashcardResponseText' }).classes())
       .toContain('interval-review-card__face--hidden')
+
+    wrapper.unmount()
+  })
+
+  it('persists a pinned quick tag to the card and active interval snapshot', async () => {
+    const wrapper = mountRunner()
+    await flushPromises()
+
+    await wrapper.get('[data-tag-name="easy"]').trigger('click')
+    await flushPromises()
+
+    expect(mocks.flashcardStore.bulkUpdateCards).toHaveBeenCalledWith(
+      'add_tags',
+      ['card-1'],
+      ['tag-easy'],
+    )
+    expect(mocks.intervalStore.sessions[0]?.flashcardReview?.cards[0]?.tags)
+      .toEqual(['tag-easy'])
+
+    wrapper.unmount()
+  })
+
+  it('offers non-pinned tags in the selector and persists the selection', async () => {
+    const wrapper = mountRunner()
+    await flushPromises()
+
+    await wrapper.get('.interval-review-card__tag-menu-button').trigger('click')
+    await flushPromises()
+
+    const tagSheet = wrapper.get('.action-bottom-sheet-stub')
+    expect(tagSheet.findAll('button').map(item => item.text())).toEqual(['focus'])
+
+    await tagSheet.get('[data-tag-id="tag-focus"]').trigger('click')
+    await flushPromises()
+
+    expect(mocks.flashcardStore.bulkUpdateCards).toHaveBeenCalledWith(
+      'add_tags',
+      ['card-1'],
+      ['tag-focus'],
+    )
+    expect(mocks.intervalStore.sessions[0]?.flashcardReview?.cards[0]?.tags)
+      .toEqual(['tag-focus'])
 
     wrapper.unmount()
   })
