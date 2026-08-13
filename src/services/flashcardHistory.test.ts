@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { flashcardReviewProgressPercent } from '@/services/flashcardHistory'
+import { flashcardReviewHistoryItems, flashcardReviewProgressPercent } from '@/services/flashcardHistory'
 import { groupSessionsByDate } from '@/services/sessionHistory'
-import type { FlashcardReviewSession } from '@/types/domain'
+import type { FlashcardReviewSession, IntervalSession } from '@/types/domain'
 
 function session(overrides: Partial<FlashcardReviewSession> = {}): FlashcardReviewSession {
   return {
@@ -51,5 +51,86 @@ describe('flashcard review history', () => {
 
     expect(groups.map(group => group.label)).toEqual(['Today', 'Yesterday'])
     expect(groups[0]?.sessions.map(item => item.id)).toEqual(['today-later', 'today-earlier'])
+  })
+
+  it('includes measured Review set time from completed interval sessions', () => {
+    const intervalSession: IntervalSession = {
+      id: 'interval-1',
+      source: 'template',
+      status: 'completed',
+      name: 'Focus interval',
+      taskDate: '',
+      definition: {
+        version: 1,
+        children: [
+          { id: 'review', type: 'step', name: 'Review', kind: 'work', durationSeconds: 20 },
+          {
+            id: 'rest',
+            type: 'step',
+            name: 'Rest',
+            kind: 'rest',
+            durationSeconds: 40,
+            flashcardReviewEnabled: false,
+          },
+        ],
+      },
+      cues: { soundEnabled: true, vibrationEnabled: true },
+      flashcardReview: {
+        reviewSet: 'spanish',
+        name: 'Spanish vocabulary',
+        tags: [],
+        sortMode: 'random',
+        cardSides: 'both',
+        frontSeconds: 5,
+        backSeconds: 5,
+        backSpeechRepeatCount: 1,
+        noteBeforeBack: false,
+        speechEnabled: false,
+        frontLanguage: '',
+        backLanguage: '',
+        cards: [],
+      },
+      startedAt: '2026-08-13T12:00:00.000Z',
+      endedAt: '2026-08-13T12:01:00.000Z',
+      plannedSeconds: 60,
+      elapsedSeconds: 60,
+      runtime: {
+        stepIndex: 2,
+        remainingMs: 0,
+        accumulatedMs: 60_000,
+        flashcardReviewAccumulatedMs: 12_000,
+        updatedAt: '2026-08-13T12:01:00.000Z',
+      },
+      updated: '2026-08-13T12:01:00.000Z',
+    }
+
+    expect(flashcardReviewHistoryItems([], [intervalSession])).toEqual([{
+      id: 'interval-interval-1',
+      source: 'interval',
+      status: 'completed',
+      name: 'Spanish vocabulary',
+      startedAt: '2026-08-13T12:00:00.000Z',
+      sourceLabel: 'Interval',
+      elapsedSeconds: 12,
+      progressPercent: 100,
+    }])
+  })
+
+  it('omits interval sessions where no Review set playback occurred', () => {
+    const finishedInterval = {
+      id: 'interval-1',
+      status: 'ended',
+      elapsedSeconds: 3,
+      definition: { version: 1, children: [] },
+      runtime: {
+        stepIndex: 0,
+        remainingMs: 0,
+        accumulatedMs: 3_000,
+        flashcardReviewAccumulatedMs: 0,
+      },
+      flashcardReview: { name: 'Spanish vocabulary' },
+    } as unknown as IntervalSession
+
+    expect(flashcardReviewHistoryItems([], [finishedInterval])).toEqual([])
   })
 })

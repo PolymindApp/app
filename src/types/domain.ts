@@ -479,6 +479,22 @@ export interface FlashcardReviewSession extends FlashcardReviewSettings {
   taskDate?: string
 }
 
+export interface FlashcardReviewHistoryItem {
+  id: string
+  source: 'flashcards' | 'interval'
+  status: 'completed' | 'ended'
+  name: string
+  startedAt: string
+  sourceLabel: 'Manual' | 'Passive' | 'Interval'
+  elapsedSeconds: number
+  progressPercent: number
+  viewedCount?: number
+  successCount?: number
+  errorCount?: number
+  ejectedCount?: number
+  accuracy?: number
+}
+
 export interface FlashcardSpeechLanguage {
   tag: string
   title: string

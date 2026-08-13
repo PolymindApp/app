@@ -6,19 +6,21 @@ import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import WeekNavigator from '@/components/WeekNavigator.vue'
 import type { LongPressDragResult } from '@/directives/longPressDrag'
-import { flashcardReviewProgressPercent } from '@/services/flashcardHistory'
-import { formatReviewDuration, reviewSetCardCount, reviewSortTitle, sessionAccuracy } from '@/services/flashcards'
+import { flashcardReviewHistoryItems } from '@/services/flashcardHistory'
+import { formatReviewDuration, reviewSetCardCount, reviewSortTitle } from '@/services/flashcards'
 import { FLASHCARD_REVIEW_SET_ACTIONS } from '@/services/flashcardReviewSetActions'
 import { groupSessionsByDate } from '@/services/sessionHistory'
 import { useFlashcardStore } from '@/stores/flashcards'
+import { useIntervalStore } from '@/stores/intervals'
 import type {
-  FlashcardReviewSession,
+  FlashcardReviewHistoryItem,
   FlashcardReviewSet,
   FlashcardReviewSetAction,
 } from '@/types/domain'
 
 const router = useRouter()
 const store = useFlashcardStore()
+const intervalStore = useIntervalStore()
 const startError = ref('')
 const reviewSetActionsOpen = ref(false)
 const selectedReviewSet = ref<FlashcardReviewSet>()
@@ -36,9 +38,9 @@ const selectedActions = computed(() => selectedReviewSet.value
       .filter(item => item.action !== 'review')
   : [])
 
-const recentReviewsForWeek = computed(() => store.sessions.filter(session =>
-  (session.status === 'completed' || session.status === 'ended')
-  && isSameWeek(new Date(session.startedAt), recentWeekStart.value, { weekStartsOn: 1 }),
+const reviewHistory = computed(() => flashcardReviewHistoryItems(store.sessions, intervalStore.sessions))
+const recentReviewsForWeek = computed(() => reviewHistory.value.filter(session =>
+  isSameWeek(new Date(session.startedAt), recentWeekStart.value, { weekStartsOn: 1 }),
 ))
 const recentReviewGroups = computed(() => groupSessionsByDate(recentReviewsForWeek.value))
 const recentWeekIsCurrent = computed(() =>
@@ -46,7 +48,10 @@ const recentWeekIsCurrent = computed(() =>
 )
 
 onMounted(() => {
-  store.load().catch(() => undefined)
+  Promise.all([
+    store.load(),
+    intervalStore.load({ reconcileActiveSession: false }),
+  ]).catch(() => undefined)
 })
 
 function tagName(reviewSet: FlashcardReviewSet, id: string) {
@@ -55,7 +60,7 @@ function tagName(reviewSet: FlashcardReviewSet, id: string) {
     || 'Removed tag'
 }
 
-function recentReviewColor(session: FlashcardReviewSession) {
+function recentReviewColor(session: FlashcardReviewHistoryItem) {
   return session.status === 'completed' ? 'success' : 'warning'
 }
 
@@ -132,11 +137,7 @@ async function openReviewSet(reviewSet: FlashcardReviewSet) {
   try {
     const active = store.activeSession
     if (active) {
-      await router.push({
-        name: 'flashcard-review-runner',
-        params: { sessionId: active.id },
-        query: { autoplay: '1' },
-      })
+      await router.push({ name: 'flashcard-review-runner', params: { sessionId: active.id } })
       return
     }
     await router.push({
@@ -443,26 +444,26 @@ async function reorderReviewSets(result: LongPressDragResult) {
                       />
                     </template>
                     <span class="recent-review-meta">
-                      {{ format(new Date(session.startedAt), 'h:mm a') }} · {{ session.mode === 'passive' ? 'Passive' : 'Manual' }}
+                      {{ format(new Date(session.startedAt), 'h:mm a') }} · {{ session.sourceLabel }}
                     </span>
                     <div class="recent-review-progress">
                       <v-progress-linear
-                        :model-value="flashcardReviewProgressPercent(session)"
+                        :model-value="session.progressPercent"
                         :color="recentReviewColor(session)"
                         bg-color="white"
                         :bg-opacity="0.14"
                         height="4"
                         rounded
-                        :aria-label="`${session.name}: ${flashcardReviewProgressPercent(session)}% accomplished`"
+                        :aria-label="`${session.name}: ${session.progressPercent}% accomplished`"
                       />
                     </div>
-                    <div class="recent-review-stats">
-                      <span v-if="session.mode === 'passive'">{{ session.viewedCount }} viewed</span>
+                    <div v-if="session.source === 'flashcards'" class="recent-review-stats">
+                      <span v-if="session.sourceLabel === 'Passive'">{{ session.viewedCount }} viewed</span>
                       <template v-else>
                         <span>{{ session.successCount }} success</span>
                         <span>{{ session.errorCount }} error</span>
                       </template>
-                      <span v-if="sessionAccuracy(session) !== undefined">{{ sessionAccuracy(session) }}% accuracy</span>
+                      <span v-if="session.accuracy !== undefined">{{ session.accuracy }}% accuracy</span>
                       <span v-if="session.ejectedCount">{{ session.ejectedCount }} ejected</span>
                     </div>
                     <template #append>
@@ -475,7 +476,7 @@ async function reorderReviewSets(result: LongPressDragResult) {
           </section>
         </v-card>
         <v-card
-          v-else-if="store.loaded"
+          v-else-if="store.loaded && intervalStore.loaded"
           :key="`empty-${recentWeekStart.toISOString()}`"
           class="surface-card pa-7 text-center"
         >
@@ -499,11 +500,7 @@ async function reorderReviewSets(result: LongPressDragResult) {
         color="primary"
         size="large"
         append-icon="mdi-arrow-right"
-        :to="{
-          name: 'flashcard-review-runner',
-          params: { sessionId: store.activeSession.id },
-          query: { autoplay: '1' },
-        }"
+        :to="{ name: 'flashcard-review-runner', params: { sessionId: store.activeSession.id } }"
       >
         Resume
       </v-btn>

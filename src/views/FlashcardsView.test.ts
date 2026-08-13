@@ -18,10 +18,16 @@ const mocks = vi.hoisted(() => ({
     copyReviewSet: vi.fn(),
     removeReviewSetShare: vi.fn(),
   },
+  intervalStore: {
+    sessions: [],
+    loaded: true,
+    load: vi.fn().mockResolvedValue(undefined),
+  },
 }))
 
 vi.mock('vue-router', () => ({ useRouter: () => mocks.router }))
 vi.mock('@/stores/flashcards', () => ({ useFlashcardStore: () => mocks.store }))
+vi.mock('@/stores/intervals', () => ({ useIntervalStore: () => mocks.intervalStore }))
 
 const reviewSet = (
   id: string,
