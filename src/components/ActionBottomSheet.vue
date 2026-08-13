@@ -309,6 +309,7 @@ onBeforeUnmount(() => {
 .action-menu__content + .action-menu__list { border-top: .0625rem solid rgb(var(--v-theme-on-surface) / .08); }
 
 .action-bottom-sheet {
+  z-index: 2500 !important;
   bottom: max(
     env(safe-area-inset-bottom, 0px),
     var(--safe-area-inset-bottom, 0px)
@@ -366,6 +367,7 @@ onBeforeUnmount(() => {
    follow-up tap meant for the page beneath the sheet. */
 :global(.action-bottom-sheet + .v-navigation-drawer__scrim) {
   position: fixed;
+  z-index: 2499 !important;
   inset: 0;
   width: auto;
   height: auto;
