@@ -1,7 +1,6 @@
 import { defineComponent } from 'vue'
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
-import TrackingRatingValue from '@/components/TrackingRatingValue.vue'
 import TrackingWeeklyBarChart from '@/components/TrackingWeeklyBarChart.vue'
 import type { TrackingEntry, TrackingTracker } from '@/types/domain'
 
@@ -102,21 +101,18 @@ describe('TrackingWeeklyBarChart', () => {
 
     expect(wrapper.find('.chart-legend').text()).toContain('Meditation')
     expect(wrapper.find('.chart-legend').text()).toContain('Mood')
-    expect(wrapper.find('.chart-readout').text()).toContain('Monday, Jul 27')
-    expect(wrapper.findAll('.chart-readout, .chart-plot, .chart-legend')[0]?.classes()).toContain('chart-readout')
-    expect(wrapper.findAll('.chart-readout, .chart-plot, .chart-legend')[1]?.classes()).toContain('chart-plot')
-    expect(wrapper.findAll('.chart-readout, .chart-plot, .chart-legend')[2]?.classes()).toContain('chart-legend')
-    expect(wrapper.find('.chart-readout').text()).toContain('Meditation:')
-    expect(wrapper.find('.chart-readout').text()).toContain('2 times')
-    expect(wrapper.findComponent(TrackingRatingValue).props('value')).toBe(7)
+    expect(wrapper.find('.chart-readout').exists()).toBe(false)
+    expect(wrapper.find('.chart-legend').text()).toContain('Meditation (2 times)')
+    expect(wrapper.find('.chart-legend').text()).toContain('Mood (7/10)')
+    expect(wrapper.findAll('.chart-plot, .chart-legend')[0]?.classes()).toContain('chart-plot')
+    expect(wrapper.findAll('.chart-plot, .chart-legend')[1]?.classes()).toContain('chart-legend')
 
     await wrapper.find('.chart-plot').trigger('keydown', { key: 'ArrowRight' })
     await wrapper.find('.chart-plot').trigger('keydown', { key: 'ArrowRight' })
 
-    expect(wrapper.find('.chart-readout').text()).toContain('Tuesday, Jul 28')
-    expect(wrapper.findAll('.chart-readout__value')).toHaveLength(2)
-    expect(wrapper.find('.chart-readout').text()).toContain('Meditation:Not occurred')
-    expect(wrapper.find('.chart-readout').text()).toContain('Mood:Not logged')
+    expect(wrapper.find('.chart-legend').attributes('aria-label')).toContain('Tuesday, July 28')
+    expect(wrapper.find('.chart-legend').text()).toContain('Meditation (Not occurred)')
+    expect(wrapper.find('.chart-legend').text()).toContain('Mood (Not logged)')
   })
 
   it('shows unlogged event days as not occurred', () => {
@@ -131,7 +127,7 @@ describe('TrackingWeeklyBarChart', () => {
     })
 
     expect(wrapper.find('.weekly-chart-empty').exists()).toBe(false)
-    expect(wrapper.find('.chart-readout').text()).toContain('Migraine:Not occurred')
+    expect(wrapper.find('.chart-legend').text()).toContain('Migraine (Not occurred)')
     expect(wrapper.findAll('.chart-bar')).toHaveLength(7)
   })
 

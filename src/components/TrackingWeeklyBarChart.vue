@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { addDays, format } from 'date-fns'
-import TrackingRatingValue from '@/components/TrackingRatingValue.vue'
 import { useResponsiveChartWidth } from '@/services/responsiveChart'
-import { formatTrackingValue, trackingDailyValuesForRange } from '@/services/tracking'
+import { formatNumber, formatTrackingValue, trackingDailyValuesForRange } from '@/services/tracking'
 import type { TrackingEntry, TrackingTracker } from '@/types/domain'
 
 const props = defineProps<{
@@ -104,6 +103,12 @@ function barY(value: number | null, max: number) {
   return plotTop + plotHeight - normalizedBarHeight(value, max)
 }
 
+function legendValue(tracker: TrackingTracker, value: number | null) {
+  if (value === null) return 'Not logged'
+  if (tracker.kind === 'rating') return `${formatNumber(value)}/${formatNumber(Math.max(1, tracker.scaleMax))}`
+  return formatTrackingValue(tracker, value)
+}
+
 function selectFromPointer(event: PointerEvent) {
   const rect = (event.currentTarget as SVGElement).getBoundingClientRect()
   if (!rect.width) return
@@ -128,24 +133,6 @@ function onKeydown(event: KeyboardEvent) {
 <template>
   <div ref="chartRoot" class="weekly-chart">
     <template v-if="series.length">
-      <div class="chart-readout" aria-live="polite">
-        <strong v-if="readoutDay">{{ format(readoutDay.date, 'EEEE, MMM d') }}</strong>
-        <span v-for="item in readoutValues" :key="item.tracker.id" class="chart-readout__value">
-          <b>{{ item.tracker.name }}:</b>
-          <span class="chart-readout__display">
-            <TrackingRatingValue
-              v-if="item.tracker.kind === 'rating' && item.value !== null"
-              :value="item.value"
-              :max="item.tracker.scaleMax"
-              :color="item.tracker.color"
-              :label="item.tracker.name"
-            />
-            <template v-else-if="item.value !== null">{{ formatTrackingValue(item.tracker, item.value) }}</template>
-            <template v-else>Not logged</template>
-          </span>
-        </span>
-      </div>
-
       <div
         class="chart-plot"
         tabindex="0"
@@ -207,9 +194,10 @@ function onKeydown(event: KeyboardEvent) {
         </svg>
       </div>
 
-      <div class="chart-legend" aria-label="Trackers shown">
-        <span v-for="item in series" :key="item.tracker.id">
-          <i :style="{ background: item.tracker.color }" />{{ item.tracker.name }}
+      <div class="chart-legend" :aria-label="readoutDay ? `Trackers shown for ${format(readoutDay.date, 'EEEE, MMMM d')}` : 'Trackers shown'" aria-live="polite">
+        <span v-for="item in readoutValues" :key="item.tracker.id" class="chart-legend__item">
+          <i :style="{ background: item.tracker.color }" />
+          {{ item.tracker.name }} <strong>({{ legendValue(item.tracker, item.value) }})</strong>
         </span>
       </div>
     </template>
@@ -222,8 +210,7 @@ function onKeydown(event: KeyboardEvent) {
 </template>
 
 <style scoped>
-.chart-legend,
-.chart-readout {
+.chart-legend {
   display: flex;
   align-items: center;
   gap: .5rem 1rem;
@@ -231,13 +218,9 @@ function onKeydown(event: KeyboardEvent) {
 }
 
 .chart-legend { margin-top: .5rem; color: rgba(var(--v-theme-on-surface), .68); font-size: .72rem; font-weight: 800; }
-.chart-legend span { display: inline-flex; align-items: center; gap: .4rem; }
+.chart-legend__item { display: inline-flex; align-items: center; gap: .4rem; }
 .chart-legend i { width: .65rem; height: .65rem; flex: 0 0 auto; border-radius: .2rem; }
-.chart-readout { min-height: 2.75rem; margin-bottom: .65rem; color: rgba(var(--v-theme-on-surface), .58); font-size: .7rem; }
-.chart-readout strong { color: rgb(var(--v-theme-on-surface)); }
-.chart-readout__value { display: inline-flex; align-items: center; gap: .35rem; }
-.chart-readout__value b { font-weight: 800; }
-.chart-readout__display { display: inline-flex; width: min(7.5rem, 38vw); min-width: 6rem; align-items: center; }
+.chart-legend strong { color: rgb(var(--v-theme-on-surface) / .88); }
 .chart-plot { outline: none; }
 .chart-plot:focus-visible { border-radius: 1rem; outline: .125rem solid rgba(var(--v-theme-secondary), .72); outline-offset: .25rem; }
 svg { display: block; width: 100%; height: auto; touch-action: pan-y; }
@@ -246,10 +229,6 @@ svg { display: block; width: 100%; height: auto; touch-action: pan-y; }
 .chart-bar { opacity: .92; transition: opacity 180ms ease; }
 .day-label { fill: rgba(var(--v-theme-on-surface), .54); font-family: inherit; font-size: .6875rem; font-weight: 800; text-anchor: middle; }
 .weekly-chart-empty { color: rgba(var(--v-theme-on-surface), .58); font-size: .8rem; }
-
-@media (max-width: 30rem) {
-  .chart-readout { align-items: flex-start; flex-direction: column; gap: .15rem; }
-}
 
 @media (prefers-reduced-motion: reduce) {
   .chart-bar { transition: none; }
