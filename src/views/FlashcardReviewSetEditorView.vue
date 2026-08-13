@@ -265,7 +265,6 @@ async function remove() {
           :can-add="false"
           :show-search-filter="false"
           :table-surface="false"
-          :show-last-column="false"
           empty-title="No cards match this Review set"
           empty-description="Change the selected tags to include cards in this Review set."
         >
