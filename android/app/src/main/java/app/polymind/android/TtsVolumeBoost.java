@@ -17,8 +17,8 @@ import java.io.IOException;
  */
 final class TtsVolumeBoost {
 
-    // LoudnessEnhancer uses millibels. +12 dB is approximately four times the linear amplitude.
-    static final int AMPLIFICATION_GAIN_MILLIBELS = 1200;
+    // LoudnessEnhancer uses millibels. +13.98 dB is approximately five times the linear amplitude.
+    static final int AMPLIFICATION_GAIN_MILLIBELS = 1398;
 
     private final Context context;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
