@@ -7,7 +7,6 @@ import TrackingRelationshipChart from '@/components/TrackingRelationshipChart.vu
 import TrackingTimelineChart from '@/components/TrackingTimelineChart.vue'
 import {
   buildTrackingInsight,
-  dateRangeKeys,
   defaultTrackingInsightRangeDays,
   trackingDailyValuesForRange,
   type TrackingInsightResult,
@@ -420,29 +419,6 @@ function trackerDailyValues(trackerId: string, start: string, end: string) {
         </div>
       </v-card>
 
-      <v-card class="summary-card surface-card pa-5 mb-4">
-        <div class="summary-heading">
-          <div :class="['summary-icon', `summary-icon--${insight.ready ? insight.direction : 'waiting'}`]">
-            <v-icon :icon="insight.ready ? 'mdi-chart-line' : 'mdi-chart-timeline-variant-shimmer'" />
-          </div>
-          <div>
-            <h2>What your logs show</h2>
-            <p>{{ insight.summary }}</p>
-          </div>
-        </div>
-
-        <div class="summary-metrics mt-4">
-          <div><strong>{{ insight.matched.length }}</strong><span>paired days</span></div>
-          <div><strong>{{ dateRangeKeys(rangeStart, rangeEnd).length }}</strong><span>days in range</span></div>
-          <div><strong>{{ relationshipLabel }}</strong><span>relationship view</span></div>
-        </div>
-
-        <v-alert v-if="insight.earlySignal" type="warning" variant="tonal" density="compact" class="mt-4">
-          Early signal: fewer than 14 observations support at least part of this pattern.
-        </v-alert>
-        <p class="caution mt-4"><v-icon icon="mdi-information-outline" size="18" />{{ insight.caution }}</p>
-      </v-card>
-
       <v-card class="chart-card surface-card pa-5">
         <div class="chart-heading">
           <div><h2>Relationship</h2><p>{{ relationshipLabel }} across dates containing both values.</p></div>
@@ -480,7 +456,6 @@ function trackerDailyValues(trackerId: string, start: string, end: string) {
 .insights-page { max-width: 56.25rem; }
 .filter-card { display: grid; gap: 1rem; }
 .filter-card h2,
-.summary-card h2,
 .chart-card h2,
 .empty-state h2 { font-size: 1rem; font-weight: 900; }
 .filter-card > div:first-child p,
@@ -494,19 +469,6 @@ function trackerDailyValues(trackerId: string, start: string, end: string) {
 .insight-results { position: relative; transition: opacity 160ms ease; }
 .insight-results--loading { opacity: .58; }
 .results-progress { position: sticky; z-index: 2; top: var(--v-layout-top, 0); margin-bottom: .5rem; border-radius: 999rem; }
-.summary-heading { display: grid; grid-template-columns: 3rem 1fr; align-items: center; gap: 1rem; }
-.summary-heading p { margin-top: .2rem; color: rgb(var(--v-theme-on-surface) / .66); font-size: .78rem; line-height: 1.5; }
-.summary-icon { display: grid; width: 3rem; height: 3rem; place-items: center; border-radius: .95rem; background: rgb(var(--v-theme-secondary) / .14); color: rgb(var(--v-theme-secondary)); }
-.summary-icon--worse { background: rgb(var(--v-theme-warning) / .14); color: rgb(var(--v-theme-warning)); }
-.summary-icon--mixed,
-.summary-icon--waiting { background: rgb(var(--v-theme-on-surface) / .08); color: rgb(var(--v-theme-on-surface) / .6); }
-.summary-metrics { display: grid; grid-template-columns: .75fr .75fr 1.5fr; gap: .65rem; }
-.summary-metrics > div { min-width: 0; padding: .85rem; border: .0625rem solid rgb(var(--v-theme-on-surface) / .08); border-radius: .9rem; background: rgb(var(--v-theme-background) / .4); }
-.summary-metrics strong,
-.summary-metrics span { display: block; }
-.summary-metrics strong { overflow: hidden; font-size: 1rem; text-overflow: ellipsis; white-space: nowrap; }
-.summary-metrics span { margin-top: .15rem; color: rgb(var(--v-theme-on-surface) / .5); font-size: .65rem; }
-.caution { display: flex; align-items: flex-start; gap: .5rem; color: rgb(var(--v-theme-on-surface) / .58); font-size: .72rem; line-height: 1.5; }
 .chart-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
 .chart-empty { color: rgb(var(--v-theme-on-surface) / .5); }
 .chart-empty p { margin-top: .75rem; color: rgb(var(--v-theme-on-surface) / .68); font-size: .78rem; font-weight: 800; }
@@ -514,8 +476,6 @@ function trackerDailyValues(trackerId: string, start: string, end: string) {
 
 @media (max-width: 37.5rem) {
   .date-presets { grid-template-columns: repeat(2, 1fr); }
-  .summary-metrics { grid-template-columns: 1fr 1fr; }
-  .summary-metrics > div:last-child { grid-column: 1 / -1; }
 }
 
 @media (prefers-reduced-motion: reduce) {
