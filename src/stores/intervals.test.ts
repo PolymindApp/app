@@ -5,6 +5,7 @@ import type { IntervalFlashcardReviewSnapshot, IntervalTemplate } from '@/types/
 const apiMocks = vi.hoisted(() => ({
   authRecord: { id: 'user-1', settings: {} as Record<string, unknown> },
   createIntervalSession: vi.fn(),
+  getIntervalTemplates: vi.fn(),
   getIntervalSessions: vi.fn(),
   updateTemplate: vi.fn(),
   updateIntervalSession: vi.fn(),
@@ -19,7 +20,10 @@ vi.mock('@/lib/api', () => ({
     completeIntervalSession: apiMocks.completeIntervalSession,
     updateIntervalSessionFlashcards: apiMocks.updateIntervalSessionFlashcards,
     collection: (name: string) => {
-      if (name === 'interval_templates') return { update: apiMocks.updateTemplate }
+      if (name === 'interval_templates') return {
+        getFullList: apiMocks.getIntervalTemplates,
+        update: apiMocks.updateTemplate,
+      }
       if (name === 'interval_sessions') return {
         create: apiMocks.createIntervalSession,
         getList: apiMocks.getIntervalSessions,
@@ -90,12 +94,50 @@ describe('interval task attribution', () => {
     setActivePinia(createPinia())
     localStorage.clear()
     apiMocks.createIntervalSession.mockReset()
+    apiMocks.getIntervalTemplates.mockReset()
     apiMocks.getIntervalSessions.mockReset()
     apiMocks.updateIntervalSession.mockReset()
     apiMocks.updateIntervalSessionFlashcards.mockReset()
     apiMocks.completeIntervalSession.mockReset()
     apiMocks.authRecord.settings = {}
+    apiMocks.getIntervalTemplates.mockResolvedValue([])
     apiMocks.getIntervalSessions.mockResolvedValue({ items: [] })
+  })
+
+  it('does not persist active timer drift during a local data refresh', async () => {
+    const startedAt = new Date(Date.now() - 1_000).toISOString()
+    const record = {
+      id: 'session-1',
+      source: 'template',
+      status: 'running',
+      snapshot_name: 'Active interval',
+      definition_snapshot: {
+        version: 1,
+        children: [{
+          id: 'step-1',
+          type: 'step',
+          name: 'Work',
+          kind: 'work',
+          durationSeconds: 60,
+        }],
+      },
+      cue_snapshot: { soundEnabled: true, vibrationEnabled: true },
+      started_at: startedAt,
+      planned_seconds: 60,
+      elapsed_seconds: 0,
+      runtime_state: {
+        stepIndex: 0,
+        remainingMs: 60_000,
+        accumulatedMs: 0,
+        stepStartedAt: startedAt,
+        updatedAt: startedAt,
+      },
+    }
+    apiMocks.getIntervalSessions.mockResolvedValue({ items: [record] })
+
+    await useIntervalStore().load({ reconcileActiveSession: false })
+
+    expect(apiMocks.updateIntervalSession).not.toHaveBeenCalled()
   })
 
   it('keeps the task date selected by the task view when starting a session', async () => {

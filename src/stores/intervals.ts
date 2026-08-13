@@ -113,7 +113,7 @@ export const useIntervalStore = defineStore('intervals', () => {
     sessions.value.filter((session) => session.status === 'completed' || session.status === 'ended').slice(0, 20),
   )
 
-  async function load() {
+  async function load(options: { reconcileActiveSession?: boolean } = {}) {
     if (!api.authStore.record) return
     loading.value = true
     error.value = ''
@@ -130,10 +130,10 @@ export const useIntervalStore = defineStore('intervals', () => {
       if (active && recovery?.sessionId === active.id && recovery.runtime.updatedAt > active.runtime.updatedAt) {
         active.runtime = recovery.runtime
       }
-      if (active) {
+      if (active && options.reconcileActiveSession !== false) {
         await reconcileActiveSession()
       } else {
-        localStorage.removeItem(RECOVERY_KEY)
+        if (!active) localStorage.removeItem(RECOVERY_KEY)
       }
       loaded.value = true
     } catch (cause) {

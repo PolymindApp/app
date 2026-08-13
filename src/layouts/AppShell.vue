@@ -217,7 +217,7 @@ function scheduleLocalRefresh() {
   localRefreshTimer = window.setTimeout(() => {
     localRefreshTimer = undefined
     void Promise.allSettled([
-      intervalStore.load(),
+      intervalStore.load({ reconcileActiveSession: false }),
       flashcardStore.load(),
       taskStore.load(),
       trackingStore.load(),
