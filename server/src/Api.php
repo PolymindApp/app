@@ -6068,6 +6068,14 @@ final class Api
 
     private function validateRelations(string $collection, array $record, string $owner): void
     {
+        if ($collection === 'entries'
+            && array_key_exists('value', $record)
+            && (float) $record['value'] === 0.0
+        ) {
+            throw new ApiException(422, 'Task log entries cannot have a value of zero.', [
+                'value' => 'nonzero',
+            ]);
+        }
         if (in_array($collection, ['flashcards', 'flashcard_review_sets'], true)) {
             foreach (($record['tags'] ?? []) as $tag) {
                 if (!is_string($tag) || !$this->relationExists('flashcard_tags', $tag, $owner)) {

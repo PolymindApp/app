@@ -534,6 +534,29 @@ describe('quantitative task completion', () => {
     expect(store.entries[0]?.note).toBe('Steady pace')
   })
 
+  it('rejects task log entries with a value of zero', async () => {
+    const store = useTaskStore()
+    const progress = store.makeProgress(task, selectedDate)
+
+    await expect(store.addEntry(progress, 0)).rejects.toThrow(
+      'Task log entries cannot have a value of zero.',
+    )
+
+    expect(apiMocks.createOccurrence).not.toHaveBeenCalled()
+    expect(apiMocks.createEntry).not.toHaveBeenCalled()
+  })
+
+  it('rejects changing a task log entry value to zero', async () => {
+    const store = useTaskStore()
+    const progress = store.makeProgress(task, selectedDate)
+
+    await expect(store.updateEntry(progress, 'entry-1', 0)).rejects.toThrow(
+      'Task log entries cannot have a value of zero.',
+    )
+
+    expect(apiMocks.updateEntry).not.toHaveBeenCalled()
+  })
+
   it('stores notes as a single line limited to 255 characters', async () => {
     const store = useTaskStore()
     store.selectedDate = selectedDate

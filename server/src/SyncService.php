@@ -894,6 +894,14 @@ final class SyncService
 
     private function validateRelations(string $resource, array $values, string $account): void
     {
+        if ($resource === 'entries'
+            && array_key_exists('value', $values)
+            && (float) $values['value'] === 0.0
+        ) {
+            throw new ApiException(422, 'Task log entries cannot have a value of zero.', [
+                'value' => 'nonzero',
+            ]);
+        }
         if ($resource === 'tasks') {
             $reminderTimes = $values['reminder_times'] ?? [];
             foreach ($reminderTimes as $time) {

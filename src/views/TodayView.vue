@@ -114,6 +114,16 @@ const exactDesktopAmount = computed<number | null>({
     exactAmountInput.value = value === null ? '' : String(value)
   },
 })
+const exactCanLogAmount = computed(() => exactAmount.value !== null && exactAmount.value !== 0)
+const exactCanAdjustAmount = computed(() => exactAmount.value !== null && exactAmount.value > 0)
+const exactCanSetAmount = computed(() => exactAmount.value !== null && exactAmount.value >= 0)
+const exactAmountError = computed(() => {
+  if (exactEditingEntry.value && exactAmount.value === 0) return 'Amount cannot be zero.'
+  if (!exactEditingEntry.value && exactAmount.value !== null && exactAmount.value < 0) {
+    return 'Enter a positive amount and use Subtract.'
+  }
+  return undefined
+})
 const keypadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'backspace'] as const
 const exactNoteOptions = computed(() =>
   exactProgress.value?.task.entryNotesEnabled
@@ -774,6 +784,7 @@ function pressKeypad(key: typeof keypadKeys[number]) {
 
 async function submitExact(mode: 'add' | 'subtract' | 'set') {
   if (!exactProgress.value || exactAmount.value === null || busy.value) return
+  if (mode === 'set' ? exactAmount.value < 0 : exactAmount.value <= 0) return
   const progress = exactProgress.value
   exactAction.value = mode
   const amount = mode === 'set'
@@ -781,6 +792,10 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
     : mode === 'subtract'
       ? -exactAmount.value
       : exactAmount.value
+  if (amount === 0) {
+    if (mode === 'set') exactDialog.value = false
+    return
+  }
   try {
     await run(() => store.addEntry(
       progress,
@@ -800,7 +815,7 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
 async function saveTaskLogEntry() {
   const progress = exactProgress.value
   const entry = exactEditingEntry.value
-  if (!progress || !entry || exactAmount.value === null || busy.value) return
+  if (!progress || !entry || !exactCanLogAmount.value || busy.value) return
   exactAction.value = 'save'
   exactError.value = ''
   try {
@@ -1071,7 +1086,9 @@ async function saveTaskLogEntry() {
             v-model="exactDesktopAmount"
             label="Amount"
             :precision="null"
+            :min="exactEditingEntry ? undefined : 0"
             :autofocus="allowAutomaticFocus"
+            :error-messages="exactAmountError"
           />
           <div v-else class="amount-keypad">
             <div class="amount-keypad__display">
@@ -1098,6 +1115,9 @@ async function saveTaskLogEntry() {
                 <template v-else>{{ key }}</template>
               </v-btn>
             </div>
+            <p v-if="exactAmountError" class="text-caption text-error mt-2">
+              {{ exactAmountError }}
+            </p>
           </div>
         </div>
         <v-combobox
@@ -1119,7 +1139,7 @@ async function saveTaskLogEntry() {
           size="large"
           color="secondary"
           :loading="busy && exactAction === 'save'"
-          :disabled="exactAmount === null || busy"
+          :disabled="!exactCanLogAmount || busy"
           @click="saveTaskLogEntry"
         >
           Save
@@ -1132,7 +1152,7 @@ async function saveTaskLogEntry() {
             color="secondary"
             aria-label="Add"
             :loading="busy && exactAction === 'add'"
-            :disabled="exactAmount === null || busy"
+            :disabled="!exactCanAdjustAmount || busy"
             @click="submitExact('add')"
           >
             Add
@@ -1145,7 +1165,7 @@ async function saveTaskLogEntry() {
             color="error"
             aria-label="Subtract"
             :loading="busy && exactAction === 'subtract'"
-            :disabled="exactAmount === null || busy"
+            :disabled="!exactCanAdjustAmount || busy"
             @click="submitExact('subtract')"
           >
               Subtract
@@ -1157,7 +1177,7 @@ async function saveTaskLogEntry() {
             class="exact-action exact-action--set"
             variant="tonal"
             :loading="busy && exactAction === 'set'"
-            :disabled="exactAmount === null || busy"
+            :disabled="!exactCanSetAmount || busy"
             @click="submitExact('set')"
           >
             Set

@@ -767,6 +767,28 @@ entry_created_at="$(json_field created_at <<<"$entry_response")"
   exit 1
 }
 
+zero_entry_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "{\"task\":\"$task_id\",\"entry_date\":\"2026-08-02\",\"value\":0,\"kind\":\"quantity\",\"unit\":\"reps\",\"note\":\"\"}" \
+  "$api_url/collections/entries/records")"
+[[ "$zero_entry_status" == 422 ]] || {
+  echo "The API accepted a task entry with a value of zero." >&2
+  exit 1
+}
+
+entry_id="$(json_field id <<<"$entry_response")"
+zero_entry_update_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  --request PATCH \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"value":0}' \
+  "$api_url/collections/entries/records/$entry_id")"
+[[ "$zero_entry_update_status" == 422 ]] || {
+  echo "The API allowed a task entry to be changed to a value of zero." >&2
+  exit 1
+}
+
 session_entry_source="sync-session-$suffix"
 session_entry_response="$(curl --silent --show-error --fail \
   -H "Content-Type: application/json" \

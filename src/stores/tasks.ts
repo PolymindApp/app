@@ -613,6 +613,7 @@ export const useTaskStore = defineStore('tasks', () => {
 
   async function addEntry(progress: TaskProgress, amount: number, kind?: Entry['kind'], note = '') {
     if (progress.sealed) return
+    if (amount === 0) throw new Error('Task log entries cannot have a value of zero.')
     const progressDate = parseISO(progress.scheduledDate)
     const occurrence = await ensureOccurrence(progress.task, progressDate, progress.programStep)
     const unit = progress.programStep?.customUnit || progress.programStep?.unit || progress.task.customUnit || progress.task.unit || (progress.task.type === 'duration' ? 'hours' : '')
@@ -633,6 +634,7 @@ export const useTaskStore = defineStore('tasks', () => {
 
   async function updateEntry(progress: TaskProgress, entryId: string, amount: number, note = '') {
     if (progress.sealed) return undefined
+    if (amount === 0) throw new Error('Task log entries cannot have a value of zero.')
     const record = await api.collection('entries').update(entryId, {
       value: amount,
       note: sanitizeTaskEntryNote(note).trim(),
