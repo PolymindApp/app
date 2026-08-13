@@ -137,6 +137,7 @@ export type IntervalCueSound =
   | 'go'
   | 'complete'
   | 'count'
+  | 'copper-bell'
   | 'none'
 export type IntervalTypeSoundSettings = Record<IntervalStepKind, IntervalCueSound>
 

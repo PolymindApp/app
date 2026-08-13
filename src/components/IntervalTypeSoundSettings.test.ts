@@ -49,6 +49,7 @@ describe('IntervalTypeSoundSettings', () => {
     expect(INTERVAL_CUE_SOUND_OPTIONS).toEqual(expect.arrayContaining([
       { title: 'Cash Register', value: 'cash' },
       { title: 'Cinematic Hit', value: 'cine-hit' },
+      { title: 'Copper Bell', value: 'copper-bell' },
       { title: 'Meditation Gong', value: 'gong' },
     ]))
   })

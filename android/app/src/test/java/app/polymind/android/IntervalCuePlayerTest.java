@@ -23,6 +23,7 @@ public class IntervalCuePlayerTest {
             "count",
             "go",
             "complete",
+            "copper-bell",
         };
 
         for (String sound : sounds) assertTrue(IntervalCuePlayer.supportsSound(sound));

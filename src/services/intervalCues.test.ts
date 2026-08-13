@@ -88,12 +88,13 @@ describe('interval cue audio', () => {
       'go',
       'complete',
       'count',
+      'copper-bell',
     ] as const
 
     await Promise.all([preloadIntervalCueAudio(sounds), preloadIntervalCueAudio(sounds)])
     await preloadIntervalCueAudio(sounds)
 
-    expect(fetch).toHaveBeenCalledTimes(13)
+    expect(fetch).toHaveBeenCalledTimes(14)
     expect(fetch).toHaveBeenCalledWith('/sounds/cash.mp3')
     expect(fetch).toHaveBeenCalledWith('/sounds/celestial.mp3')
     expect(fetch).toHaveBeenCalledWith('/sounds/chime.mp3')
@@ -107,8 +108,9 @@ describe('interval cue audio', () => {
     expect(fetch).toHaveBeenCalledWith('/sounds/count.mp3')
     expect(fetch).toHaveBeenCalledWith('/sounds/go.mp3')
     expect(fetch).toHaveBeenCalledWith('/sounds/complete.mp3')
+    expect(fetch).toHaveBeenCalledWith('/sounds/copper-bell.mp3')
     expect(audioContexts).toHaveLength(1)
-    expect(audioContexts[0].decodeAudioData).toHaveBeenCalledTimes(13)
+    expect(audioContexts[0].decodeAudioData).toHaveBeenCalledTimes(14)
   })
 
   it('preloads the configured sounds and resumes the audio context when cues are prepared', async () => {
@@ -121,7 +123,7 @@ describe('interval cue audio', () => {
     expect(audioContexts[0].resume).toHaveBeenCalledOnce()
     expect(fetch).toHaveBeenCalledTimes(8)
     expect(fetch).toHaveBeenCalledWith('/sounds/cash.mp3')
-    expect(fetch).toHaveBeenCalledWith('/sounds/notification.mp3')
+    expect(fetch).toHaveBeenCalledWith('/sounds/copper-bell.mp3')
     expect(fetch).toHaveBeenCalledWith('/sounds/chime.mp3')
     expect(fetch).toHaveBeenCalledWith('/sounds/gong.mp3')
     expect(fetch).toHaveBeenCalledWith('/sounds/confirm.mp3')

@@ -90,6 +90,7 @@ final class IntervalCuePlayer {
         signalResources.put("harp", R.raw.harp);
         signalResources.put("magic", R.raw.magic);
         signalResources.put("notification", R.raw.notification);
+        signalResources.put("copper-bell", R.raw.copper_bell);
         signalResources.put("eject", R.raw.eject);
     }
 
@@ -135,6 +136,7 @@ final class IntervalCuePlayer {
             case "harp":
             case "magic":
             case "notification":
+            case "copper-bell":
             case "eject":
             case "count":
             case "go":

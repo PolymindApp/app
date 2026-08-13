@@ -45,6 +45,7 @@ export const INTERVAL_CUE_SOUND_OPTIONS: Array<{
   { title: 'Go Signal', value: 'go' },
   { title: 'Completion Signal', value: 'complete' },
   { title: 'Countdown Tick', value: 'count' },
+  { title: 'Copper Bell', value: 'copper-bell' },
   { title: 'None', value: 'none' },
 ]
 
@@ -56,7 +57,7 @@ export function defaultIntervalTypeSounds(): IntervalTypeSoundSettings {
   return {
     train: 'go',
     work: 'cash',
-    rest: 'notification',
+    rest: 'copper-bell',
     prepare: 'chime',
     meditation: 'gong',
     confirmation: 'confirm',

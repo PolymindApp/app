@@ -31,6 +31,7 @@ const cueUrls = {
   count: '/sounds/count.mp3',
   go: '/sounds/go.mp3',
   complete: '/sounds/complete.mp3',
+  'copper-bell': '/sounds/copper-bell.mp3',
   eject: '/sounds/eject.mp3',
 } as const satisfies Record<AppCueSound, string>
 type CueName = AppCueSound

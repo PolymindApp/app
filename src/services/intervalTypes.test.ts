@@ -13,7 +13,7 @@ describe('interval type sounds', () => {
     expect(sounds).toEqual({
       train: 'go',
       work: 'cash',
-      rest: 'notification',
+      rest: 'copper-bell',
       prepare: 'chime',
       meditation: 'gong',
       confirmation: 'confirm',
@@ -25,7 +25,7 @@ describe('interval type sounds', () => {
     const sounds = normalizeIntervalTypeSounds({ work: 'count', rest: 'bell', meditation: 'none' })
 
     expect(sounds.work).toBe('count')
-    expect(sounds.rest).toBe('notification')
+    expect(sounds.rest).toBe('copper-bell')
     expect(sounds.meditation).toBe('none')
     expect(sounds.confirmation).toBe('confirm')
   })
