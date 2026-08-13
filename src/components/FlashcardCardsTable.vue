@@ -188,7 +188,7 @@ function cardTagNames(card: Flashcard) {
             >
               <td
                 v-if="selectable"
-                class="card-library-table__select"
+                class="card-library-table__select text-no-wrap"
                 @touchstart.stop
                 @click.stop="toggleCardSelection(card.id, !selectedCardIds.includes(card.id))"
                 @keydown.stop
@@ -203,7 +203,7 @@ function cardTagNames(card: Flashcard) {
                   @update:model-value="toggleCardSelection(card.id, Boolean($event))"
                 />
               </td>
-              <td class="card-library-table__image-cell">
+              <td class="card-library-table__image-cell text-no-wrap">
                 <slot name="image-column" :card="card">
                   <div class="flashcard-table__image-frame">
                     <v-img
@@ -225,14 +225,14 @@ function cardTagNames(card: Flashcard) {
                   </div>
                 </slot>
               </td>
-              <td class="card-library-table__faces-cell">
+              <td class="card-library-table__faces-cell text-no-wrap">
                 <span v-ripple class="card-library-table__row-ripple" aria-hidden="true" />
                 <div class="flashcard-table__faces">
                   <strong class="flashcard-table__text flashcard-table__front">{{ card.front }}</strong>
                   <span class="flashcard-table__text flashcard-table__back">{{ card.back }}</span>
                 </div>
               </td>
-              <td v-if="showLastColumn" class="card-library-table__tags-cell">
+              <td v-if="showLastColumn" class="card-library-table__tags-cell text-no-wrap">
                 <slot name="last-column" :card="card">
                   <span class="flashcard-table__text flashcard-table__tags" :title="cardTagNames(card)">
                     {{ cardTagNames(card) }}
@@ -282,8 +282,7 @@ function cardTagNames(card: Flashcard) {
 .card-library-header__select :deep(.v-selection-control) { justify-content: center; }
 .card-library-scroll { max-width: 100%; overflow-x: auto; overscroll-behavior-inline: contain; }
 .card-library-scroll:focus-visible { outline: .125rem solid rgba(var(--v-theme-secondary), .72); outline-offset: -.125rem; }
-.card-library-table { min-width: 42rem; max-width: none; background: transparent; }
-.card-library-table--without-last-column { min-width: 32rem; }
+.card-library-table { max-width: none; background: transparent; }
 .card-library-table :deep(.v-table__wrapper) { overflow: visible; }
 .card-library-table :deep(table) { width: 100%; table-layout: fixed; }
 .card-library-table__semantic-heading { position: absolute; width: .0625rem; height: .0625rem; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
