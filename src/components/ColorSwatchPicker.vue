@@ -17,7 +17,20 @@ const emit = defineEmits<{
   'update:modelValue': [value: string]
 }>()
 
-const colors = ['#C7F464', '#8FB8FF', '#FFB86B', '#D4A5FF', '#79C174', '#FF776B']
+const colors = [
+  '#C7F464',
+  '#8FB8FF',
+  '#FFB86B',
+  '#D4A5FF',
+  '#79C174',
+  '#FF776B',
+  '#66D9C8',
+  '#F0D264',
+  '#FF8FA3',
+  '#7E9CFF',
+  '#5CC8FF',
+  '#F4B8E4',
+]
 const customColorDialog = ref(false)
 const draftColor = ref(props.modelValue)
 
