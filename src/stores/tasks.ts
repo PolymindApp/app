@@ -2,8 +2,9 @@ import { computed, nextTick, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { addDays, endOfWeek, format, parseISO, startOfWeek, subDays } from 'date-fns'
 import { api } from '@/lib/api'
-import { hasLocalBootstrap, listLocalRecords } from '@/lib/localDatabase'
+import { hasLocalBootstrap, listLocalRecords, repairLegacyHealthConnectEntrySync } from '@/lib/localDatabase'
 import { readHealthConnectSteps } from '@/services/healthConnect'
+import { healthConnectEntrySession, isHealthConnectEntry } from '@/services/healthConnectEntries'
 import { completedIntervalFlashcardReviewSeconds } from '@/services/intervals'
 import { dailyTotalCompletionPercent, isTaskScheduled, meetsTarget, programCycleDay, progressPercent, stepsForDate, toDateKey } from '@/services/schedule'
 import { taskNeedsReview } from '@/services/taskCardActions'
@@ -127,7 +128,6 @@ export const useTaskStore = defineStore('tasks', () => {
   const selectedDate = ref(new Date())
   const loading = ref(false)
   const error = ref('')
-  const stepCounts = ref<Record<string, number>>({})
   const stepCountLoading = ref(false)
   const stepCountError = ref('')
   let stepCountRequest = 0
@@ -180,9 +180,7 @@ export const useTaskStore = defineStore('tasks', () => {
       ? loggedTrackingTrackerIds.size
       : !step && task.type === 'journal'
         ? journalEntryCount
-      : !step && task.type === 'step_counter'
-        ? stepCounts.value[dateKey] || 0
-        : entriesFor(task, date, step).reduce((sum, entry) => sum + entry.value, 0)
+      : entriesFor(task, date, step).reduce((sum, entry) => sum + entry.value, 0)
     const isSessionDuration = !step
       && ['interval', 'flashcards'].includes(task.type)
       && task.sessionGoalType === 'duration'
@@ -311,6 +309,7 @@ export const useTaskStore = defineStore('tasks', () => {
     loading.value = true
     error.value = ''
     try {
+      await repairLegacyHealthConnectEntrySync(api.authStore.record.id)
       const since = toDateKey(subDays(new Date(), 120))
       const [taskRecords, stepRecords, occurrenceRecords, entryRecords] = await Promise.all([
         api.collection('tasks').getFullList({ sort: 'sort_order' }),
@@ -390,19 +389,45 @@ export const useTaskStore = defineStore('tasks', () => {
     stepCountError.value = ''
     await nextTick()
     try {
-      const steps = await readHealthConnectSteps(date)
+      const value = await readHealthConnectSteps(date)
       if (request !== stepCountRequest) return
-      stepCounts.value = {
-        ...stepCounts.value,
-        [toDateKey(date)]: steps,
+      const entryDate = toDateKey(date)
+      const stepTasks = activeTasks.value.filter(
+        task => task.type === 'step_counter' && isTaskScheduled(task, date),
+      )
+      for (const task of stepTasks) {
+        const occurrence = await ensureOccurrence(task, date)
+        const existing = entries.value.find(entry => (
+          entry.task === task.id
+          && !entry.programStep
+          && entry.entryDate === entryDate
+          && isHealthConnectEntry(entry)
+          && (entry.sourceSession === entryDate
+            || entry.sourceSession === healthConnectEntrySession(entryDate))
+        ))
+        const payload = {
+          occurrence: occurrence.id,
+          entry_date: entryDate,
+          value,
+          kind: 'quantity',
+          unit: 'steps',
+          note: '',
+          source_type: '',
+          source_session: healthConnectEntrySession(entryDate),
+        }
+        const record = existing
+          ? await api.collection('entries').update(existing.id, payload)
+          : await api.collection('entries').create({
+              owner: api.authStore.record!.id,
+              task: task.id,
+              program_step: '',
+              ...payload,
+            })
+        upsertEntryRecord(record)
+        await syncEntryProgress(makeProgress(task, date))
       }
-      await syncTaskReminders()
     } catch (cause) {
       if (request !== stepCountRequest) return
-      const key = toDateKey(date)
-      const nextStepCounts = { ...stepCounts.value }
-      delete nextStepCounts[key]
-      stepCounts.value = nextStepCounts
       await syncTaskReminders()
       stepCountError.value = cause instanceof Error
         ? cause.message
@@ -908,7 +933,6 @@ export const useTaskStore = defineStore('tasks', () => {
     selectedDate,
     loading,
     error,
-    stepCounts,
     stepCountLoading,
     stepCountError,
     activeTasks,

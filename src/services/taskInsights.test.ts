@@ -121,7 +121,7 @@ describe('task insight factors', () => {
     ])
   })
 
-  it('uses Health Connect step amounts for step-counter tasks', () => {
+  it('uses persisted Health Connect and additional amounts for step-counter tasks', () => {
     const stepCounter = task('step_counter', { unit: 'steps', targetValue: 10_000 })
 
     expect(taskInsightProfile(stepCounter)).toMatchObject({
@@ -130,13 +130,16 @@ describe('task insight factors', () => {
     })
     expect(taskInsightDailyValues(
       stepCounter,
-      [],
+      [
+        entry('2026-07-01', 8123, { unit: 'steps', sourceType: 'health_connect' }),
+        entry('2026-07-01', 250, { id: 'additional-steps', unit: 'steps' }),
+        entry('2026-07-02', 10_456, { unit: 'steps', sourceType: 'health_connect' }),
+      ],
       [],
       '2026-07-01',
       '2026-07-02',
-      { '2026-07-01': 8123, '2026-07-02': 10_456 },
     )).toEqual([
-      { date: '2026-07-01', value: 8123 },
+      { date: '2026-07-01', value: 8373 },
       { date: '2026-07-02', value: 10_456 },
     ])
   })

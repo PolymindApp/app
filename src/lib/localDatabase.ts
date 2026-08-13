@@ -6,6 +6,7 @@ import type {
   SyncOperation,
   SyncResource,
 } from '@/types/sync'
+import { healthConnectEntrySession } from '@/services/healthConnectEntries'
 
 const CLIENT_ID_KEY = 'polymind-sync-client-id'
 const SYNC_DATA_CHANGED_EVENT = 'polymind-sync-data-changed'
@@ -202,6 +203,75 @@ export async function getLocalRecord(accountId: string, resource: string, id: st
   const resolvedId = await resolveLocalAlias(accountId, resource, id)
   const row = await localDatabase.resources.get(resourceKey(accountId, resource, resolvedId))
   return row && !row.deleted ? row.data : undefined
+}
+
+export async function repairLegacyHealthConnectEntrySync(accountId: string) {
+  if (typeof indexedDB === 'undefined') return 0
+  let repairedOperations = 0
+  await localDatabase.transaction(
+    'rw',
+    localDatabase.resources,
+    localDatabase.outbox,
+    localDatabase.issues,
+    async () => {
+      const rows = await localDatabase.resources
+        .where('[accountId+resource]')
+        .equals([accountId, 'entries'])
+        .toArray()
+      for (const row of rows) {
+        if (row.data?.source_type !== 'health_connect') continue
+        const clock = createFieldClock()
+        await localDatabase.resources.put({
+          ...row,
+          data: {
+            ...row.data,
+            source_type: '',
+            source_session: healthConnectEntrySession(String(row.data.entry_date || '')),
+          },
+          fieldClocks: {
+            ...row.fieldClocks,
+            source_type: clock,
+            source_session: clock,
+          },
+          locallyModified: true,
+        })
+      }
+
+      const operations = await localDatabase.outbox
+        .where('accountId')
+        .equals(accountId)
+        .filter(operation => (
+          operation.resource === 'entries'
+          && operation.payload.source_type === 'health_connect'
+        ))
+        .toArray()
+      for (const operation of operations) {
+        const clock = createFieldClock()
+        operation.payload = {
+          ...operation.payload,
+          source_type: '',
+          source_session: healthConnectEntrySession(String(operation.payload.entry_date || '')),
+        }
+        operation.fieldClocks = {
+          ...operation.fieldClocks,
+          source_type: clock,
+          source_session: clock,
+        }
+        operation.status = 'pending'
+        operation.attempts = 0
+        operation.nextAttemptAt = 0
+        delete operation.error
+        await localDatabase.outbox.put(operation)
+        await localDatabase.issues.delete(`issue-${operation.operationId}`)
+        repairedOperations += 1
+      }
+    },
+  )
+  if (repairedOperations) {
+    notifyDataChanged(accountId, 'entries')
+    notifyOutboxChanged(accountId)
+  }
+  return repairedOperations
 }
 
 export async function putLocalCreate(

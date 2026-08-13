@@ -95,7 +95,7 @@ export interface Entry {
   kind: 'duration' | 'quantity' | 'adjustment'
   unit: string
   note?: string
-  sourceType?: 'interval' | 'flashcards'
+  sourceType?: 'interval' | 'flashcards' | 'health_connect'
   sourceSession?: string
 }
 

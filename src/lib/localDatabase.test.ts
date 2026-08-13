@@ -17,6 +17,7 @@ import {
   pendingOperations,
   putLocalCreate,
   putLocalPatch,
+  repairLegacyHealthConnectEntrySync,
   recoverInterruptedOperations,
   retryPendingOperationsNow,
   resolveLocalAlias,
@@ -200,6 +201,45 @@ describe('offline local database', () => {
     await Promise.all(operations.map(async operation => {
       expect(await getLocalRecord(accountId, operation.resource, operation.recordId!)).toBeUndefined()
     }))
+  })
+
+  it('repairs rejected Health Connect entries for servers using the existing source schema', async () => {
+    await completeLocalBootstrap(accountId, 0, [])
+    const entry = await putLocalCreate(accountId, 'entries', {
+      task: 'step-task',
+      entry_date: '2026-08-13',
+      value: 8000,
+      kind: 'quantity',
+      unit: 'steps',
+      source_type: 'health_connect',
+      source_session: '2026-08-13',
+    })
+    const operation = (await pendingOperations(accountId))[0]!
+    await applyExchangeResults(accountId, 1, '2026-08-13T12:00:00.000Z', [{
+      operationId: operation.operationId,
+      status: 'rejected',
+      error: { message: 'Invalid source type.' },
+    }], [])
+
+    expect(await issueCount(accountId)).toBe(1)
+    expect(await repairLegacyHealthConnectEntrySync(accountId)).toBe(1)
+
+    expect(await issueCount(accountId)).toBe(0)
+    expect(await getLocalRecord(accountId, 'entries', entry.id)).toMatchObject({
+      source_type: '',
+      source_session: 'health-connect:2026-08-13',
+    })
+    expect(await pendingOperations(accountId)).toEqual([
+      expect.objectContaining({
+        operationId: operation.operationId,
+        status: 'pending',
+        attempts: 0,
+        payload: expect.objectContaining({
+          source_type: '',
+          source_session: 'health-connect:2026-08-13',
+        }),
+      }),
+    ])
   })
 
   it('reconciles acknowledgements, aliases, and remote delete-wins changes', async () => {

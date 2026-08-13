@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { TASK_CARD_ACTION_ITEMS, taskCanLogAmounts, taskIntervalCanStart, taskNeedsReview } from './taskCardActions'
+import { TASK_CARD_ACTION_ITEMS, taskCanLogAdditionalValue, taskCanLogAmounts, taskIntervalCanStart, taskNeedsReview } from './taskCardActions'
 import type { ProgramStep, Task, TaskProgress, TaskType } from '@/types/domain'
 
 function progress(type: TaskType, completionType?: ProgramStep['completionType']) {
@@ -10,12 +10,19 @@ function progress(type: TaskType, completionType?: ProgramStep['completionType']
 }
 
 describe('task card actions', () => {
-  it('puts edit before the contextual task actions', () => {
+  it('puts the additional-value action first in the shared menu', () => {
     expect(TASK_CARD_ACTION_ITEMS.map(item => item.id)).toEqual([
+      'log-additional-value',
       'edit-task',
       'toggle-task-status',
       'view-log-history',
     ])
+  })
+
+  it('limits additional values to top-level step-counter tasks', () => {
+    expect(taskCanLogAdditionalValue(progress('step_counter'))).toBe(true)
+    expect(taskCanLogAdditionalValue(progress('daily_total'))).toBe(false)
+    expect(taskCanLogAdditionalValue(progress('program', 'quantity'))).toBe(false)
   })
 
   it('limits log history to tasks and steps that can log amounts', () => {

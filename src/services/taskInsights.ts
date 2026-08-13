@@ -60,14 +60,8 @@ export function taskInsightDailyValues(
   occurrences: Occurrence[],
   start: string,
   end: string,
-  stepCounts: Record<string, number> = {},
 ): TrackingDailyValue[] {
   const scheduledDates = new Set(taskInsightDateKeys(task, start, end))
-
-  if (task.type === 'step_counter') {
-    return [...scheduledDates]
-      .map((date) => ({ date, value: Math.max(0, Number(stepCounts[date]) || 0) }))
-  }
 
   if (isQuantitativeTask(task)) {
     const totals = new Map<string, number>()

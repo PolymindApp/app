@@ -3,6 +3,11 @@ import type { TaskProgress } from '@/types/domain'
 
 export const TASK_CARD_ACTION_ITEMS = [
   {
+    id: 'log-additional-value',
+    title: 'Log additional value',
+    icon: 'mdi-plus-minus-variant',
+  },
+  {
     id: 'edit-task',
     title: 'Edit',
     icon: 'mdi-pencil-outline',
@@ -14,7 +19,7 @@ export const TASK_CARD_ACTION_ITEMS = [
   },
   {
     id: 'view-log-history',
-    title: 'View log history',
+    title: 'Log history',
     icon: 'mdi-history',
   },
 ] as const
@@ -25,6 +30,10 @@ export function taskCanLogAmounts(progress?: TaskProgress) {
   if (!progress) return false
   if (progress.programStep) return progress.programStep.completionType === 'quantity'
   return progress.task.type === 'duration' || progress.task.type === 'daily_total'
+}
+
+export function taskCanLogAdditionalValue(progress?: TaskProgress) {
+  return Boolean(progress && !progress.programStep && progress.task.type === 'step_counter')
 }
 
 export function taskIntervalCanStart(progress: TaskProgress, currentDate: string) {

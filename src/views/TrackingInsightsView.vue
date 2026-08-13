@@ -11,10 +11,8 @@ import {
   trackingDailyValuesForRange,
   type TrackingInsightResult,
 } from '@/services/tracking'
-import { readHealthConnectStepsForDates } from '@/services/healthConnect'
 import {
   taskInsightDailyValues,
-  taskInsightDateKeys,
   taskInsightProfile,
 } from '@/services/taskInsights'
 import {
@@ -266,16 +264,12 @@ async function factorDailyValues(sourceId: string, start: string, end: string): 
     const task = tasks.tasks.find((item) => item.id === id)
     if (!task) return []
     await tasks.loadProgressRange(start, end)
-    const stepCounts = task.type === 'step_counter'
-      ? await readHealthConnectStepsForDates(taskInsightDateKeys(task, start, end))
-      : undefined
     return taskInsightDailyValues(
       task,
       tasks.entries,
       tasks.occurrences,
       start,
       end,
-      stepCounts,
     )
   }
   if (source === 'interval') {

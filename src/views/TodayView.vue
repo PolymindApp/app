@@ -14,9 +14,10 @@ import WeekDateNavigator from '@/components/WeekDateNavigator.vue'
 import type { LongPressDragResult } from '@/directives/longPressDrag'
 import { reviewSetCardCount } from '@/services/flashcards'
 import { isNativeHealthConnectSupported } from '@/services/healthConnect'
+import { isHealthConnectEntry } from '@/services/healthConnectEntries'
 import { formatIntervalDuration, intervalDuration } from '@/services/intervals'
 import { taskCompletionMarkerColor, toDateKey } from '@/services/schedule'
-import { TASK_CARD_ACTION_ITEMS, taskCanLogAmounts, taskIntervalCanStart } from '@/services/taskCardActions'
+import { TASK_CARD_ACTION_ITEMS, taskCanLogAdditionalValue, taskCanLogAmounts, taskIntervalCanStart } from '@/services/taskCardActions'
 import type { TaskCardActionId } from '@/services/taskCardActions'
 import { formatTrackingValue } from '@/services/tracking'
 import {
@@ -67,6 +68,7 @@ const exactNote = ref('')
 const exactNoteHistory = ref<Entry[]>([])
 const exactNoteLoading = ref(false)
 const exactEditingEntry = ref<Entry>()
+const exactLoggingAdditional = ref(false)
 const exactError = ref('')
 let exactNoteHistoryRequest = 0
 const exactAction = ref<'add' | 'subtract' | 'set' | 'save'>()
@@ -141,7 +143,17 @@ const taskSheetDescription = computed(() => taskSheetMode.value === 'history'
   ? `${taskActionTitle.value} · ${format(selectedDate.value, 'EEEE, MMMM d')}`
   : undefined)
 const taskCardActionItems = computed(() => TASK_CARD_ACTION_ITEMS.filter((action) =>
-  action.id !== 'view-log-history' || taskCanLogAmounts(taskActionProgress.value),
+  action.id === 'log-additional-value'
+    ? taskCanLogAdditionalValue(taskActionProgress.value)
+    : action.id !== 'view-log-history'
+      || taskCanLogAmounts(taskActionProgress.value)
+      || (taskCanLogAdditionalValue(taskActionProgress.value) && taskActionProgress.value
+        ? store.entriesFor(
+            taskActionProgress.value.task,
+            parseISO(taskActionProgress.value.scheduledDate),
+            taskActionProgress.value.programStep,
+          ).length > 0
+        : false),
 ).map(action => action.id === 'toggle-task-status'
   ? {
       ...action,
@@ -200,8 +212,6 @@ onMounted(async () => {
     await Promise.all([store.load(), intervalStore.load(), flashcardStore.load(), trackingStore.load()])
   } catch { /* Store error states are displayed in the view. */ }
   await loadVisibleTaskProgress()
-  if (!isNativeHealthConnectSupported()) await store.refreshStepCount(selectedDate.value)
-
   if (Capacitor.isNativePlatform()) {
     appStateListener = await App.addListener('appStateChange', ({ isActive }) => {
       clearTimeout(stepCountResumeTimer)
@@ -247,7 +257,7 @@ onUpdated(() => {
 })
 
 watch(selectedDate, date => {
-  void store.refreshStepCount(date)
+  if (isNativeHealthConnectSupported()) void store.refreshStepCount(date)
 })
 
 watch(visibleWeekStart, () => {
@@ -509,12 +519,14 @@ function openTaskActions(progress: TaskProgress) {
 }
 
 function taskEntryKindLabel(entry: Entry) {
+  if (isHealthConnectEntry(entry)) return 'Health Connect'
   if (entry.kind === 'duration') return 'Duration'
   if (entry.kind === 'adjustment') return 'Adjustment'
   return 'Quantity'
 }
 
 function taskEntryIcon(entry: Entry) {
+  if (isHealthConnectEntry(entry)) return 'mdi-heart-pulse'
   if (entry.kind === 'duration') return 'mdi-timer-outline'
   if (entry.kind === 'adjustment') return 'mdi-plus-minus-variant'
   return 'mdi-chart-donut'
@@ -574,6 +586,13 @@ function runTaskCardAction(action: TaskCardActionId) {
     taskStatusDialog.value = true
     return
   }
+  if (action === 'log-additional-value') {
+    const progress = taskActionProgress.value
+    if (!progress) return
+    taskSheet.value = false
+    void openExact(progress, true)
+    return
+  }
   if (action === 'view-log-history') void openTaskLogHistory()
 }
 
@@ -590,9 +609,10 @@ async function confirmTaskStatusChange() {
   }
 }
 
-async function openExact(progress: TaskProgress) {
+async function openExact(progress: TaskProgress, additional = false) {
   exactProgress.value = progress
   exactEditingEntry.value = undefined
+  exactLoggingAdditional.value = additional
   exactAmountInput.value = ''
   exactNote.value = ''
   exactNoteHistory.value = store.entries.filter((entry) => entry.task === progress.task.id)
@@ -622,9 +642,10 @@ function updateExactNote(value: unknown) {
 
 function editTaskLogEntry(entry: Entry) {
   const progress = taskActionProgress.value
-  if (!progress || progress.sealed || busy.value) return
+  if (!progress || progress.sealed || busy.value || isHealthConnectEntry(entry)) return
   exactProgress.value = progress
   exactEditingEntry.value = entry
+  exactLoggingAdditional.value = false
   exactAmountInput.value = String(Number(entry.value.toFixed(2)))
   exactNote.value = entry.note || ''
   exactNoteHistory.value = taskLogEntries.value
@@ -642,7 +663,7 @@ function toggleExactSign() {
 }
 
 function requestTaskLogDeletion(entry: Entry) {
-  if (taskActionProgress.value?.sealed || busy.value) return
+  if (taskActionProgress.value?.sealed || busy.value || isHealthConnectEntry(entry)) return
   taskLogDeleteEntry.value = entry
   taskLogDeleteDialog.value = true
 }
@@ -1099,7 +1120,7 @@ async function saveTaskLogEntry() {
       <v-card class="pa-5">
         <div class="d-flex align-center justify-space-between mb-5">
           <div class="min-width-0">
-            <h2 class="text-h6 font-weight-black">{{ exactEditingEntry ? 'Edit log entry' : 'Log amount' }}</h2>
+            <h2 class="text-h6 font-weight-black">{{ exactEditingEntry ? 'Edit log entry' : exactLoggingAdditional ? 'Log additional value' : 'Log amount' }}</h2>
             <p class="text-body-2 muted text-truncate mt-1">{{ exactProgress?.programStep?.name || exactProgress?.task.name }}</p>
           </div>
           <v-btn icon="mdi-close" variant="text" aria-label="Close amount logger" @click="exactDialog = false" />
@@ -1253,14 +1274,15 @@ async function saveTaskLogEntry() {
       :aria-label="taskSheetMode === 'history' ? `${taskActionTitle} log history` : `${taskActionTitle} actions`"
     >
       <template v-if="taskActionProgress && taskSheetMode === 'actions'">
-        <v-list-item
-          v-for="action in taskCardActionItems"
-          :key="action.id"
-          :prepend-icon="action.icon"
-          :title="action.title"
-          rounded="lg"
-          @click="runTaskCardAction(action.id)"
-        />
+        <template v-for="action in taskCardActionItems" :key="action.id">
+          <v-list-item
+            :prepend-icon="action.icon"
+            :title="action.title"
+            rounded="lg"
+            @click="runTaskCardAction(action.id)"
+          />
+          <v-divider v-if="action.id === 'log-additional-value'" class="my-2" />
+        </template>
       </template>
       <template v-else-if="taskSheetMode === 'history'">
         <v-list-item
@@ -1290,7 +1312,7 @@ async function saveTaskLogEntry() {
               <span>{{ taskEntrySubtitle(entry) }} · {{ taskEntryValue(entry) }}</span>
             </template>
             <template #append>
-              <div class="task-log-actions">
+              <div v-if="!isHealthConnectEntry(entry)" class="task-log-actions">
                 <v-btn
                   icon="mdi-pencil-outline"
                   variant="text"

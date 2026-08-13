@@ -815,9 +815,33 @@ describe('step-counter task progress', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     healthMocks.readHealthConnectSteps.mockReset()
+    apiMocks.createOccurrence.mockReset()
+    apiMocks.createEntry.mockReset()
+    apiMocks.updateEntry.mockReset()
+    apiMocks.updateOccurrence.mockReset()
+    apiMocks.createOccurrence.mockImplementation(async payload => ({
+      id: 'step-occurrence',
+      ...payload,
+    }))
+    apiMocks.createEntry.mockImplementation(async payload => ({
+      id: 'health-connect-entry',
+      created_at: '2026-07-29T12:00:00.000Z',
+      ...payload,
+    }))
+    apiMocks.updateOccurrence.mockImplementation(async (id, payload) => ({
+      id,
+      task: 'step-task',
+      program_step: '',
+      scheduled_date: '2026-07-29',
+      sealed: false,
+      snapshot_name: 'Daily steps',
+      snapshot_target: 8000,
+      snapshot_unit: 'steps',
+      ...payload,
+    }))
   })
 
-  it('uses the Health Connect daily aggregate as its value', async () => {
+  it('persists the Health Connect daily aggregate and uses it as its value', async () => {
     const store = useTaskStore()
     const stepTask: Task = {
       ...task,
@@ -835,11 +859,85 @@ describe('step-counter task progress', () => {
     await store.refreshStepCount(selectedDate)
 
     expect(healthMocks.readHealthConnectSteps).toHaveBeenCalledWith(selectedDate)
+    expect(apiMocks.createEntry).toHaveBeenCalledWith(expect.objectContaining({
+      task: stepTask.id,
+      entry_date: '2026-07-29',
+      value: 9234,
+      kind: 'quantity',
+      unit: 'steps',
+      source_type: '',
+      source_session: 'health-connect:2026-07-29',
+    }))
     expect(store.makeProgress(stepTask, selectedDate)).toMatchObject({
       value: 9234,
       percent: 100,
       complete: true,
     })
+  })
+
+  it('replaces a synced total and keeps additional steps on top', async () => {
+    const store = useTaskStore()
+    const stepTask: Task = {
+      ...task,
+      id: 'step-task',
+      name: 'Daily steps',
+      type: 'step_counter',
+      targetValue: 8000,
+      targetOperator: 'gte',
+      unit: 'steps',
+    }
+    store.tasks = [stepTask]
+    store.occurrences = [{ ...completedOccurrence, id: 'step-occurrence', task: stepTask.id }]
+    store.entries = [
+      { ...entry('health-connect-entry', 9000), task: stepTask.id, kind: 'quantity', unit: 'steps', sourceType: 'health_connect', sourceSession: '2026-07-29' },
+      { ...entry('additional-entry', 250), task: stepTask.id, kind: 'quantity', unit: 'steps' },
+    ]
+    healthMocks.readHealthConnectSteps.mockResolvedValue(9234)
+    apiMocks.updateEntry.mockImplementation(async (id, payload) => ({
+      id,
+      task: stepTask.id,
+      program_step: '',
+      created_at: '2026-07-29T12:00:00.000Z',
+      ...payload,
+    }))
+
+    await store.refreshStepCount(selectedDate)
+
+    expect(apiMocks.updateEntry).toHaveBeenCalledWith('health-connect-entry', expect.objectContaining({
+      value: 9234,
+      source_type: '',
+      source_session: 'health-connect:2026-07-29',
+    }))
+    expect(apiMocks.createEntry).not.toHaveBeenCalled()
+    expect(store.makeProgress(stepTask, selectedDate).value).toBe(9484)
+  })
+
+  it('keeps the last persisted total when Health Connect cannot refresh', async () => {
+    const store = useTaskStore()
+    const stepTask: Task = {
+      ...task,
+      id: 'step-task',
+      name: 'Daily steps',
+      type: 'step_counter',
+      targetValue: 8000,
+      targetOperator: 'gte',
+      unit: 'steps',
+    }
+    store.tasks = [stepTask]
+    store.entries = [{
+      ...entry('health-connect-entry', 9000),
+      task: stepTask.id,
+      kind: 'quantity',
+      unit: 'steps',
+      sourceType: 'health_connect',
+      sourceSession: '2026-07-29',
+    }]
+    healthMocks.readHealthConnectSteps.mockRejectedValue(new Error('Health Connect unavailable'))
+
+    await store.refreshStepCount(selectedDate)
+
+    expect(store.makeProgress(stepTask, selectedDate).value).toBe(9000)
+    expect(store.stepCountError).toBe('Health Connect unavailable')
   })
 
   it('exposes loading through a Vue update before a fast Health Connect read completes', async () => {
