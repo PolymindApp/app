@@ -281,7 +281,6 @@ async function previewIntervalTypeSound(kind: IntervalStepKind, sound: IntervalC
           class="menu-order-item"
           :class="{ 'menu-order-item--hidden': !mainMenuItemIsVisible(item.id) }"
         >
-          <v-icon icon="mdi-drag" size="22" class="menu-order-item__handle" />
           <span class="menu-order-item__icon">
             <v-icon :icon="item.icon" size="21" />
           </span>
@@ -470,7 +469,6 @@ async function previewIntervalTypeSound(kind: IntervalStepKind, sound: IntervalC
   align-items: center;
   min-height: 3.75rem;
   gap: .75rem;
-  padding: .5rem .75rem;
   border: 1px solid rgb(var(--v-theme-on-surface) / .1);
   border-radius: 16px;
   background: rgb(var(--v-theme-surface-variant) / .28);
@@ -503,10 +501,6 @@ async function previewIntervalTypeSound(kind: IntervalStepKind, sound: IntervalC
   flex: 0 0 auto;
 }
 
-.menu-order-item__handle {
-  color: rgb(var(--v-theme-on-surface) / .52);
-}
-
 .menu-order-item__icon {
   display: grid;
   width: 2.75rem;
@@ -535,7 +529,7 @@ async function previewIntervalTypeSound(kind: IntervalStepKind, sound: IntervalC
 
 @media (max-width: 27.5rem) {
   .menu-order-item {
-    grid-template-columns: 1.25rem 2.5rem minmax(0, 1fr) auto;
+    grid-template-columns: 2.5rem minmax(0, 1fr) auto;
     gap: .5rem;
     padding-inline: .5rem;
   }
