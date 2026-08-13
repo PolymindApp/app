@@ -6,7 +6,7 @@ import {
 } from '@/services/intervalTypes'
 
 describe('interval type sounds', () => {
-  it('uses the requested defaults and retains Go Signal for unassigned types', () => {
+  it('uses the requested defaults for every interval type', () => {
     const sounds = defaultIntervalTypeSounds()
 
     expect(Object.keys(sounds)).toEqual(INTERVAL_STEP_TYPES.map(type => type.value))
@@ -17,7 +17,7 @@ describe('interval type sounds', () => {
       prepare: 'chime',
       meditation: 'gong',
       confirmation: 'confirm',
-      custom: 'go',
+      custom: 'notification',
     })
   })
 

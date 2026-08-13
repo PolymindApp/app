@@ -61,7 +61,7 @@ export function defaultIntervalTypeSounds(): IntervalTypeSoundSettings {
     prepare: 'chime',
     meditation: 'gong',
     confirmation: 'confirm',
-    custom: 'go',
+    custom: 'notification',
   }
 }
 
