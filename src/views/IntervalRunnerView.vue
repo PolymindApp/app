@@ -1905,14 +1905,14 @@ async function runAgain(repetitions?: number) {
 .interval-review-card:disabled { cursor: default; opacity: .72; }
 .interval-review-card--playback-paused { border-style: dashed; background: rgba(var(--v-theme-on-surface), .025); opacity: .72; }
 .interval-review-card :deep(.v-ripple__container) { z-index: 2; }
-.interval-review-card__content { display: flex; box-sizing: border-box; min-height: 8rem; padding: 1rem; align-items: center; justify-content: center; flex-direction: column; gap: .65rem; text-align: center; }
+.interval-review-card__content { display: flex; box-sizing: border-box; min-height: 8rem; padding: 1rem; align-items: center; justify-content: flex-start; flex-direction: column; gap: .65rem; text-align: center; }
 .interval-review-card__heading { display: flex; width: 100%; min-width: 0; align-items: center; justify-content: space-between; gap: .75rem; }
 .interval-review-card__meta { display: flex; flex: 0 0 auto; align-items: center; justify-content: flex-end; gap: .75rem; color: rgba(var(--v-theme-on-surface), .58); font-size: .62rem; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
 .interval-review-card__meta small { display: inline-flex; align-items: center; gap: .25rem; }
 .interval-review-card__set { display: flex; min-width: 0; max-width: 75%; align-items: center; gap: .4rem; color: rgba(var(--v-theme-on-surface), .58); font-size: .62rem; font-weight: 900; letter-spacing: .1em; text-align: left; text-transform: uppercase; }
 .interval-review-card__set > .text-truncate { min-width: 0; }
 .interval-review-card__content small { color: rgba(var(--v-theme-on-surface), .58); font-size: .62rem; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
-.interval-review-card__faces { display: grid; width: 100%; place-items: center; }
+.interval-review-card__faces { display: grid; width: 100%; min-height: 0; flex: 1 1 auto; place-items: center; }
 .interval-review-card__faces > * { grid-area: 1 / 1; max-width: 100%; }
 .interval-review-card__face--hidden { visibility: hidden; }
 .interval-review-card__content strong { overflow-wrap: anywhere; font-size: clamp(1.05rem, 4.5vw, 1.5rem); line-height: 1.3; white-space: pre-wrap; }
