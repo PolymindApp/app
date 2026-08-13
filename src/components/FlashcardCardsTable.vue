@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Capacitor } from '@capacitor/core'
 import { useDisplay } from 'vuetify'
 import { Intersect, Ripple } from 'vuetify/directives'
@@ -38,7 +38,11 @@ const PAGE_SIZE = 10
 const cardPage = ref(1)
 const visibleCardCount = ref(PAGE_SIZE)
 const horizontalScrollLeft = ref(0)
+const tableScroll = ref<HTMLElement>()
+const headerColumnWidths = ref<number[]>([])
+const headerTrackWidth = ref(0)
 const infiniteScrollOptions = { rootMargin: '0px 0px 192px 0px' }
+let tableResizeObserver: ResizeObserver | undefined
 
 const selectedCardIds = computed({
   get: () => props.modelValue,
@@ -61,6 +65,42 @@ const someCardsSelected = computed(() =>
 )
 const hasMoreCards = computed(() => usesInfiniteScroll.value && displayedCards.value.length < props.cards.length)
 const tagNames = computed(() => new Map(props.tags.map(tag => [tag.id, tag.name])))
+const headerTrackStyle = computed(() => ({
+  width: headerTrackWidth.value ? `${headerTrackWidth.value}px` : undefined,
+  gridTemplateColumns: headerColumnWidths.value.length
+    ? headerColumnWidths.value.map(width => `${width}px`).join(' ')
+    : undefined,
+  transform: `translateX(-${horizontalScrollLeft.value}px)`,
+}))
+
+function syncHeaderColumns() {
+  const table = tableScroll.value?.querySelector('table')
+  const cells = table?.querySelector('tbody tr')?.children
+  if (!table || !cells?.length) return
+  const columnWidths = Array.from(cells, cell => cell.getBoundingClientRect().width)
+  headerColumnWidths.value = columnWidths
+  headerTrackWidth.value = columnWidths.reduce((total, width) => total + width, 0)
+}
+
+function observeTableSize() {
+  tableResizeObserver?.disconnect()
+  syncHeaderColumns()
+  if (typeof ResizeObserver === 'undefined') return
+  tableResizeObserver = new ResizeObserver(syncHeaderColumns)
+  const table = tableScroll.value?.querySelector('table')
+  if (table) tableResizeObserver.observe(table)
+  if (tableScroll.value) tableResizeObserver.observe(tableScroll.value)
+}
+
+onMounted(() => nextTick(observeTableSize))
+onBeforeUnmount(() => tableResizeObserver?.disconnect())
+
+watch([
+  displayedCards,
+  () => props.selectable,
+  () => props.showLastColumn,
+  () => props.tags,
+], () => nextTick(observeTableSize), { deep: true })
 
 watch(() => props.cards.map(card => card.id), (cardIds) => {
   const available = new Set(cardIds)
@@ -120,7 +160,7 @@ function cardTagNames(card: Flashcard) {
             'card-library-header__track--without-selection': !selectable,
             'card-library-header__track--without-last-column': !showLastColumn,
           }"
-          :style="{ transform: `translateX(-${horizontalScrollLeft}px)` }"
+          :style="headerTrackStyle"
         >
           <div v-if="selectable" class="card-library-header__cell card-library-header__select">
             <v-checkbox-btn
@@ -143,6 +183,7 @@ function cardTagNames(card: Flashcard) {
         </div>
       </div>
       <div
+        ref="tableScroll"
         class="card-library-scroll"
         role="region"
         aria-label="Flashcard table"

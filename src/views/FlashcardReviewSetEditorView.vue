@@ -269,6 +269,7 @@ async function remove() {
           empty-description="Change the selected tags to include cards in this Review set."
         >
           <template #image-column-heading><span class="d-sr-only">Included</span></template>
+          <template #last-column-heading>Tags</template>
           <template #image-column="{ card }">
             <div class="review-set-card-state">
               <v-icon
