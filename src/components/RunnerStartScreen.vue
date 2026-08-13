@@ -7,13 +7,13 @@ const props = defineProps<{
   icon: string
   color?: string
   primaryLabel: string
-  backLabel: string
+  cancelLabel: string
   busy?: boolean
 }>()
 
 defineEmits<{
   start: []
-  back: []
+  cancel: []
 }>()
 
 const titleElement = ref<HTMLElement>()
@@ -96,12 +96,11 @@ onBeforeUnmount(() => {
       <v-btn
         variant="text"
         size="large"
-        prepend-icon="mdi-arrow-left"
-        :aria-label="backLabel"
+        :aria-label="cancelLabel"
         :disabled="busy"
-        @click="$emit('back')"
+        @click="$emit('cancel')"
       >
-        Back
+        Cancel
       </v-btn>
     </div>
   </section>

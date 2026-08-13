@@ -9,7 +9,7 @@ describe('RunnerStartScreen', () => {
         summary: '12 cards',
         icon: 'mdi-cards-playing-outline',
         primaryLabel: 'Start review',
-        backLabel: 'Back to flashcards',
+        cancelLabel: 'Cancel review',
       },
       global: { stubs: { VBtn: true, VIcon: true } },
     })

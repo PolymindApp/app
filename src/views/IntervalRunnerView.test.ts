@@ -782,7 +782,7 @@ describe('IntervalRunnerView start screen', () => {
     mocks.taskStore.steps = []
   })
 
-  it('shows only the interval name and Play and Back actions before starting', async () => {
+  it('shows only the interval name and Play and Cancel actions before starting', async () => {
     const wrapper = mountRunner()
     await flushPromises()
 
@@ -792,7 +792,7 @@ describe('IntervalRunnerView start screen', () => {
     expect(wrapper.get('.runner-start-screen__icon').getComponent({ name: 'VIcon' }).attributes('icon'))
       .toBe('mdi-timer-outline')
     expect(wrapper.get('[aria-label="Start interval"]').exists()).toBe(true)
-    expect(wrapper.get('[aria-label="Back to intervals"]').exists()).toBe(true)
+    expect(wrapper.get('[aria-label="Cancel interval"]').exists()).toBe(true)
     expect(wrapper.find('.runner-step').exists()).toBe(false)
     expect(wrapper.find('.runner-progress').exists()).toBe(false)
     expect(wrapper.find('.runner-controls').exists()).toBe(false)

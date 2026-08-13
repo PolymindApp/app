@@ -1298,10 +1298,10 @@ async function runAgain(repetitions?: number) {
         icon="mdi-timer-outline"
         :color="previewTemplate?.color"
         primary-label="Start interval"
-        back-label="Back to intervals"
+        cancel-label="Cancel interval"
         :busy="starting"
         @start="requestStartTemplate"
-        @back="router.replace(returnTo)"
+        @cancel="router.replace(returnTo)"
       />
 
       <section
