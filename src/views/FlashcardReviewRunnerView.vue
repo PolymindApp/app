@@ -398,6 +398,8 @@ function restorePassiveState(value: FlashcardReviewSession) {
     ) {
       passiveSide.value = saved.side
       passiveRemainingMs.value = Math.max(1, Number(saved.remainingMs) || passiveDurationMs.value)
+      const restoredSpeechKey = speechKey(true)
+      if (saved.spokenKey === restoredSpeechKey) lastSpokenKey = restoredSpeechKey
     }
   } catch {
     // Start the current card from its front when local recovery is unavailable.
@@ -411,6 +413,7 @@ function savePassiveState() {
       cardId: currentCard.value.id,
       side: passiveSide.value,
       remainingMs: passiveRemainingMs.value,
+      spokenKey: lastSpokenKey,
     }))
   } catch {
     // Server queue state remains recoverable even when local phase storage is unavailable.
@@ -649,7 +652,7 @@ async function speakCurrentSide(allowPaused = false) {
     || !card
     || !key
   ) {
-    if (!key || value?.status !== 'running') lastSpokenKey = ''
+    if (!value || !card || !value.speechEnabled) lastSpokenKey = ''
     await stopFlashcardSpeech()
     return
   }

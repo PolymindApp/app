@@ -280,6 +280,8 @@ function mountRunner() {
 
 describe('FlashcardReviewRunnerView Review set preview', () => {
   beforeEach(() => {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' })
+    localStorage.clear()
     mocks.route.params = { reviewSetId: 'set-1' }
     mocks.route.query = {}
     mocks.router.replace.mockReset().mockResolvedValue(undefined)
@@ -506,6 +508,81 @@ describe('FlashcardReviewRunnerView Review set preview', () => {
     expect(active.status).toBe('running')
 
     wrapper.unmount()
+  })
+
+  it('does not repeat the current passive TTS checkpoint after a visibility pause resumes', async () => {
+    const active = {
+      ...runningSession(),
+      mode: 'passive' as const,
+      cardSides: 'back' as const,
+      backSeconds: 10,
+      backSpeechRepeatCount: 2,
+      speechEnabled: true,
+      backLanguage: 'fr-CA',
+    }
+    mocks.route.params = { sessionId: active.id }
+    mocks.store.sessions = reactive([active])
+    mocks.store.loadSession.mockResolvedValue(active)
+    mocks.store.act.mockImplementation(async (_id, action) => {
+      if (action === 'pause') active.status = 'paused'
+      if (action === 'resume') active.status = 'running'
+      return active
+    })
+
+    const wrapper = mountRunner()
+    await flushPromises()
+    expect(mocks.speakFlashcardText).toHaveBeenCalledWith('Maison', 'fr-CA')
+    mocks.speakFlashcardText.mockClear()
+
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' })
+    document.dispatchEvent(new Event('visibilitychange'))
+    await flushPromises()
+    expect(active.status).toBe('paused')
+
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' })
+    document.dispatchEvent(new Event('visibilitychange'))
+    await flushPromises()
+
+    expect(active.status).toBe('running')
+    expect(mocks.speakFlashcardText).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('restores a card at 25% without replaying before the 50% TTS checkpoint', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-13T12:00:00Z'))
+    const active = {
+      ...runningSession(),
+      mode: 'passive' as const,
+      cardSides: 'back' as const,
+      backSeconds: 10,
+      backSpeechRepeatCount: 2,
+      speechEnabled: true,
+      backLanguage: 'fr-CA',
+    }
+    localStorage.setItem(`polymind-flashcard-passive:${active.id}`, JSON.stringify({
+      cardId: 'card-1',
+      side: 'back',
+      remainingMs: 15_000,
+      spokenKey: 'card-1:back:0',
+    }))
+    mocks.route.params = { sessionId: active.id }
+    mocks.store.sessions = reactive([active])
+    mocks.store.loadSession.mockResolvedValue(active)
+
+    const wrapper = mountRunner()
+    try {
+      await flushPromises()
+      expect(mocks.speakFlashcardText).not.toHaveBeenCalled()
+
+      await vi.advanceTimersByTimeAsync(5_000)
+      await flushPromises()
+      expect(mocks.speakFlashcardText).toHaveBeenCalledTimes(1)
+      expect(mocks.speakFlashcardText).toHaveBeenCalledWith('Maison', 'fr-CA')
+    } finally {
+      wrapper.unmount()
+      vi.useRealTimers()
+    }
   })
 
   it('shows a card speech failure as a warning snackbar only once per session', async () => {

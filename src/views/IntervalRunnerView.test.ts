@@ -346,6 +346,7 @@ function mountRunner() {
 
 describe('IntervalRunnerView flashcard area', () => {
   beforeEach(() => {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' })
     mocks.route.params = { sessionId: 'session-1' }
     mocks.route.query = {}
     mocks.intervalStore.templates = []
@@ -653,6 +654,29 @@ describe('IntervalRunnerView flashcard area', () => {
     wrapper.unmount()
   })
 
+  it('does not repeat the current Review set TTS checkpoint when an interval resumes', async () => {
+    const active = intervalSession('running')
+    if (!active.flashcardReview) throw new Error('Expected a Review set snapshot')
+    active.flashcardReview.speechEnabled = true
+    active.flashcardReview.frontLanguage = 'en-US'
+    active.runtime.remainingMs = 592_000
+    mocks.intervalStore.sessions = reactive([active])
+
+    const wrapper = mountRunner()
+    await flushPromises()
+    expect(mocks.speakFlashcardText).toHaveBeenCalledWith('House', 'en-US', '0:front:0')
+    mocks.speakFlashcardText.mockClear()
+
+    await wrapper.get('.interval-review-card').trigger('click')
+    await flushPromises()
+    await wrapper.get('.flashcard-context-actions button').trigger('click')
+    await flushPromises()
+
+    expect(active.status).toBe('running')
+    expect(mocks.speakFlashcardText).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
   it('stays paused after closing the context menu when it was already paused', async () => {
     mocks.intervalStore.sessions = reactive([intervalSession('paused')])
     const wrapper = mountRunner()
@@ -713,7 +737,7 @@ describe('IntervalRunnerView flashcard area', () => {
     wrapper.unmount()
   })
 
-  it('pauses an aloud Review set with the current step while keeping its context menu available', async () => {
+  it('pauses an aloud Review set with the current step without repeating it in the next step', async () => {
     const active = intervalSession('running')
     if (!active.flashcardReview) throw new Error('Expected a Review set snapshot')
     active.flashcardReview.speechEnabled = true
@@ -791,7 +815,7 @@ describe('IntervalRunnerView flashcard area', () => {
     expect(wrapper.get('.interval-review-card__meta small').text()).toBe('Front')
     expect(wrapper.get('.interval-review-card').attributes('disabled')).toBeUndefined()
     expect(wrapper.get('.interval-review-card').classes()).not.toContain('interval-review-card--playback-paused')
-    expect(mocks.speakFlashcardText).toHaveBeenCalledWith('House', 'en-US', '0:front:0')
+    expect(mocks.speakFlashcardText).not.toHaveBeenCalled()
 
     wrapper.unmount()
   })
@@ -856,6 +880,30 @@ describe('IntervalRunnerView flashcard area', () => {
       configurable: true,
       value: 'visible',
     })
+    wrapper.unmount()
+  })
+
+  it('does not repeat a checkpoint spoken by the native interval when the app is refocused', async () => {
+    const active = intervalSession('running')
+    if (!active.flashcardReview) throw new Error('Expected a Review set snapshot')
+    active.flashcardReview.speechEnabled = true
+    active.flashcardReview.frontLanguage = 'en-US'
+    active.runtime.remainingMs = 592_000
+    mocks.intervalStore.sessions = reactive([active])
+    mocks.nativeBackgroundIntervalIsActive.mockReturnValue(true)
+
+    const wrapper = mountRunner()
+    await flushPromises()
+    mocks.speakFlashcardText.mockClear()
+
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' })
+    document.dispatchEvent(new Event('visibilitychange'))
+    await flushPromises()
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' })
+    document.dispatchEvent(new Event('visibilitychange'))
+    await flushPromises()
+
+    expect(mocks.speakFlashcardText).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 

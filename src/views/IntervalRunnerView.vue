@@ -156,6 +156,7 @@ let runnerMounted = false
 let lastCountCue = ''
 let timerEffectTimeout: number | undefined
 let lastSpokenFlashcardKey = ''
+let reconcilingVisibilitySpeech = false
 let resumeAfterFlashcardContext = false
 let resumeAfterFlashcardModal = false
 let flashcardSaveWork: Promise<void> = Promise.resolve()
@@ -477,6 +478,7 @@ async function speakCurrentFlashcardSide() {
   const review = item?.flashcardReview
   const phase = flashcardPhase.value
   const key = item && phase ? `${item.id}:${phase.key}` : ''
+  if (reconcilingVisibilitySpeech) return
   if (document.visibilityState !== 'visible') return
   if (
     item?.status !== 'running'
@@ -485,7 +487,7 @@ async function speakCurrentFlashcardSide() {
     || !phase
     || !key
   ) {
-    if (!key || item?.status !== 'running' || !flashcardReviewPlaybackEnabled.value) {
+    if (!item || !review?.speechEnabled || !phase || !key) {
       lastSpokenFlashcardKey = ''
     }
     await stopFlashcardSpeech()
@@ -569,9 +571,17 @@ function handlePageHide() {
 async function handleVisibility() {
   cueHandoff.recordVisibility(document.visibilityState)
   if (document.visibilityState === 'visible' && session.value?.status === 'running') {
-    wakeLock = await requestIntervalWakeLock()
-    await tick()
-    lastSpokenFlashcardKey = ''
+    const backgroundWasActive = nativeBackgroundIntervalIsActive()
+    reconcilingVisibilitySpeech = backgroundWasActive
+    try {
+      wakeLock = await requestIntervalWakeLock()
+      await tick()
+      if (backgroundWasActive && flashcardPhase.value) {
+        lastSpokenFlashcardKey = `${session.value.id}:${flashcardPhase.value.key}`
+      }
+    } finally {
+      reconcilingVisibilitySpeech = false
+    }
     await speakCurrentFlashcardSide()
   } else if (document.visibilityState !== 'visible') {
     await wakeLock?.release()
@@ -730,7 +740,6 @@ async function resume() {
   }
   await prepareIntervalCues(item.cues)
   const updated = await store.updateSession(item.id, { status: 'running', runtime })
-  lastSpokenFlashcardKey = ''
   await syncNativeTimer(updated)
   wakeLock = await requestIntervalWakeLock()
 }
