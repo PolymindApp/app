@@ -364,6 +364,13 @@ onBeforeUnmount(() => {
 /* The drawer scrim is a sibling rendered by Vuetify and remains in the DOM
    while fading out. Once it is leaving, it must no longer consume a quick
    follow-up tap meant for the page beneath the sheet. */
+:global(.action-bottom-sheet + .v-navigation-drawer__scrim) {
+  position: fixed;
+  inset: 0;
+  width: auto;
+  height: auto;
+}
+
 :global(.v-navigation-drawer__scrim.fade-transition-leave-active) {
   pointer-events: none !important;
 }
