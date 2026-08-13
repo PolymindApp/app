@@ -400,7 +400,7 @@ function releaseLeavingPage(element: Element) {
 
     <v-main
       tag="div"
-      class="app-scroll"
+      class="app-scroll app-scroll--shell"
       :class="{
         'app-scroll--with-nav': !mdAndUp && !immersive && !mobileKeyboardVisible,
         'app-scroll--with-bar': !immersive && !mobileKeyboardVisible,
@@ -716,8 +716,16 @@ function releaseLeavingPage(element: Element) {
   left: 0;
   display: flex;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
-  padding-bottom: env(safe-area-inset-bottom);
-  height: calc(72px + env(safe-area-inset-bottom)) !important;
+  padding-bottom: max(
+    env(safe-area-inset-bottom, 0rem),
+    var(--safe-area-inset-bottom, 0rem)
+  );
+  height: calc(
+    72px + max(
+      env(safe-area-inset-bottom, 0rem),
+      var(--safe-area-inset-bottom, 0rem)
+    )
+  ) !important;
   background: rgb(var(--v-theme-surface));
   box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.3) !important;
 }
@@ -764,7 +772,12 @@ function releaseLeavingPage(element: Element) {
 }
 
 .app-scroll--with-nav {
-  padding-bottom: calc(72px + env(safe-area-inset-bottom)) !important;
+  padding-bottom: calc(
+    72px + max(
+      env(safe-area-inset-bottom, 0rem),
+      var(--safe-area-inset-bottom, 0rem)
+    )
+  ) !important;
 }
 
 .app-scroll--with-bar {

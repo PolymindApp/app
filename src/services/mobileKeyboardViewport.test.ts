@@ -5,6 +5,7 @@ import {
 } from './mobileKeyboardViewport'
 
 const initialInnerHeight = window.innerHeight
+const initialScrollY = window.scrollY
 
 function rectangle(top: number, bottom: number): DOMRect {
   return {
@@ -45,10 +46,15 @@ afterEach(() => {
   vi.useRealTimers()
   document.body.replaceChildren()
   document.documentElement.classList.remove('keyboard-open')
+  document.documentElement.classList.remove('platform-android')
   document.documentElement.removeAttribute('style')
   Object.defineProperty(window, 'innerHeight', {
     configurable: true,
     value: initialInnerHeight,
+  })
+  Object.defineProperty(window, 'scrollY', {
+    configurable: true,
+    value: initialScrollY,
   })
 })
 
@@ -89,6 +95,21 @@ describe('mobile keyboard viewport', () => {
     remove()
   })
 
+  it('uses the resized Android layout viewport while the visual viewport settles', () => {
+    document.documentElement.classList.add('platform-android')
+    const viewport = createViewport(118)
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 480 })
+    const remove = installMobileKeyboardViewport(document, viewport)
+
+    expect(document.documentElement.style.getPropertyValue('--app-viewport-height')).toBe('480px')
+
+    viewport.height = 480
+    viewport.dispatchEvent(new Event('resize'))
+    expect(document.documentElement.style.getPropertyValue('--app-viewport-height')).toBe('480px')
+
+    remove()
+  })
+
   it('does not add a second scroll when the field is already visible', () => {
     const wrapper = document.createElement('div')
     wrapper.className = 'v-input'
@@ -102,6 +123,128 @@ describe('mobile keyboard viewport', () => {
     input.focus()
     vi.advanceTimersByTime(120)
 
+    expect(wrapper.scrollIntoView).not.toHaveBeenCalled()
+    remove()
+  })
+
+  it('does not scroll an Android field that remains visible after the app bar hides', () => {
+    document.documentElement.classList.add('platform-android')
+    const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation((options) => {
+      const top = typeof options === 'object' ? options.top : options
+      Object.defineProperty(window, 'scrollY', { configurable: true, value: top ?? 0 })
+    })
+    Object.defineProperty(window, 'scrollY', { configurable: true, value: 100 })
+    const wrapper = document.createElement('div')
+    wrapper.className = 'v-input'
+    wrapper.scrollIntoView = vi.fn()
+    wrapper.getBoundingClientRect = () => {
+      const documentTop = document.documentElement.classList.contains('keyboard-open')
+        ? 140
+        : 200
+      return rectangle(documentTop - window.scrollY, documentTop + 60 - window.scrollY)
+    }
+    const input = document.createElement('input')
+    wrapper.append(input)
+    document.body.append(wrapper)
+    const remove = installMobileKeyboardViewport(document, null)
+
+    const focus = vi.spyOn(input, 'focus')
+    input.dispatchEvent(new Event('pointerdown', { bubbles: true, composed: true }))
+
+    expect(focus).toHaveBeenCalledWith({ preventScroll: true })
+    expect(document.activeElement).toBe(input)
+
+    window.dispatchEvent(new Event('keyboardWillShow'))
+    window.dispatchEvent(new Event('keyboardDidShow'))
+    vi.runOnlyPendingTimers()
+
+    expect(document.documentElement.classList).toContain('keyboard-open')
+    expect(scrollTo).not.toHaveBeenCalled()
+    expect(wrapper.scrollIntoView).not.toHaveBeenCalled()
+
+    window.dispatchEvent(new Event('keyboardDidHide'))
+    focus.mockClear()
+    input.dispatchEvent(new Event('pointerdown', { bubbles: true, composed: true }))
+    expect(focus).toHaveBeenCalledWith({ preventScroll: true })
+    remove()
+  })
+
+  it('applies the Android safe top offset before the keyboard frame can paint', () => {
+    document.documentElement.classList.add('platform-android')
+    document.documentElement.style.setProperty('--safe-area-inset-top', '52px')
+    const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation((options) => {
+      const top = typeof options === 'object' ? options.top : options
+      Object.defineProperty(window, 'scrollY', { configurable: true, value: top ?? 0 })
+    })
+    Object.defineProperty(window, 'scrollY', { configurable: true, value: 100 })
+    const appScroll = document.createElement('main')
+    appScroll.className = 'app-scroll'
+    document.body.append(appScroll)
+    const wrapper = document.createElement('div')
+    wrapper.className = 'v-input'
+    wrapper.getBoundingClientRect = () => {
+      const documentTop = document.documentElement.classList.contains('keyboard-open')
+        ? 140
+        : 200
+      return rectangle(documentTop - window.scrollY, documentTop + 60 - window.scrollY)
+    }
+    const input = document.createElement('input')
+    wrapper.append(input)
+    appScroll.append(wrapper)
+    const remove = installMobileKeyboardViewport(document, null)
+
+    input.dispatchEvent(new Event('pointerdown', { bubbles: true, composed: true }))
+    window.dispatchEvent(new Event('keyboardWillShow'))
+
+    expect(scrollTo).toHaveBeenCalledOnce()
+    expect(scrollTo).toHaveBeenCalledWith({
+      top: 64,
+      behavior: 'auto',
+    })
+
+    window.dispatchEvent(new Event('keyboardDidShow'))
+    vi.runOnlyPendingTimers()
+    expect(scrollTo).toHaveBeenCalledOnce()
+    remove()
+  })
+
+  it('adds only the scroll needed to reveal an Android field from the captured position', () => {
+    document.documentElement.classList.add('platform-android')
+    const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation((options) => {
+      const top = typeof options === 'object' ? options.top : options
+      Object.defineProperty(window, 'scrollY', { configurable: true, value: top ?? 0 })
+    })
+    Object.defineProperty(window, 'scrollY', { configurable: true, value: 100 })
+    const wrapper = document.createElement('div')
+    wrapper.className = 'v-input'
+    wrapper.scrollIntoView = vi.fn()
+    wrapper.getBoundingClientRect = () => {
+      const documentTop = document.documentElement.classList.contains('keyboard-open')
+        ? 690
+        : 750
+      return rectangle(documentTop - window.scrollY, documentTop + 60 - window.scrollY)
+    }
+    const input = document.createElement('input')
+    wrapper.append(input)
+    document.body.append(wrapper)
+    const viewport = createViewport(800)
+    const remove = installMobileKeyboardViewport(document, viewport)
+
+    input.focus()
+    viewport.height = 552
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 552 })
+    window.dispatchEvent(new Event('keyboardWillShow'))
+
+    expect(scrollTo).toHaveBeenCalledOnce()
+    expect(scrollTo).toHaveBeenCalledWith({
+      top: 214,
+      behavior: 'auto',
+    })
+
+    window.dispatchEvent(new Event('keyboardDidShow'))
+    vi.runOnlyPendingTimers()
+
+    expect(scrollTo).toHaveBeenCalledOnce()
     expect(wrapper.scrollIntoView).not.toHaveBeenCalled()
     remove()
   })

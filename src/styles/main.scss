@@ -116,9 +116,40 @@ html.keyboard-open {
   scroll-padding-bottom: var(--keyboard-scroll-bottom, 1rem);
 }
 
+html.platform-android.keyboard-open {
+  scroll-padding-top: calc(
+    1.5rem + max(
+      env(safe-area-inset-top, 0rem),
+      var(--safe-area-inset-top, 0rem)
+    )
+  );
+}
+
+html.platform-android.keyboard-open .app-bar,
+html.platform-android.keyboard-open .bottom-nav {
+  display: none !important;
+}
+
+html.platform-android.keyboard-open .app-scroll--shell {
+  overflow-anchor: none;
+  transition: none !important;
+  padding-top: max(
+    env(safe-area-inset-top, 0rem),
+    var(--safe-area-inset-top, 0rem)
+  ) !important;
+  padding-bottom: max(
+    env(safe-area-inset-bottom, 0rem),
+    var(--safe-area-inset-bottom, 0rem)
+  ) !important;
+}
+
 html.keyboard-open .v-input {
   scroll-margin-top: 1rem;
   scroll-margin-bottom: var(--keyboard-scroll-bottom, 1rem);
+}
+
+html.platform-android.keyboard-open .v-input {
+  scroll-margin-top: 1.5rem;
 }
 
 html.keyboard-open .page-action-area {
