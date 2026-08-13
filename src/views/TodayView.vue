@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Capacitor } from '@capacitor/core'
 import { App } from '@capacitor/app'
-import { computed, onBeforeUnmount, onBeforeUpdate, onMounted, onUpdated, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { addDays, format, isAfter, parseISO, startOfDay, startOfWeek } from 'date-fns'
 import { storeToRefs } from 'pinia'
 import { useDisplay } from 'vuetify'
@@ -106,7 +106,6 @@ const taskCardPositions = new Map<HTMLElement, {
   left: number
   width: number
 }>()
-let captureTaskCardPositions = false
 const exactAmount = computed(() => {
   if (!exactAmountInput.value || exactAmountInput.value === '.') return null
   const value = Number(exactAmountInput.value)
@@ -235,9 +234,7 @@ onBeforeUnmount(() => {
   completedVisibilityTimers.clear()
 })
 
-onBeforeUpdate(() => {
-  if (!captureTaskCardPositions) return
-  captureTaskCardPositions = false
+function captureTaskCardLayout() {
   taskCardPositions.clear()
   taskPage.value?.querySelectorAll<HTMLElement>('.task-masonry-item').forEach((element) => {
     const parent = element.parentElement
@@ -250,11 +247,7 @@ onBeforeUpdate(() => {
       width: bounds.width,
     })
   })
-})
-
-onUpdated(() => {
-  taskCardPositions.clear()
-})
+}
 
 watch(selectedDate, date => {
   if (isNativeHealthConnectSupported()) void store.refreshStepCount(date)
@@ -327,11 +320,11 @@ function taskFilterEnabled(filter: TaskFilterId) {
 
 function toggleTaskFilter(filter: TaskFilterId) {
   if (filter === 'completed') {
-    captureTaskCardPositions = showCompleted.value
+    if (showCompleted.value) captureTaskCardLayout()
     showCompleted.value = !showCompleted.value
     return
   }
-  captureTaskCardPositions = showNotScheduled.value
+  if (showNotScheduled.value) captureTaskCardLayout()
   showNotScheduled.value = !showNotScheduled.value
 }
 
@@ -369,6 +362,7 @@ function clearCompletedTaskVisibility(key: string) {
   if (timer) clearTimeout(timer)
   completedVisibilityTimers.delete(key)
   if (!recentlyCompletedKeys.value.has(key)) return
+  if (!showCompleted.value) captureTaskCardLayout()
   const nextKeys = new Set(recentlyCompletedKeys.value)
   nextKeys.delete(key)
   recentlyCompletedKeys.value = nextKeys
