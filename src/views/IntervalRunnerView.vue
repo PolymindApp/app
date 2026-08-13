@@ -1619,9 +1619,11 @@ async function runAgain(repetitions?: number) {
               </v-btn>
             </footer>
             <v-progress-linear
+              class="interval-review-card__progress"
               :model-value="flashcardPhase.progress"
-              color="surface-variant"
-              bg-color="background"
+              color="info"
+              bg-color="on-surface"
+              :bg-opacity="0.2"
               height="5"
               rounded
               :aria-label="flashcardReviewPlaybackEnabled
@@ -2043,6 +2045,7 @@ async function runAgain(repetitions?: number) {
 .interval-review-card__quick-tag.v-chip--variant-outlined { border-color: rgba(var(--v-theme-on-surface), .18); }
 .interval-review-card__tag-menu-button { min-width: 0; padding-inline: .65rem; grid-column: 3; justify-self: end; }
 .interval-review-card :deep(.v-progress-linear) { border-radius: 0; }
+.interval-review-card__progress :deep(.v-progress-linear__determinate) { opacity: .3; }
 .runner-progress {
   display: flex;
   width: 100%;
