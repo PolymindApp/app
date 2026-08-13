@@ -230,16 +230,6 @@ async function previewIntervalTypeSound(kind: IntervalStepKind, sound: IntervalC
 
 <template>
   <main class="app-page settings-page">
-    <header class="settings-intro">
-      <div class="settings-intro__icon">
-        <v-icon icon="mdi-cog-outline" size="26" />
-      </div>
-      <div>
-        <h1 class="text-h5 font-weight-black">Settings</h1>
-        <p>Customize Polymind's navigation, interval sounds, and connected data.</p>
-      </div>
-    </header>
-
     <v-alert v-if="error" type="error" variant="tonal" closable @click:close="error = ''">
       {{ error }}
     </v-alert>
@@ -413,26 +403,6 @@ async function previewIntervalTypeSound(kind: IntervalStepKind, sound: IntervalC
   gap: 1rem;
 }
 
-.settings-intro {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  padding: .5rem .25rem .75rem;
-}
-
-.settings-intro__icon {
-  display: grid;
-  width: 52px;
-  height: 52px;
-  flex: 0 0 auto;
-  place-items: center;
-  border: 1px solid rgb(var(--v-theme-secondary) / .24);
-  border-radius: 17px;
-  background: rgb(var(--v-theme-secondary) / .1);
-  color: rgb(var(--v-theme-secondary));
-}
-
-.settings-intro p,
 .settings-section-heading p,
 .v-alert p {
   margin-top: .2rem;
@@ -465,7 +435,7 @@ async function previewIntervalTypeSound(kind: IntervalStepKind, sound: IntervalC
 
 .menu-order-item {
   display: grid;
-  grid-template-columns: 2rem 2.75rem minmax(0, 1fr) auto;
+  grid-template-columns: 2rem minmax(0, 1fr) auto;
   align-items: center;
   min-height: 3.75rem;
   gap: .75rem;
