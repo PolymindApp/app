@@ -74,6 +74,8 @@ const reviewSheet = ref(false)
 const taskSheet = ref(false)
 const taskSheetMode = ref<'actions' | 'history'>('actions')
 const taskActionProgress = ref<TaskProgress>()
+const taskStatusDialog = ref(false)
+const taskStatusUpdating = ref(false)
 const taskLogEntries = ref<Entry[]>([])
 const taskLogLoading = ref(false)
 const taskLogError = ref('')
@@ -140,7 +142,13 @@ const taskSheetDescription = computed(() => taskSheetMode.value === 'history'
   : undefined)
 const taskCardActionItems = computed(() => TASK_CARD_ACTION_ITEMS.filter((action) =>
   action.id !== 'view-log-history' || taskCanLogAmounts(taskActionProgress.value),
-))
+).map(action => action.id === 'toggle-task-status'
+  ? {
+      ...action,
+      title: taskActionProgress.value?.task.active ? 'Pause task' : 'Unpause task',
+      icon: taskActionProgress.value?.task.active ? 'mdi-pause' : 'mdi-play',
+    }
+  : action))
 const visibleWeekDates = computed(() => Array.from(
   { length: 7 },
   (_, index) => addDays(visibleWeekStart.value, index),
@@ -560,7 +568,26 @@ function runTaskCardAction(action: TaskCardActionId) {
     void router.push({ name: 'task-edit', params: { id: taskId } })
     return
   }
+  if (action === 'toggle-task-status') {
+    if (!taskActionProgress.value) return
+    taskSheet.value = false
+    taskStatusDialog.value = true
+    return
+  }
   if (action === 'view-log-history') void openTaskLogHistory()
+}
+
+async function confirmTaskStatusChange() {
+  const task = taskActionProgress.value?.task
+  if (!task || taskStatusUpdating.value) return
+  taskStatusUpdating.value = true
+  try {
+    await store.toggleTaskActive(task)
+    taskStatusDialog.value = false
+    taskActionProgress.value = undefined
+  } finally {
+    taskStatusUpdating.value = false
+  }
 }
 
 async function openExact(progress: TaskProgress) {
@@ -1294,6 +1321,19 @@ async function saveTaskLogEntry() {
         </div>
       </template>
     </ActionBottomSheet>
+
+    <ConfirmDialog
+      v-model="taskStatusDialog"
+      :title="taskActionProgress?.task.active ? 'Pause this task?' : 'Unpause this task?'"
+      :message="taskActionProgress?.task.active
+        ? `${taskActionProgress?.task.name || 'This task'} will stop appearing in your schedule until you unpause it. Its history will be preserved.`
+        : `${taskActionProgress?.task.name || 'This task'} will return to its schedule based on its recurrence settings.`"
+      :confirm-text="taskActionProgress?.task.active ? 'Pause task' : 'Unpause task'"
+      :confirm-color="taskActionProgress?.task.active ? 'warning' : 'secondary'"
+      :icon="taskActionProgress?.task.active ? 'mdi-pause' : 'mdi-play'"
+      :loading="taskStatusUpdating"
+      @confirm="confirmTaskStatusChange"
+    />
 
     <ConfirmDialog
       v-model="taskLogDeleteDialog"

@@ -172,6 +172,7 @@ const numericGoalStatus = computed(() => {
 })
 const taskTypePresentation = computed(() => TASK_TYPE_PRESENTATION[task.value.type])
 const taskColor = computed(() => task.value.color || taskTypePresentation.value.color)
+const isPausedTask = computed(() => props.scheduleStatus === 'paused')
 const stateColor = computed(() => {
   if (numericGoalStatus.value?.tone === 'text-success') return 'success'
   if (numericGoalStatus.value?.tone === 'text-warning') return 'warning'
@@ -181,14 +182,16 @@ const stateColor = computed(() => {
   return taskColor.value
 })
 const stateIcon = computed(() => {
+  if (isPausedTask.value) return 'mdi-pause'
   if (displayedComplete.value) return 'mdi-check-bold'
   if (props.progress.locked) return 'mdi-lock-outline'
   return taskTypePresentation.value.icon
 })
 const showingTaskTypeIcon = computed(() =>
-  !displayedComplete.value && !props.progress.locked,
+  !isPausedTask.value && !displayedComplete.value && !props.progress.locked,
 )
 const stateIconColor = computed(() => {
+  if (isPausedTask.value) return 'on-surface'
   if (showingTaskTypeIcon.value) return '#191C19'
   if (displayedComplete.value) return 'white'
   return stateColor.value
@@ -323,7 +326,8 @@ onBeforeUnmount(() => clearTimeout(stepSyncHideTimer))
           class="check-control check-control--status"
           :class="{
             'check-control--type': showingTaskTypeIcon,
-            'check-control--done': displayedComplete,
+            'check-control--done': displayedComplete && !isPausedTask,
+            'check-control--paused': isPausedTask,
           }"
           :style="{ '--task-color': taskColor }"
           aria-hidden="true"
@@ -741,6 +745,10 @@ onBeforeUnmount(() => clearTimeout(stepSyncHideTimer))
 .check-control--type {
   background: var(--task-color);
   color: #191c19;
+}
+
+.check-control--paused {
+  background: rgba(var(--v-theme-on-surface), .14);
 }
 
 .check-control--status {

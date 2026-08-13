@@ -8,6 +8,11 @@ export const TASK_CARD_ACTION_ITEMS = [
     icon: 'mdi-pencil-outline',
   },
   {
+    id: 'toggle-task-status',
+    title: 'Pause task',
+    icon: 'mdi-pause',
+  },
+  {
     id: 'view-log-history',
     title: 'View log history',
     icon: 'mdi-history',

@@ -11,7 +11,11 @@ function progress(type: TaskType, completionType?: ProgramStep['completionType']
 
 describe('task card actions', () => {
   it('puts edit before the contextual task actions', () => {
-    expect(TASK_CARD_ACTION_ITEMS.map(item => item.id)).toEqual(['edit-task', 'view-log-history'])
+    expect(TASK_CARD_ACTION_ITEMS.map(item => item.id)).toEqual([
+      'edit-task',
+      'toggle-task-status',
+      'view-log-history',
+    ])
   })
 
   it('limits log history to tasks and steps that can log amounts', () => {
