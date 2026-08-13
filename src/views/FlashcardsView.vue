@@ -137,7 +137,11 @@ async function openReviewSet(reviewSet: FlashcardReviewSet) {
   try {
     const active = store.activeSession
     if (active) {
-      await router.push({ name: 'flashcard-review-runner', params: { sessionId: active.id } })
+      await router.push({
+        name: 'flashcard-review-runner',
+        params: { sessionId: active.id },
+        query: { autoplay: '1' },
+      })
       return
     }
     await router.push({
@@ -500,7 +504,11 @@ async function reorderReviewSets(result: LongPressDragResult) {
         color="primary"
         size="large"
         append-icon="mdi-arrow-right"
-        :to="{ name: 'flashcard-review-runner', params: { sessionId: store.activeSession.id } }"
+        :to="{
+          name: 'flashcard-review-runner',
+          params: { sessionId: store.activeSession.id },
+          query: { autoplay: '1' },
+        }"
       >
         Resume
       </v-btn>
