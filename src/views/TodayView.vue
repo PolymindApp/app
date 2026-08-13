@@ -685,7 +685,7 @@ async function startFlashcardTask(progress: TaskProgress) {
       await router.push({
         name: 'flashcard-review-runner',
         params: { sessionId: active.id },
-        query: { from: 'tasks' },
+        query: { from: 'tasks', autoplay: '1' },
       })
     } else {
       activeReviewSheet.value = true
@@ -723,7 +723,7 @@ async function startIntervalTask(progress: TaskProgress) {
       await router.push({
         name: 'interval-runner',
         params: { sessionId: active.id },
-        query: { from: 'tasks' },
+        query: { from: 'tasks', autoplay: '1' },
       })
     } else {
       activeIntervalSheet.value = true
@@ -754,7 +754,7 @@ async function resumeActiveInterval() {
   await router.push({
     name: 'interval-runner',
     params: { sessionId: active.id },
-    query: { from: 'tasks' },
+    query: { from: 'tasks', autoplay: '1' },
   })
 }
 
@@ -765,7 +765,7 @@ async function resumeActiveReview() {
   await router.push({
     name: 'flashcard-review-runner',
     params: { sessionId: active.id },
-    query: { from: 'tasks' },
+    query: { from: 'tasks', autoplay: '1' },
   })
 }
 

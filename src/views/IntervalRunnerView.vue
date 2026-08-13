@@ -441,8 +441,11 @@ onMounted(async () => {
     cueHandoff.recordVisibility(document.visibilityState)
     window.addEventListener('pagehide', handlePageHide)
 
+    const autoplay = route.query.autoplay === '1' && session.value.status === 'paused'
+    if (autoplay) await resume()
+
     const active = session.value
-    if (active?.status === 'running') {
+    if (!autoplay && active?.status === 'running') {
       void prepareIntervalCues(active.cues)
       void syncNativeTimer(active)
       void speakCurrentFlashcardSide()
@@ -743,7 +746,7 @@ async function requestStartTemplate() {
       await router.replace({
         name: 'interval-runner',
         params: { sessionId: active.id },
-        query: { from: route.query.from },
+        query: { from: route.query.from, autoplay: '1' },
       })
     } else {
       activeSessionSheet.value = true
@@ -859,7 +862,10 @@ async function resumeActiveSession() {
   await router.replace({
     name: 'interval-runner',
     params: { sessionId: active.id },
-    query: route.query.from === 'tasks' ? { from: 'tasks' } : {},
+    query: {
+      ...(route.query.from === 'tasks' ? { from: 'tasks' } : {}),
+      autoplay: '1',
+    },
   })
 }
 

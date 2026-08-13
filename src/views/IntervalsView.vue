@@ -186,7 +186,11 @@ onBeforeUnmount(() => {
         color="primary"
         size="large"
         append-icon="mdi-arrow-right"
-        :to="`/intervals/run/${store.activeSession.id}`"
+        :to="{
+          name: 'interval-runner',
+          params: { sessionId: store.activeSession.id },
+          query: { autoplay: '1' },
+        }"
       >
         Resume
       </v-btn>

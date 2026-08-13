@@ -406,6 +406,22 @@ describe('IntervalRunnerView flashcard area', () => {
     mocks.nativeBackgroundIntervalIsActive.mockReset().mockReturnValue(false)
   })
 
+  it('starts playing when a paused interval is reopened through Resume', async () => {
+    mocks.route.query = { autoplay: '1' }
+    mocks.intervalStore.sessions = reactive([intervalSession('paused')])
+
+    const wrapper = mountRunner()
+    await flushPromises()
+
+    expect(mocks.intervalStore.updateSession).toHaveBeenCalledWith(
+      'session-1',
+      expect.objectContaining({ status: 'running' }),
+    )
+    expect(mocks.intervalStore.sessions[0]?.status).toBe('running')
+
+    wrapper.unmount()
+  })
+
   it('orders session actions and toggles TTS amplification without replaying', async () => {
     const active = intervalSession('running')
     if (!active.flashcardReview) throw new Error('Expected a Review set snapshot')

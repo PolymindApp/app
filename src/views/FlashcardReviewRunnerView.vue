@@ -304,8 +304,13 @@ onMounted(async () => {
     } else {
       throw new Error('This review could not be found.')
     }
-    const restoredBackground = await reconcileBackgroundReview()
-    if (!restoredBackground) await syncNativeBackground()
+    const autoplay = route.query.autoplay === '1' && session.value?.status === 'paused'
+    if (autoplay) {
+      await resumeReview()
+    } else {
+      const restoredBackground = await reconcileBackgroundReview()
+      if (!restoredBackground) await syncNativeBackground()
+    }
     tickTimer = setInterval(tick, 100)
     document.addEventListener('visibilitychange', handleVisibilityChange)
     if (shouldKeepScreenAwake.value && document.visibilityState === 'visible') void acquireWakeLock()

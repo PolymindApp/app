@@ -485,6 +485,29 @@ describe('FlashcardReviewRunnerView Review set preview', () => {
     wrapper.unmount()
   })
 
+  it('starts playing when a paused Review set is reopened through Resume', async () => {
+    const active = {
+      ...runningSession(),
+      status: 'paused' as const,
+    }
+    mocks.route.params = { sessionId: active.id }
+    mocks.route.query = { autoplay: '1' }
+    mocks.store.sessions = reactive([active])
+    mocks.store.loadSession.mockResolvedValue(active)
+    mocks.store.act.mockImplementation(async (_id, action) => {
+      if (action === 'resume') active.status = 'running'
+      return active
+    })
+
+    const wrapper = mountRunner()
+    await flushPromises()
+
+    expect(mocks.store.act).toHaveBeenCalledWith(active.id, 'resume', 0)
+    expect(active.status).toBe('running')
+
+    wrapper.unmount()
+  })
+
   it('shows a card speech failure as a warning snackbar only once per session', async () => {
     const active = {
       ...runningSession(),
