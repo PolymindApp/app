@@ -275,8 +275,8 @@ function cardTagNames(card: Flashcard) {
 .card-library-header { position: sticky; z-index: 3; top: calc(3.75rem + max(env(safe-area-inset-top, 0rem), var(--safe-area-inset-top, 0rem))); width: 100%; height: 2.25rem; overflow: hidden; background: rgb(var(--v-theme-surface)); box-shadow: 0 .0625rem 0 rgba(var(--v-theme-on-surface), .1); }
 .card-library-header__track { display: grid; width: max(42rem, 100%); height: 100%; grid-template-columns: 3rem 3rem 54% minmax(0, 1fr); will-change: transform; }
 .card-library-header__track--without-selection { grid-template-columns: 3rem 54% minmax(0, 1fr); }
-.card-library-header__track--without-last-column { width: max(32rem, 100%); grid-template-columns: 3rem 5.5rem minmax(0, 1fr); }
-.card-library-header__track--without-selection.card-library-header__track--without-last-column { grid-template-columns: 5.5rem minmax(0, 1fr); }
+.card-library-header__track--without-last-column { width: max(32rem, 100%); grid-template-columns: 3rem 3rem minmax(0, 1fr); }
+.card-library-header__track--without-selection.card-library-header__track--without-last-column { grid-template-columns: 3rem minmax(0, 1fr); }
 .card-library-header__cell { display: flex; min-width: 0; height: 2.25rem; padding: 0 .75rem; align-items: center; color: rgba(var(--v-theme-on-surface), .52); font-size: .64rem; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
 .card-library-header__select { justify-content: center; padding-right: .25rem; padding-left: .25rem; }
 .card-library-header__select :deep(.v-selection-control) { justify-content: center; }
@@ -289,7 +289,7 @@ function cardTagNames(card: Flashcard) {
 .card-library-table__semantic-heading { position: absolute; width: .0625rem; height: .0625rem; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
 .card-library-table__select-column { width: 3rem; }
 .card-library-table__image-column { width: 3rem; }
-.card-library-table--without-last-column .card-library-table__image-column { width: 5.5rem; }
+.card-library-table--without-last-column .card-library-table__faces-column { width: auto; }
 .card-library-table__faces-column { width: 54%; }
 .card-library-table th.card-library-table__select,
 .card-library-table td.card-library-table__select { padding-right: .25rem !important; padding-left: .25rem !important; text-align: center; }
