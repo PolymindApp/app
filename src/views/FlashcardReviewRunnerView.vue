@@ -39,6 +39,7 @@ import {
   flashcardSideFromSwipe,
   flashcardTextFontSize,
   formatReviewDuration,
+  INTERVAL_FLASHCARD_QUICK_TAGS,
   normalizeFlashcardBackSpeechRepeatCount,
   sessionAccuracy,
 } from '@/services/flashcards'
@@ -53,6 +54,7 @@ import type {
   FlashcardReviewSide,
   FlashcardSettingsApplyTarget,
   FlashcardSpeechSupport,
+  FlashcardTag,
   RunnerSessionAction,
 } from '@/types/domain'
 
@@ -66,6 +68,8 @@ const revealed = ref(false)
 const sessionActionsSheet = ref(false)
 const endDialog = ref(false)
 const cardMenuOpen = ref(false)
+const cardTagSheet = ref(false)
+const cardTagSaving = ref('')
 const cardEditorDialog = ref(false)
 const cardEditorCard = ref<Flashcard>()
 const deleteCardDialog = ref(false)
@@ -121,6 +125,7 @@ let suppressManualCardTap = false
 let manualCardTapResetTimer: number | undefined
 let resumeAfterSessionSettings = false
 let resumeAfterCardEditor = false
+let resumeAfterCardTagSheet = false
 const speechFailureWarnedSessionIds = new Set<string>()
 
 const currentSessionId = ref('')
@@ -139,6 +144,26 @@ const currentSourceCards = computed(() => {
 const currentSourceCard = computed(() => currentSourceCards.value.find(card => card.id === currentCard.value?.id))
 const canManageCurrentCard = computed(() => !currentReviewSet.value
   || currentReviewSet.value.accessRole !== 'readonly')
+const canTagCurrentCard = computed(() => Boolean(
+  !isReviewSetPreview.value
+  && currentReviewSet.value?.accessRole === 'owner'
+  && currentSourceCard.value,
+))
+const quickTagNames = new Set(
+  INTERVAL_FLASHCARD_QUICK_TAGS.map(tag => tag.name.toLocaleLowerCase()),
+)
+const quickTags = computed(() => INTERVAL_FLASHCARD_QUICK_TAGS.map((quickTag) => {
+  const tag = (store.tags || []).find(
+    item => item.name.toLocaleLowerCase() === quickTag.name.toLocaleLowerCase(),
+  )
+  return {
+    ...quickTag,
+    selected: Boolean(tag && currentCard.value?.tags.includes(tag.id)),
+  }
+}))
+const selectableTags = computed(() => (store.tags || []).filter(
+  tag => !quickTagNames.has(tag.name.toLocaleLowerCase()),
+))
 const isFinished = computed(() => session.value?.status === 'completed' || session.value?.status === 'ended')
 const isRunning = computed(() => session.value?.status === 'running')
 const canReplayCurrentSide = computed(() => Boolean(
@@ -912,6 +937,42 @@ async function closeCardEditor(open: boolean) {
   if (!open) resumeAfterCardEditor = false
 }
 
+async function openCardTagSheet() {
+  if (!canTagCurrentCard.value || cardTagSaving.value || !selectableTags.value.length || !session.value) return
+  resumeAfterCardTagSheet = session.value.status === 'running'
+  if (resumeAfterCardTagSheet) await pauseReview(false)
+  if (session.value && !isFinished.value) cardTagSheet.value = true
+  else await closeCardTagSheet(false)
+}
+
+async function closeCardTagSheet(open: boolean) {
+  cardTagSheet.value = open
+  if (!open && resumeAfterCardTagSheet && session.value?.status === 'paused') await resumeReview()
+  if (!open) resumeAfterCardTagSheet = false
+}
+
+function currentCardHasTag(tagId: string) {
+  return Boolean(currentCard.value?.tags.includes(tagId))
+}
+
+async function toggleCurrentCardTag(tag: FlashcardTag | { name: string }) {
+  const cardId = currentCard.value?.id
+  if (!cardId || !canTagCurrentCard.value || cardTagSaving.value) return
+  cardTagSaving.value = 'id' in tag ? tag.id : tag.name
+  try {
+    const resolvedTag = 'id' in tag ? tag : await store.createTag(tag.name)
+    const action = currentCardHasTag(resolvedTag.id) ? 'remove_tags' : 'add_tags'
+    const updatedCards = await store.bulkUpdateCards(action, [cardId], [resolvedTag.id])
+    const updatedCard = updatedCards.find(card => card.id === cardId)
+    if (!updatedCard) throw new Error('The flashcard could not be updated.')
+    handleCardSaved(updatedCard)
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : 'Could not update this flashcard tag.'
+  } finally {
+    cardTagSaving.value = ''
+  }
+}
+
 function handleCardSaved(card: Flashcard) {
   const value = session.value
   if (!value) return
@@ -1126,44 +1187,85 @@ async function leaveRunner() {
           <span>{{ formatReviewDuration(elapsedSeconds) }}</span>
         </div>
 
-        <button
-          v-if="session.mode === 'manual'"
-          v-ripple
-          type="button"
-          class="review-card"
-          :class="{ 'review-card--revealed': manualShowingBack }"
-          :aria-label="session.speechEnabled
-            ? `Replay ${currentSpeechSide} speech`
-            : session.cardSides === 'both' && !revealed ? 'Show answer' : `${currentSpeechSide} shown`"
-          :disabled="busy || (session.status !== 'running' && !canReplayCurrentSide)"
-          @pointerdown="beginManualCardSwipe"
-          @pointerup="finishManualCardSwipe"
-          @pointercancel="cancelManualCardSwipe"
-          @click="handleManualCardTap"
-        >
-          <span class="review-card__inner">
-            <span class="review-card__face review-card__front" :aria-hidden="manualShowingBack">
-              <small>Front</small>
-              <img
-                v-if="currentCard.image"
-                :src="currentCard.image"
-                alt=""
-                class="review-card__image"
-                width="256"
-                height="256"
-              />
-              <strong :style="{ fontSize: flashcardTextFontSize(currentCard.front) }">
-                {{ currentCard.front }}
-              </strong>
-              <span v-if="session.speechEnabled" class="review-card__hint">
-                <v-icon icon="mdi-volume-high" size="18" /> Tap to replay
+        <div class="review-card-stack">
+          <button
+            v-if="session.mode === 'manual'"
+            v-ripple
+            type="button"
+            class="review-card"
+            :class="{ 'review-card--revealed': manualShowingBack }"
+            :aria-label="session.speechEnabled
+              ? `Replay ${currentSpeechSide} speech`
+              : session.cardSides === 'both' && !revealed ? 'Show answer' : `${currentSpeechSide} shown`"
+            :disabled="busy || (session.status !== 'running' && !canReplayCurrentSide)"
+            @pointerdown="beginManualCardSwipe"
+            @pointerup="finishManualCardSwipe"
+            @pointercancel="cancelManualCardSwipe"
+            @click="handleManualCardTap"
+          >
+            <span class="review-card__inner">
+              <span class="review-card__face review-card__front" :aria-hidden="manualShowingBack">
+                <small>Front</small>
+                <img
+                  v-if="currentCard.image"
+                  :src="currentCard.image"
+                  alt=""
+                  class="review-card__image"
+                  width="256"
+                  height="256"
+                />
+                <strong :style="{ fontSize: flashcardTextFontSize(currentCard.front) }">
+                  {{ currentCard.front }}
+                </strong>
+                <span v-if="session.speechEnabled" class="review-card__hint">
+                  <v-icon icon="mdi-volume-high" size="18" /> Tap to replay
+                </span>
+                <span v-else-if="session.cardSides === 'both' && !revealed" class="review-card__hint">
+                  <v-icon icon="mdi-gesture-tap" size="18" /> Tap to reveal
+                </span>
               </span>
-              <span v-else-if="session.cardSides === 'both' && !revealed" class="review-card__hint">
-                <v-icon icon="mdi-gesture-tap" size="18" /> Tap to reveal
+              <span class="review-card__face review-card__back" :aria-hidden="!manualShowingBack">
+                <small>Back</small>
+                <img
+                  v-if="currentCard.image"
+                  :src="currentCard.image"
+                  alt=""
+                  class="review-card__image"
+                  width="256"
+                  height="256"
+                />
+                <span class="review-card__answer">
+                  <span v-if="session.cardSides === 'both'" class="review-card__front-reference">
+                    {{ currentCard.front }}
+                  </span>
+                  <FlashcardResponseText
+                    :back="currentCard.back"
+                    :note="currentCard.note"
+                    :note-before-back="session.noteBeforeBack"
+                  />
+                </span>
+                <span v-if="session.speechEnabled" class="review-card__hint">
+                  <v-icon icon="mdi-volume-high" size="18" /> Tap to replay
+                </span>
               </span>
             </span>
-            <span class="review-card__face review-card__back" :aria-hidden="!manualShowingBack">
-              <small>Back</small>
+          </button>
+
+          <div
+            v-else
+            v-ripple="canReplayCurrentSide"
+            class="passive-card"
+            :class="{ 'passive-card--interactive': canReplayCurrentSide }"
+            :role="session.speechEnabled ? 'button' : undefined"
+            :tabindex="canReplayCurrentSide ? 0 : undefined"
+            :aria-label="session.speechEnabled ? `Replay ${passiveSide} speech` : undefined"
+            :aria-disabled="session.speechEnabled ? !canReplayCurrentSide : undefined"
+            @click="replayCurrentSide"
+            @keydown.enter="replayCurrentSide"
+            @keydown.space.prevent="replayCurrentSide"
+          >
+            <div class="passive-card__content">
+              <small>{{ passiveSide === 'front' ? 'Front' : 'Back' }}</small>
               <img
                 v-if="currentCard.image"
                 :src="currentCard.image"
@@ -1173,78 +1275,69 @@ async function leaveRunner() {
                 height="256"
               />
               <span class="review-card__answer">
-                <span v-if="session.cardSides === 'both'" class="review-card__front-reference">
-                  {{ currentCard.front }}
-                </span>
                 <FlashcardResponseText
+                  v-if="passiveSide === 'back'"
                   :back="currentCard.back"
                   :note="currentCard.note"
                   :note-before-back="session.noteBeforeBack"
                 />
+                <strong
+                  v-else
+                  :style="{
+                    fontSize: flashcardTextFontSize(currentCard.front),
+                  }"
+                >
+                  {{ currentCard.front }}
+                </strong>
+                <span
+                  v-if="passiveSide === 'back' && session.cardSides === 'both'"
+                  class="review-card__front-reference"
+                >
+                  {{ currentCard.front }}
+                </span>
               </span>
               <span v-if="session.speechEnabled" class="review-card__hint">
                 <v-icon icon="mdi-volume-high" size="18" /> Tap to replay
               </span>
-            </span>
-          </span>
-        </button>
-
-        <div
-          v-else
-          v-ripple="canReplayCurrentSide"
-          class="passive-card"
-          :class="{ 'passive-card--interactive': canReplayCurrentSide }"
-          :role="session.speechEnabled ? 'button' : undefined"
-          :tabindex="canReplayCurrentSide ? 0 : undefined"
-          :aria-label="session.speechEnabled ? `Replay ${passiveSide} speech` : undefined"
-          :aria-disabled="session.speechEnabled ? !canReplayCurrentSide : undefined"
-          @click="replayCurrentSide"
-          @keydown.enter="replayCurrentSide"
-          @keydown.space.prevent="replayCurrentSide"
-        >
-          <div class="passive-card__content">
-            <small>{{ passiveSide === 'front' ? 'Front' : 'Back' }}</small>
-            <img
-              v-if="currentCard.image"
-              :src="currentCard.image"
-              alt=""
-              class="review-card__image"
-              width="256"
-              height="256"
+            </div>
+            <v-progress-linear
+              :model-value="passiveProgress"
+              color="secondary"
+              bg-color="surface-variant"
+              height="6"
+              rounded
             />
-            <span class="review-card__answer">
-              <FlashcardResponseText
-                v-if="passiveSide === 'back'"
-                :back="currentCard.back"
-                :note="currentCard.note"
-                :note-before-back="session.noteBeforeBack"
-              />
-              <strong
-                v-else
-                :style="{
-                  fontSize: flashcardTextFontSize(currentCard.front),
-                }"
-              >
-                {{ currentCard.front }}
-              </strong>
-              <span
-                v-if="passiveSide === 'back' && session.cardSides === 'both'"
-                class="review-card__front-reference"
-              >
-                {{ currentCard.front }}
-              </span>
-            </span>
-            <span v-if="session.speechEnabled" class="review-card__hint">
-              <v-icon icon="mdi-volume-high" size="18" /> Tap to replay
-            </span>
           </div>
-          <v-progress-linear
-            :model-value="passiveProgress"
-            color="secondary"
-            bg-color="surface-variant"
-            height="6"
-            rounded
-          />
+
+          <footer v-if="store.tags" class="review-card__tag-actions" aria-label="Flashcard tags" @click.stop>
+            <div class="review-card__quick-tags">
+              <v-chip
+                v-for="tag in quickTags"
+                :key="tag.name"
+                class="review-card__tag-control review-card__quick-tag"
+                :data-tag-name="tag.name"
+                label
+                :color="tag.selected ? tag.color : undefined"
+                :variant="tag.selected ? 'flat' : 'outlined'"
+                :prepend-icon="tag.selected ? 'mdi-check' : 'mdi-tag-outline'"
+                :disabled="!canTagCurrentCard"
+                :aria-pressed="tag.selected"
+                :aria-label="`${tag.selected ? 'Remove' : 'Add'} ${tag.name} tag`"
+                @click.stop="toggleCurrentCardTag({ name: tag.name })"
+              >
+                {{ tag.name }}
+              </v-chip>
+            </div>
+            <v-btn
+              class="review-card__tag-control review-card__tag-menu-button"
+              variant="text"
+              prepend-icon="mdi-tag-multiple-outline"
+              :disabled="!canTagCurrentCard || !selectableTags.length"
+              @click.stop="openCardTagSheet"
+            >
+              Tags
+            </v-btn>
+          </footer>
         </div>
 
         <div v-if="session.mode === 'manual'" class="grading-actions">
@@ -1369,6 +1462,34 @@ async function leaveRunner() {
       :can-undo-eject="Boolean(session?.ejectedCount)"
       @action="handleSessionMenuAction"
     />
+
+    <ActionBottomSheet
+      v-if="store.tags"
+      :model-value="cardTagSheet"
+      title="Tag flashcard"
+      description="Choose any additional tags for this card. Easy and hard stay pinned on the card."
+      aria-label="Choose flashcard tags"
+      @update:model-value="closeCardTagSheet"
+    >
+      <v-list-item
+        v-for="tag in selectableTags"
+        :key="tag.id"
+        :data-tag-id="tag.id"
+        :title="tag.name"
+        :prepend-icon="currentCardHasTag(tag.id) ? 'mdi-check-circle' : 'mdi-tag-outline'"
+        :active="currentCardHasTag(tag.id)"
+        :disabled="Boolean(cardTagSaving)"
+        rounded="lg"
+        @click="toggleCurrentCardTag(tag)"
+      />
+      <v-list-item
+        v-if="!selectableTags.length"
+        prepend-icon="mdi-tag-off-outline"
+        title="No other tags available"
+        disabled
+        rounded="lg"
+      />
+    </ActionBottomSheet>
 
     <FlashcardCardDialog
       :model-value="cardEditorDialog"
@@ -1512,12 +1633,13 @@ async function leaveRunner() {
 .runner-body { display: flex; width: 100%; max-width: 44rem; min-height: 0; margin: 0 auto; padding: 1rem 1rem .5rem; flex: 1 1 auto; flex-direction: column; gap: .875rem; overflow-y: auto; overscroll-behavior: contain; }
 .runner-meta { display: flex; align-items: center; justify-content: space-between; gap: 1rem; color: rgba(var(--v-theme-on-surface), .68); font-size: .75rem; font-weight: 850; }
 .runner-meta > div { display: flex; align-items: center; gap: .4rem; }
+.review-card-stack { position: relative; display: flex; width: 100%; min-height: min(38dvh, 22rem); flex: 1 1 auto; flex-direction: column; }
 .review-card { position: relative; width: 100%; min-height: min(38dvh, 22rem); border: 0; border-radius: 1.5rem; flex: 1 1 auto; overflow: hidden; background: transparent; color: inherit; cursor: pointer; perspective: 80rem; touch-action: pan-y; }
 .review-card :deep(.v-ripple__container) { z-index: 2; }
 .review-card:focus-visible { outline: .1875rem solid rgba(var(--v-theme-secondary), .72); outline-offset: .25rem; }
 .review-card__inner { position: relative; display: grid; height: 100%; min-height: inherit; transform-style: preserve-3d; transition: transform 240ms cubic-bezier(.22, 1, .36, 1); }
 .review-card--revealed .review-card__inner { transform: rotateY(180deg); }
-.review-card__face { display: flex; min-height: inherit; padding: 2rem; border: .0625rem solid rgba(var(--v-theme-on-surface), .1); border-radius: 1.5rem; grid-area: 1 / 1; align-items: center; justify-content: center; flex-direction: column; gap: 1.5rem; overflow: auto; background: rgb(var(--v-theme-surface)); box-shadow: 0 1rem 2.5rem rgba(0, 0, 0, .26); backface-visibility: hidden; }
+.review-card__face { display: flex; min-height: inherit; padding: 2rem 2rem 5.5rem; border: .0625rem solid rgba(var(--v-theme-on-surface), .1); border-radius: 1.5rem; grid-area: 1 / 1; align-items: center; justify-content: center; flex-direction: column; gap: 1.5rem; overflow: auto; background: rgb(var(--v-theme-surface)); box-shadow: 0 1rem 2.5rem rgba(0, 0, 0, .26); backface-visibility: hidden; }
 .review-card__face small,
 .passive-card small { color: rgba(var(--v-theme-on-surface), .48); font-size: .68rem; font-weight: 900; letter-spacing: .12em; text-transform: uppercase; }
 .review-card__face strong,
@@ -1527,10 +1649,14 @@ async function leaveRunner() {
 .review-card__front-reference { max-width: 30rem; overflow-wrap: anywhere; color: rgba(var(--v-theme-on-surface), .48); font-size: clamp(.72rem, 2.2vw, .88rem); line-height: 1.4; white-space: pre-wrap; }
 .review-card__back { border-color: rgba(var(--v-theme-secondary), .34); transform: rotateY(180deg); }
 .review-card__hint { display: flex; align-items: center; gap: .4rem; color: rgba(var(--v-theme-on-surface), .48); font-size: .72rem; font-weight: 800; }
-.passive-card { position: relative; display: flex; width: 100%; min-height: min(38dvh, 22rem); padding: 2rem; border: .0625rem solid rgba(var(--v-theme-secondary), .28); border-radius: 1.5rem; align-items: center; flex: 1 1 auto; flex-direction: column; gap: 1.5rem; overflow: hidden; background: rgb(var(--v-theme-surface)); color: inherit; font: inherit; text-align: center; box-shadow: 0 1rem 2.5rem rgba(0, 0, 0, .26); }
+.passive-card { position: relative; display: flex; width: 100%; min-height: min(38dvh, 22rem); padding: 2rem 2rem 5.5rem; border: .0625rem solid rgba(var(--v-theme-secondary), .28); border-radius: 1.5rem; align-items: center; flex: 1 1 auto; flex-direction: column; gap: 1.5rem; overflow: hidden; background: rgb(var(--v-theme-surface)); color: inherit; font: inherit; text-align: center; box-shadow: 0 1rem 2.5rem rgba(0, 0, 0, .26); }
 .passive-card--interactive { cursor: pointer; }
 .passive-card__content { display: flex; width: 100%; flex: 1 1 auto; align-items: center; justify-content: center; flex-direction: column; gap: 1.5rem; }
 .passive-card .v-progress-linear { width: min(20rem, 100%); flex: 0 0 auto; }
+.review-card__tag-actions { position: absolute; z-index: 3; right: 1.5rem; bottom: 1.25rem; left: 1.5rem; display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: .5rem; }
+.review-card__quick-tags { display: flex; grid-column: 1; justify-self: start; gap: .5rem; }
+.review-card__quick-tag.v-chip--variant-outlined { border-color: rgba(var(--v-theme-on-surface), .18); }
+.review-card__tag-menu-button { min-width: 0; grid-column: 3; justify-self: end; }
 .review-navigation { display: grid; margin-top: auto; padding-top: .25rem; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: center; justify-items: center; gap: 1rem; }
 .review-navigation__control { display: flex; min-width: 0; align-items: center; }
 .grading-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
