@@ -46,6 +46,7 @@ function entry(id: string, date: string, body: string) {
     id,
     title: '',
     body,
+    color: '#D4A5FF',
     image: '',
     occurredAt: `${date}T16:00:00.000Z`,
     localDate: date,
@@ -150,6 +151,8 @@ describe('JournalView month navigation', () => {
       expect.stringContaining('Selected reflection'),
       expect.stringContaining('Previous reflection'),
     ])
+    expect(wrapper.findAll('.journal-entry')[0]?.attributes('style'))
+      .toContain('--journal-entry-color: #D4A5FF')
     expect(wrapper.find('.section-heading .text-caption').exists()).toBe(false)
     expect(wrapper.text()).toContain('Selected reflection')
 

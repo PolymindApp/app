@@ -11,6 +11,7 @@ export function mapJournalEntry(record: Record<string, any>): JournalEntry {
     id: record.id,
     title: record.title || '',
     body: record.body || '',
+    color: record.color || '#C7F464',
     image: record.image_file
       ? apiAssetUrl(`/journal-images/${record.image_file}`)
       : apiAssetUrl(record.image_url || ''),
@@ -92,6 +93,7 @@ export const useJournalStore = defineStore('journal', () => {
     const payload = {
       title: draft.title.trim(),
       body: draft.body.trim(),
+      color: draft.color,
       occurred_at: draft.occurredAt,
       local_date: draft.localDate,
       timezone_offset: draft.timezoneOffset,

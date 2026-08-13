@@ -37,6 +37,7 @@ function record(id: string, date = '2026-08-02') {
     id,
     title: 'A reflection',
     body: 'What I noticed.',
+    color: '#D4A5FF',
     image_url: '',
     image_file: 'a'.repeat(48) + '.jpg',
     occurred_at: `${date}T16:00:00.000Z`,
@@ -73,6 +74,7 @@ describe('journal store', () => {
       task: 'task-1',
       trackers: ['tracker-1', 'tracker-2'],
       taskSnapshot: 'Train',
+      color: '#D4A5FF',
       trackerSnapshots: { 'tracker-1': 'Mood', 'tracker-2': 'Energy' },
       image: `/api/journal-images/${'a'.repeat(48)}.jpg`,
     })
@@ -86,6 +88,7 @@ describe('journal store', () => {
     await store.saveEntry({
       title: ' A reflection ',
       body: ' What I noticed. ',
+      color: '#D4A5FF',
       occurredAt: '2026-08-02T16:00:00.000Z',
       localDate: '2026-08-02',
       timezoneOffset: 240,
@@ -96,6 +99,7 @@ describe('journal store', () => {
     expect(apiMocks.create).toHaveBeenCalledWith({
       title: 'A reflection',
       body: 'What I noticed.',
+      color: '#D4A5FF',
       occurred_at: '2026-08-02T16:00:00.000Z',
       local_date: '2026-08-02',
       timezone_offset: 240,
@@ -118,6 +122,7 @@ describe('journal store', () => {
     const saved = await store.saveEntry({
       title: '',
       body: 'Offline reflection',
+      color: '#C7F464',
       occurredAt: '2026-08-02T16:00:00.000Z',
       localDate: '2026-08-02',
       timezoneOffset: 240,
@@ -170,6 +175,7 @@ describe('journal store', () => {
       id: 'journal-1',
       title: 'A reflection',
       body: 'What I noticed.',
+      color: '#D4A5FF',
       image: '',
       occurredAt: '2026-08-02T16:00:00.000Z',
       localDate: '2026-08-02',

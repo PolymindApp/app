@@ -578,6 +578,7 @@ export interface JournalEntry {
   id: string
   title: string
   body: string
+  color: string
   image: string
   occurredAt: string
   localDate: string
@@ -594,6 +595,7 @@ export interface JournalEntryDraft {
   id?: string
   title: string
   body: string
+  color: string
   occurredAt: string
   localDate: string
   timezoneOffset: number

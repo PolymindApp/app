@@ -111,7 +111,7 @@ final class Database
                 'timezone_offset', 'value', 'note',
             ],
             'journal_entries' => [
-                'id', 'owner', 'title', 'body', 'occurred_at', 'local_date',
+                'id', 'owner', 'title', 'body', 'color', 'occurred_at', 'local_date',
                 'timezone_offset', 'task', 'tracker', 'task_snapshot',
                 'tracker_snapshot', 'image_url', 'image_file', 'created_at', 'updated_at',
             ],

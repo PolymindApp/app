@@ -196,6 +196,7 @@ onMounted(async () => {
                   :key="entry.id"
                   v-ripple
                   class="journal-entry surface-card pa-4"
+                  :style="{ '--journal-entry-color': entry.color }"
                   role="link"
                   tabindex="0"
                   :aria-label="`Edit ${journalEntryHeading(entry)}`"
@@ -209,10 +210,13 @@ onMounted(async () => {
                         <h3 class="text-body-1 font-weight-black journal-entry__title">
                           {{ journalEntryHeading(entry) }}
                         </h3>
-                        <span class="d-block text-caption muted mt-1">
+                        <p v-if="entry.title" class="journal-entry__body mt-2">{{ entry.body }}</p>
+                      </div>
+                      <div class="d-flex align-center ga-2 mt-3">
+                        <span class="journal-entry__color-badge" aria-hidden="true" />
+                        <span class="text-caption muted">
                           {{ format(new Date(entry.occurredAt), 'h:mm a') }}
                         </span>
-                        <p v-if="entry.title" class="journal-entry__body mt-2">{{ entry.body }}</p>
                       </div>
                       <div v-if="taskName(entry) || trackerContexts(entry).length" class="d-flex flex-wrap ga-2 mt-3">
                         <v-chip
@@ -278,6 +282,7 @@ onMounted(async () => {
 .journal-groups { gap: 1.25rem; }
 .journal-entry { overflow: hidden; cursor: pointer; }
 .journal-entry__layout { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: .875rem; }
+.journal-entry__color-badge { display: block; width: 1.75rem; height: .625rem; border: .0625rem solid rgba(var(--v-theme-on-surface), .18); border-radius: 999rem; background: var(--journal-entry-color); box-shadow: 0 .125rem .375rem rgba(0, 0, 0, .24); }
 .journal-entry__image { overflow: hidden; border: .0625rem solid rgba(var(--v-theme-on-surface), .08); border-radius: .75rem; background: rgba(var(--v-theme-on-surface), .04); }
 .journal-entry:focus-visible { outline: .125rem solid rgba(var(--v-theme-secondary), .72); outline-offset: .1875rem; }
 .journal-entry__title,

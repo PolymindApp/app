@@ -116,7 +116,7 @@ suffix="$(php -r 'echo bin2hex(random_bytes(5));')"
 password="correct-horse-battery"
 
 migration_count="$(sqlite3 "$test_db" 'SELECT COUNT(*) FROM polymind_schema_migrations;')"
-[[ "$migration_count" == 37 ]] || {
+[[ "$migration_count" == 38 ]] || {
   echo "The API did not apply the complete database migration sequence." >&2
   exit 1
 }
@@ -1257,7 +1257,8 @@ journal_payload="$(php -r '
   echo json_encode([
     "title" => "After training", "body" => "I felt calmer after the final round.\nKeep the slower pace.",
     "occurred_at" => "2026-08-02T16:00:00Z", "local_date" => "2026-08-02",
-    "timezone_offset" => 240, "task" => $argv[1], "tracker" => [$argv[2], $argv[3]],
+    "timezone_offset" => 240, "color" => "#D4A5FF",
+    "task" => $argv[1], "tracker" => [$argv[2], $argv[3]],
   ], JSON_THROW_ON_ERROR);
 ' "$task_id" "$tracker_id" "$second_tracker_id")"
 journal_response="$(curl --silent --show-error --fail \
@@ -1267,6 +1268,7 @@ journal_response="$(curl --silent --show-error --fail \
   "$api_url/collections/journal_entries/records")"
 journal_id="$(json_field id <<<"$journal_response")"
 journal_task_snapshot="$(json_field task_snapshot <<<"$journal_response")"
+journal_color="$(json_field color <<<"$journal_response")"
 journal_created_at="$(json_field created_at <<<"$journal_response")"
 php -r '
   $entry = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
@@ -1279,7 +1281,7 @@ php -r '
       exit(1);
   }
 ' "$tracker_id" "$second_tracker_id" <<<"$journal_response"
-[[ "$journal_task_snapshot" == "Secure task" && "$journal_created_at" =~ T ]] || {
+[[ "$journal_task_snapshot" == "Secure task" && "$journal_color" == "#D4A5FF" && "$journal_created_at" =~ T ]] || {
   echo "A journal entry did not retain its task and tracker context snapshots." >&2
   exit 1
 }

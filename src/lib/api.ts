@@ -178,7 +178,7 @@ function localCreateDefaults(resource: string, body: Record<string, unknown>) {
   if (resource === 'flashcard_review_sets') return { created_at: now, updated_at: now, ...body }
   if (resource === 'journal_entries') {
     return {
-      image_url: '', image_file: '', task_snapshot: '', tracker_snapshot: {},
+      color: '#C7F464', image_url: '', image_file: '', task_snapshot: '', tracker_snapshot: {},
       created_at: now, updated_at: now, ...body,
     }
   }

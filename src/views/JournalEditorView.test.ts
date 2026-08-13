@@ -61,6 +61,7 @@ function reflection(id = 'reflection-1') {
     id,
     title: 'A title',
     body: 'Cached reflection',
+    color: '#D4A5FF',
     image: '/api/journal-images/cached.jpg',
     occurredAt: '2026-08-05T16:00:00.000Z',
     localDate: '2026-08-05',
@@ -79,6 +80,7 @@ function mountEditor() {
     global: {
       stubs: {
         AppForm: AppFormStub,
+        ColorSwatchPicker: true,
         ConfirmDialog: true,
         DateTimePickerField: DateFieldStub,
         FormActionBar: true,

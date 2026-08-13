@@ -4,6 +4,7 @@ import { computed, onMounted, ref } from 'vue'
 import { format, isToday, isValid, parseISO } from 'date-fns'
 import { useRoute, useRouter } from 'vue-router'
 import AppForm from '@/components/AppForm.vue'
+import ColorSwatchPicker from '@/components/ColorSwatchPicker.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import DateTimePickerField from '@/components/DateTimePickerField.vue'
 import FormActionBar from '@/components/FormActionBar.vue'
@@ -25,6 +26,7 @@ const allowAutomaticFocus = Capacitor.getPlatform() !== 'android'
 const form = ref()
 const title = ref('')
 const body = ref('')
+const color = ref('#C7F464')
 const image = ref<SquareImageSourceValue>(reflectionImageValue())
 const occurredLocal = ref('')
 const task = ref<string>()
@@ -63,6 +65,7 @@ const trackerItems = computed(() => [...trackingStore.trackers]
 const signature = computed(() => JSON.stringify({
   title: title.value,
   body: body.value,
+  color: color.value,
   image: squareImageSourceSignature(image.value),
   occurredLocal: occurredLocal.value,
   task: task.value || '',
@@ -109,6 +112,7 @@ function destinationRoute() {
 function applyEntry(entry: JournalEntry) {
   title.value = entry.title
   body.value = entry.body
+  color.value = entry.color || '#C7F464'
   image.value = reflectionImageValue(entry.image)
   occurredLocal.value = format(new Date(entry.occurredAt), "yyyy-MM-dd'T'HH:mm")
   task.value = entry.task
@@ -167,6 +171,7 @@ async function save() {
       id: entryId.value || undefined,
       title: title.value,
       body: body.value,
+      color: color.value,
       occurredAt: occurred.toISOString(),
       localDate: format(occurred, 'yyyy-MM-dd'),
       timezoneOffset: occurred.getTimezoneOffset(),
@@ -230,6 +235,11 @@ async function removeEntry() {
             counter
           />
           <DateTimePickerField v-model="occurredLocal" label="When" />
+          <ColorSwatchPicker
+            v-model="color"
+            label="Reflection color"
+            custom-label="Choose a custom reflection color"
+          />
         </div>
       </v-card>
 
