@@ -1088,10 +1088,10 @@ async function leaveRunner() {
         :summary="`${session.totalCards} ${session.totalCards === 1 ? 'card' : 'cards'}${session.indefinite ? ' · looping' : ''}`"
         icon="mdi-cards-playing-outline"
         primary-label="Start review"
-        cancel-label="Cancel review"
+        back-label="Back to flashcards"
         :busy="busy"
         @start="startPreviewReview"
-        @cancel="leaveRunner"
+        @back="leaveRunner"
       />
 
       <section v-else-if="isFinished" class="completion-panel">

@@ -322,7 +322,9 @@ describe('FlashcardReviewRunnerView Review set preview', () => {
       .toBe('mdi-cards-playing-outline')
     expect(wrapper.get('.runner-start-screen').classes()).toContain('px-4')
     expect(wrapper.get('[aria-label="Start review"]').text()).toBe('Start review')
-    expect(wrapper.get('[aria-label="Cancel review"]').text()).toBe('Cancel')
+    expect(wrapper.get('[aria-label="Back to flashcards"]').text()).toBe('Back')
+    expect(wrapper.get('[aria-label="Back to flashcards"]').attributes('prepend-icon'))
+      .toBe('mdi-arrow-left')
     expect(wrapper.find('.runner-header').exists()).toBe(false)
     expect(wrapper.find('.review-card').exists()).toBe(false)
     expect(wrapper.find('.review-navigation').exists()).toBe(false)
@@ -354,11 +356,11 @@ describe('FlashcardReviewRunnerView Review set preview', () => {
     wrapper.unmount()
   })
 
-  it('returns to Flashcards when the start screen is cancelled', async () => {
+  it('returns to Flashcards from the start screen', async () => {
     const wrapper = mountRunner()
     await flushPromises()
 
-    await wrapper.get('[aria-label="Cancel review"]').trigger('click')
+    await wrapper.get('[aria-label="Back to flashcards"]').trigger('click')
     await flushPromises()
 
     expect(mocks.store.startReview).not.toHaveBeenCalled()
