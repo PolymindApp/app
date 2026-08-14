@@ -77,7 +77,7 @@ const searchQuery = ref<string | null>('')
 const selectedCardIds = ref<string[]>([])
 const bulkError = ref('')
 const bulkSaving = ref(false)
-const bulkMenuOpen = ref(false)
+const bulkSheetOpen = ref(false)
 const bulkImageDialogOpen = ref(false)
 const bulkTagSheetOpen = ref(false)
 const bulkTagAction = ref<FlashcardBulkTagAction>('add_tags')
@@ -183,7 +183,7 @@ function openBulkTagAction(action: FlashcardBulkTagAction) {
 }
 
 function chooseBulkAction(action: FlashcardBulkAction | FlashcardSelectionAction) {
-  bulkMenuOpen.value = false
+  bulkSheetOpen.value = false
   if (action === 'exclude' || action === 'include') {
     void runSelectionAction(action)
     return
@@ -313,54 +313,25 @@ async function deleteSelectedCards() {
             <span class="card-filter-action__label">Import</span>
           </span>
         </v-btn>
-        <v-menu
+        <v-btn
           v-if="hasBulkActions"
-          v-model="bulkMenuOpen"
-          location="bottom end"
-          transition="slide-y-transition"
+          class="card-filter-action"
+          variant="tonal"
+          :disabled="!selectedCardIds.length || bulkSaving"
+          :aria-label="selectedCardIds.length ? `Bulk actions for ${selectedCardIds.length} selected cards` : 'Select cards to use bulk actions'"
+          @click="bulkSheetOpen = true"
         >
-          <template #activator="{ props: activatorProps }">
-            <v-btn
-              v-bind="activatorProps"
-              class="card-filter-action"
-              variant="tonal"
-              :disabled="!selectedCardIds.length || bulkSaving"
-              :aria-label="selectedCardIds.length ? `Bulk actions for ${selectedCardIds.length} selected cards` : 'Select cards to use bulk actions'"
+          <span class="card-filter-action__content">
+            <v-badge
+              :model-value="selectedCardIds.length > 0"
+              :content="selectedCardIds.length"
+              color="secondary"
             >
-              <span class="card-filter-action__content">
-                <v-badge
-                  :model-value="selectedCardIds.length > 0"
-                  :content="selectedCardIds.length"
-                  color="secondary"
-                >
-                  <v-icon icon="mdi-select-multiple" />
-                </v-badge>
-                <span class="card-filter-action__label">Bulk</span>
-              </span>
-            </v-btn>
-          </template>
-
-          <v-list class="bulk-menu-list" density="compact" rounded="lg">
-            <v-list-subheader>
-              {{ selectedCardIds.length }} {{ selectedCardIds.length === 1 ? 'card' : 'cards' }} selected
-            </v-list-subheader>
-            <template v-for="item in availableBulkMenuItems" :key="item.action">
-              <v-divider v-if="'divider' in item && item.divider" class="my-1" />
-              <v-list-item
-                :prepend-icon="item.icon"
-                :title="item.title"
-                :subtitle="item.action === 'swap_note_back' && !selectedCardsCanSwapNoteBack
-                  ? 'Every selected card needs a note and a back under 2,000 characters'
-                  : undefined"
-                :base-color="item.color"
-                :disabled="bulkSaving
-                  || ('requiresTags' in item && item.requiresTags && !selectedCardsHaveTags)
-                  || (item.action === 'swap_note_back' && !selectedCardsCanSwapNoteBack)"
-                @click="chooseBulkAction(item.action)"
-              />
-            </template>
-          </v-list>
-        </v-menu>
+              <v-icon icon="mdi-select-multiple" />
+            </v-badge>
+            <span class="card-filter-action__label">Bulk</span>
+          </span>
+        </v-btn>
         <v-btn
           v-if="canAdd"
           class="card-filter-action"
@@ -421,6 +392,28 @@ async function deleteSelectedCards() {
     </v-card>
 
     <template v-if="hasBulkActions">
+      <ActionBottomSheet
+        v-model="bulkSheetOpen"
+        :title="`${selectedCardIds.length} ${selectedCardIds.length === 1 ? 'card' : 'cards'} selected`"
+        aria-label="Bulk card actions"
+      >
+        <template v-for="item in availableBulkMenuItems" :key="item.action">
+          <v-divider v-if="'divider' in item && item.divider" class="my-1" />
+          <v-list-item
+            :prepend-icon="item.icon"
+            :title="item.title"
+            :subtitle="item.action === 'swap_note_back' && !selectedCardsCanSwapNoteBack
+              ? 'Every selected card needs a note and a back under 2,000 characters'
+              : undefined"
+            :base-color="item.color"
+            :disabled="bulkSaving
+              || ('requiresTags' in item && item.requiresTags && !selectedCardsHaveTags)
+              || (item.action === 'swap_note_back' && !selectedCardsCanSwapNoteBack)"
+            @click="chooseBulkAction(item.action)"
+          />
+        </template>
+      </ActionBottomSheet>
+
       <ActionBottomSheet
         v-model="bulkTagSheetOpen"
         :title="bulkTagCopy.title"
@@ -520,7 +513,6 @@ async function deleteSelectedCards() {
 .card-filter-action { min-width: 4rem; min-height: 3.75rem; height: auto !important; padding: .125rem .375rem !important; text-transform: none; }
 .card-filter-action__content { display: flex; min-width: 0; flex-direction: column; align-items: center; justify-content: center; gap: .2rem; }
 .card-filter-action__label { margin-top: .25rem; overflow: hidden; max-width: 100%; font-size: .64rem; font-weight: 800; line-height: 1.15; text-overflow: ellipsis; white-space: nowrap; }
-.bulk-menu-list { min-width: 14rem; }
 .bulk-tag-actions { display: flex; justify-content: flex-end; gap: .5rem; }
 .bulk-tag-actions > .v-btn { min-width: 6rem; min-height: 2.75rem; }
 

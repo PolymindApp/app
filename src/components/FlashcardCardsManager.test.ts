@@ -70,6 +70,10 @@ const ConfirmDialogStub = defineComponent({
   `,
 })
 
+const ActionBottomSheetStub = defineComponent({
+  template: '<section class="action-bottom-sheet-stub"><slot name="content" /><slot /></section>',
+})
+
 function card(id: string, front: string, tags: string[]): Flashcard {
   return {
     id,
@@ -100,7 +104,7 @@ function mountManager(props: Record<string, unknown> = {}, attachTo?: Element) {
     },
     global: {
       stubs: {
-        ActionBottomSheet: true,
+        ActionBottomSheet: ActionBottomSheetStub,
         ConfirmDialog: ConfirmDialogStub,
         FlashcardBulkImageAssignmentDialog: true,
         FlashcardCardsTable: TableStub,
