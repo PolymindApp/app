@@ -215,19 +215,22 @@ async function removeEntry() {
     <AppForm v-else ref="form" validate-on="lazy" @submit.prevent="save">
       <v-card class="surface-card pa-5 mb-4">
         <div class="journal-editor-fields">
-          <v-textarea
-            v-model="body"
-            rows="10"
-            auto-grow
-            maxlength="20000"
-            counter
-            :autofocus="allowAutomaticFocus"
-            :rules="[value => Boolean(value?.trim()) || 'Reflection is required']"
-          >
-            <template #label>
-              Reflection <span class="required-mark">*</span>
-            </template>
-          </v-textarea>
+          <div class="journal-editor-reflection">
+            <p class="journal-editor-privacy mb-2">All posts remain 100% private.</p>
+            <v-textarea
+              v-model="body"
+              rows="10"
+              auto-grow
+              maxlength="20000"
+              counter
+              :autofocus="allowAutomaticFocus"
+              :rules="[value => Boolean(value?.trim()) || 'Reflection is required']"
+            >
+              <template #label>
+                Reflection <span class="required-mark">*</span>
+              </template>
+            </v-textarea>
+          </div>
           <v-text-field
             v-model="title"
             label="Title (optional)"
@@ -313,6 +316,8 @@ async function removeEntry() {
 .journal-editor-page { padding-bottom: 6rem; }
 .journal-editor-fields,
 .journal-editor-context { display: grid; gap: 1rem; }
+.journal-editor-reflection { display: grid; gap: .25rem; }
+.journal-editor-privacy { color: rgba(var(--v-theme-on-surface), .58); font-size: .72rem; font-style: italic; line-height: 1.4; }
 .required-mark { color: rgb(var(--v-theme-error)); }
 @media (min-width: 48rem) {
   .journal-editor-context { grid-template-columns: repeat(2, minmax(0, 1fr)); }
