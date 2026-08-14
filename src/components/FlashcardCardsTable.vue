@@ -134,6 +134,16 @@ function toggleCardSelection(cardId: string, selected: boolean) {
   selectedCardIds.value = [...next]
 }
 
+function activateCardRow(card: Flashcard) {
+  if (props.interactive) {
+    emit('open-card', card)
+    return
+  }
+  if (props.selectable) {
+    toggleCardSelection(card.id, !selectedCardIds.value.includes(card.id))
+  }
+}
+
 function loadMoreCards(intersecting: boolean) {
   if (!intersecting || !hasMoreCards.value) return
   visibleCardCount.value = Math.min(props.cards.length, visibleCardCount.value + PAGE_SIZE)
@@ -217,15 +227,18 @@ function cardTagNames(card: Flashcard) {
             <tr
               v-for="card in displayedCards"
               :key="card.id"
-              :tabindex="interactive ? 0 : undefined"
+              :tabindex="interactive || selectable ? 0 : undefined"
               :class="{
                 'card-library-table__row--selected': selectedCardIds.includes(card.id),
-                'card-library-table__row--interactive': interactive,
+                'card-library-table__row--interactive': interactive || selectable,
               }"
-              :aria-label="interactive ? `Edit card: ${card.front}` : undefined"
-              @click="interactive && emit('open-card', card)"
-              @keydown.enter="interactive && emit('open-card', card)"
-              @keydown.space.prevent="interactive && emit('open-card', card)"
+              :aria-label="interactive
+                ? `Edit card: ${card.front}`
+                : selectable ? `Select card: ${card.front}` : undefined"
+              :aria-selected="selectable ? selectedCardIds.includes(card.id) : undefined"
+              @click="activateCardRow(card)"
+              @keydown.enter="activateCardRow(card)"
+              @keydown.space.prevent="activateCardRow(card)"
             >
               <td
                 v-if="selectable"
