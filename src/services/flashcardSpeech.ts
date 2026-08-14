@@ -21,6 +21,10 @@ interface FlashcardSpeechPlugin {
     overAmplified: boolean
     backgroundIntervalSpeechKey?: string
   }): Promise<void>
+  playRecording(options: {
+    url: string
+    backgroundIntervalSpeechKey?: string
+  }): Promise<void>
   setOverAmplification(options: { enabled: boolean }): Promise<void>
   stopSpeaking(): Promise<void>
   startBackground(options: {
@@ -220,7 +224,14 @@ export async function speakFlashcardText(
   const recording = audioUrl.trim()
   if (recording) {
     try {
-      await playFlashcardRecording(recording)
+      if (isNativeAndroid()) {
+        await NativeFlashcardSpeech.playRecording({
+          url: resolveFlashcardAudioPlaybackUrl(recording),
+          ...(backgroundIntervalSpeechKey ? { backgroundIntervalSpeechKey } : {}),
+        })
+      } else {
+        await playFlashcardRecording(recording)
+      }
       return
     } catch {
       // Fall back to synthesis if a saved recording is temporarily unavailable.

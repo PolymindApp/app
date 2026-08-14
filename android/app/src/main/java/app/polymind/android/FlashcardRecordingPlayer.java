@@ -18,6 +18,7 @@ final class FlashcardRecordingPlayer {
     private final Context context;
     private MediaPlayer player;
     private File temporaryFile;
+    private Runnable pendingCancellation;
     private long generation;
 
     FlashcardRecordingPlayer(Context context) {
@@ -25,6 +26,16 @@ final class FlashcardRecordingPlayer {
     }
 
     void play(String source, Runnable fallback, PlaybackAllowed playbackAllowed) {
+        play(source, () -> {}, fallback, () -> {}, playbackAllowed);
+    }
+
+    void play(
+        String source,
+        Runnable started,
+        Runnable fallback,
+        Runnable cancelled,
+        PlaybackAllowed playbackAllowed
+    ) {
         stop();
         if (source == null || source.trim().isEmpty()) {
             fallback.run();
@@ -34,6 +45,7 @@ final class FlashcardRecordingPlayer {
         long requestGeneration = generation;
         MediaPlayer nextPlayer = new MediaPlayer();
         player = nextPlayer;
+        pendingCancellation = cancelled;
         nextPlayer.setAudioAttributes(
             new AudioAttributes.Builder()
                 .setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
@@ -46,16 +58,30 @@ final class FlashcardRecordingPlayer {
                 || player != prepared
                 || !playbackAllowed.get()
             ) {
+                Runnable cancellation = takePendingCancellation(prepared);
                 release(prepared);
+                if (cancellation != null) cancellation.run();
                 return;
             }
-            prepared.start();
+            try {
+                prepared.start();
+                takePendingCancellation(prepared);
+                started.run();
+            } catch (RuntimeException error) {
+                boolean shouldFallback = requestGeneration == generation
+                    && player == prepared
+                    && playbackAllowed.get();
+                takePendingCancellation(prepared);
+                release(prepared);
+                if (shouldFallback) fallback.run();
+            }
         });
         nextPlayer.setOnCompletionListener(this::release);
         nextPlayer.setOnErrorListener((failed, what, extra) -> {
             boolean shouldFallback = requestGeneration == generation
                 && player == failed
                 && playbackAllowed.get();
+            takePendingCancellation(failed);
             release(failed);
             if (shouldFallback) fallback.run();
             return true;
@@ -70,6 +96,7 @@ final class FlashcardRecordingPlayer {
             }
             nextPlayer.prepareAsync();
         } catch (IOException | IllegalArgumentException error) {
+            takePendingCancellation(nextPlayer);
             release(nextPlayer);
             if (playbackAllowed.get()) fallback.run();
         }
@@ -77,14 +104,18 @@ final class FlashcardRecordingPlayer {
 
     void stop() {
         generation += 1;
+        Runnable cancellation = pendingCancellation;
+        pendingCancellation = null;
         MediaPlayer current = player;
         if (current != null) release(current);
         else removeTemporaryFile();
+        if (cancellation != null) cancellation.run();
     }
 
     private File writeDataUrl(String source) throws IOException {
         int comma = source.indexOf(',');
-        if (comma < 0 || !source.substring(0, comma).endsWith(";base64")) {
+        String metadata = comma < 0 ? "" : source.substring(0, comma).toLowerCase();
+        if (comma < 0 || !metadata.endsWith(";base64")) {
             throw new IOException("Invalid audio data URL.");
         }
         byte[] bytes;
@@ -96,7 +127,8 @@ final class FlashcardRecordingPlayer {
         if (bytes.length < 100 || bytes.length > 1_500_000) {
             throw new IOException("Invalid audio data size.");
         }
-        temporaryFile = File.createTempFile("flashcard-audio-", ".recording", context.getCacheDir());
+        String extension = metadata.startsWith("data:audio/mp4") ? ".m4a" : ".webm";
+        temporaryFile = File.createTempFile("flashcard-audio-", extension, context.getCacheDir());
         try (FileOutputStream output = new FileOutputStream(temporaryFile)) {
             output.write(bytes);
         }
@@ -105,7 +137,10 @@ final class FlashcardRecordingPlayer {
 
     private void release(MediaPlayer target) {
         boolean active = player == target;
-        if (active) player = null;
+        if (active) {
+            player = null;
+            pendingCancellation = null;
+        }
         try {
             target.setOnPreparedListener(null);
             target.setOnCompletionListener(null);
@@ -121,6 +156,13 @@ final class FlashcardRecordingPlayer {
             // Releasing an already-ended player is safe to ignore.
         }
         if (active) removeTemporaryFile();
+    }
+
+    private Runnable takePendingCancellation(MediaPlayer target) {
+        if (player != target) return null;
+        Runnable cancellation = pendingCancellation;
+        pendingCancellation = null;
+        return cancellation;
     }
 
     private void removeTemporaryFile() {

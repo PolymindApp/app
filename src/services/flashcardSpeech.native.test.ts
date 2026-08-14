@@ -1,6 +1,7 @@
 const nativeSpeech = vi.hoisted(() => ({
   getLanguages: vi.fn().mockResolvedValue({ available: true, languages: ['en-CA'] }),
   getBackgroundState: vi.fn().mockResolvedValue({}),
+  playRecording: vi.fn().mockResolvedValue(undefined),
   setOverAmplification: vi.fn().mockResolvedValue(undefined),
   speak: vi.fn().mockResolvedValue(undefined),
   startBackground: vi.fn().mockResolvedValue(undefined),
@@ -21,6 +22,7 @@ import { speakFlashcardText } from '@/services/flashcardSpeech'
 describe('native flashcard speech', () => {
   beforeEach(() => {
     nativeSpeech.speak.mockClear()
+    nativeSpeech.playRecording.mockClear()
     nativeSpeech.stopSpeaking.mockClear()
   })
 
@@ -44,6 +46,38 @@ describe('native flashcard speech', () => {
       language: 'fr-CA',
       overAmplified: false,
       backgroundIntervalSpeechKey: '3:back:0',
+    })
+  })
+
+  it('plays recorded audio through the native bridge instead of TTS', async () => {
+    await speakFlashcardText(
+      'Synthesized fallback',
+      'en-CA',
+      '3:front:0',
+      'data:audio/webm;base64,recording',
+    )
+
+    expect(nativeSpeech.playRecording).toHaveBeenCalledWith({
+      url: 'data:audio/webm;base64,recording',
+      backgroundIntervalSpeechKey: '3:front:0',
+    })
+    expect(nativeSpeech.speak).not.toHaveBeenCalled()
+  })
+
+  it('falls back to native TTS when recorded audio cannot start', async () => {
+    nativeSpeech.playRecording.mockRejectedValueOnce(new Error('Playback failed'))
+
+    await speakFlashcardText(
+      'Synthesized fallback',
+      'en-CA',
+      '',
+      'https://polymind.app/server/flashcard-audio/missing.webm',
+    )
+
+    expect(nativeSpeech.speak).toHaveBeenCalledWith({
+      text: 'Synthesized fallback',
+      language: 'en-CA',
+      overAmplified: false,
     })
   })
 })

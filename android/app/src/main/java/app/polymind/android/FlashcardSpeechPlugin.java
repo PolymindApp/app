@@ -41,10 +41,12 @@ public class FlashcardSpeechPlugin extends Plugin {
     private boolean overAmplificationEnabled;
     private String backgroundIntervalSpeechKey = "";
     private TtsVolumeBoost volumeBoost;
+    private FlashcardRecordingPlayer recordingPlayer;
 
     @Override
     public void load() {
         volumeBoost = new TtsVolumeBoost(getContext());
+        recordingPlayer = new FlashcardRecordingPlayer(getContext());
         speech = new TextToSpeech(getContext(), status -> {
             speechReady = status == TextToSpeech.SUCCESS;
             speechFailed = !speechReady;
@@ -114,6 +116,35 @@ public class FlashcardSpeechPlugin extends Plugin {
         speakReady(call);
     }
 
+    @PluginMethod
+    public void playRecording(PluginCall call) {
+        String source = call.getString("url", "").trim();
+        if (
+            source.isEmpty()
+            || source.length() > 2_100_000
+            || !(source.startsWith("https://")
+                || source.startsWith("http://")
+                || source.startsWith("data:audio/"))
+        ) {
+            call.reject("The card recording URL is invalid.");
+            return;
+        }
+        if (!MainActivity.isAppVisible()) {
+            call.resolve();
+            return;
+        }
+
+        stopForegroundSpeech();
+        backgroundIntervalSpeechKey = call.getString("backgroundIntervalSpeechKey", "").trim();
+        recordingPlayer.play(
+            source,
+            call::resolve,
+            () -> call.reject("The card recording could not be played."),
+            call::resolve,
+            MainActivity::isAppVisible
+        );
+    }
+
     private void speakReady(PluginCall call) {
         if (!MainActivity.isAppVisible()) {
             call.resolve();
@@ -169,6 +200,7 @@ public class FlashcardSpeechPlugin extends Plugin {
         }
         if (speech != null) speech.stop();
         if (volumeBoost != null) volumeBoost.stop();
+        if (recordingPlayer != null) recordingPlayer.stop();
     }
 
     @PluginMethod
@@ -284,6 +316,7 @@ public class FlashcardSpeechPlugin extends Plugin {
             pendingSpeechCall = null;
         }
         if (volumeBoost != null) volumeBoost.stop();
+        if (recordingPlayer != null) recordingPlayer.stop();
         if (speech != null) {
             speech.stop();
             speech.shutdown();
