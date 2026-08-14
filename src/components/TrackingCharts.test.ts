@@ -241,53 +241,7 @@ describe('TrackingRelationshipChart', () => {
     expect(style.getPropertyValue('--outcome-color')).toBe(TRACKING_CHART_COLORS[1])
   })
 
-  it('keeps a full-height plot with mobile-width coordinates', async () => {
-    let resize = () => undefined
-    vi.stubGlobal('ResizeObserver', class {
-      constructor(callback: () => void) { resize = callback }
-      observe() {}
-      disconnect() {}
-    })
-    const insight: TrackingInsightResult = {
-      points: [],
-      matched: [
-        { date: '2026-07-01', factorValue: 10, outcomeValue: 4 },
-        { date: '2026-07-02', factorValue: 20, outcomeValue: 6 },
-      ],
-      mode: 'quantity',
-      ready: false,
-      earlySignal: false,
-      direction: 'mixed',
-      summary: '',
-      caution: '',
-      trend: { count: 2, slope: .2, intercept: 2, correlation: 1, hasVariation: true },
-    }
-    const wrapper = mount(TrackingRelationshipChart, {
-      props: { ...timelineProps, insight },
-    })
-    Object.defineProperty(wrapper.element, 'clientWidth', { configurable: true, value: 320 })
-    resize()
-    await wrapper.vm.$nextTick()
-
-    expect(wrapper.find('svg').attributes('viewBox')).toBe('0 0 320 300')
-    expect(wrapper.find('.grid-line').attributes('x2')).toBe('308')
-
-    wrapper.unmount()
-    vi.unstubAllGlobals()
-  })
-
-  it('uses the selected date count for a seven-day mobile scroll viewport', async () => {
-    let resize = () => undefined
-    vi.stubGlobal('matchMedia', vi.fn(() => ({
-      matches: true,
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-    })))
-    vi.stubGlobal('ResizeObserver', class {
-      constructor(callback: () => void) { resize = callback }
-      observe() {}
-      disconnect() {}
-    })
+  it('fits the whole graph without horizontal scrolling or calculated width styles', () => {
     const insight: TrackingInsightResult = {
       points: timelinePoints(14),
       matched: [
@@ -305,66 +259,12 @@ describe('TrackingRelationshipChart', () => {
     const wrapper = mount(TrackingRelationshipChart, {
       props: { ...timelineProps, insight },
     })
-    Object.defineProperty(wrapper.element, 'clientWidth', { configurable: true, value: 320 })
-    resize()
-    await wrapper.vm.$nextTick()
 
-    expect(wrapper.find('.chart-scroll--active').exists()).toBe(true)
-    expect(wrapper.find('svg').attributes('viewBox')).toBe('0 0 640 300')
-    expect(wrapper.find('svg').attributes('style')).toContain('width: 640px')
-
-    wrapper.unmount()
-    vi.unstubAllGlobals()
-  })
-
-  it('scrolls relationship data to the end after a mobile range update is rendered', async () => {
-    let resize = () => undefined
-    vi.stubGlobal('matchMedia', vi.fn(() => ({
-      matches: true,
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-    })))
-    vi.stubGlobal('ResizeObserver', class {
-      constructor(callback: () => void) { resize = callback }
-      observe() {}
-      disconnect() {}
-    })
-    const insight: TrackingInsightResult = {
-      points: timelinePoints(14),
-      matched: [
-        { date: '2026-07-01', factorValue: 10, outcomeValue: 4 },
-        { date: '2026-07-14', factorValue: 20, outcomeValue: 6 },
-      ],
-      mode: 'quantity',
-      ready: false,
-      earlySignal: false,
-      direction: 'mixed',
-      summary: '',
-      caution: '',
-      trend: { count: 2, slope: .2, intercept: 2, correlation: 1, hasVariation: true },
-    }
-    const wrapper = mount(TrackingRelationshipChart, {
-      props: { ...timelineProps, insight },
-    })
-    Object.defineProperty(wrapper.element, 'clientWidth', { configurable: true, value: 320 })
-    resize()
-    await wrapper.vm.$nextTick()
-
-    const chartScroll = wrapper.find('.chart-scroll').element as HTMLElement
-    Object.defineProperty(chartScroll, 'clientWidth', { configurable: true, value: 320 })
-    Object.defineProperty(chartScroll, 'scrollWidth', { configurable: true, value: 640 })
-    chartScroll.scrollLeft = 0
-    await wrapper.setProps({
-      insight: {
-        ...insight,
-        points: timelinePoints(14).map((point) => ({ ...point, date: point.date.replace('07', '08') })),
-      },
-    })
-
-    expect(chartScroll.scrollLeft).toBe(320)
-
-    wrapper.unmount()
-    vi.unstubAllGlobals()
+    expect(wrapper.find('.chart-canvas').exists()).toBe(true)
+    expect(wrapper.find('.chart-scroll').exists()).toBe(false)
+    expect(wrapper.find('svg').attributes('viewBox')).toBe('0 0 720 300')
+    expect(wrapper.find('svg').attributes('style')).toBeUndefined()
+    expect(wrapper.attributes('aria-label')).not.toContain('Scroll horizontally')
   })
 
   it('rounds large y-axis values up and leaves room for the complete labels', () => {

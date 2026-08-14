@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { format, parseISO } from 'date-fns'
-import { formatTrackingAxisTick, TRACKING_CHART_COLORS, trackingAxisGutter, useScrollableTrackingChartWidth } from '@/services/responsiveChart'
+import { formatTrackingAxisTick, TRACKING_CHART_COLORS, trackingAxisGutter } from '@/services/responsiveChart'
 import { formatNumber } from '@/services/tracking'
 import type { TrackingInsightResult } from '@/services/tracking'
 import type { TrackingRelationshipPoint } from '@/types/domain'
@@ -20,13 +20,9 @@ const props = defineProps<{
 
 const selectedIndex = ref<number>()
 const [factorColor, outcomeColor] = TRACKING_CHART_COLORS
-const { chartRoot, chartScroll, chartViewportWidth, chartWidth, horizontallyScrollable } = useScrollableTrackingChartWidth(
-  () => props.insight.points.length,
-  () => props.insight,
-)
+const chartWidth = 720
 const chartHeight = 300
-const compactLayout = computed(() => chartViewportWidth.value < 420)
-const plotRight = computed(() => compactLayout.value ? 12 : 24)
+const plotRight = 24
 const plotTop = 18
 const plotBottom = 48
 const plotHeight = chartHeight - plotTop - plotBottom
@@ -42,8 +38,8 @@ const factorRange = computed(() => valueRange(
   props.factorScaleMax,
 ))
 const outcomeTicks = computed(() => yTicks())
-const plotLeft = computed(() => trackingAxisGutter(outcomeTicks.value, compactLayout.value ? 52 : 64, 32))
-const plotWidth = computed(() => Math.max(1, chartWidth.value - plotLeft.value - plotRight.value))
+const plotLeft = computed(() => trackingAxisGutter(outcomeTicks.value, 64, 32))
+const plotWidth = computed(() => Math.max(1, chartWidth - plotLeft.value - plotRight))
 const plottedPoints = computed(() => props.insight.matched.map((point, index) => ({
   point,
   x: props.insight.mode === 'presence'
@@ -55,8 +51,8 @@ const selectedPoint = computed(() => selectedIndex.value === undefined
   ? undefined
   : props.insight.matched[selectedIndex.value])
 const ariaLabel = computed(() => props.insight.mode === 'presence'
-  ? `${props.outcomeName} values grouped by whether ${props.factorName} was present or absent. ${horizontallyScrollable.value ? 'Scroll horizontally on the chart to move through the selected range. ' : ''}Use left and right arrow keys to inspect paired days.`
-  : `${props.outcomeName} plotted against ${props.factorName} for ${props.insight.matched.length} paired days. ${horizontallyScrollable.value ? 'Scroll horizontally on the chart to move through the selected range. ' : ''}Use left and right arrow keys to inspect points.`)
+  ? `${props.outcomeName} values grouped by whether ${props.factorName} was present or absent. Use left and right arrow keys to inspect paired days.`
+  : `${props.outcomeName} plotted against ${props.factorName} for ${props.insight.matched.length} paired days. Use left and right arrow keys to inspect points.`)
 
 function presenceX(point: TrackingRelationshipPoint, index: number) {
   const center = point.factorValue > 0 ? plotLeft.value + plotWidth.value * .72 : plotLeft.value + plotWidth.value * .28
@@ -103,7 +99,7 @@ function selectFromPointer(event: PointerEvent) {
   if (!plottedPoints.value.length) return
   const rect = (event.currentTarget as SVGElement).getBoundingClientRect()
   if (!rect.width || !rect.height) return
-  const pointerX = (event.clientX - rect.left) / rect.width * chartWidth.value
+  const pointerX = (event.clientX - rect.left) / rect.width * chartWidth
   const pointerY = (event.clientY - rect.top) / rect.height * chartHeight
   const closest = plottedPoints.value.reduce(
     (best, candidate, index) => {
@@ -151,7 +147,6 @@ function displayValue(value: number, unit: string) {
 
 <template>
   <div
-    ref="chartRoot"
     class="relationship-chart"
     :style="{ '--factor-color': factorColor, '--outcome-color': outcomeColor }"
     tabindex="0"
@@ -168,10 +163,9 @@ function displayValue(value: number, unit: string) {
       <span v-else>Tap, hover, or use arrow keys to inspect a paired day.</span>
     </div>
 
-    <div ref="chartScroll" :class="['chart-scroll', { 'chart-scroll--active': horizontallyScrollable }]">
+    <div class="chart-canvas">
       <svg
         :viewBox="`0 0 ${chartWidth} ${chartHeight}`"
-        :style="horizontallyScrollable ? { width: `${chartWidth}px` } : undefined"
         aria-hidden="true"
         @pointerdown="selectFromPointer"
         @pointermove="selectFromPointer"
@@ -270,9 +264,7 @@ function displayValue(value: number, unit: string) {
 }
 
 .chart-readout strong { color: rgb(var(--v-theme-on-surface)); }
-.chart-scroll { width: 100%; max-width: 100%; }
-.chart-scroll--active { overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; }
-.chart-scroll--active svg { max-width: none; }
+.chart-canvas { min-width: 0; width: 100%; }
 svg { display: block; width: 100%; height: auto; touch-action: pan-x pan-y; }
 .grid-line { stroke: rgb(var(--v-theme-on-surface) / .18); stroke-width: 1; }
 .axis-value,
