@@ -1,5 +1,9 @@
 import { Capacitor, registerPlugin } from '@capacitor/core'
-import { LocalNotifications } from '@capacitor/local-notifications'
+import {
+  LocalNotifications,
+  type LocalNotificationSchema,
+  type PendingLocalNotificationSchema,
+} from '@capacitor/local-notifications'
 import { addDays, startOfDay } from 'date-fns'
 import type { Router } from 'vue-router'
 import { isTaskScheduled, toDateKey } from '@/services/schedule'
@@ -134,19 +138,10 @@ export async function reconcileTaskReminders(
   options: TaskReminderReconcileOptions = {},
 ) {
   if (!taskRemindersAvailable()) return
-  const pending = await LocalNotifications.getPending()
-  const replaceable = pending.notifications.filter(notification => (
-    notification.extra?.kind === TASK_EXTRA_KIND
-    || notification.extra?.kind === LEGACY_TRACKING_EXTRA_KIND
-  ))
-  if (replaceable.length) {
-    await LocalNotifications.cancel({ notifications: replaceable.map(({ id }) => ({ id })) })
-  }
-
   const now = options.now ?? new Date()
   const lookaheadDays = Math.max(1, options.lookaheadDays ?? TASK_REMINDER_LOOKAHEAD_DAYS)
   const enabledTasks = tasks.filter(task => task.active && task.reminderEnabled)
-  const notifications = enabledTasks
+  const notifications: LocalNotificationSchema[] = enabledTasks
     .flatMap(task => {
       const times = [...new Set(task.reminderTimes)]
       return Array.from({ length: lookaheadDays }, (_, offset) => addDays(startOfDay(now), offset))
@@ -182,13 +177,51 @@ export async function reconcileTaskReminders(
         route: '/tasks',
       },
     }))
-  if (!notifications.length) return
+
+  const pending = await LocalNotifications.getPending()
+  const replaceable = pending.notifications.filter(notification => (
+    notification.extra?.kind === TASK_EXTRA_KIND
+    || notification.extra?.kind === LEGACY_TRACKING_EXTRA_KIND
+  ))
+  const pendingById = new Map(replaceable.map(notification => [notification.id, notification]))
+  const unchangedIds = new Set(notifications
+    .filter(notification => taskReminderMatches(pendingById.get(notification.id), notification))
+    .map(notification => notification.id))
+  const stale = replaceable.filter(notification => !unchangedIds.has(notification.id))
+  if (stale.length) {
+    await LocalNotifications.cancel({ notifications: stale.map(({ id }) => ({ id })) })
+  }
+
+  const missing = notifications.filter(notification => !unchangedIds.has(notification.id))
+  if (!missing.length) return
 
   const status = await LocalNotifications.checkPermissions()
   if (status.display !== 'granted') return
 
   await LocalNotifications.createChannel(CHANNEL)
-  await LocalNotifications.schedule({ notifications })
+  await LocalNotifications.schedule({ notifications: missing })
+}
+
+function taskReminderMatches(
+  pending: PendingLocalNotificationSchema | undefined,
+  desired: LocalNotificationSchema,
+) {
+  if (!pending) return false
+  return pending.title === desired.title
+    && pending.body === desired.body
+    && pending.extra?.kind === desired.extra?.kind
+    && pending.extra?.taskId === desired.extra?.taskId
+    && pending.extra?.scheduledDate === desired.extra?.scheduledDate
+    && pending.extra?.route === desired.extra?.route
+    && scheduleTime(pending.schedule?.at) === scheduleTime(desired.schedule?.at)
+}
+
+function scheduleTime(value: unknown) {
+  if (!(value instanceof Date) && typeof value !== 'string' && typeof value !== 'number') {
+    return undefined
+  }
+  const time = new Date(value).getTime()
+  return Number.isFinite(time) ? time : undefined
 }
 
 export async function installTaskNotificationRouting(router: Router) {

@@ -141,6 +141,67 @@ describe('task reminders', () => {
     ))).toBe(true)
   })
 
+  it('keeps matching reminders and cancels only alarms that became stale', async () => {
+    const now = new Date(2026, 7, 10, 8)
+    const pendingReminder = (date: Date, time: string, scheduledDate: string) => ({
+      id: taskReminderNotificationId(task().id, time, scheduledDate),
+      title: 'Task reminder',
+      body: task().name,
+      schedule: { at: date.toISOString() },
+      extra: {
+        kind: 'polymind-task-reminder',
+        taskId: task().id,
+        scheduledDate,
+        route: '/tasks',
+      },
+    })
+    const todayMorning = pendingReminder(new Date(2026, 7, 10, 9, 15), '09:15', '2026-08-10')
+    const todayEvening = pendingReminder(new Date(2026, 7, 10, 20, 30), '20:30', '2026-08-10')
+    const tomorrowMorning = pendingReminder(new Date(2026, 7, 11, 9, 15), '09:15', '2026-08-11')
+    const tomorrowEvening = pendingReminder(new Date(2026, 7, 11, 20, 30), '20:30', '2026-08-11')
+    mocks.getPending.mockResolvedValue({
+      notifications: [todayMorning, todayEvening, tomorrowMorning, tomorrowEvening],
+    })
+
+    await reconcileTaskReminders([task()], {
+      now,
+      lookaheadDays: 2,
+      isTaskIncomplete: (_task, date) => date.getDate() !== 10,
+    })
+
+    expect(mocks.cancel).toHaveBeenCalledWith({
+      notifications: [{ id: todayMorning.id }, { id: todayEvening.id }],
+    })
+    expect(mocks.schedule).not.toHaveBeenCalled()
+  })
+
+  it('does no native writes when every task reminder is already current', async () => {
+    const now = new Date(2026, 7, 10, 8)
+    mocks.getPending.mockResolvedValue({
+      notifications: ['09:15', '20:30'].map(time => {
+        const [hour, minute] = time.split(':').map(Number)
+        const at = new Date(2026, 7, 10, hour, minute)
+        return {
+          id: taskReminderNotificationId(task().id, time, '2026-08-10'),
+          title: 'Task reminder',
+          body: task().name,
+          schedule: { at },
+          extra: {
+            kind: 'polymind-task-reminder',
+            taskId: task().id,
+            scheduledDate: '2026-08-10',
+            route: '/tasks',
+          },
+        }
+      }),
+    })
+
+    await reconcileTaskReminders([task()], { now, lookaheadDays: 1 })
+
+    expect(mocks.cancel).not.toHaveBeenCalled()
+    expect(mocks.schedule).not.toHaveBeenCalled()
+  })
+
   it('cancels stale notifications without scheduling while permission is denied', async () => {
     mocks.checkPermissions.mockResolvedValue({ display: 'denied' })
 

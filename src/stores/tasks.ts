@@ -134,7 +134,8 @@ export const useTaskStore = defineStore('tasks', () => {
   let progressRangeRequest = 0
   let initialProgressSince = ''
   let reconciledSessionProgressKey = ''
-  let reminderSyncQueue: Promise<void> = Promise.resolve()
+  let reminderSyncPromise: Promise<void> | undefined
+  let reminderSyncRequested = false
   const loadedProgressRanges = new Set<string>()
 
   const activeTasks = computed(() => tasks.value.filter((task) => task.active))
@@ -299,12 +300,26 @@ export const useTaskStore = defineStore('tasks', () => {
   }
 
   function syncTaskReminders() {
-    reminderSyncQueue = reminderSyncQueue
-      .catch(() => undefined)
-      .then(() => reconcileTaskReminders(tasks.value, {
-        isTaskIncomplete: isTaskIncompleteForReminder,
-      }))
-    return reminderSyncQueue.catch(() => undefined)
+    reminderSyncRequested = true
+    if (!reminderSyncPromise) {
+      reminderSyncPromise = runTaskReminderSync().finally(() => {
+        reminderSyncPromise = undefined
+      })
+    }
+    return reminderSyncPromise
+  }
+
+  async function runTaskReminderSync() {
+    while (reminderSyncRequested) {
+      reminderSyncRequested = false
+      try {
+        await reconcileTaskReminders(tasks.value, {
+          isTaskIncomplete: isTaskIncompleteForReminder,
+        })
+      } catch {
+        // Reminder maintenance must not prevent task data from saving.
+      }
+    }
   }
 
   async function load() {
@@ -706,7 +721,7 @@ export const useTaskStore = defineStore('tasks', () => {
         Object.assign(occurrence, mapOccurrence(updatedOccurrence))
       }
     }
-    await syncTaskReminders()
+    void syncTaskReminders()
   }
 
   async function loadEntryNoteHistory(taskId: string) {

@@ -125,6 +125,26 @@ describe('quantitative task completion', () => {
     expect(options.isTaskIncomplete(store.tasks[0], selectedDate)).toBe(true)
   })
 
+  it('coalesces reminder sync requests made while reconciliation is running', async () => {
+    const store = useTaskStore()
+    let finishFirstSync!: () => void
+    reminderMocks.reconcileTaskReminders
+      .mockImplementationOnce(() => new Promise<void>((resolve) => {
+        finishFirstSync = resolve
+      }))
+      .mockResolvedValue(undefined)
+
+    const first = store.syncTaskReminders()
+    const second = store.syncTaskReminders()
+    const third = store.syncTaskReminders()
+
+    expect(reminderMocks.reconcileTaskReminders).toHaveBeenCalledOnce()
+    finishFirstSync()
+    await Promise.all([first, second, third])
+
+    expect(reminderMocks.reconcileTaskReminders).toHaveBeenCalledTimes(2)
+  })
+
   it('does not remain complete when adjustments reduce a four-hour task to zero', () => {
     const store = useTaskStore()
     store.selectedDate = selectedDate
@@ -532,6 +552,45 @@ describe('quantitative task completion', () => {
 
     expect(apiMocks.createEntry).toHaveBeenCalledWith(expect.objectContaining({ note: 'Steady pace' }))
     expect(store.entries[0]?.note).toBe('Steady pace')
+  })
+
+  it('finishes saving an amount without waiting for reminder maintenance', async () => {
+    const store = useTaskStore()
+    store.selectedDate = selectedDate
+    store.occurrences = [{
+      ...completedOccurrence,
+      status: 'pending',
+      completedAt: undefined,
+    }]
+    apiMocks.createEntry.mockResolvedValue({
+      id: 'entry-with-slow-reminders',
+      task: task.id,
+      occurrence: completedOccurrence.id,
+      program_step: '',
+      entry_date: '2026-07-29',
+      value: 1,
+      kind: 'duration',
+      unit: 'hours',
+      note: '',
+      created_at: '2026-07-29T13:00:00.000Z',
+    })
+    let finishReminderSync!: () => void
+    reminderMocks.reconcileTaskReminders
+      .mockImplementationOnce(() => new Promise<void>((resolve) => {
+        finishReminderSync = resolve
+      }))
+      .mockResolvedValue(undefined)
+
+    let saved = false
+    const save = store.addEntry(store.makeProgress(task, selectedDate), 1)
+      .then(() => { saved = true })
+
+    await vi.waitFor(() => expect(saved).toBe(true))
+    expect(store.entries[0]?.id).toBe('entry-with-slow-reminders')
+
+    const reminders = store.syncTaskReminders()
+    finishReminderSync()
+    await Promise.all([save, reminders])
   })
 
   it('rejects task log entries with a value of zero', async () => {
