@@ -389,7 +389,7 @@ defineExpose({ choose })
 .crop-frame::after { position: absolute; content: ""; background: rgba(var(--v-theme-on-surface), .28); }
 .crop-frame::before { inset: 33.333% 0; border-top: .0625rem solid rgba(var(--v-theme-on-surface), .28); border-bottom: .0625rem solid rgba(var(--v-theme-on-surface), .28); background: transparent; }
 .crop-frame::after { inset: 0 33.333%; border-right: .0625rem solid rgba(var(--v-theme-on-surface), .28); border-left: .0625rem solid rgba(var(--v-theme-on-surface), .28); background: transparent; }
-.crop-resize { max-width: 25rem; margin: 1.25rem auto 0; }
+.crop-resize { max-width: 25rem; margin: 1.25rem 0; }
 .crop-resize__heading { display: flex; margin-bottom: .6rem; align-items: center; justify-content: space-between; gap: 1rem; font-size: .78rem; }
 .crop-resize__heading strong { font-weight: 850; }
 .crop-resize__heading span { color: rgba(var(--v-theme-on-surface), .58); font-variant-numeric: tabular-nums; }

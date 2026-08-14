@@ -67,28 +67,6 @@ function releaseUploadPreview() {
       <p class="journal-image-field__hint">Optional · uploads are cropped to 512 × 512</p>
     </div>
 
-    <div class="journal-image-field__actions mt-3">
-      <v-btn
-        variant="tonal"
-        color="secondary"
-        prepend-icon="mdi-image-plus-outline"
-        :disabled="loading"
-        @click="imageUpload?.choose()"
-      >
-        {{ previewUrl && modelValue.source !== 'none' ? 'Replace image' : 'Choose image' }}
-      </v-btn>
-      <v-btn
-        v-if="previewUrl && modelValue.source !== 'none'"
-        variant="text"
-        color="error"
-        prepend-icon="mdi-image-remove-outline"
-        :disabled="loading"
-        @click="removeImage"
-      >
-        Remove
-      </v-btn>
-    </div>
-
     <v-expand-transition>
       <div
         v-if="previewUrl && modelValue.source !== 'none' && !previewFailed"
@@ -106,6 +84,33 @@ function releaseUploadPreview() {
       </div>
     </v-expand-transition>
 
+    <v-row class="mt-1" dense>
+      <v-col v-if="previewUrl && modelValue.source !== 'none'" cols="6">
+        <v-btn
+          block
+          variant="text"
+          color="error"
+          prepend-icon="mdi-image-remove-outline"
+          :disabled="loading"
+          @click="removeImage"
+        >
+          Remove
+        </v-btn>
+      </v-col>
+      <v-col :cols="previewUrl && modelValue.source !== 'none' ? 6 : 12">
+        <v-btn
+          block
+          variant="tonal"
+          color="secondary"
+          prepend-icon="mdi-image-plus-outline"
+          :disabled="loading"
+          @click="imageUpload?.choose()"
+        >
+          {{ previewUrl && modelValue.source !== 'none' ? 'Replace' : 'Choose image' }}
+        </v-btn>
+      </v-col>
+    </v-row>
+
     <v-alert
       v-if="previewFailed && modelValue.source !== 'none'"
       type="warning"
@@ -122,7 +127,6 @@ function releaseUploadPreview() {
 .journal-image-field { min-width: 0; max-width: 100%; padding-top: .25rem; }
 .journal-image-field__title { font-size: .82rem; font-weight: 850; }
 .journal-image-field__hint { margin-top: .2rem; color: rgba(var(--v-theme-on-surface), .56); font-size: .7rem; }
-.journal-image-field__actions { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
 .journal-image-field__preview { width: 100%; max-width: 100%; overflow: hidden; border: .0625rem solid rgba(var(--v-theme-on-surface), .1); border-radius: 1rem; place-items: center; background: rgba(var(--v-theme-on-surface), .04); }
 .journal-image-field__preview :deep(img) { max-width: 100%; }
 </style>
