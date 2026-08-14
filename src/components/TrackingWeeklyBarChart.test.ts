@@ -1,6 +1,6 @@
 import { defineComponent } from 'vue'
 import { config, mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import TrackingWeeklyBarChart from '@/components/TrackingWeeklyBarChart.vue'
 import type { TrackingEntry, TrackingTracker } from '@/types/domain'
 
@@ -14,6 +14,10 @@ const VBtnStub = defineComponent({
 })
 
 config.global.stubs.VBtn = VBtnStub
+
+beforeEach(() => {
+  localStorage.clear()
+})
 
 function tracker(overrides: Partial<TrackingTracker>): TrackingTracker {
   return {
@@ -112,13 +116,14 @@ describe('TrackingWeeklyBarChart', () => {
     expect(wrapper.find('.chart-legend').text()).toContain('Mood (7/10)')
     expect(wrapper.findAll('.chart-plot, .chart-legend')[0]?.classes()).toContain('chart-plot')
     expect(wrapper.findAll('.chart-plot, .chart-legend')[1]?.classes()).toContain('chart-legend')
+    expect(wrapper.find('.selected-day').exists()).toBe(true)
+    expect(wrapper.find('.chart-legend').attributes('aria-label')).toContain('Monday, July 27')
 
-    await wrapper.find('.chart-plot').trigger('keydown', { key: 'ArrowRight' })
     await wrapper.find('.chart-plot').trigger('keydown', { key: 'ArrowRight' })
 
     expect(wrapper.find('.chart-legend').attributes('aria-label')).toContain('Tuesday, July 28')
-    expect(wrapper.find('.chart-legend').text()).toContain('Meditation (Not occurred)')
-    expect(wrapper.find('.chart-legend').text()).toContain('Mood (Not logged)')
+    expect(wrapper.find('.chart-legend').text()).not.toContain('()')
+    expect(wrapper.findAll('.chart-legend__item').map(item => item.text())).toEqual(['Meditation', 'Mood'])
   })
 
   it('starts with every tracker enabled and toggles chart series from the legend', async () => {
@@ -153,6 +158,35 @@ describe('TrackingWeeklyBarChart', () => {
     expect(wrapper.findAll('.chart-bar').filter(bar => bar.isVisible())).toHaveLength(8)
   })
 
+  it('restores inactive legends and remembers subsequent changes', async () => {
+    localStorage.setItem(
+      'polymind-tracking-chart-inactive-trackers',
+      JSON.stringify(['meditation']),
+    )
+    const wrapper = mount(TrackingWeeklyBarChart, {
+      props: {
+        weekStart: new Date(2026, 6, 27, 12),
+        selectedDate: new Date(2026, 6, 27, 12),
+        trackers: [
+          tracker({ id: 'meditation', name: 'Meditation' }),
+          tracker({ id: 'mood', name: 'Mood', kind: 'rating', scaleMax: 10, sortOrder: 1 }),
+        ],
+        entries: [
+          entry('one', 'meditation', '2026-07-27', 1),
+          entry('two', 'mood', '2026-07-27', 7),
+        ],
+      },
+    })
+
+    const legendItems = wrapper.findAll('.chart-legend__item')
+    expect(legendItems.map(item => item.attributes('aria-pressed'))).toEqual(['false', 'true'])
+
+    await legendItems[1]!.trigger('click')
+
+    expect(JSON.parse(localStorage.getItem('polymind-tracking-chart-inactive-trackers') || '[]'))
+      .toEqual(['meditation', 'mood'])
+  })
+
   it('shows unlogged event days as not occurred', () => {
     const wrapper = mount(TrackingWeeklyBarChart, {
       props: {
@@ -165,7 +199,7 @@ describe('TrackingWeeklyBarChart', () => {
     })
 
     expect(wrapper.find('.weekly-chart-empty').exists()).toBe(false)
-    expect(wrapper.find('.chart-legend').text()).toContain('Migraine (Not occurred)')
+    expect(wrapper.find('.chart-legend__item').text()).toBe('Migraine')
     expect(wrapper.findAll('.chart-bar')).toHaveLength(7)
   })
 

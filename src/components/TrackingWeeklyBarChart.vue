@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { addDays, format } from 'date-fns'
 import { useResponsiveChartWidth } from '@/services/responsiveChart'
 import { formatNumber, formatTrackingValue, trackingDailyValuesForRange } from '@/services/tracking'
+import { readInactiveTrackingChartTrackerIds, storeInactiveTrackingChartTrackerIds } from '@/services/trackingChartPreferences'
 import type { TrackingEntry, TrackingTracker } from '@/types/domain'
 
 const props = defineProps<{
@@ -13,7 +14,7 @@ const props = defineProps<{
 }>()
 
 const selectedDayIndex = ref<number>()
-const inactiveTrackerIds = ref(new Set<string>())
+const inactiveTrackerIds = ref(new Set(readInactiveTrackingChartTrackerIds()))
 const { chartRoot, chartWidth } = useResponsiveChartWidth()
 const chartHeight = 125
 const plotLeft = 16
@@ -105,10 +106,13 @@ function barY(value: number | null, max: number) {
   return plotTop + plotHeight - normalizedBarHeight(value, max)
 }
 
-function legendValue(tracker: TrackingTracker, value: number | null) {
-  if (value === null) return 'Not logged'
+function legendValue(tracker: TrackingTracker, value: number) {
   if (tracker.kind === 'rating') return `${formatNumber(value)}/${formatNumber(Math.max(1, tracker.scaleMax))}`
   return formatTrackingValue(tracker, value)
+}
+
+function legendHasNoValue(tracker: TrackingTracker, value: number | null) {
+  return value === null || (tracker.kind === 'event' && value === 0)
 }
 
 function trackerIsActive(trackerId: string) {
@@ -120,6 +124,7 @@ function toggleTracker(trackerId: string) {
   if (next.has(trackerId)) next.delete(trackerId)
   else next.add(trackerId)
   inactiveTrackerIds.value = next
+  storeInactiveTrackingChartTrackerIds([...next])
 }
 
 function selectFromPointer(event: PointerEvent) {
@@ -138,8 +143,8 @@ function onKeydown(event: KeyboardEvent) {
   event.preventDefault()
   if (event.key === 'Home') selectedDayIndex.value = 0
   else if (event.key === 'End') selectedDayIndex.value = 6
-  else if (event.key === 'ArrowLeft') selectedDayIndex.value = Math.max(0, (selectedDayIndex.value ?? 7) - 1)
-  else selectedDayIndex.value = Math.min(6, (selectedDayIndex.value ?? -1) + 1)
+  else if (event.key === 'ArrowLeft') selectedDayIndex.value = Math.max(0, readoutDayIndex.value - 1)
+  else selectedDayIndex.value = Math.min(6, readoutDayIndex.value + 1)
 }
 </script>
 
@@ -171,8 +176,7 @@ function onKeydown(event: KeyboardEvent) {
           />
 
           <rect
-            v-if="selectedDayIndex !== undefined"
-            :x="plotLeft + selectedDayIndex * groupWidth + 3"
+            :x="plotLeft + readoutDayIndex * groupWidth + 3"
             :y="plotTop"
             :width="groupWidth - 6"
             :height="plotHeight"
@@ -219,7 +223,8 @@ function onKeydown(event: KeyboardEvent) {
           @click="toggleTracker(item.tracker.id)"
         >
           <i :style="{ background: item.tracker.color }" />
-          {{ item.tracker.name }} <strong>({{ legendValue(item.tracker, item.value) }})</strong>
+          {{ item.tracker.name }}
+          <strong v-if="!legendHasNoValue(item.tracker, item.value)">({{ legendValue(item.tracker, item.value) }})</strong>
         </v-btn>
       </div>
     </template>
