@@ -125,6 +125,7 @@ describe('FlashcardCardsTable', () => {
       'Image',
       'Faces',
       'Tags',
+      'Notes',
     ])
     expect(wrapper.findAll('.flashcard-table__image-frame')).toHaveLength(2)
     expect(wrapper.get('.image-stub').attributes('src')).toBe(cards[0]?.image)
@@ -146,6 +147,7 @@ describe('FlashcardCardsTable', () => {
       'Image',
       'Faces',
       'Tags',
+      'Notes',
     ])
   })
 
@@ -171,7 +173,8 @@ describe('FlashcardCardsTable', () => {
       ),
     })
 
-    expect(wrapper.findAll('thead th').at(-1)?.text()).toBe('Included?')
+    expect(wrapper.findAll('thead th').at(-2)?.text()).toBe('Included?')
+    expect(wrapper.findAll('thead th').at(-1)?.text()).toBe('Notes')
     expect(wrapper.findAll('.included-state').map(state => state.text()))
       .toEqual(['Included', 'Excluded'])
     expect(wrapper.text()).not.toContain('Vocabulary')
@@ -185,7 +188,8 @@ describe('FlashcardCardsTable', () => {
 
     const headings = wrapper.findAll('thead th')
     expect(headings[1]?.get('.d-sr-only').text()).toBe('Image')
-    expect(headings.at(-1)?.get('.d-sr-only').text()).toBe('Included?')
+    expect(headings.at(-2)?.get('.d-sr-only').text()).toBe('Included?')
+    expect(headings.at(-1)?.text()).toBe('Notes')
   })
 
   it('toggles selection from the selection cell without opening the card', async () => {
