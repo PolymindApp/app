@@ -762,7 +762,7 @@ async function requestStartTemplate() {
     }
     return
   }
-  if (!originTaskId.value && attachedProgressCandidates.value.length) {
+  if (!originTaskId.value && eligibleTaskProgress.value.length) {
     attributionSheet.value = true
     return
   }

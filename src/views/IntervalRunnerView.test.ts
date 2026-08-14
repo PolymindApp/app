@@ -913,13 +913,16 @@ describe('IntervalRunnerView start screen', () => {
   beforeEach(() => {
     mocks.route.params = { templateId: 'template-1' }
     mocks.route.query = {}
+    mocks.router.replace.mockReset()
     mocks.intervalStore.sessions = reactive([])
     mocks.intervalStore.templates = [intervalTemplate()]
     mocks.intervalStore.activeSession = undefined
     mocks.intervalStore.load.mockReset().mockResolvedValue(undefined)
+    mocks.intervalStore.startSession.mockReset()
     mocks.flashcardStore.load.mockReset().mockResolvedValue(undefined)
     mocks.flashcardStore.reviewSets = []
     mocks.taskStore.load.mockReset().mockResolvedValue(undefined)
+    mocks.taskStore.makeProgress.mockReset()
     mocks.taskStore.tasks = []
     mocks.taskStore.steps = []
   })
@@ -938,6 +941,53 @@ describe('IntervalRunnerView start screen', () => {
     expect(wrapper.find('.runner-step').exists()).toBe(false)
     expect(wrapper.find('.runner-progress').exists()).toBe(false)
     expect(wrapper.find('.runner-controls').exists()).toBe(false)
+
+    wrapper.unmount()
+  })
+
+  it('starts standalone without opening the chooser when no attached task is eligible', async () => {
+    const attachedTask = {
+      id: 'interval-task-1',
+      name: 'Morning intervals',
+      description: '',
+      type: 'interval' as const,
+      mandatory: false,
+      reviewWhenMissed: false,
+      active: true,
+      startDate: '2026-08-01',
+      recurrenceType: 'daily' as const,
+      weekdays: [],
+      intervalWeeks: 1,
+      entryNotesEnabled: false,
+      entryNoteSuggestionsEnabled: false,
+      sortOrder: 0,
+      intervalTemplate: 'template-1',
+      reminderEnabled: false,
+      reminderTimes: [],
+    }
+    mocks.taskStore.tasks = [attachedTask]
+    mocks.taskStore.makeProgress.mockReturnValue({
+      task: attachedTask,
+      scheduledDate: '2026-08-14',
+      value: 1,
+      percent: 100,
+      complete: true,
+      status: 'completed',
+    })
+    const startedSession = intervalSession('running')
+    mocks.intervalStore.startSession.mockResolvedValue(startedSession)
+
+    const wrapper = mountRunner()
+    await flushPromises()
+    await wrapper.get('[aria-label="Start interval"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.action-bottom-sheet-stub').exists()).toBe(false)
+    expect(mocks.intervalStore.startSession).toHaveBeenCalledWith(expect.objectContaining({
+      task: undefined,
+      programStep: undefined,
+      taskDate: undefined,
+    }))
 
     wrapper.unmount()
   })
