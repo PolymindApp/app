@@ -39,11 +39,14 @@ const minuteInteracting = ref(false)
 const secondInteracting = ref(false)
 let selectionActive = false
 let selectionEndTimer: number | undefined
+let syncFrame: number | undefined
+let syncVersion = 0
 const timeMode = computed(() => props.mode === 'time')
 const primaryMaximum = computed(() => timeMode.value ? 23 : props.maxMinutes)
 
 function activateWheel() {
   if (wheelFocused.value) return
+  cancelScheduledScrollerSync()
   wheelFocused.value = true
   nextTick(syncScrollers)
 }
@@ -141,6 +144,25 @@ function syncScrollers() {
   scrollToValue(secondScroller.value, seconds.value)
 }
 
+function scheduleScrollerSync() {
+  const version = ++syncVersion
+  nextTick(() => {
+    if (version !== syncVersion) return
+    if (syncFrame !== undefined) cancelAnimationFrame(syncFrame)
+    syncFrame = requestAnimationFrame(() => {
+      if (version !== syncVersion) return
+      syncFrame = undefined
+      syncScrollers()
+    })
+  })
+}
+
+function cancelScheduledScrollerSync() {
+  syncVersion += 1
+  if (syncFrame !== undefined) cancelAnimationFrame(syncFrame)
+  syncFrame = undefined
+}
+
 function updateValue(part: WheelPart, value: number, behavior: ScrollBehavior = 'smooth') {
   const changed = part === 'minutes' ? minutes.value !== value : seconds.value !== value
   if (part === 'minutes') {
@@ -186,12 +208,20 @@ function updatePartInteraction(part: WheelPart) {
   else secondInteracting.value = interacting
 }
 
+function interruptScrollSettle(part: WheelPart) {
+  if (scrollSettleTimers[part]) window.clearTimeout(scrollSettleTimers[part])
+  scrollSettleTimers[part] = undefined
+  releaseReadyParts.delete(part)
+}
+
 function beginPointerInteraction(part: WheelPart, event: PointerEvent) {
+  interruptScrollSettle(part)
   activePointerParts.set(event.pointerId, part)
   updatePartInteraction(part)
 }
 
 function beginTouchInteraction(part: WheelPart, event: TouchEvent) {
+  interruptScrollSettle(part)
   Array.from(event.changedTouches).forEach(touch => activeTouchParts.set(touch.identifier, part))
   updatePartInteraction(part)
 }
@@ -285,11 +315,11 @@ watch(() => props.modelValue, (value) => {
   if (parts.minutes === minutes.value && parts.seconds === seconds.value) return
   minutes.value = parts.minutes
   seconds.value = parts.seconds
-  if (props.active) nextTick(syncScrollers)
+  if (props.active) scheduleScrollerSync()
 })
 
 watch(() => props.active, (active) => {
-  if (active) nextTick(syncScrollers)
+  if (active) scheduleScrollerSync()
 })
 
 onMounted(() => {
@@ -299,7 +329,7 @@ onMounted(() => {
   document.addEventListener('touchend', finishTouchInteraction, true)
   document.addEventListener('touchcancel', finishTouchInteraction, true)
   setLocalValue(props.modelValue)
-  if (props.active) nextTick(syncScrollers)
+  if (props.active) scheduleScrollerSync()
 })
 
 onBeforeUnmount(() => {
@@ -308,6 +338,7 @@ onBeforeUnmount(() => {
   document.removeEventListener('pointercancel', finishPointerInteraction, true)
   document.removeEventListener('touchend', finishTouchInteraction, true)
   document.removeEventListener('touchcancel', finishTouchInteraction, true)
+  cancelScheduledScrollerSync()
   Object.values(scrollFrames).forEach((frame) => frame && cancelAnimationFrame(frame))
   Object.values(scrollSettleTimers).forEach((timer) => timer && window.clearTimeout(timer))
   finishSelection()
@@ -446,14 +477,15 @@ onBeforeUnmount(() => {
   height: 156px;
   grid-template-columns: minmax(0, 1fr) 1.75rem minmax(0, 1fr);
   overflow: hidden;
-  border-radius: 20px;
+  border: .0625rem solid rgba(var(--v-theme-on-surface), .38);
+  border-radius: .5rem;
   background: transparent;
   outline: .125rem solid transparent;
   outline-offset: .125rem;
   transition: outline-color 180ms ease;
 }
 .timer-wheel--focused {
-  outline-color: rgba(var(--v-theme-secondary), .9);
+  outline-color: rgba(var(--v-theme-on-surface), .9);
 }
 .timer-wheel__focus-guard {
   position: absolute;
@@ -479,11 +511,11 @@ onBeforeUnmount(() => {
   position: absolute;
   z-index: 0;
   top: 52px;
-  right: .5rem;
-  left: .5rem;
+  right: 0;
+  left: 0;
   height: 52px;
-  border-block: 1px solid rgb(var(--v-theme-secondary) / .6);
-  background: rgb(var(--v-theme-secondary) / .1);
+  border-block: 1px solid rgba(var(--v-theme-on-surface), .12);
+  background: rgba(var(--v-theme-on-surface), .08);
   pointer-events: none;
 }
 .timer-wheel__column {
@@ -495,15 +527,11 @@ onBeforeUnmount(() => {
   overscroll-behavior: contain;
   perspective: 260px;
   scrollbar-width: none;
-  scroll-snap-type: y mandatory;
   touch-action: none;
 }
 .timer-wheel--focused .timer-wheel__column {
   overflow-y: auto;
   touch-action: pan-y;
-}
-.timer-wheel__column--interacting {
-  scroll-snap-type: none;
 }
 .timer-wheel__column::-webkit-scrollbar { display: none; }
 .timer-wheel__spacer { height: 52px; scroll-snap-align: none; }

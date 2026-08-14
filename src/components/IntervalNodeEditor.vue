@@ -178,7 +178,7 @@ function selectKind(kind: IntervalStepKind | null) {
         </v-select>
         <fieldset v-if="node.kind !== 'confirmation'" class="duration-wheel">
           <legend>Duration</legend>
-          <TimerWheelPicker v-model="durationSeconds" />
+          <TimerWheelPicker v-model="durationSeconds" :active="isExpanded" />
         </fieldset>
         <div>
             <v-checkbox

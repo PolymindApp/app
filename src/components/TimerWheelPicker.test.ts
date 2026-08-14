@@ -128,19 +128,52 @@ describe('TimerWheelPicker focus gate', () => {
     wrapper.unmount()
   })
 
+  it('cancels a queued settle when a new gesture reverses the scroll', async () => {
+    const wrapper = mountPicker()
+    await wrapper.find('.timer-wheel__focus-guard').trigger('click')
+    const seconds = wrapper.findAll<HTMLElement>('.timer-wheel__column')[1]!
+
+    await seconds.trigger('pointerdown', { pointerId: 7 })
+    seconds.element.scrollTop = 10 * 52 + 20
+    await seconds.trigger('scroll')
+    await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)))
+    dispatchPointer('pointerup', 7)
+
+    await seconds.trigger('pointerdown', { pointerId: 8 })
+    await new Promise(resolve => window.setTimeout(resolve, 140))
+    seconds.element.scrollTop = 8 * 52 + 20
+    dispatchPointer('pointerup', 8)
+    await nextTick()
+
+    expect(seconds.element.scrollTop).toBe(8 * 52 + 20)
+
+    await new Promise(resolve => window.setTimeout(resolve, 140))
+    expect(seconds.element.scrollTop).toBe(8 * 52)
+
+    wrapper.unmount()
+  })
+
   it('uses the same wheel for hour and minute clock values', async () => {
     const wrapper = mount(TimerWheelPicker, {
+      attachTo: document.body,
       props: { modelValue: '09:45', mode: 'time' },
       global: { stubs: { VNumberInput: VNumberInputStub } },
     })
+
+    await nextTick()
+    await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)))
 
     const columns = wrapper.findAll('.timer-wheel__column')
     expect(wrapper.get('.timer-wheel').attributes('aria-label')).toBe('Time wheel')
     expect(columns[0]?.attributes('aria-label')).toBe('Hours')
     expect(columns[1]?.attributes('aria-label')).toBe('Minutes')
     expect(columns[0]?.findAll('.timer-wheel__option')).toHaveLength(24)
+    expect((columns[0]?.element as HTMLElement).scrollTop).toBe(9 * 52)
+    expect((columns[1]?.element as HTMLElement).scrollTop).toBe(45 * 52)
 
     await columns[0]?.findAll('.timer-wheel__option')[10]?.trigger('click')
     expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual(['10:45'])
+
+    wrapper.unmount()
   })
 })

@@ -107,6 +107,39 @@ describe('IntervalNodeEditor interval type select', () => {
     expect(wrapper.find('.stub-selection .interval-type-icon').exists()).toBe(false)
   })
 
+  it('activates the duration wheel only while its interval is expanded', async () => {
+    const node: IntervalStepNode = {
+      id: 'step-duration',
+      type: 'step',
+      name: 'Work',
+      kind: 'work',
+      durationSeconds: 90,
+    }
+    const wrapper = mount(IntervalNodeEditor, {
+      props: editorProps(node, { expandedNodeId: 'another-step' }),
+      global: {
+        directives: { longPressDrag: {}, longPressDrop: {} },
+        stubs: {
+          ExpandTransition: { template: '<div><slot /></div>' },
+          VBtn: true,
+          VCard: { template: '<div><slot /></div>' },
+          VCheckbox: true,
+          VIcon: VIconStub,
+          VListItem: VListItemStub,
+          VSelect: VSelectStub,
+          VTextField: true,
+          TimerWheelPicker: true,
+        },
+      },
+    })
+
+    expect(wrapper.getComponent({ name: 'TimerWheelPicker' }).props('active')).toBe(false)
+
+    await wrapper.setProps({ expandedNodeId: node.id })
+
+    expect(wrapper.getComponent({ name: 'TimerWheelPicker' }).props('active')).toBe(true)
+  })
+
   it('renders colored type icons in the selection and every item slot', async () => {
     const node: IntervalStepNode = {
       id: 'step-1',
