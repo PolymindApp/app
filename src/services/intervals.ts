@@ -14,7 +14,7 @@ import type {
 const safeAdd = (left: number, right: number) => Math.min(Number.MAX_SAFE_INTEGER, left + right)
 const safeMultiply = (left: number, right: number) => Math.min(Number.MAX_SAFE_INTEGER, left * right)
 const GLOBAL_REPETITION_GROUP_ID = 'interval-global-repetition'
-export const MIN_GLOBAL_REPETITIONS = 2
+export const MIN_GLOBAL_REPETITIONS = 1
 export const MAX_GLOBAL_REPETITIONS = 15
 export const INTERVAL_FLASHCARD_REVIEW_EDGE_PAUSE_MS = 4_000
 

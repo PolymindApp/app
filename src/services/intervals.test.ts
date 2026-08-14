@@ -121,15 +121,23 @@ describe('interval definitions', () => {
       .toEqual(['Work', 'Rest', 'Work', 'Rest', 'Work'])
   })
 
-  it('validates the global repetition default', () => {
+  it('allows one as the global repetition default and rejects values below it', () => {
     const definition: IntervalDefinition = {
       version: 1,
       children: [createIntervalStep('Work', 'work', 30)],
       globalRepetition: { enabled: true, defaultCount: 1 },
     }
 
+    expect(intervalGlobalRepetitionSettings({ version: 1, children: [] })).toEqual({
+      enabled: false,
+      defaultCount: 1,
+    })
+    expect(validateIntervalDefinition(definition)).toEqual([])
+
+    definition.globalRepetition!.defaultCount = 0
+
     expect(validateIntervalDefinition(definition))
-      .toContain('Default repetitions must be from 2 to 15.')
+      .toContain('Default repetitions must be from 1 to 15.')
   })
 
   it('duplicates a reactive interval group with fresh IDs for every nested node', () => {

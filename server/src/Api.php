@@ -5072,7 +5072,7 @@ final class Api
             : [];
         $repetition = $definition['globalRepetition'] ?? null;
         if (is_array($repetition) && ($repetition['enabled'] ?? false) === true) {
-            $repeatCount = min(15, max(2, (int) round((float) ($repetition['defaultCount'] ?? 2))));
+            $repeatCount = min(15, max(1, (int) round((float) ($repetition['defaultCount'] ?? 1))));
             $nodes = [[
                 'type' => 'group',
                 'repeatCount' => $repeatCount,
