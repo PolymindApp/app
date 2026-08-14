@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { addDays, format, isValid, parseISO, startOfWeek } from 'date-fns'
 import { useRoute, useRouter } from 'vue-router'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
+import TrackingChartSkeleton from '@/components/TrackingChartSkeleton.vue'
 import TrackingLogBottomSheet from '@/components/TrackingLogBottomSheet.vue'
 import TrackingTrackerCard from '@/components/TrackingTrackerCard.vue'
 import TrackingWeeklyBarChart from '@/components/TrackingWeeklyBarChart.vue'
@@ -26,6 +27,7 @@ const editingEntry = ref<TrackingEntry>()
 const addingPreset = ref('')
 const error = ref('')
 const weeklyChartError = ref('')
+const weeklyChartLoading = ref(true)
 let weeklyLoadRequest = 0
 
 const dateKey = computed(() => format(selectedDate.value, 'yyyy-MM-dd'))
@@ -183,12 +185,14 @@ onMounted(async () => {
     taskStore.tasks.length ? Promise.resolve() : taskStore.load().catch(() => undefined),
   ])
   if (store.loaded) await loadVisibleWeekEntries()
+  else weeklyChartLoading.value = false
   openRequestedTracker()
 })
 
 async function loadVisibleWeekEntries() {
   const request = ++weeklyLoadRequest
   weeklyChartError.value = ''
+  weeklyChartLoading.value = true
   try {
     await store.loadRange(
       format(visibleWeekStart.value, 'yyyy-MM-dd'),
@@ -198,6 +202,8 @@ async function loadVisibleWeekEntries() {
     if (request === weeklyLoadRequest) {
       weeklyChartError.value = cause instanceof Error ? cause.message : 'Could not load this week’s entries.'
     }
+  } finally {
+    if (request === weeklyLoadRequest) weeklyChartLoading.value = false
   }
 }
 </script>
@@ -215,17 +221,20 @@ async function loadVisibleWeekEntries() {
       class="mb-5"
     />
 
-    <v-card v-if="store.trackers.length" class="weekly-chart-card surface-card pa-5 mb-5">
+    <v-card v-if="weeklyChartLoading || store.trackers.length" class="weekly-chart-card surface-card pa-5 mb-5">
       <v-alert v-if="weeklyChartError" type="error" variant="tonal" class="mb-4">
         {{ weeklyChartError }}
       </v-alert>
+      <TrackingChartSkeleton v-if="weeklyChartLoading" compact />
       <TrackingWeeklyBarChart
+        v-else
         :trackers="store.trackers"
         :entries="store.entries"
         :week-start="visibleWeekStart"
         :selected-date="selectedDate"
       />
       <v-btn
+        v-if="store.trackers.length"
         block
         class="mt-4"
         color="secondary"

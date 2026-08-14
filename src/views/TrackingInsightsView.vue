@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { format, parseISO, subDays } from 'date-fns'
 import { api } from '@/lib/api'
 import DatePickerField from '@/components/DatePickerField.vue'
+import TrackingChartSkeleton from '@/components/TrackingChartSkeleton.vue'
 import TrackingRelationshipChart from '@/components/TrackingRelationshipChart.vue'
 import TrackingTimelineChart from '@/components/TrackingTimelineChart.vue'
 import {
@@ -187,6 +188,7 @@ onBeforeUnmount(() => {
 function scheduleAnalysis() {
   analysisRequest += 1
   if (analysisTimer !== undefined) window.clearTimeout(analysisTimer)
+  loading.value = Boolean(selectedFactor.value && selectedOutcome.value && dateRangeValid.value)
   analysisTimer = window.setTimeout(() => {
     analysisTimer = undefined
     void analyze()
@@ -381,13 +383,25 @@ function trackerDailyValues(trackerId: string, start: string, end: string) {
       <v-btn class="mt-4" color="secondary" to="/tracking/new" prepend-icon="mdi-plus">Create tracker</v-btn>
     </v-card>
 
-    <div v-else-if="!initialized" class="d-flex justify-center py-12" role="status">
-      <v-progress-circular indeterminate color="secondary" />
-      <span class="ml-3 muted">Loading insights…</span>
-    </div>
+    <section v-else-if="!initialized || loading" class="insight-results" aria-busy="true">
+      <v-card class="chart-card surface-card pa-5 mb-4">
+        <div class="chart-heading">
+          <div><h2>Over time</h2><p>Both lines share one date plot, with independent scales on the left and right.</p></div>
+          <v-icon icon="mdi-chart-timeline-variant" color="secondary" />
+        </div>
+        <TrackingChartSkeleton class="mt-4" />
+      </v-card>
 
-    <section v-else-if="insight && selectedFactor && selectedOutcome" :class="['insight-results', { 'insight-results--loading': loading }]" :aria-busy="loading">
-      <v-progress-linear v-if="loading" indeterminate color="secondary" class="results-progress" />
+      <v-card class="chart-card surface-card pa-5">
+        <div class="chart-heading">
+          <div><h2>Relationship</h2><p>Factor and outcome values compared across matching dates.</p></div>
+          <v-icon icon="mdi-scatter-plot" color="secondary" />
+        </div>
+        <TrackingChartSkeleton class="mt-4" />
+      </v-card>
+    </section>
+
+    <section v-else-if="insight && selectedFactor && selectedOutcome" class="insight-results">
 
       <v-card class="chart-card surface-card pa-5 mb-4">
         <div class="chart-heading">
@@ -460,9 +474,7 @@ function trackerDailyValues(trackerId: string, start: string, end: string) {
 .date-presets :deep(.v-btn) { min-width: 0; padding-inline: .5rem; }
 .range-note { display: flex; align-items: center; gap: .5rem .75rem; flex-wrap: wrap; color: rgb(var(--v-theme-on-surface) / .56); font-size: .7rem; }
 .range-note span:first-of-type { color: rgb(var(--v-theme-on-surface) / .78); font-weight: 800; }
-.insight-results { position: relative; transition: opacity 160ms ease; }
-.insight-results--loading { opacity: .58; }
-.results-progress { position: sticky; z-index: 2; top: var(--v-layout-top, 0); margin-bottom: .5rem; border-radius: 999rem; }
+.insight-results { position: relative; }
 .chart-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
 .chart-empty { color: rgb(var(--v-theme-on-surface) / .5); }
 .chart-empty p { margin-top: .75rem; color: rgb(var(--v-theme-on-surface) / .68); font-size: .78rem; font-weight: 800; }
@@ -472,7 +484,4 @@ function trackerDailyValues(trackerId: string, start: string, end: string) {
   .date-presets { grid-template-columns: repeat(2, 1fr); }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .insight-results { transition: none; }
-}
 </style>
