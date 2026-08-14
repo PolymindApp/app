@@ -58,6 +58,7 @@ public class BackgroundIntervalService extends Service {
     private PowerManager.WakeLock wakeLock;
     private TextToSpeech speech;
     private TtsVolumeBoost volumeBoost;
+    private FlashcardRecordingPlayer recordingPlayer;
     private boolean speechReady;
     private String sessionId = "";
     private String sessionName = "Interval";
@@ -79,6 +80,7 @@ public class BackgroundIntervalService extends Service {
     private String lastReviewSpeechKey = "";
     private String pendingReviewSpeechText = "";
     private String pendingReviewSpeechLanguage = "";
+    private String pendingReviewRecordingUrl = "";
     private boolean reviewSpeechOverAmplified;
     private boolean appWasVisible;
 
@@ -125,10 +127,14 @@ public class BackgroundIntervalService extends Service {
     private static final class ReviewCard {
         final String front;
         final String back;
+        final String frontAudio;
+        final String backAudio;
 
-        ReviewCard(String front, String back) {
+        ReviewCard(String front, String back, String frontAudio, String backAudio) {
             this.front = front;
             this.back = back;
+            this.frontAudio = frontAudio;
+            this.backAudio = backAudio;
         }
     }
 
@@ -150,6 +156,7 @@ public class BackgroundIntervalService extends Service {
         activeInstance = this;
         createNotificationChannel();
         volumeBoost = new TtsVolumeBoost(this);
+        recordingPlayer = new FlashcardRecordingPlayer(this);
         speech = new TextToSpeech(this, status -> {
             speechReady = status == TextToSpeech.SUCCESS;
             TextToSpeech currentSpeech = speech;
@@ -247,6 +254,7 @@ public class BackgroundIntervalService extends Service {
         reviewCards.clear();
         pendingReviewSpeechText = "";
         pendingReviewSpeechLanguage = "";
+        pendingReviewRecordingUrl = "";
         reviewBaseElapsedMs = Math.max(0L, intent.getLongExtra(EXTRA_ELAPSED_MS, 0L));
         reviewConfiguredWindowElapsedMs = currentStepReviewWindowElapsedMs(
             SystemClock.elapsedRealtime()
@@ -271,7 +279,9 @@ public class BackgroundIntervalService extends Service {
             JSONObject card = cards.getJSONObject(index);
             reviewCards.add(new ReviewCard(
                 card.optString("front", ""),
-                card.optString("back", "")
+                card.optString("back", ""),
+                card.optString("frontAudio", ""),
+                card.optString("backAudio", "")
             ));
         }
         reviewFrontDurationMs = Math.max(1000L, review.optLong("frontSeconds", 5L) * 1000L);
@@ -337,6 +347,7 @@ public class BackgroundIntervalService extends Service {
         lastReviewSpeechKey = "";
         pendingReviewSpeechText = "";
         pendingReviewSpeechLanguage = "";
+        pendingReviewRecordingUrl = "";
         stopSpeechPlayback();
     }
 
@@ -393,6 +404,7 @@ public class BackgroundIntervalService extends Service {
             lastReviewSpeechKey = "";
             pendingReviewSpeechText = "";
             pendingReviewSpeechLanguage = "";
+            pendingReviewRecordingUrl = "";
         } else {
             speakCurrentReviewSide(now, appWasVisible);
         }
@@ -413,6 +425,7 @@ public class BackgroundIntervalService extends Service {
         lastReviewSpeechKey = phase.key;
         pendingReviewSpeechText = "";
         pendingReviewSpeechLanguage = "";
+        pendingReviewRecordingUrl = "";
         appWasVisible = false;
         return true;
     }
@@ -420,25 +433,63 @@ public class BackgroundIntervalService extends Service {
     private void speakCurrentReviewSide(long now, boolean force) {
         ReviewPhase phase = currentReviewPhase(now);
         if (phase == null || (!force && phase.key.equals(lastReviewSpeechKey))) return;
+        stopSpeechPlayback();
         ReviewCard card = reviewCards.get(phase.cardIndex);
         lastReviewSpeechKey = phase.key;
         pendingReviewSpeechText = "front".equals(phase.side) ? card.front : card.back;
         pendingReviewSpeechLanguage = "front".equals(phase.side)
             ? reviewFrontLanguage
             : reviewBackLanguage;
+        pendingReviewRecordingUrl = "front".equals(phase.side)
+            ? card.frontAudio
+            : card.backAudio;
         speakPendingReviewSide();
     }
 
     private void speakPendingReviewSide() {
         if (
-            !speechReady
-            || speech == null
-            || pendingReviewSpeechText.isEmpty()
-            || pendingReviewSpeechLanguage.isEmpty()
+            MainActivity.isAppVisible()
+            || !currentStepPlaysFlashcardReview(SystemClock.elapsedRealtime())
+            || (pendingReviewRecordingUrl.isEmpty()
+                && (pendingReviewSpeechText.isEmpty() || pendingReviewSpeechLanguage.isEmpty()))
+        ) return;
+
+        String recordingUrl = pendingReviewRecordingUrl;
+        String text = pendingReviewSpeechText;
+        String language = pendingReviewSpeechLanguage;
+        pendingReviewRecordingUrl = "";
+        if (!recordingUrl.isEmpty()) {
+            pendingReviewSpeechText = "";
+            pendingReviewSpeechLanguage = "";
+            if (speech != null) speech.stop();
+            if (volumeBoost != null) volumeBoost.stop();
+            recordingPlayer.play(
+                recordingUrl,
+                () -> speakSynthesizedReview(text, language),
+                () -> running
+                    && !MainActivity.isAppVisible()
+                    && currentStepPlaysFlashcardReview(SystemClock.elapsedRealtime())
+            );
+            return;
+        }
+        speakSynthesizedReview(text, language);
+    }
+
+    private void speakSynthesizedReview(String text, String language) {
+        if (!speechReady || speech == null) {
+            pendingReviewSpeechText = text;
+            pendingReviewSpeechLanguage = language;
+            return;
+        }
+        if (
+            text.isEmpty()
+            || language.isEmpty()
             || MainActivity.isAppVisible()
             || !currentStepPlaysFlashcardReview(SystemClock.elapsedRealtime())
         ) return;
-        int availability = speech.setLanguage(Locale.forLanguageTag(pendingReviewSpeechLanguage));
+        pendingReviewSpeechText = "";
+        pendingReviewSpeechLanguage = "";
+        int availability = speech.setLanguage(Locale.forLanguageTag(language));
         if (
             availability == TextToSpeech.LANG_MISSING_DATA
             || availability == TextToSpeech.LANG_NOT_SUPPORTED
@@ -446,16 +497,15 @@ public class BackgroundIntervalService extends Service {
         String utteranceId = "polymind-background-interval-flashcard-" + System.nanoTime();
         int result = volumeBoost.speak(
             speech,
-            pendingReviewSpeechText,
+            text,
             utteranceId,
             reviewSpeechOverAmplified
         );
         if (result == TextToSpeech.ERROR) volumeBoost.finish(utteranceId);
-        pendingReviewSpeechText = "";
-        pendingReviewSpeechLanguage = "";
     }
 
     private void stopSpeechPlayback() {
+        if (recordingPlayer != null) recordingPlayer.stop();
         if (speech != null) speech.stop();
         if (volumeBoost != null) volumeBoost.stop();
     }
@@ -641,6 +691,7 @@ public class BackgroundIntervalService extends Service {
         if (activeInstance == this) activeInstance = null;
         handler.removeCallbacksAndMessages(null);
         releaseWakeLock();
+        if (recordingPlayer != null) recordingPlayer.stop();
         if (volumeBoost != null) volumeBoost.stop();
         if (speech != null) {
             speech.stop();

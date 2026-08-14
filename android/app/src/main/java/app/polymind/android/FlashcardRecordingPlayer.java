@@ -1,0 +1,130 @@
+package app.polymind.android;
+
+import android.content.Context;
+import android.media.AudioAttributes;
+import android.media.MediaPlayer;
+import android.util.Base64;
+
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+
+final class FlashcardRecordingPlayer {
+
+    interface PlaybackAllowed {
+        boolean get();
+    }
+
+    private final Context context;
+    private MediaPlayer player;
+    private File temporaryFile;
+    private long generation;
+
+    FlashcardRecordingPlayer(Context context) {
+        this.context = context.getApplicationContext();
+    }
+
+    void play(String source, Runnable fallback, PlaybackAllowed playbackAllowed) {
+        stop();
+        if (source == null || source.trim().isEmpty()) {
+            fallback.run();
+            return;
+        }
+
+        long requestGeneration = generation;
+        MediaPlayer nextPlayer = new MediaPlayer();
+        player = nextPlayer;
+        nextPlayer.setAudioAttributes(
+            new AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                .build()
+        );
+        nextPlayer.setOnPreparedListener(prepared -> {
+            if (
+                requestGeneration != generation
+                || player != prepared
+                || !playbackAllowed.get()
+            ) {
+                release(prepared);
+                return;
+            }
+            prepared.start();
+        });
+        nextPlayer.setOnCompletionListener(this::release);
+        nextPlayer.setOnErrorListener((failed, what, extra) -> {
+            boolean shouldFallback = requestGeneration == generation
+                && player == failed
+                && playbackAllowed.get();
+            release(failed);
+            if (shouldFallback) fallback.run();
+            return true;
+        });
+
+        try {
+            String trimmed = source.trim();
+            if (trimmed.startsWith("data:audio/")) {
+                nextPlayer.setDataSource(writeDataUrl(trimmed).getAbsolutePath());
+            } else {
+                nextPlayer.setDataSource(trimmed);
+            }
+            nextPlayer.prepareAsync();
+        } catch (IOException | IllegalArgumentException error) {
+            release(nextPlayer);
+            if (playbackAllowed.get()) fallback.run();
+        }
+    }
+
+    void stop() {
+        generation += 1;
+        MediaPlayer current = player;
+        if (current != null) release(current);
+        else removeTemporaryFile();
+    }
+
+    private File writeDataUrl(String source) throws IOException {
+        int comma = source.indexOf(',');
+        if (comma < 0 || !source.substring(0, comma).endsWith(";base64")) {
+            throw new IOException("Invalid audio data URL.");
+        }
+        byte[] bytes;
+        try {
+            bytes = Base64.decode(source.substring(comma + 1), Base64.DEFAULT);
+        } catch (IllegalArgumentException error) {
+            throw new IOException("Invalid audio data URL.", error);
+        }
+        if (bytes.length < 100 || bytes.length > 1_500_000) {
+            throw new IOException("Invalid audio data size.");
+        }
+        temporaryFile = File.createTempFile("flashcard-audio-", ".recording", context.getCacheDir());
+        try (FileOutputStream output = new FileOutputStream(temporaryFile)) {
+            output.write(bytes);
+        }
+        return temporaryFile;
+    }
+
+    private void release(MediaPlayer target) {
+        boolean active = player == target;
+        if (active) player = null;
+        try {
+            target.setOnPreparedListener(null);
+            target.setOnCompletionListener(null);
+            target.setOnErrorListener(null);
+            try {
+                target.stop();
+            } catch (IllegalStateException ignored) {
+                // The player may still be preparing.
+            }
+            target.reset();
+            target.release();
+        } catch (RuntimeException ignored) {
+            // Releasing an already-ended player is safe to ignore.
+        }
+        if (active) removeTemporaryFile();
+    }
+
+    private void removeTemporaryFile() {
+        if (temporaryFile != null && temporaryFile.isFile()) temporaryFile.delete();
+        temporaryFile = null;
+    }
+}

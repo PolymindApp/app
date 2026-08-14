@@ -97,6 +97,47 @@ describe('flashcard speech helpers', () => {
     expect(synthesis.cancel).toHaveBeenCalledOnce()
   })
 
+  it('plays a face recording instead of synthesizing its text', async () => {
+    const synthesis = {
+      cancel: vi.fn(),
+      getVoices: vi.fn(() => []),
+      paused: false,
+      pending: false,
+      speaking: false,
+    } as unknown as SpeechSynthesis
+    let recordedAudio: FakeAudio | undefined
+    class FakeAudio extends EventTarget {
+      preload = ''
+      pause = vi.fn()
+      load = vi.fn()
+      removeAttribute = vi.fn()
+      play = vi.fn(async () => {
+        this.dispatchEvent(new Event('playing'))
+      })
+
+      constructor(readonly src: string) {
+        super()
+        recordedAudio = this
+      }
+    }
+    vi.stubGlobal('speechSynthesis', synthesis)
+    vi.stubGlobal('Audio', FakeAudio)
+
+    await speakFlashcardText(
+      'Synthesized fallback',
+      'en-US',
+      '',
+      '/api/flashcard-audio/front.webm',
+    )
+
+    expect(recordedAudio?.src).toBe('/api/flashcard-audio/front.webm')
+    expect(recordedAudio?.play).toHaveBeenCalledOnce()
+    expect(synthesis.getVoices).not.toHaveBeenCalled()
+
+    await stopFlashcardSpeech()
+    expect(recordedAudio?.pause).toHaveBeenCalledOnce()
+  })
+
   it('reports browser support from voices that are actually available', async () => {
     const synthesis = {
       getVoices: vi.fn(() => [{ lang: 'fr-CA' } as SpeechSynthesisVoice]),

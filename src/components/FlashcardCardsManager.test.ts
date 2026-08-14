@@ -218,9 +218,9 @@ describe('FlashcardCardsManager', () => {
     expect(swapNoteAndBack?.attributes('disabled')).toBeDefined()
   })
 
-  it('offers scoped import and bulk actions for editable Review sets', () => {
+  it('offers scoped import and deletion for editable Review sets', () => {
     const wrapper = mountManager({
-      bulkActions: ['assign_images', 'delete'],
+      bulkActions: ['delete'],
       canAdd: true,
       importReviewSetId: 'set-1',
       selectable: true,
@@ -229,10 +229,7 @@ describe('FlashcardCardsManager', () => {
 
     expect(wrapper.get('.card-filter-actions').classes()).toContain('card-filter-actions--3')
     expect(wrapper.get('.table-stub').attributes('data-selectable')).toBe('true')
-    expect(wrapper.findAll('.bulk-item').map(item => item.text())).toEqual([
-      'Assign images',
-      'Delete cards',
-    ])
+    expect(wrapper.findAll('.bulk-item').map(item => item.text())).toEqual(['Delete cards'])
     const importButton = wrapper.findAllComponents(ButtonStub)
       .find(button => button.attributes('aria-label') === 'Import flashcards')
     expect(importButton?.props('to')).toEqual({
@@ -265,5 +262,25 @@ describe('FlashcardCardsManager', () => {
     await nextTick()
 
     expect(selectionActionHandler).toHaveBeenCalledWith('exclude', ['card-1', 'card-2'])
+  })
+
+  it('combines Review set inclusion actions with standard card bulk actions', () => {
+    const wrapper = mountManager({
+      bulkActions: ['swap_front_back', 'add_tags', 'delete'],
+      canAdd: false,
+      selectable: true,
+      selectionActions: [
+        { action: 'exclude', title: 'Exclude', icon: 'mdi-minus-circle-outline' },
+        { action: 'include', title: 'Include', icon: 'mdi-check-circle-outline' },
+      ],
+    })
+
+    expect(wrapper.findAll('.bulk-item').map(item => item.text())).toEqual([
+      'Exclude',
+      'Include',
+      'Swap front and back',
+      'Add tags',
+      'Delete cards',
+    ])
   })
 })

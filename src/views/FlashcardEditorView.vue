@@ -4,6 +4,7 @@ import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppForm from '@/components/AppForm.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import FlashcardAudioSection from '@/components/FlashcardAudioSection.vue'
 import FlashcardImageField from '@/components/FlashcardImageField.vue'
 import FlashcardTagCombobox from '@/components/FlashcardTagCombobox.vue'
 import FormActionBar from '@/components/FormActionBar.vue'
@@ -12,7 +13,7 @@ import {
   squareImageSourceSignature,
 } from '@/services/avatarImage'
 import { useFlashcardStore } from '@/stores/flashcards'
-import type { FlashcardDraft, SquareImageSourceValue } from '@/types/domain'
+import type { FlashcardAudioValue, FlashcardDraft, SquareImageSourceValue } from '@/types/domain'
 
 const route = useRoute()
 const router = useRouter()
@@ -35,6 +36,10 @@ const cardImage = ref<SquareImageSourceValue>({
   existingUrl: '',
   existingSource: 'none',
 })
+const frontAudio = ref<FlashcardAudioValue>(emptyAudio())
+const backAudio = ref<FlashcardAudioValue>(emptyAudio())
+const frontAudioRecording = ref(false)
+const backAudioRecording = ref(false)
 
 const cardId = computed(() => typeof route.params.id === 'string' ? route.params.id : '')
 const reviewSetId = computed(() => typeof route.params.reviewSetId === 'string' ? route.params.reviewSetId : '')
@@ -51,10 +56,14 @@ const signature = computed(() => JSON.stringify({
   note: draft.note,
   tags: draft.tags,
   image: squareImageSourceSignature(cardImage.value),
+  frontAudio: frontAudio.value.url,
+  backAudio: backAudio.value.url,
 }))
 const canSave = computed(() => (
   ready.value
   && !saving.value
+  && !frontAudioRecording.value
+  && !backAudioRecording.value
   && signature.value !== original.value
   && Boolean(draft.front.trim())
   && Boolean(draft.back.trim())
@@ -107,9 +116,9 @@ onMounted(async () => {
         url: card.imageSource === 'url' ? card.image : '',
         existingUrl: card.image,
         existingSource: card.imageSource,
-        existingLibraryImageId: card.libraryImage?.id,
-        libraryImage: card.libraryImage,
       }
+      frontAudio.value = existingAudio(card.frontAudio || '')
+      backAudio.value = existingAudio(card.backAudio || '')
     }
     original.value = signature.value
     ready.value = true
@@ -119,6 +128,19 @@ onMounted(async () => {
     loading.value = false
   }
 })
+
+function emptyAudio(): FlashcardAudioValue {
+  return { url: '', existingUrl: '' }
+}
+
+function existingAudio(url: string): FlashcardAudioValue {
+  return { url, existingUrl: url }
+}
+
+function setAudioRecording(side: 'front' | 'back', recording: boolean) {
+  if (side === 'front') frontAudioRecording.value = recording
+  else backAudioRecording.value = recording
+}
 
 async function save() {
   const result = await form.value?.validate()
@@ -135,9 +157,18 @@ async function save() {
       tags: draft.tags,
     }
     if (isReviewSetCard.value) {
-      await store.saveReviewSetCard(reviewSetId.value, cardDraft, cardImage.value)
+      await store.saveReviewSetCard(
+        reviewSetId.value,
+        cardDraft,
+        cardImage.value,
+        { front: frontAudio.value, back: backAudio.value },
+      )
     } else {
-      await store.saveCard(cardDraft, cardImage.value)
+      await store.saveCard(
+        cardDraft,
+        cardImage.value,
+        { front: frontAudio.value, back: backAudio.value },
+      )
     }
     if (isEditing.value || returnTo.value) {
       await router.replace(returnTo.value || (isReviewSetCard.value
@@ -154,6 +185,8 @@ async function save() {
       existingUrl: '',
       existingSource: 'none',
     }
+    frontAudio.value = emptyAudio()
+    backAudio.value = emptyAudio()
     original.value = signature.value
     savedNotice.value = true
     await nextTick()
@@ -251,6 +284,13 @@ async function remove() {
           <v-alert v-else type="info" variant="tonal" density="compact">
             Card tags are controlled by the Review set owner so this card stays in the live set.
           </v-alert>
+          <FlashcardAudioSection
+            v-model:front="frontAudio"
+            v-model:back="backAudio"
+            :disabled="saving"
+            @recording-change="setAudioRecording"
+            @error="error = $event"
+          />
           <FlashcardImageField
             v-model="cardImage"
             :loading="saving"

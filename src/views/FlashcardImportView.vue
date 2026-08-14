@@ -36,6 +36,11 @@ const promptCopyError = ref('')
 const reviewSetId = computed(() => typeof route.query.reviewSetId === 'string' ? route.query.reviewSetId : '')
 const reviewSet = computed(() => store.reviewSets.find(item => item.id === reviewSetId.value))
 const isReviewSetImport = computed(() => Boolean(reviewSetId.value))
+const returnTo = computed(() => typeof route.query.returnTo === 'string'
+  && route.query.returnTo.startsWith('/')
+  && !route.query.returnTo.startsWith('//')
+  ? route.query.returnTo
+  : '')
 const activeAiPrompt = computed(() => isReviewSetImport.value ? REVIEW_SET_AI_PROMPT : AI_PROMPT)
 const canManageReviewSet = computed(() => (
   !isReviewSetImport.value
@@ -127,7 +132,8 @@ async function importCards() {
     const rows = parsed.value.rows
     if (isReviewSetImport.value) {
       await store.importReviewSetCards(reviewSetId.value, rows)
-      await router.replace({ name: 'flashcard-review-set-cards', params: { id: reviewSetId.value } })
+      await router.replace(returnTo.value
+        || { name: 'flashcard-review-set-cards', params: { id: reviewSetId.value } })
     } else {
       await store.importCards(rows)
       await router.replace({ name: 'flashcard-cards' })

@@ -39,7 +39,6 @@ Configuration may be supplied through the root `.env`, process environment varia
 | `POLYMIND_MAIL_ENCRYPTION` | `tls`, `ssl`, or `none` for trusted local development | `tls` |
 | `POLYMIND_MAIL_FROM_ADDRESS` | Sender email address | Required for account email |
 | `POLYMIND_MAIL_FROM_NAME` | Sender display name | Polymind |
-| `POLYMIND_PEXELS_API_KEY` | Server-side Pexels API key used by batch and on-demand cache fills | Disabled |
 | `POLYMIND_PASSKEY_RP_ID` | Android passkey relying-party domain | Disabled |
 | `POLYMIND_PASSKEY_ANDROID_PACKAGE` | Trusted Android application ID | Disabled |
 | `POLYMIND_PASSKEY_ANDROID_KEY_HASHES` | Comma-separated base64url SHA-256 signing-certificate hashes | Disabled |
@@ -106,12 +105,13 @@ The reconstructed PHP-era history is:
 | `202607290001` | Baseline schema used when the standalone PHP server replaced the previous backend |
 | `202607290002` | API rate-limit storage |
 | `202607290003` | Android passkey credentials and one-time challenges |
-| `202608070005` | Multilingual image concepts, full-text search, Pexels cache metadata, and flashcard library image attribution |
 | `202608070006` | Live Review set sharing, recipient preferences, reviewer-specific card statistics, and source-owner session attribution |
 | `202608080001` | Privacy-preserving Review set invitations for registered and future email addresses |
 | `202608080003` | Review set note-before-answer display preference |
 | `202608090001` | Offline synchronization versions, change log, idempotency receipts, client cursors, and per-device active sessions |
 | `202608100001` | Hashed email-confirmation and password-reset tokens; existing accounts are grandfathered as verified |
+| `202608140001` | Optional front- and back-face flashcard audio recordings |
+| `202608140002` | Removal of the retired stock-image library and attribution fields |
 
 Existing PHP databases are advanced without recreating application data. The schema is validated after migration, including required columns.
 
@@ -135,35 +135,17 @@ Recommended deployment order:
 
 The release workflow calls the authenticated endpoint after its upload job succeeds. Configure the same `POLYMIND_MIGRATION_KEY` value in the host's root `.env` and the GitHub `Web` environment secret. `MIGRATION_URL` may be set as a `Web` environment variable when the default deployment URL is not appropriate. The first ordinary API request also applies pending migrations as a fallback. Keep the backup: migrations are forward-only and do not perform automatic rollbacks after a successful deployment.
 
-## Flashcard image library
+## Flashcard face recordings
 
-The committed seed contains more than 5,000 common WordNet concepts and localized Open Multilingual WordNet terms. Each source and its data license are recorded in `image_sources`. Load or refresh it after migrations:
+Each flashcard face can store one optional WebM or MP4 recording of up to 60 seconds and 1.5 MB. Recordings are kept in `flashcard-audio` beside the configured database and are included in Review set and interval snapshots. When read-aloud is enabled, a face recording plays in place of synthesized speech, including native Android background playback; text-to-speech remains the fallback when a recording cannot be played.
 
-```bash
-php scripts/seed-image-concepts.php
-```
-
-The seed is idempotent. Existing Pexels results remain flagged as searched unless a concept's English search query changes. To rebuild the committed artifact from the upstream WordNet and OMW archives, run `php scripts/build-image-concept-seed.php`; this development-only command downloads its sources and requires cURL and Zip.
-
-Create a Pexels API key and set `POLYMIND_PEXELS_API_KEY` in the server environment. Local API runs also use that one value from the root `.env.prod` when it is absent from the environment, local server configuration, and `.env`; other production settings are not imported. Fill the cache in bounded batches:
-
-```bash
-php scripts/fetch-pexels-images.php --limit=100
-```
-
-The limit is the maximum number of unsearched concepts processed in that run; `--limit=0` processes every pending concept. Each Pexels search requests and stores up to 30 results. Successful searches, including zero-result searches, are flagged so later runs skip them. A failed search remains pending and records its error for a retry.
-
-Authenticated image-library searches also fill misses on demand. The API first fetches a matching pending concept. If the term is not in the concept catalog, it creates an on-demand concept and immediately stores up to 30 Pexels results. A matching concept already searched with zero results is not searched again. External fetches are rate-limited per account; ordinary cached searches do not consume that allowance.
-
-Downloaded photos are center-cropped to 256 × 256 JPEGs and stored in `flashcard-images` beside the configured database. `image_assets` retains the Pexels photo page, photographer, alt text, license, dimensions, content hash, and source URL. Flashcards keep an attribution snapshot when an image is selected, while the cached file remains shared. The picker links photographers and photos back to Pexels and displays “Photos provided by Pexels”; deployments remain responsible for following the current Pexels API and license terms.
-
-The flashcard card list also offers **Bulk → Assign images**. It opens a safe-area fullscreen review where each selected card can receive a proposed cached image, use a refined multilingual search, or be skipped before moving to the next card.
+Owners use `/flashcards/{id}/audio/{front|back}` to add or remove recordings. Review set editors use the equivalent set-scoped card route. Stored audio is served from `/flashcard-audio/{filename}` with immutable caching.
 
 ## Review set sharing
 
 `GET /flashcard-review-sets` returns the authenticated account’s owned sets and sets shared with it. Each record includes its `access_role`, owner display metadata, resolved tag names, current matching-card count, and that account’s effective review settings.
 
-Owners manage access through `/flashcard-review-sets/{id}/shares` and `/flashcard-review-set-shares/{shareId}`. Shares accept any valid email address and a `readonly` or `editor` role. Create, list, and update responses expose only the invited email and role—not account profile data or registration state. An invitation for an unregistered address is claimed automatically on that account’s first authenticated request after registration. Read-only recipients may review and list cards. Editors may also use the set-scoped card and image endpoints to mutate the owner’s matching source cards, but cannot change card tags, set identity, tag filters, or sharing. New editor-created cards receive the set’s current tags automatically.
+Owners manage access through `/flashcard-review-sets/{id}/shares` and `/flashcard-review-set-shares/{shareId}`. Shares accept any valid email address and a `readonly` or `editor` role. Create, list, and update responses expose only the invited email and role—not account profile data or registration state. An invitation for an unregistered address is claimed automatically on that account’s first authenticated request after registration. Read-only recipients may review and list cards. Editors may also use the set-scoped card and image-upload endpoints to mutate the owner’s matching source cards, but cannot change card tags, set identity, tag filters, or sharing. New editor-created cards receive the set’s current tags automatically.
 
 Review preferences and card statistics are keyed by account, so one recipient’s timing, speech, sorting, success, and error history do not alter another account’s experience. Sessions retain both the reviewer and source owner. Recipients may attach accessible sets to their tasks, program steps, and interval templates. Removing a share detaches those references transactionally while keeping immutable review events and session snapshots.
 

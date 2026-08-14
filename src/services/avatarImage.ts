@@ -96,12 +96,6 @@ export function squareImageSourceIsValid(value: SquareImageSourceValue) {
   if (value.source === 'upload') {
     return Boolean(value.upload || value.existingSource === 'upload')
   }
-  if (value.source === 'library') {
-    return Boolean(
-      value.libraryImage?.id
-      || (value.existingSource === 'library' && value.existingUrl),
-    )
-  }
   try {
     const url = new URL(value.url.trim())
     return url.protocol === 'http:' || url.protocol === 'https:'
@@ -115,7 +109,6 @@ export function squareImageSourceSignature(value: SquareImageSourceValue) {
     source: value.source,
     url: value.source === 'url' ? value.url.trim() : '',
     upload: value.upload ? `${value.upload.type}:${value.upload.size}` : '',
-    libraryImage: value.source === 'library' ? value.libraryImage?.id || 0 : 0,
   })
 }
 

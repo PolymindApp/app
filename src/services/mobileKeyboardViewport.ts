@@ -22,6 +22,7 @@ type ResizeViewport = Pick<
 
 const FIELD_EDGE_GAP = 16
 const ANDROID_FIELD_TOP_GAP = 24
+const TAP_MOVE_TOLERANCE = 8
 const REVEAL_DELAY = 120
 const keyboardVisibleState = ref(false)
 
@@ -67,6 +68,12 @@ export function installMobileKeyboardViewport(
     : FIELD_EDGE_GAP
   let focusedField: HTMLElement | undefined
   let pointerFocusedField: HTMLElement | undefined
+  let pendingFieldTap: {
+    field: HTMLElement
+    pointerId: number
+    startX: number
+    startY: number
+  } | undefined
   let geometryFrame: number | undefined
   let scrollTimer: number | undefined
 
@@ -158,15 +165,39 @@ export function installMobileKeyboardViewport(
   const handlePointerDown = (event: PointerEvent) => {
     if (!isAndroid) return
     const field = editableFieldFromPointer(event)
-    if (
-      !field
-      || (keyboardVisibleState.value && root.activeElement === field)
-    ) return
+    if (!field || (keyboardVisibleState.value && root.activeElement === field)) {
+      pendingFieldTap = undefined
+      return
+    }
+
+    pendingFieldTap = {
+      field,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+    }
+  }
+
+  const handlePointerMove = (event: PointerEvent) => {
+    if (!pendingFieldTap || event.pointerId !== pendingFieldTap.pointerId) return
+    const deltaX = event.clientX - pendingFieldTap.startX
+    const deltaY = event.clientY - pendingFieldTap.startY
+    if (Math.hypot(deltaX, deltaY) > TAP_MOVE_TOLERANCE) pendingFieldTap = undefined
+  }
+
+  const handlePointerUp = (event: PointerEvent) => {
+    if (!pendingFieldTap || event.pointerId !== pendingFieldTap.pointerId) return
+    const { field } = pendingFieldTap
+    pendingFieldTap = undefined
 
     focusedField = field
     pointerFocusedField = field
     field.focus({ preventScroll: true })
     pointerFocusedField = undefined
+  }
+
+  const handlePointerCancel = () => {
+    pendingFieldTap = undefined
   }
 
   const handleFocus = (event: FocusEvent) => {
@@ -224,6 +255,9 @@ export function installMobileKeyboardViewport(
   }
 
   root.addEventListener('pointerdown', handlePointerDown, true)
+  root.addEventListener('pointermove', handlePointerMove, true)
+  root.addEventListener('pointerup', handlePointerUp, true)
+  root.addEventListener('pointercancel', handlePointerCancel, true)
   root.addEventListener('focusin', handleFocus)
   viewport?.addEventListener('resize', handleViewportChange)
   viewport?.addEventListener('scroll', handleViewportChange)
@@ -236,6 +270,9 @@ export function installMobileKeyboardViewport(
 
   return () => {
     root.removeEventListener('pointerdown', handlePointerDown, true)
+    root.removeEventListener('pointermove', handlePointerMove, true)
+    root.removeEventListener('pointerup', handlePointerUp, true)
+    root.removeEventListener('pointercancel', handlePointerCancel, true)
     root.removeEventListener('focusin', handleFocus)
     viewport?.removeEventListener('resize', handleViewportChange)
     viewport?.removeEventListener('scroll', handleViewportChange)
@@ -247,6 +284,7 @@ export function installMobileKeyboardViewport(
     if (geometryFrame !== undefined) runtimeWindow.cancelAnimationFrame(geometryFrame)
     if (scrollTimer !== undefined) runtimeWindow.clearTimeout(scrollTimer)
     keyboardVisibleState.value = false
+    pendingFieldTap = undefined
     rootElement.classList.remove('keyboard-open')
     rootElement.style.removeProperty('--app-viewport-height')
     rootElement.style.removeProperty('--keyboard-viewport-bottom')

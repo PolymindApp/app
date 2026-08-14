@@ -183,8 +183,6 @@ describe('Flashcards Review set cards', () => {
     )).toEqual([
       'Edit',
       'Share',
-      'divider',
-      'Manage cards',
     ])
   })
 })

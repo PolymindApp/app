@@ -21,7 +21,6 @@ try {
     require $serverRoot . '/src/Database.php';
     require $serverRoot . '/src/Schema.php';
     require $serverRoot . '/src/SyncService.php';
-    require $serverRoot . '/src/PexelsImageFetcher.php';
     require $serverRoot . '/src/Api.php';
 
     $config = Config::load($serverRoot);

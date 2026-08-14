@@ -16,7 +16,6 @@ final class Config
         public readonly string $passkeyRpId,
         public readonly string $passkeyAndroidPackage,
         public readonly array $passkeyAndroidKeyHashes,
-        public readonly string $pexelsApiKey,
         public readonly string $appUrl,
         public readonly string $mailHost,
         public readonly int $mailPort,
@@ -77,11 +76,6 @@ final class Config
             'trim',
             explode(',', (string) $value('POLYMIND_PASSKEY_ANDROID_KEY_HASHES', '')),
         ))));
-        $pexelsApiKey = trim((string) $value('POLYMIND_PEXELS_API_KEY', ''));
-        if ($pexelsApiKey === '') {
-            $productionDotenv = self::readDotenv($projectRoot . '/.env.prod');
-            $pexelsApiKey = trim((string) ($productionDotenv['POLYMIND_PEXELS_API_KEY'] ?? ''));
-        }
         $appUrl = rtrim(trim((string) $value('POLYMIND_APP_URL', '')), '/');
         $mailHost = trim((string) $value('POLYMIND_MAIL_HOST', ''));
         $mailPort = (int) $value('POLYMIND_MAIL_PORT', 587);
@@ -201,7 +195,6 @@ final class Config
             $passkeyRpId,
             $passkeyAndroidPackage,
             $passkeyAndroidKeyHashes,
-            $pexelsApiKey,
             $appUrl,
             $mailHost,
             $mailPort,

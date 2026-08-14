@@ -498,11 +498,11 @@ async function speakCurrentFlashcardSide() {
 
   lastSpokenFlashcardKey = key
   try {
-    await speakFlashcardText(
-      phase.side === 'front' ? phase.card.front : phase.card.back,
-      phase.side === 'front' ? review.frontLanguage : review.backLanguage,
-      phase.key,
-    )
+    const text = phase.side === 'front' ? phase.card.front : phase.card.back
+    const language = phase.side === 'front' ? review.frontLanguage : review.backLanguage
+    const audio = (phase.side === 'front' ? phase.card.frontAudio : phase.card.backAudio) || ''
+    if (audio) await speakFlashcardText(text, language, phase.key, audio)
+    else await speakFlashcardText(text, language, phase.key)
   } catch {
     // Speech is optional during intervals; timer playback continues without an inline warning.
   }
@@ -1040,6 +1040,8 @@ function snapshotCard(card: Flashcard) {
     front: card.front,
     back: card.back,
     note: card.note,
+    frontAudio: card.frontAudio,
+    backAudio: card.backAudio,
     image: card.image,
     tags: [...card.tags],
   }

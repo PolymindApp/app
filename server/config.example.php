@@ -17,7 +17,6 @@ return [
     'POLYMIND_MAIL_ENCRYPTION' => 'tls',
     'POLYMIND_MAIL_FROM_ADDRESS' => 'polymind@example.com',
     'POLYMIND_MAIL_FROM_NAME' => 'Polymind',
-    'POLYMIND_PEXELS_API_KEY' => 'CHANGE_ME',
     'POLYMIND_PASSKEY_RP_ID' => 'polymind.example.com',
     'POLYMIND_PASSKEY_ANDROID_PACKAGE' => 'app.polymind.android',
     'POLYMIND_PASSKEY_ANDROID_KEY_HASHES' => 'BASE64URL_SHA256_OF_ANDROID_SIGNING_CERTIFICATE',

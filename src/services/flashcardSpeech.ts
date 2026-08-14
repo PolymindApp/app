@@ -26,7 +26,12 @@ interface FlashcardSpeechPlugin {
   startBackground(options: {
     sessionId: string
     sessionName: string
-    cards: Array<{ front: string; back: string }>
+    cards: Array<{
+      front: string
+      back: string
+      frontAudio: string
+      backAudio: string
+    }>
     indefinite: boolean
     cardSides: FlashcardReviewCardSides
     side: FlashcardReviewSide
@@ -47,6 +52,7 @@ const NativeFlashcardSpeech = registerPlugin<FlashcardSpeechPlugin>('FlashcardSp
 const SPEECH_OVER_AMPLIFICATION_STORAGE_KEY = 'polymind-flashcard-speech:over-amplification'
 let nativeBackgroundActive = false
 let activeBrowserUtterance: SpeechSynthesisUtterance | undefined
+let activeRecordedAudio: HTMLAudioElement | undefined
 let browserVoiceLoad: Promise<SpeechSynthesisVoice[]> | undefined
 
 function storedSpeechOverAmplificationIsEnabled() {
@@ -75,6 +81,11 @@ function isNativeAndroid() {
 
 export function nativeFlashcardBackgroundIsAvailable() {
   return isNativeAndroid()
+}
+
+export function resolveFlashcardAudioPlaybackUrl(value: string) {
+  if (!value || /^(?:data:|blob:)/i.test(value) || typeof window === 'undefined') return value
+  return new URL(value, window.location.href).href
 }
 
 export function flashcardSpeechOverAmplificationIsEnabled() {
@@ -203,8 +214,18 @@ export async function speakFlashcardText(
   text: string,
   language: string,
   backgroundIntervalSpeechKey = '',
+  audioUrl = '',
 ) {
   const content = text.trim()
+  const recording = audioUrl.trim()
+  if (recording) {
+    try {
+      await playFlashcardRecording(recording)
+      return
+    } catch {
+      // Fall back to synthesis if a saved recording is temporarily unavailable.
+    }
+  }
   if (!content || !language) return
   if (isNativeAndroid()) {
     await NativeFlashcardSpeech.speak({
@@ -267,7 +288,52 @@ export async function speakFlashcardText(
   })
 }
 
+async function playFlashcardRecording(url: string) {
+  if (typeof Audio === 'undefined') throw new Error('Recorded audio is not available.')
+  await stopFlashcardSpeech()
+  const audio = new Audio(url)
+  audio.preload = 'auto'
+  activeRecordedAudio = audio
+  await new Promise<void>((resolve, reject) => {
+    let settled = false
+    const cleanupStartListeners = () => {
+      window.clearTimeout(startTimeout)
+      audio.removeEventListener('playing', handlePlaying)
+      audio.removeEventListener('error', handleError)
+    }
+    const handlePlaying = () => {
+      if (settled) return
+      settled = true
+      cleanupStartListeners()
+      resolve()
+    }
+    const handleError = () => {
+      if (settled) return
+      settled = true
+      cleanupStartListeners()
+      audio.pause()
+      audio.removeAttribute('src')
+      audio.load()
+      if (activeRecordedAudio === audio) activeRecordedAudio = undefined
+      reject(new Error('The card recording could not be played.'))
+    }
+    const startTimeout = window.setTimeout(handleError, 3000)
+    audio.addEventListener('playing', handlePlaying, { once: true })
+    audio.addEventListener('error', handleError, { once: true })
+    audio.addEventListener('ended', () => {
+      if (activeRecordedAudio === audio) activeRecordedAudio = undefined
+    }, { once: true })
+    void audio.play().catch(handleError)
+  })
+}
+
 export async function stopFlashcardSpeech() {
+  if (activeRecordedAudio) {
+    activeRecordedAudio.pause()
+    activeRecordedAudio.removeAttribute('src')
+    activeRecordedAudio.load()
+    activeRecordedAudio = undefined
+  }
   if (isNativeAndroid()) {
     await NativeFlashcardSpeech.stopSpeaking().catch(() => undefined)
     return
@@ -300,7 +366,12 @@ export async function syncBackgroundFlashcardReview(
     await NativeFlashcardSpeech.startBackground({
       sessionId: session.id,
       sessionName: session.name,
-      cards: session.queue.map(card => ({ front: card.front, back: card.back })),
+      cards: session.queue.map(card => ({
+        front: card.front,
+        back: card.back,
+        frontAudio: resolveFlashcardAudioPlaybackUrl(card.frontAudio || ''),
+        backAudio: resolveFlashcardAudioPlaybackUrl(card.backAudio || ''),
+      })),
       indefinite: session.indefinite,
       cardSides: session.cardSides,
       side,

@@ -38,6 +38,7 @@ import {
 const baseUrl = (import.meta.env.VITE_API_URL || '/api').replace(/\/+$/, '')
 const STATUS_EVENT = 'polymind-sync-status-changed'
 const MUTATION_SYNC_DELAY_MS = 50
+const MAX_SYNC_REQUEST_BYTES = 2_400_000
 
 export const offlineSyncStatus = reactive<SyncStatusSnapshot>({
   phase: 'idle',
@@ -277,7 +278,7 @@ async function performSync() {
     let loops = 0
     while (hasMore && loops < 20) {
       const result = await exchange(accountId)
-      if (result.hasMore && !result.cursorAdvanced) {
+      if (result.hasMore && !result.cursorAdvanced && !result.hadActivity) {
         throw new Error('Synchronization did not advance the server cursor.')
       }
       hasMore = result.hasMore
@@ -332,12 +333,21 @@ async function warmMediaCache(resources: SyncBootstrapResponse['resources']) {
     } else {
       add(data.image_url)
     }
+    for (const side of ['front', 'back']) {
+      const audioFile = data[`${side}_audio_file`]
+      if (typeof audioFile === 'string' && audioFile) add(`/flashcard-audio/${audioFile}`)
+      else add(data[`${side}_audio_url`])
+    }
     const cards = Array.isArray(data.queue_state)
       ? data.queue_state
       : Array.isArray(data.cards)
         ? data.cards
         : []
-    cards.forEach(card => add(card?.image))
+    cards.forEach(card => {
+      add(card?.image)
+      add(card?.frontAudio)
+      add(card?.backAudio)
+    })
   }
   const cache = await caches.open('polymind-media-v1')
   await Promise.allSettled([...urls].map(async url => {
@@ -350,7 +360,8 @@ async function warmMediaCache(resources: SyncBootstrapResponse['resources']) {
 
 async function exchange(accountId: string) {
   const metadata = await initializeLocalMetadata(accountId)
-  const operations = await pendingOperations(accountId)
+  const pending = await pendingOperations(accountId)
+  const operations = syncRequestOperations(pending, metadata.clientId, metadata.cursor)
   const operationIds = operations.map(operation => operation.operationId)
   if (operationIds.length) await markOperationsSending(operationIds)
   try {
@@ -381,7 +392,7 @@ async function exchange(accountId: string) {
     )
     await stageNativeBackgroundBatch(accountId)
     return {
-      hasMore: response.hasMore,
+      hasMore: response.hasMore || operations.length < pending.length,
       cursorAdvanced: response.cursor > metadata.cursor,
       hadActivity: operations.length > 0
         || response.acknowledgements.length > 0
@@ -402,10 +413,11 @@ async function exchange(accountId: string) {
 
 async function stageNativeBackgroundBatch(accountId: string) {
   if (!Capacitor.isNativePlatform() || !api.authStore.token) return
-  const [metadata, operations] = await Promise.all([
+  const [metadata, pending] = await Promise.all([
     initializeLocalMetadata(accountId),
     pendingOperations(accountId),
   ])
+  const operations = syncRequestOperations(pending, metadata.clientId, metadata.cursor)
   try {
     await writeBackgroundSyncStage({
       url: `${baseUrl}/sync/exchange`,
@@ -425,6 +437,37 @@ async function stageNativeBackgroundBatch(accountId: string) {
     })
   } catch {
     // Background scheduling is opportunistic; foreground sync remains authoritative.
+  }
+}
+
+function syncRequestOperations(
+  operations: Awaited<ReturnType<typeof pendingOperations>>,
+  clientId: string,
+  cursor: number,
+) {
+  const selected: typeof operations = []
+  for (const operation of operations) {
+    const candidate = [...selected, operation]
+    const outbound = candidate.map(syncRequestOperation)
+    const bytes = new TextEncoder().encode(JSON.stringify({ clientId, cursor, operations: outbound })).byteLength
+    if (selected.length && bytes > MAX_SYNC_REQUEST_BYTES) break
+    selected.push(operation)
+  }
+  return selected
+}
+
+function syncRequestOperation(
+  operation: Awaited<ReturnType<typeof pendingOperations>>[number],
+) {
+  return {
+    operationId: operation.operationId,
+    transactionId: operation.transactionId,
+    resource: operation.resource,
+    recordId: operation.recordId,
+    kind: operation.kind,
+    payload: operation.payload,
+    fieldClocks: operation.fieldClocks,
+    dependsOn: operation.dependsOn,
   }
 }
 

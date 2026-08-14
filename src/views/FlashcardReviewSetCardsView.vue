@@ -55,9 +55,6 @@ function bulkUpdateCards(action: Parameters<typeof store.bulkUpdateReviewSetCard
   return store.bulkUpdateReviewSetCards(reviewSetId.value, action, cardIds)
 }
 
-function assignCardImage(cardId: string, imageId: number) {
-  return store.assignReviewSetLibraryImage(reviewSetId.value, cardId, imageId)
-}
 </script>
 
 <template>
@@ -104,9 +101,8 @@ function assignCardImage(cardId: string, imageId: number) {
         :can-add="canEdit"
         :show-import="canEdit"
         :import-review-set-id="reviewSetId"
-        :bulk-actions="canEdit ? ['assign_images', 'delete'] : []"
+        :bulk-actions="canEdit ? ['delete'] : []"
         :bulk-action-handler="bulkUpdateCards"
-        :assign-image-handler="assignCardImage"
         add-aria-label="Add a card to this Review set"
         empty-title="No matching cards"
         :empty-description="canEdit ? 'Add a card to this live Review set.' : 'The owner has not added a matching card yet.'"

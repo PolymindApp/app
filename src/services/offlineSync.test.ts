@@ -160,4 +160,38 @@ describe('offline synchronization coordination', () => {
     expect(fetch).toHaveBeenCalledOnce()
     expect(offlineSyncStatus.phase).toBe('offline')
   })
+
+  it('splits large recording operations across request-sized exchanges', async () => {
+    const operation = (id: string) => ({
+      operationId: id,
+      accountId: 'account-1',
+      clientId: 'client-1',
+      resource: 'flashcards',
+      recordId: 'card-1',
+      kind: 'patch' as const,
+      payload: { front_audio_url: `data:audio/webm;base64,${'A'.repeat(1_300_000)}` },
+      fieldClocks: { front_audio_url: 'clock' },
+      dependsOn: [],
+      status: 'pending' as const,
+      sequence: 1,
+      attempts: 0,
+      nextAttemptAt: 0,
+      createdAt: '2026-08-14T12:00:00.000Z',
+    })
+    const first = operation('operation-1')
+    const second = operation('operation-2')
+    mocks.pendingOperations
+      .mockResolvedValueOnce([first, second])
+      .mockResolvedValueOnce([second])
+    const { syncNow } = await import('./offlineSync')
+
+    await expect(syncNow('manual')).resolves.toBe(true)
+
+    expect(fetch).toHaveBeenCalledTimes(2)
+    const bodies = vi.mocked(fetch).mock.calls.map(([, options]) => (
+      JSON.parse(String(options?.body))
+    ))
+    expect(bodies.map(body => body.operations.map((item: { operationId: string }) => item.operationId)))
+      .toEqual([['operation-1'], ['operation-2']])
+  })
 })

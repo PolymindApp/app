@@ -12,6 +12,7 @@ import {
   DEFAULT_FLASHCARD_REVIEW_CARD_SIDES,
   DEFAULT_FLASHCARD_SESSION_CARDS,
   cardMatchesTags,
+  FLASHCARD_BULK_MENU_ITEMS,
   FLASHCARD_REVIEW_SELECTION_MENU_ITEMS,
   flashcardReviewSettingsAreValid,
   flashcardReviewSettingsSignature,
@@ -25,6 +26,8 @@ import {
 import { useFlashcardStore } from '@/stores/flashcards'
 import type {
   Flashcard,
+  FlashcardBulkAction,
+  FlashcardBulkRecordAction,
   FlashcardReviewSetDraft,
   FlashcardSelectionAction,
   FlashcardSpeechSupport,
@@ -45,6 +48,13 @@ const speechSupport = ref<FlashcardSpeechSupport>({ available: false, languages:
 const isEditing = computed(() => Boolean(route.params.id))
 const currentReviewSet = computed(() => store.reviewSets.find(item => item.id === route.params.id))
 const isOwner = computed(() => !isEditing.value || currentReviewSet.value?.accessRole === 'owner')
+const canEditCards = computed(() => (
+  isEditing.value && currentReviewSet.value?.accessRole !== 'readonly'
+))
+const editorReturnTo = computed(() => router.resolve({
+  name: 'flashcard-review-set-edit',
+  params: { id: draft.id },
+}).href)
 const draft = reactive<FlashcardReviewSetDraft>({
   name: '',
   tags: [],
@@ -91,6 +101,12 @@ const sourceCards = computed(() => {
   if (!currentReviewSet.value || currentReviewSet.value.accessRole === 'owner') return store.cards
   return store.reviewSetCards[currentReviewSet.value.id] || []
 })
+const cardTableTags = computed(() => {
+  const tags = new Map(store.tags.map(tag => [tag.id, tag]))
+  currentReviewSet.value?.tagDetails.forEach(tag => tags.set(tag.id, tag))
+  sourceCards.value.flatMap(card => card.tagDetails || []).forEach(tag => tags.set(tag.id, tag))
+  return [...tags.values()]
+})
 const orderedMatchingCards = computed(() => sortFlashcardsForReview(
   sourceCards.value.filter(card => cardMatchesTags(card, draft.tags)),
   draft.sortMode,
@@ -98,6 +114,11 @@ const orderedMatchingCards = computed(() => sortFlashcardsForReview(
 const excludedCardIds = computed(() => new Set(draft.excludedCards || []))
 const includedCardCount = computed(() => orderedMatchingCards.value
   .filter(card => !excludedCardIds.value.has(card.id)).length)
+const reviewSetBulkActions = computed<FlashcardBulkAction[]>(() => {
+  if (!canEditCards.value) return []
+  if (isOwner.value) return FLASHCARD_BULK_MENU_ITEMS.map(item => item.action)
+  return ['delete']
+})
 
 function ensureSpeechLanguages() {
   const fallback = defaultFlashcardSpeechLanguage(speechSupport.value.languages)
@@ -175,6 +196,38 @@ function updateCardSelection(action: FlashcardSelectionAction, cards: string[]) 
 
 function cardIsIncluded(card: Flashcard) {
   return !excludedCardIds.value.has(card.id)
+}
+
+function cardRowClass(card: Flashcard) {
+  return cardIsIncluded(card) ? undefined : 'card-library-table__row--excluded'
+}
+
+function bulkUpdateCards(
+  action: FlashcardBulkRecordAction,
+  cardIds: string[],
+  tagIds: string[],
+) {
+  if (isOwner.value) return store.bulkUpdateCards(action, cardIds, tagIds)
+  if (!draft.id) return Promise.resolve([])
+  return store.bulkUpdateReviewSetCards(draft.id, action, cardIds)
+}
+
+function openNewCard() {
+  if (!draft.id || !canEditCards.value) return
+  void router.push({
+    name: 'flashcard-review-set-card-new',
+    params: { reviewSetId: draft.id },
+    query: { returnTo: editorReturnTo.value },
+  })
+}
+
+function openCard(card: Flashcard) {
+  if (!draft.id || !canEditCards.value) return
+  void router.push({
+    name: 'flashcard-review-set-card-edit',
+    params: { reviewSetId: draft.id, id: card.id },
+    query: { returnTo: editorReturnTo.value },
+  })
 }
 
 async function remove() {
@@ -257,25 +310,42 @@ async function remove() {
         </div>
         <FlashcardCardsManager
           :cards="orderedMatchingCards"
-          :tags="store.tags"
+          :tags="cardTableTags"
           :selection-actions="FLASHCARD_REVIEW_SELECTION_MENU_ITEMS"
           :selection-action-handler="updateCardSelection"
+          :bulk-actions="reviewSetBulkActions"
+          :bulk-action-handler="bulkUpdateCards"
           selectable
           :interactive="false"
-          :can-add="false"
-          :show-search-filter="false"
+          :can-add="canEditCards"
+          :show-import="canEditCards"
+          :import-review-set-id="draft.id"
+          :import-return-to="editorReturnTo"
+          :row-class="cardRowClass"
           :table-surface="false"
           empty-title="No cards match this Review set"
           empty-description="Change the selected tags to include cards in this Review set."
+          add-aria-label="Add a card to this Review set"
+          @add-card="openNewCard"
+          @open-card="openCard"
         >
-          <template #image-column-heading><span class="d-sr-only">Included</span></template>
+          <template #image-column-heading><span v-if="canEditCards" class="d-sr-only">Edit</span></template>
           <template #last-column-heading>Tags</template>
           <template #image-column="{ card }">
-            <div class="review-set-card-state">
-              <v-icon
-                :icon="cardIsIncluded(card) ? 'mdi-check-circle' : 'mdi-minus-circle-outline'"
-                :color="cardIsIncluded(card) ? 'success' : 'warning'"
-                :aria-label="cardIsIncluded(card) ? 'Included' : 'Excluded'"
+            <div
+              v-if="canEditCards"
+              class="review-set-card-edit"
+              @pointerdown.stop
+              @touchstart.stop
+              @click.stop
+              @keydown.stop
+            >
+              <v-btn
+                icon="mdi-pencil-outline"
+                variant="text"
+                size="small"
+                :aria-label="`Edit card: ${card.front}`"
+                @click.stop="openCard(card)"
               />
             </div>
           </template>
@@ -321,5 +391,5 @@ async function remove() {
 .review-set-summary p { margin-top: .15rem; color: rgba(var(--v-theme-on-surface), .56); font-size: .7rem; }
 .review-set-loading { display: flex; align-items: center; justify-content: center; gap: .75rem; }
 .review-set-card-selection { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
-.review-set-card-state { display: flex; align-items: center; justify-content: center; }
+.review-set-card-edit { position: relative; z-index: 2; display: flex; align-items: center; justify-content: center; }
 </style>

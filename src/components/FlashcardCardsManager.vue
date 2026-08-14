@@ -2,7 +2,6 @@
 import { computed, ref, watch } from 'vue'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
-import FlashcardBulkImageAssignmentDialog from '@/components/FlashcardBulkImageAssignmentDialog.vue'
 import FlashcardCardsTable from '@/components/FlashcardCardsTable.vue'
 import FlashcardTagCombobox from '@/components/FlashcardTagCombobox.vue'
 import TagSelectionChip from '@/components/TagSelectionChip.vue'
@@ -26,6 +25,7 @@ const props = withDefaults(defineProps<{
   libraryActions?: boolean
   showImport?: boolean
   importReviewSetId?: string
+  importReturnTo?: string
   bulkActions?: FlashcardBulkAction[]
   bulkActionHandler?: (
     action: FlashcardBulkRecordAction,
@@ -37,7 +37,6 @@ const props = withDefaults(defineProps<{
     action: FlashcardSelectionAction,
     cardIds: string[],
   ) => Promise<unknown> | unknown
-  assignImageHandler?: (cardId: string, imageId: number) => Promise<unknown>
   selectable?: boolean
   interactive?: boolean
   canAdd?: boolean
@@ -49,10 +48,12 @@ const props = withDefaults(defineProps<{
   showSearchFilter?: boolean
   tableSurface?: boolean
   showLastColumn?: boolean
+  rowClass?: (card: Flashcard) => string | undefined
 }>(), {
   libraryActions: false,
   showImport: false,
   importReviewSetId: '',
+  importReturnTo: '',
   selectable: false,
   interactive: true,
   canAdd: true,
@@ -78,7 +79,6 @@ const selectedCardIds = ref<string[]>([])
 const bulkError = ref('')
 const bulkSaving = ref(false)
 const bulkSheetOpen = ref(false)
-const bulkImageDialogOpen = ref(false)
 const bulkTagSheetOpen = ref(false)
 const bulkTagAction = ref<FlashcardBulkTagAction>('add_tags')
 const bulkTagIds = ref<string[]>([])
@@ -97,11 +97,15 @@ const filteredCards = computed(() => props.cards.filter(card => cardMatchesSearc
   searchQuery.value || '',
 )))
 const availableBulkMenuItems = computed(() => {
-  if (props.selectionActions?.length) return props.selectionActions
   const actions = props.libraryActions
     ? FLASHCARD_BULK_MENU_ITEMS.map(item => item.action)
     : props.bulkActions || []
-  return FLASHCARD_BULK_MENU_ITEMS.filter(item => actions.includes(item.action))
+  const bulkItems = FLASHCARD_BULK_MENU_ITEMS
+    .filter(item => actions.includes(item.action))
+    .map((item, index) => props.selectionActions?.length && index === 0
+      ? { ...item, divider: true }
+      : item)
+  return [...(props.selectionActions || []), ...bulkItems]
 })
 const hasBulkActions = computed(() => availableBulkMenuItems.value.length > 0)
 const hasActions = computed(() => props.libraryActions || props.showImport || hasBulkActions.value || props.canAdd)
@@ -113,7 +117,12 @@ const actionCount = computed(() => (
 ))
 const importRoute = computed(() => ({
   name: 'flashcard-import',
-  query: props.importReviewSetId ? { reviewSetId: props.importReviewSetId } : undefined,
+  query: props.importReviewSetId || props.importReturnTo
+    ? {
+        ...(props.importReviewSetId ? { reviewSetId: props.importReviewSetId } : {}),
+        ...(props.importReturnTo ? { returnTo: props.importReturnTo } : {}),
+      }
+    : undefined,
 }))
 const selectedCards = computed(() => {
   const selected = new Set(selectedCardIds.value)
@@ -188,11 +197,6 @@ function chooseBulkAction(action: FlashcardBulkAction | FlashcardSelectionAction
     void runSelectionAction(action)
     return
   }
-  if (action === 'assign_images') {
-    bulkError.value = ''
-    bulkImageDialogOpen.value = true
-    return
-  }
   if (action === 'add_tags' || action === 'set_tags' || action === 'remove_tags') {
     openBulkTagAction(action)
     return
@@ -221,10 +225,6 @@ async function runSelectionAction(action: FlashcardSelectionAction) {
   } finally {
     bulkSaving.value = false
   }
-}
-
-function completeBulkImageAssignment() {
-  selectedCardIds.value = []
 }
 
 async function runBulkAction(action: FlashcardBulkRecordAction, tagIds: string[] = []) {
@@ -361,6 +361,7 @@ async function deleteSelectedCards() {
       :interactive="interactive"
       :surface="tableSurface"
       :show-last-column="showLastColumn"
+      :row-class="rowClass"
       @open-card="emit('open-card', $event)"
     >
       <template v-if="$slots['image-column-heading']" #image-column-heading>
@@ -463,13 +464,6 @@ async function deleteSelectedCards() {
           </div>
         </template>
       </ActionBottomSheet>
-
-      <FlashcardBulkImageAssignmentDialog
-        v-model="bulkImageDialogOpen"
-        :cards="selectedCards"
-        :assign-image="assignImageHandler"
-        @complete="completeBulkImageAssignment"
-      />
 
       <ConfirmDialog
         v-model="swapCardsDialog"

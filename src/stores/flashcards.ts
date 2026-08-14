@@ -14,6 +14,7 @@ import { useSnackbarStore } from '@/stores/snackbar'
 import { useTaskStore } from '@/stores/tasks'
 import type {
   Flashcard,
+  FlashcardAudioValue,
   FlashcardBulkRecordAction,
   FlashcardDraft,
   FlashcardImportRow,
@@ -35,32 +36,24 @@ function mapTag(record: Record<string, any>): FlashcardTag {
 function mapCard(record: Record<string, any>): Flashcard {
   const imageFile = typeof record.image_file === 'string' ? record.image_file : ''
   const imageUrl = typeof record.image_url === 'string' ? record.image_url : ''
-  const libraryImageId = Number(record.library_image_id || 0)
-  const imageMetadata = record.image_metadata && typeof record.image_metadata === 'object'
-    && !Array.isArray(record.image_metadata)
-    ? record.image_metadata
-    : {}
   const resolvedImage = imageFile ? apiAssetUrl(`/flashcard-images/${imageFile}`) : imageUrl
-  const libraryImage = libraryImageId > 0
-    ? {
-        id: libraryImageId,
-        imageUrl: resolvedImage,
-        alt: String(imageMetadata.alt || ''),
-        photographer: String(imageMetadata.photographer || ''),
-        photographerUrl: String(imageMetadata.photographer_url || ''),
-        sourceUrl: String(imageMetadata.source_url || ''),
-        licenseName: String(imageMetadata.license_name || ''),
-        licenseUrl: String(imageMetadata.license_url || ''),
-      }
-    : undefined
+  const frontAudioFile = typeof record.front_audio_file === 'string' ? record.front_audio_file : ''
+  const backAudioFile = typeof record.back_audio_file === 'string' ? record.back_audio_file : ''
+  const frontAudioUrl = typeof record.front_audio_url === 'string' ? record.front_audio_url : ''
+  const backAudioUrl = typeof record.back_audio_url === 'string' ? record.back_audio_url : ''
   return {
     id: record.id,
     front: record.front,
     back: record.back,
     note: record.note || '',
+    frontAudio: frontAudioFile
+      ? apiAssetUrl(`/flashcard-audio/${frontAudioFile}`)
+      : frontAudioUrl,
+    backAudio: backAudioFile
+      ? apiAssetUrl(`/flashcard-audio/${backAudioFile}`)
+      : backAudioUrl,
     image: resolvedImage,
-    imageSource: imageFile ? libraryImage ? 'library' : 'upload' : imageUrl ? 'url' : 'none',
-    libraryImage,
+    imageSource: imageFile ? 'upload' : imageUrl ? 'url' : 'none',
     tags: Array.isArray(record.tags) ? record.tags : [],
     tagDetails: Array.isArray(record.tag_details) ? record.tag_details.map(mapTag) : undefined,
     createdAt: record.created_at,
@@ -143,6 +136,12 @@ function mapSession(record: Record<string, any>): FlashcardReviewSession {
     queue: Array.isArray(record.queue_state)
       ? record.queue_state.map((card: Record<string, any>) => ({
           ...card,
+          ...(typeof card.frontAudio === 'string' && card.frontAudio
+            ? { frontAudio: apiAssetUrl(card.frontAudio) }
+            : {}),
+          ...(typeof card.backAudio === 'string' && card.backAudio
+            ? { backAudio: apiAssetUrl(card.backAudio) }
+            : {}),
           image: apiAssetUrl(typeof card.image === 'string' ? card.image : ''),
         }))
       : [],
@@ -295,6 +294,8 @@ export const useFlashcardStore = defineStore('flashcards', () => {
           front: card.front,
           back: card.back,
           note: card.note,
+          frontAudio: card.frontAudio,
+          backAudio: card.backAudio,
           image: card.image,
           tags: [...card.tags],
         }
@@ -315,13 +316,15 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     return card
   }
 
-  async function saveCard(draft: FlashcardDraft, image?: SquareImageSourceValue) {
+  async function saveCard(
+    draft: FlashcardDraft,
+    image?: SquareImageSourceValue,
+    audio?: { front: FlashcardAudioValue; back: FlashcardAudioValue },
+  ) {
     const imageChanged = Boolean(image && (
       image.upload
       || image.source !== image.existingSource
       || (image.source === 'url' && image.url.trim() !== image.existingUrl)
-      || (image.source === 'library'
-        && image.libraryImage?.id !== image.existingLibraryImageId)
     ))
     const payload: Record<string, unknown> = {
       owner: api.authStore.record!.id,
@@ -338,18 +341,18 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     if (imageChanged && image) {
       if (image.source === 'upload' && image.upload) {
         record = await api.updateFlashcardImage(record.id, image.upload)
-      } else if (image.source === 'library' && image.libraryImage) {
-        record = await api.setFlashcardLibraryImage(record.id, image.libraryImage.id)
       } else if (image.source === 'none' && draft.id) {
         record = await api.removeFlashcardImage(record.id)
       }
     }
+    for (const side of ['front', 'back'] as const) {
+      const value = audio?.[side]
+      if (!value || (!value.recording && value.url === value.existingUrl)) continue
+      record = value.recording
+        ? await api.updateFlashcardAudio(record.id, side, value.recording)
+        : await api.removeFlashcardAudio(record.id, side)
+    }
     return cacheCard(mapCard(record), !draft.id)
-  }
-
-  async function assignLibraryImage(cardId: string, imageId: number) {
-    const record = await api.setFlashcardLibraryImage(cardId, imageId)
-    return cacheCard(mapCard(record))
   }
 
   async function deleteCard(id: string) {
@@ -515,34 +518,16 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     return []
   }
 
-  async function assignReviewSetLibraryImage(
-    reviewSetId: string,
-    cardId: string,
-    imageId: number,
-  ) {
-    const record = await api.setFlashcardReviewSetCardLibraryImage(reviewSetId, cardId, imageId)
-    const card = mapCard(record)
-    const current = reviewSetCards.value[reviewSetId] || []
-    reviewSetCards.value = {
-      ...reviewSetCards.value,
-      [reviewSetId]: current.map(item => item.id === card.id ? card : item),
-    }
-    const libraryIndex = cards.value.findIndex(item => item.id === card.id)
-    if (libraryIndex >= 0) cards.value.splice(libraryIndex, 1, card)
-    return card
-  }
-
   async function saveReviewSetCard(
     reviewSetId: string,
     draft: FlashcardDraft,
     image?: SquareImageSourceValue,
+    audio?: { front: FlashcardAudioValue; back: FlashcardAudioValue },
   ) {
     const imageChanged = Boolean(image && (
       image.upload
       || image.source !== image.existingSource
       || (image.source === 'url' && image.url.trim() !== image.existingUrl)
-      || (image.source === 'library'
-        && image.libraryImage?.id !== image.existingLibraryImageId)
     ))
     const payload: Record<string, unknown> = {
       front: draft.front,
@@ -556,15 +541,21 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     if (imageChanged && image) {
       if (image.source === 'upload' && image.upload) {
         record = await api.updateFlashcardReviewSetCardImage(reviewSetId, record.id, image.upload)
-      } else if (image.source === 'library' && image.libraryImage) {
-        record = await api.setFlashcardReviewSetCardLibraryImage(
-          reviewSetId,
-          record.id,
-          image.libraryImage.id,
-        )
       } else if (image.source === 'none' && draft.id) {
         record = await api.removeFlashcardReviewSetCardImage(reviewSetId, record.id)
       }
+    }
+    for (const side of ['front', 'back'] as const) {
+      const value = audio?.[side]
+      if (!value || (!value.recording && value.url === value.existingUrl)) continue
+      record = value.recording
+        ? await api.updateFlashcardReviewSetCardAudio(
+            reviewSetId,
+            record.id,
+            side,
+            value.recording,
+          )
+        : await api.removeFlashcardReviewSetCardAudio(reviewSetId, record.id, side)
     }
     const card = mapCard(record)
     const current = reviewSetCards.value[reviewSetId] || []
@@ -902,6 +893,8 @@ export const useFlashcardStore = defineStore('flashcards', () => {
           front: card.front,
           back: card.back,
           note: card.note,
+          frontAudio: card.frontAudio,
+          backAudio: card.backAudio,
           image: card.image,
           tags: [...card.tags],
         })
@@ -983,7 +976,6 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     renameTag,
     deleteTag,
     saveCard,
-    assignLibraryImage,
     deleteCard,
     importCards,
     bulkUpdateCards,
@@ -994,7 +986,6 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     loadReviewSetCards,
     importReviewSetCards,
     bulkUpdateReviewSetCards,
-    assignReviewSetLibraryImage,
     saveReviewSetCard,
     deleteReviewSetCard,
     loadReviewSetShares,

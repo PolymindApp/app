@@ -13,6 +13,7 @@ const props = withDefaults(defineProps<{
   interactive?: boolean
   surface?: boolean
   showLastColumn?: boolean
+  rowClass?: (card: Flashcard) => string | undefined
 }>(), {
   selectable: true,
   interactive: true,
@@ -228,10 +229,13 @@ function cardTagNames(card: Flashcard) {
               v-for="card in displayedCards"
               :key="card.id"
               :tabindex="interactive || selectable ? 0 : undefined"
-              :class="{
-                'card-library-table__row--selected': selectedCardIds.includes(card.id),
-                'card-library-table__row--interactive': interactive || selectable,
-              }"
+              :class="[
+                {
+                  'card-library-table__row--selected': selectedCardIds.includes(card.id),
+                  'card-library-table__row--interactive': interactive || selectable,
+                },
+                rowClass?.(card),
+              ]"
               :aria-label="interactive
                 ? `Edit card: ${card.front}`
                 : selectable ? `Select card: ${card.front}` : undefined"
@@ -355,6 +359,15 @@ function cardTagNames(card: Flashcard) {
 .card-library-table tbody tr.card-library-table__row--interactive { cursor: pointer; }
 .card-library-table__row-ripple { position: absolute; z-index: 1; inset: 0; display: block; overflow: hidden; }
 .card-library-table tbody tr:hover { background: rgba(var(--v-theme-on-surface), .045); }
+.card-library-table tbody tr.card-library-table__row--excluded {
+  background: repeating-linear-gradient(
+    135deg,
+    rgba(var(--v-theme-warning), .09) 0,
+    rgba(var(--v-theme-warning), .09) .35rem,
+    rgba(var(--v-theme-warning), .025) .35rem,
+    rgba(var(--v-theme-warning), .025) .75rem
+  );
+}
 .card-library-table tbody tr.card-library-table__row--selected { background: rgba(var(--v-theme-secondary), .09); }
 .card-library-table tbody tr:focus-visible { outline: .125rem solid rgba(var(--v-theme-secondary), .72); outline-offset: -.125rem; }
 .card-library-load-more { display: flex; min-height: 2.75rem; align-items: center; justify-content: center; gap: .5rem; color: rgba(var(--v-theme-on-surface), .52); font-size: .68rem; font-weight: 800; }

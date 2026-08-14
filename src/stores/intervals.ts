@@ -56,6 +56,12 @@ function mapSession(record: Record<string, any>): IntervalSession {
           noteBeforeBack: Boolean(flashcardSnapshot.noteBeforeBack),
           cards: flashcardSnapshot.cards.map((card: Record<string, any>) => ({
             ...card,
+            ...(typeof card.frontAudio === 'string' && card.frontAudio
+              ? { frontAudio: apiAssetUrl(card.frontAudio) }
+              : {}),
+            ...(typeof card.backAudio === 'string' && card.backAudio
+              ? { backAudio: apiAssetUrl(card.backAudio) }
+              : {}),
             image: apiAssetUrl(typeof card.image === 'string' ? card.image : ''),
           })),
         } as IntervalFlashcardReviewSnapshot

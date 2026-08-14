@@ -496,6 +496,7 @@ final class SyncService
     ): array {
         if ($resource === 'flashcards') {
             $payload = $this->prepareFlashcardImagePayload($payload);
+            $payload = $this->prepareFlashcardAudioPayload($payload);
         }
         if ($resource === 'journal_entries') {
             $payload = $this->prepareJournalImagePayload($payload);
@@ -566,6 +567,7 @@ final class SyncService
         $normalizedCurrent = $this->normalizeRecord($config, $current);
         if ($resource === 'flashcards') {
             $payload = $this->prepareFlashcardImagePayload($payload);
+            $payload = $this->prepareFlashcardAudioPayload($payload);
         }
         if ($resource === 'journal_entries') {
             $payload = $this->prepareJournalImagePayload($payload);
@@ -627,6 +629,19 @@ final class SyncService
                 $this->removeJournalImageFile($oldFilename);
             }
         }
+        if ($resource === 'flashcards') {
+            foreach (['front', 'back'] as $side) {
+                $field = $side . '_audio_file';
+                if (!array_key_exists($field, $accepted)) {
+                    continue;
+                }
+                $oldFilename = $this->validFlashcardAudioFilename($current[$field] ?? null);
+                $newFilename = $this->validFlashcardAudioFilename($accepted[$field] ?? null);
+                if ($oldFilename !== null && $oldFilename !== $newFilename) {
+                    $this->removeFlashcardAudioFileIfUnused($oldFilename);
+                }
+            }
+        }
         if ($resource === 'flashcard_review_sets') {
             $this->saveReviewSetPreferences(
                 $recordId,
@@ -650,6 +665,16 @@ final class SyncService
             $filename = $this->validSquareImageFilename($current['image_file'] ?? null);
             if ($filename !== null) {
                 $this->removeJournalImageFile($filename);
+            }
+        }
+        if ($resource === 'flashcards') {
+            foreach (['front', 'back'] as $side) {
+                $filename = $this->validFlashcardAudioFilename(
+                    $current[$side . '_audio_file'] ?? null,
+                );
+                if ($filename !== null) {
+                    $this->removeFlashcardAudioFileIfUnused($filename);
+                }
             }
         }
         return [
@@ -724,7 +749,9 @@ final class SyncService
         if ($config === null) {
             throw new ApiException(500, 'Flashcard schema is unavailable.');
         }
-        $payload = array_intersect_key($payload, array_flip(['front', 'back', 'note', 'image_url']));
+        $payload = array_intersect_key($payload, array_flip([
+            'front', 'back', 'note', 'image_url', 'front_audio_url', 'back_audio_url',
+        ]));
         if ($kind === 'create') {
             $tags = $this->stringArray($reviewSet['tags'] ?? []);
             $response = $this->createOwnedRecord(
@@ -808,8 +835,10 @@ final class SyncService
         }
         if ($resource === 'flashcards') {
             $values += [
-                'note' => '', 'image_url' => '', 'image_file' => '', 'library_image_id' => 0,
-                'image_metadata' => [], 'tags' => [], 'created_at' => $now, 'updated_at' => $now,
+                'note' => '', 'image_url' => '', 'image_file' => '',
+                'front_audio_url' => '', 'front_audio_file' => '',
+                'back_audio_url' => '', 'back_audio_file' => '',
+                'tags' => [], 'created_at' => $now, 'updated_at' => $now,
                 'last_reviewed_at' => '', 'passive_views' => 0, 'success_count' => 0, 'error_count' => 0,
             ];
         }
@@ -1028,9 +1057,82 @@ final class SyncService
             ...$payload,
             'image_url' => '',
             'image_file' => $filename,
-            'library_image_id' => 0,
-            'image_metadata' => [],
         ];
+    }
+
+    private function prepareFlashcardAudioPayload(array $payload): array
+    {
+        foreach (['front', 'back'] as $side) {
+            $urlField = $side . '_audio_url';
+            $fileField = $side . '_audio_file';
+            $encoded = $payload[$urlField] ?? null;
+            if (!is_string($encoded) || $encoded === '') {
+                continue;
+            }
+            if (!str_starts_with($encoded, 'data:audio/')) {
+                throw new ApiException(422, 'Card audio must be a device recording.');
+            }
+            $payload[$urlField] = '';
+            $payload[$fileField] = $this->storeSyncFlashcardAudio($encoded);
+        }
+        return $payload;
+    }
+
+    private function storeSyncFlashcardAudio(string $encoded): string
+    {
+        if (!str_contains($encoded, ',')) {
+            throw new ApiException(422, 'Record valid WebM or MP4 card audio.');
+        }
+        [$metadata, $payload] = explode(',', $encoded, 2);
+        if (
+            preg_match(
+                '#^data:(audio/(?:webm|mp4))(?:;codecs=[^;,]+)?;base64$#i',
+                $metadata,
+                $matches,
+            ) !== 1
+        ) {
+            throw new ApiException(422, 'Record valid WebM or MP4 card audio.');
+        }
+        $bytes = base64_decode($payload, true);
+        if ($bytes === false || strlen($bytes) < 100 || strlen($bytes) > 1_500_000) {
+            throw new ApiException(422, 'The card recording is invalid or larger than 1.5 MB.');
+        }
+        $mimeType = strtolower($matches[1]);
+        if ($mimeType === 'audio/webm' && !str_starts_with($bytes, "\x1A\x45\xDF\xA3")) {
+            throw new ApiException(422, 'The WebM card recording is invalid.');
+        }
+        if ($mimeType === 'audio/mp4' && substr($bytes, 4, 4) !== 'ftyp') {
+            throw new ApiException(422, 'The MP4 card recording is invalid.');
+        }
+
+        $directory = dirname($this->config->databasePath) . DIRECTORY_SEPARATOR . 'flashcard-audio';
+        if (!is_dir($directory) && !mkdir($directory, 0700, true) && !is_dir($directory)) {
+            throw new ApiException(500, 'The private flashcard audio directory could not be created.');
+        }
+        if (!is_writable($directory)) {
+            throw new ApiException(500, 'The private flashcard audio directory is not writable.');
+        }
+        $extension = $mimeType === 'audio/webm' ? 'webm' : 'm4a';
+        $filename = bin2hex(random_bytes(24)) . '.' . $extension;
+        $temporary = tempnam($directory, '.audio-');
+        if ($temporary === false) {
+            throw new ApiException(500, 'The card recording could not be stored.');
+        }
+        try {
+            if (file_put_contents($temporary, $bytes, LOCK_EX) !== strlen($bytes)) {
+                throw new ApiException(500, 'The card recording could not be stored.');
+            }
+            @chmod($temporary, 0600);
+            if (!rename($temporary, $directory . DIRECTORY_SEPARATOR . $filename)) {
+                throw new ApiException(500, 'The card recording could not be finalized.');
+            }
+            $temporary = '';
+        } finally {
+            if ($temporary !== '' && is_file($temporary)) {
+                @unlink($temporary);
+            }
+        }
+        return $filename;
     }
 
     private function prepareJournalImagePayload(array $payload): array
@@ -1113,6 +1215,37 @@ final class SyncService
         return is_string($value) && preg_match('/^[a-f0-9]{48}\.jpg$/', $value) === 1
             ? $value
             : null;
+    }
+
+    private function validFlashcardAudioFilename(mixed $value): ?string
+    {
+        return is_string($value)
+            && preg_match('/^[a-f0-9]{48}\.(?:webm|m4a)$/', $value) === 1
+                ? $value
+                : null;
+    }
+
+    private function removeFlashcardAudioFileIfUnused(string $filename): void
+    {
+        $statement = $this->database->pdo->prepare(
+            'SELECT
+                (SELECT COUNT(*) FROM flashcards
+                 WHERE front_audio_file = :filename OR back_audio_file = :filename)
+                + (SELECT COUNT(*) FROM flashcard_review_sessions WHERE queue_state LIKE :needle)
+                + (SELECT COUNT(*) FROM interval_sessions WHERE flashcard_snapshot LIKE :needle)',
+        );
+        $statement->execute([
+            'filename' => $filename,
+            'needle' => '%' . $filename . '%',
+        ]);
+        if ((int) $statement->fetchColumn() > 0) {
+            return;
+        }
+        $path = dirname($this->config->databasePath) . DIRECTORY_SEPARATOR
+            . 'flashcard-audio' . DIRECTORY_SEPARATOR . $filename;
+        if (is_file($path)) {
+            @unlink($path);
+        }
     }
 
     private function removeJournalImageFile(string $filename): void

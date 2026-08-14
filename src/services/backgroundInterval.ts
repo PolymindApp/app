@@ -1,5 +1,8 @@
 import { Capacitor, registerPlugin } from '@capacitor/core'
-import { flashcardSpeechOverAmplificationIsEnabled } from '@/services/flashcardSpeech'
+import {
+  flashcardSpeechOverAmplificationIsEnabled,
+  resolveFlashcardAudioPlaybackUrl,
+} from '@/services/flashcardSpeech'
 import { intervalTypeSound } from '@/services/intervalTypes'
 import {
   intervalFlashcardReviewElapsedMs,
@@ -31,7 +34,12 @@ interface BackgroundIntervalPlugin {
     vibrationEnabled: boolean
     flashcardReview?: {
       name: string
-      cards: Array<{ front: string; back: string }>
+      cards: Array<{
+        front: string
+        back: string
+        frontAudio: string
+        backAudio: string
+      }>
       cardSides: 'both' | 'front' | 'back'
       frontSeconds: number
       backSeconds: number
@@ -99,6 +107,8 @@ export async function syncBackgroundInterval(session: IntervalSession) {
               cards: session.flashcardReview.cards.map(card => ({
                 front: card.front,
                 back: card.back,
+                frontAudio: resolveFlashcardAudioPlaybackUrl(card.frontAudio || ''),
+                backAudio: resolveFlashcardAudioPlaybackUrl(card.backAudio || ''),
               })),
               cardSides: session.flashcardReview.cardSides,
               frontSeconds: session.flashcardReview.frontSeconds,

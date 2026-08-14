@@ -1,7 +1,6 @@
 import type {
   FlashcardBulkRecordAction,
   FlashcardImportRow,
-  ImageLibraryAsset,
   FlashcardReviewAction,
   FlashcardReviewSetAccessRole,
   FlashcardReviewSettings,
@@ -86,14 +85,6 @@ interface FlashcardBulkActionResponse {
   deleted_ids: string[]
 }
 
-interface ImageLibrarySearchResponse {
-  page: number
-  perPage: number
-  totalItems: number
-  totalPages: number
-  items: ImageLibraryAsset[]
-}
-
 const AUTH_STORAGE_KEY = 'polymind-api-auth'
 const baseUrl = (import.meta.env.VITE_API_URL || '/api').replace(/\/+$/, '')
 
@@ -105,28 +96,6 @@ export function apiAssetUrl(value: string) {
     || value.startsWith(`${baseUrl}/`)
   ) return value
   return value.startsWith('/') ? `${baseUrl}${value}` : value
-}
-
-function mapImageLibraryAsset(record: Record<string, any>): ImageLibraryAsset {
-  const concept = record.concept && typeof record.concept === 'object'
-    ? {
-        id: Number(record.concept.id),
-        name: String(record.concept.name || ''),
-        partOfSpeech: String(record.concept.part_of_speech || ''),
-        definition: String(record.concept.definition || ''),
-      }
-    : undefined
-  return {
-    id: Number(record.id),
-    imageUrl: apiAssetUrl(String(record.image_url || '')),
-    alt: String(record.alt || ''),
-    photographer: String(record.photographer || ''),
-    photographerUrl: String(record.photographer_url || ''),
-    sourceUrl: String(record.source_url || ''),
-    licenseName: String(record.license_name || ''),
-    licenseUrl: String(record.license_url || ''),
-    concept,
-  }
 }
 
 function flashcardReviewSettingsBody(
@@ -169,7 +138,8 @@ function localCreateDefaults(resource: string, body: Record<string, unknown>) {
   const now = new Date().toISOString()
   if (resource === 'flashcards') {
     return {
-      note: '', image_url: '', image_file: '', library_image_id: 0, image_metadata: {},
+      note: '', image_url: '', image_file: '',
+      front_audio_url: '', front_audio_file: '', back_audio_url: '', back_audio_file: '',
       tags: [], created_at: now, updated_at: now, last_reviewed_at: '',
       passive_views: 0, success_count: 0, error_count: 0,
       ...body,
@@ -1009,8 +979,6 @@ class ApiClient {
           note: sourceCard.note || '',
           image_url: sourceCard.image_url || '',
           image_file: sourceCard.image_file || '',
-          library_image_id: Number(sourceCard.library_image_id || 0),
-          image_metadata: sourceCard.image_metadata || {},
           tags: [scopeTag.id],
         }))
         await putLocalProjectionCreate(accountId, 'review_set_cards', {
@@ -1066,8 +1034,6 @@ class ApiClient {
         note: typeof body.note === 'string' ? body.note : '',
         image_url: typeof body.image_url === 'string' ? body.image_url : '',
         image_file: '',
-        library_image_id: 0,
-        image_metadata: {},
         created_at: now,
         updated_at: now,
         last_reviewed_at: '',
@@ -1171,8 +1137,6 @@ class ApiClient {
       return putLocalSharedCardPatch(accountId, reviewSetId, cardId, {
         image_url: await blobDataUrl(image),
         image_file: '',
-        library_image_id: 0,
-        image_metadata: {},
         updated_at: new Date().toISOString(),
       })
     }
@@ -1191,8 +1155,6 @@ class ApiClient {
       return putLocalSharedCardPatch(accountId, reviewSetId, cardId, {
         image_url: '',
         image_file: '',
-        library_image_id: 0,
-        image_metadata: {},
         updated_at: new Date().toISOString(),
       })
     }
@@ -1203,33 +1165,48 @@ class ApiClient {
     )
   }
 
-  setFlashcardReviewSetCardLibraryImage(reviewSetId: string, cardId: string, imageId: number) {
+  async updateFlashcardReviewSetCardAudio(
+    reviewSetId: string,
+    cardId: string,
+    side: 'front' | 'back',
+    audio: Blob,
+  ) {
+    assertFlashcardAudio(audio)
+    const accountId = this.authStore.record?.id || ''
+    if (accountId && await hasLocalBootstrap(accountId)) {
+      const reviewSet = await getLocalRecord(accountId, 'accessible_flashcard_review_sets', reviewSetId)
+      if (reviewSet?.owner === accountId) return this.updateFlashcardAudio(cardId, side, audio)
+      return putLocalSharedCardPatch(accountId, reviewSetId, cardId, {
+        [`${side}_audio_url`]: await blobDataUrl(audio),
+        [`${side}_audio_file`]: '',
+        updated_at: new Date().toISOString(),
+      })
+    }
     return request<RecordModel>(
-      `/flashcard-review-sets/${encodeURIComponent(reviewSetId)}/cards/${encodeURIComponent(cardId)}/library-image`,
-      { method: 'POST', body: { image_id: imageId } },
+      `/flashcard-review-sets/${encodeURIComponent(reviewSetId)}/cards/${encodeURIComponent(cardId)}/audio/${side}`,
+      { method: 'POST', body: { audio: await blobDataUrl(audio) } },
       this.authStore,
     )
   }
 
-  async searchImageLibrary(query: string, page = 1, perPage = 30) {
-    const search = new URLSearchParams({
-      query: query.trim(),
-      page: String(page),
-      perPage: String(perPage),
-    })
-    const response = await request<Omit<ImageLibrarySearchResponse, 'items'> & {
-      items: Record<string, any>[]
-    }>(`/image-library/search?${search}`, {}, this.authStore)
-    return {
-      ...response,
-      items: response.items.map(mapImageLibraryAsset),
-    } satisfies ImageLibrarySearchResponse
-  }
-
-  setFlashcardLibraryImage(cardId: string, imageId: number) {
+  async removeFlashcardReviewSetCardAudio(
+    reviewSetId: string,
+    cardId: string,
+    side: 'front' | 'back',
+  ) {
+    const accountId = this.authStore.record?.id || ''
+    if (accountId && await hasLocalBootstrap(accountId)) {
+      const reviewSet = await getLocalRecord(accountId, 'accessible_flashcard_review_sets', reviewSetId)
+      if (reviewSet?.owner === accountId) return this.removeFlashcardAudio(cardId, side)
+      return putLocalSharedCardPatch(accountId, reviewSetId, cardId, {
+        [`${side}_audio_url`]: '',
+        [`${side}_audio_file`]: '',
+        updated_at: new Date().toISOString(),
+      })
+    }
     return request<RecordModel>(
-      `/flashcards/${encodeURIComponent(cardId)}/library-image`,
-      { method: 'POST', body: { image_id: imageId } },
+      `/flashcard-review-sets/${encodeURIComponent(reviewSetId)}/cards/${encodeURIComponent(cardId)}/audio/${side}`,
+      { method: 'DELETE' },
       this.authStore,
     )
   }
@@ -1243,8 +1220,6 @@ class ApiClient {
       return putLocalPatch(accountId, 'flashcards', cardId, {
         image_url: await blobDataUrl(image),
         image_file: '',
-        library_image_id: 0,
-        image_metadata: {},
         updated_at: new Date().toISOString(),
       })
     }
@@ -1261,13 +1236,44 @@ class ApiClient {
       return putLocalPatch(accountId, 'flashcards', cardId, {
         image_url: '',
         image_file: '',
-        library_image_id: 0,
-        image_metadata: {},
         updated_at: new Date().toISOString(),
       })
     }
     return request<RecordModel>(
       `/flashcards/${encodeURIComponent(cardId)}/image`,
+      { method: 'DELETE' },
+      this.authStore,
+    )
+  }
+
+  async updateFlashcardAudio(cardId: string, side: 'front' | 'back', audio: Blob) {
+    assertFlashcardAudio(audio)
+    const accountId = this.authStore.record?.id || ''
+    if (accountId && await hasLocalBootstrap(accountId)) {
+      return putLocalPatch(accountId, 'flashcards', cardId, {
+        [`${side}_audio_url`]: await blobDataUrl(audio),
+        [`${side}_audio_file`]: '',
+        updated_at: new Date().toISOString(),
+      })
+    }
+    return request<RecordModel>(
+      `/flashcards/${encodeURIComponent(cardId)}/audio/${side}`,
+      { method: 'POST', body: { audio: await blobDataUrl(audio) } },
+      this.authStore,
+    )
+  }
+
+  async removeFlashcardAudio(cardId: string, side: 'front' | 'back') {
+    const accountId = this.authStore.record?.id || ''
+    if (accountId && await hasLocalBootstrap(accountId)) {
+      return putLocalPatch(accountId, 'flashcards', cardId, {
+        [`${side}_audio_url`]: '',
+        [`${side}_audio_file`]: '',
+        updated_at: new Date().toISOString(),
+      })
+    }
+    return request<RecordModel>(
+      `/flashcards/${encodeURIComponent(cardId)}/audio/${side}`,
       { method: 'DELETE' },
       this.authStore,
     )
@@ -1352,6 +1358,16 @@ class ApiClient {
       settings: response.settings,
       updated: response.updated || record.updated,
     })
+  }
+}
+
+function assertFlashcardAudio(audio: Blob) {
+  const mimeType = audio.type.split(';')[0]?.toLocaleLowerCase() || ''
+  if (!['audio/webm', 'audio/mp4'].includes(mimeType)) {
+    throw new ApiError(422, 'Record audio in WebM or MP4 format.')
+  }
+  if (!audio.size || audio.size > 1_500_000) {
+    throw new ApiError(422, 'The card recording must be no larger than 1.5 MB.')
   }
 }
 

@@ -88,9 +88,6 @@ On the host, place a copy of `.env.prod` named `.env` at the project root becaus
 - `pnpm dev` — run the Vue client
 - `pnpm api:serve` — run the PHP API
 - `pnpm api:migrate` — apply pending SQLite migrations and report the current version
-- `pnpm pexels:fetch` — load `.env.prod` and cache images for the next 100 unsearched concepts
-- `php scripts/seed-image-concepts.php` — idempotently load the multilingual image concept catalog
-- `php scripts/fetch-pexels-images.php --limit=100` — cache up to 30 Pexels photos for each pending concept
 - `pnpm dev:all` — run the Vue client and PHP API
 - `pnpm typecheck` — validate TypeScript and Vue templates
 - `pnpm test` — run unit tests
@@ -160,8 +157,9 @@ POST   /auth/passkeys/register/options
 POST   /auth/passkeys/register/verify
 POST   /auth/passkeys/login/options
 POST   /auth/passkeys/login/verify
-GET    /image-library/search?query={word}
-POST   /flashcards/{id}/library-image
+POST   /flashcards/{id}/audio/{front|back}
+DELETE /flashcards/{id}/audio/{front|back}
+GET    /flashcard-audio/{filename}
 GET    /flashcard-review-sets
 PATCH  /flashcard-review-sets/{id}/preferences
 GET    /flashcard-review-sets/{id}/shares
@@ -175,7 +173,8 @@ PATCH  /flashcard-review-sets/{id}/cards/{cardId}
 DELETE /flashcard-review-sets/{id}/cards/{cardId}
 POST   /flashcard-review-sets/{id}/cards/{cardId}/image
 DELETE /flashcard-review-sets/{id}/cards/{cardId}/image
-POST   /flashcard-review-sets/{id}/cards/{cardId}/library-image
+POST   /flashcard-review-sets/{id}/cards/{cardId}/audio/{front|back}
+DELETE /flashcard-review-sets/{id}/cards/{cardId}/audio/{front|back}
 PATCH  /interval-sessions/{id}/flashcards
 GET    /collections/{collection}/records
 POST   /collections/{collection}/records

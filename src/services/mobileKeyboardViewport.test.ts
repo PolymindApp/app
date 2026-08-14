@@ -32,6 +32,16 @@ function createViewport(height = 800, offsetTop = 0) {
   }
 }
 
+function pointerEvent(type: string, x = 20, y = 20, pointerId = 1) {
+  const event = new Event(type, { bubbles: true, composed: true })
+  Object.defineProperties(event, {
+    clientX: { value: x },
+    clientY: { value: y },
+    pointerId: { value: pointerId },
+  })
+  return event
+}
+
 beforeEach(() => {
   vi.useFakeTimers()
   vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
@@ -149,7 +159,12 @@ describe('mobile keyboard viewport', () => {
     const remove = installMobileKeyboardViewport(document, null)
 
     const focus = vi.spyOn(input, 'focus')
-    input.dispatchEvent(new Event('pointerdown', { bubbles: true, composed: true }))
+    input.dispatchEvent(pointerEvent('pointerdown'))
+
+    expect(focus).not.toHaveBeenCalled()
+    expect(document.activeElement).not.toBe(input)
+
+    input.dispatchEvent(pointerEvent('pointerup'))
 
     expect(focus).toHaveBeenCalledWith({ preventScroll: true })
     expect(document.activeElement).toBe(input)
@@ -164,8 +179,40 @@ describe('mobile keyboard viewport', () => {
 
     window.dispatchEvent(new Event('keyboardDidHide'))
     focus.mockClear()
-    input.dispatchEvent(new Event('pointerdown', { bubbles: true, composed: true }))
+    input.dispatchEvent(pointerEvent('pointerdown'))
+    input.dispatchEvent(pointerEvent('pointerup'))
     expect(focus).toHaveBeenCalledWith({ preventScroll: true })
+    remove()
+  })
+
+  it('does not focus an Android field when the pointer starts scrolling', () => {
+    document.documentElement.classList.add('platform-android')
+    const input = document.createElement('input')
+    document.body.append(input)
+    const focus = vi.spyOn(input, 'focus')
+    const remove = installMobileKeyboardViewport(document, null)
+
+    input.dispatchEvent(pointerEvent('pointerdown', 20, 120))
+    input.dispatchEvent(pointerEvent('pointermove', 20, 100))
+    input.dispatchEvent(pointerEvent('pointerup', 20, 100))
+
+    expect(focus).not.toHaveBeenCalled()
+    expect(document.activeElement).not.toBe(input)
+    remove()
+  })
+
+  it('does not focus an Android field after its pointer is cancelled', () => {
+    document.documentElement.classList.add('platform-android')
+    const input = document.createElement('input')
+    document.body.append(input)
+    const focus = vi.spyOn(input, 'focus')
+    const remove = installMobileKeyboardViewport(document, null)
+
+    input.dispatchEvent(pointerEvent('pointerdown'))
+    input.dispatchEvent(pointerEvent('pointercancel'))
+    input.dispatchEvent(pointerEvent('pointerup'))
+
+    expect(focus).not.toHaveBeenCalled()
     remove()
   })
 
@@ -193,7 +240,8 @@ describe('mobile keyboard viewport', () => {
     appScroll.append(wrapper)
     const remove = installMobileKeyboardViewport(document, null)
 
-    input.dispatchEvent(new Event('pointerdown', { bubbles: true, composed: true }))
+    input.dispatchEvent(pointerEvent('pointerdown'))
+    input.dispatchEvent(pointerEvent('pointerup'))
     window.dispatchEvent(new Event('keyboardWillShow'))
 
     expect(scrollTo).toHaveBeenCalledOnce()

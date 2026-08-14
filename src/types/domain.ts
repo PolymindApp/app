@@ -284,7 +284,6 @@ export interface RunnerSessionMenuItem {
 }
 
 export type FlashcardBulkAction =
-  | 'assign_images'
   | 'swap_front_back'
   | 'swap_note_back'
   | 'add_tags'
@@ -292,7 +291,7 @@ export type FlashcardBulkAction =
   | 'remove_tags'
   | 'clear_tags'
   | 'delete'
-export type FlashcardBulkRecordAction = Exclude<FlashcardBulkAction, 'assign_images'>
+export type FlashcardBulkRecordAction = FlashcardBulkAction
 export type FlashcardSelectionAction = 'exclude' | 'include'
 export interface FlashcardSelectionActionItem {
   action: FlashcardSelectionAction
@@ -301,35 +300,20 @@ export interface FlashcardSelectionActionItem {
   color?: string
 }
 export type FlashcardReviewSetAccessRole = 'owner' | 'readonly' | 'editor'
-export type SquareImageSource = 'none' | 'url' | 'upload' | 'library'
-
-export interface ImageLibraryConcept {
-  id: number
-  name: string
-  partOfSpeech: string
-  definition: string
-}
-
-export interface ImageLibraryAsset {
-  id: number
-  imageUrl: string
-  alt: string
-  photographer: string
-  photographerUrl: string
-  sourceUrl: string
-  licenseName: string
-  licenseUrl: string
-  concept?: ImageLibraryConcept
-}
+export type SquareImageSource = 'none' | 'url' | 'upload'
 
 export interface SquareImageSourceValue {
   source: SquareImageSource
   url: string
   existingUrl: string
   existingSource: SquareImageSource
-  existingLibraryImageId?: number
   upload?: Blob
-  libraryImage?: ImageLibraryAsset
+}
+
+export interface FlashcardAudioValue {
+  url: string
+  existingUrl: string
+  recording?: Blob
 }
 
 export interface FlashcardTag {
@@ -342,9 +326,10 @@ export interface Flashcard {
   front: string
   back: string
   note: string
+  frontAudio?: string
+  backAudio?: string
   image: string
   imageSource: SquareImageSource
-  libraryImage?: ImageLibraryAsset
   tags: string[]
   tagDetails?: FlashcardTag[]
   createdAt: string
@@ -454,6 +439,8 @@ export interface FlashcardReviewQueueCard {
   front: string
   back: string
   note: string
+  frontAudio?: string
+  backAudio?: string
   image: string
   tags: string[]
 }

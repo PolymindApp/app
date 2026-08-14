@@ -49,6 +49,7 @@ public class BackgroundFlashcardService extends Service {
     private PowerManager.WakeLock wakeLock;
     private TextToSpeech speech;
     private TtsVolumeBoost volumeBoost;
+    private FlashcardRecordingPlayer recordingPlayer;
     private boolean speechReady;
     private boolean speechOverAmplified;
     private boolean running;
@@ -72,6 +73,7 @@ public class BackgroundFlashcardService extends Service {
     private int completedCards;
     private String pendingSpeechText = "";
     private String pendingSpeechLanguage = "";
+    private String pendingRecordingUrl = "";
     private long lastNotificationSecond = -1L;
 
     private final Runnable ticker = new Runnable() {
@@ -97,10 +99,14 @@ public class BackgroundFlashcardService extends Service {
     private static final class Card {
         final String front;
         final String back;
+        final String frontAudio;
+        final String backAudio;
 
-        Card(String front, String back) {
+        Card(String front, String back, String frontAudio, String backAudio) {
             this.front = front;
             this.back = back;
+            this.frontAudio = frontAudio;
+            this.backAudio = backAudio;
         }
     }
 
@@ -111,6 +117,7 @@ public class BackgroundFlashcardService extends Service {
         preferences = getSharedPreferences(PREFERENCES, MODE_PRIVATE);
         createNotificationChannel();
         volumeBoost = new TtsVolumeBoost(this);
+        recordingPlayer = new FlashcardRecordingPlayer(this);
         speech = new TextToSpeech(this, status -> {
             speechReady = status == TextToSpeech.SUCCESS;
             if (speechReady) {
@@ -168,7 +175,9 @@ public class BackgroundFlashcardService extends Service {
             JSONObject encoded = encodedCards.getJSONObject(index);
             cards.add(new Card(
                 encoded.optString("front", ""),
-                encoded.optString("back", "")
+                encoded.optString("back", ""),
+                encoded.optString("frontAudio", ""),
+                encoded.optString("backAudio", "")
             ));
         }
         if (cards.isEmpty()) throw new IllegalArgumentException("The review queue is empty.");
@@ -206,6 +215,7 @@ public class BackgroundFlashcardService extends Service {
         lastNotificationSecond = -1L;
         pendingSpeechText = "";
         pendingSpeechLanguage = "";
+        pendingRecordingUrl = "";
         stopSpeechPlayback();
         persistState();
     }
@@ -252,21 +262,50 @@ public class BackgroundFlashcardService extends Service {
 
     private void speakCurrentSide() {
         if (MainActivity.isAppVisible() || cardIndex >= cards.size()) return;
+        stopSpeechPlayback();
         Card card = cards.get(cardIndex);
         pendingSpeechText = "front".equals(side) ? card.front : card.back;
         pendingSpeechLanguage = "front".equals(side) ? frontLanguage : backLanguage;
+        pendingRecordingUrl = "front".equals(side) ? card.frontAudio : card.backAudio;
         speakPendingSide();
     }
 
     private void speakPendingSide() {
         if (
-            !speechReady
-            || speech == null
-            || pendingSpeechText.isEmpty()
-            || pendingSpeechLanguage.isEmpty()
-            || MainActivity.isAppVisible()
+            MainActivity.isAppVisible()
+            || (pendingRecordingUrl.isEmpty()
+                && (pendingSpeechText.isEmpty() || pendingSpeechLanguage.isEmpty()))
         ) return;
-        int availability = speech.setLanguage(Locale.forLanguageTag(pendingSpeechLanguage));
+
+        String recordingUrl = pendingRecordingUrl;
+        String text = pendingSpeechText;
+        String language = pendingSpeechLanguage;
+        pendingRecordingUrl = "";
+        if (!recordingUrl.isEmpty()) {
+            pendingSpeechText = "";
+            pendingSpeechLanguage = "";
+            if (speech != null) speech.stop();
+            if (volumeBoost != null) volumeBoost.stop();
+            recordingPlayer.play(
+                recordingUrl,
+                () -> speakSynthesized(text, language),
+                () -> running && !MainActivity.isAppVisible()
+            );
+            return;
+        }
+        speakSynthesized(text, language);
+    }
+
+    private void speakSynthesized(String text, String language) {
+        if (!speechReady || speech == null) {
+            pendingSpeechText = text;
+            pendingSpeechLanguage = language;
+            return;
+        }
+        if (text.isEmpty() || language.isEmpty() || MainActivity.isAppVisible()) return;
+        pendingSpeechText = "";
+        pendingSpeechLanguage = "";
+        int availability = speech.setLanguage(Locale.forLanguageTag(language));
         if (
             availability == TextToSpeech.LANG_MISSING_DATA
             || availability == TextToSpeech.LANG_NOT_SUPPORTED
@@ -274,16 +313,15 @@ public class BackgroundFlashcardService extends Service {
         String utteranceId = "polymind-background-flashcard-" + System.nanoTime();
         int result = volumeBoost.speak(
             speech,
-            pendingSpeechText,
+            text,
             utteranceId,
             speechOverAmplified
         );
         if (result == TextToSpeech.ERROR) volumeBoost.finish(utteranceId);
-        pendingSpeechText = "";
-        pendingSpeechLanguage = "";
     }
 
     private void stopSpeechPlayback() {
+        if (recordingPlayer != null) recordingPlayer.stop();
         if (speech != null) speech.stop();
         if (volumeBoost != null) volumeBoost.stop();
     }
@@ -443,6 +481,7 @@ public class BackgroundFlashcardService extends Service {
         activeInstance = null;
         handler.removeCallbacksAndMessages(null);
         releaseWakeLock();
+        if (recordingPlayer != null) recordingPlayer.stop();
         if (volumeBoost != null) volumeBoost.stop();
         if (speech != null) {
             speech.stop();

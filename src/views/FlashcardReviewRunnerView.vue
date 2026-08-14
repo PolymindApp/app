@@ -662,10 +662,11 @@ async function speakCurrentSide(allowPaused = false) {
   lastSpokenKey = key
   const side = currentSpeechSide.value
   try {
-    await speakFlashcardText(
-      side === 'front' ? card.front : card.back,
-      side === 'front' ? value.frontLanguage : value.backLanguage,
-    )
+    const text = side === 'front' ? card.front : card.back
+    const language = side === 'front' ? value.frontLanguage : value.backLanguage
+    const audio = (side === 'front' ? card.frontAudio : card.backAudio) || ''
+    if (audio) await speakFlashcardText(text, language, '', audio)
+    else await speakFlashcardText(text, language)
     if (request === speechRequest) speechPlaybackWarning.value = ''
   } catch {
     if (request === speechRequest && !speechFailureWarnedSessionIds.has(value.id)) {
@@ -990,6 +991,8 @@ function handleCardSaved(card: Flashcard) {
     front: card.front,
     back: card.back,
     note: card.note,
+    frontAudio: card.frontAudio,
+    backAudio: card.backAudio,
     image: card.image,
     tags: [...card.tags],
   }

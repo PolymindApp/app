@@ -3,18 +3,15 @@ set -euo pipefail
 
 source_db="${POLYMIND_TEST_SOURCE_DB:-private/data.db}"
 test_port="${POLYMIND_TEST_PORT:-$((18100 + RANDOM % 800))}"
-pexels_port="$((test_port + 1000))"
 smtp_port="$((test_port + 3000))"
 test_secret="polymind-api-integration-secret-at-least-32-characters"
 test_root="${TMPDIR:-/tmp}"
 test_dir="$(mktemp -d "$test_root/polymind-api-test.XXXXXX")"
 test_db="$test_dir/data.db"
 test_log="$test_dir/server.log"
-pexels_log="$test_dir/pexels.log"
 smtp_log="$test_dir/smtp.log"
 smtp_mailbox="$test_dir/mailbox.txt"
 server_pid=""
-pexels_pid=""
 smtp_pid=""
 
 cleanup() {
@@ -22,10 +19,6 @@ cleanup() {
   if [[ -n "$server_pid" ]]; then
     kill "$server_pid" >/dev/null 2>&1 || true
     wait "$server_pid" >/dev/null 2>&1 || true
-  fi
-  if [[ -n "$pexels_pid" ]]; then
-    kill "$pexels_pid" >/dev/null 2>&1 || true
-    wait "$pexels_pid" >/dev/null 2>&1 || true
   fi
   if [[ -n "$smtp_pid" ]]; then
     kill "$smtp_pid" >/dev/null 2>&1 || true
@@ -53,22 +46,8 @@ done
 }
 
 sqlite3 "$source_db" ".backup $test_db"
-php -S "127.0.0.1:$pexels_port" server/tests/fixtures/pexels-router.php >"$pexels_log" 2>&1 &
-pexels_pid=$!
 php server/tests/fixtures/smtp-server.php "$smtp_port" "$smtp_mailbox" >"$smtp_log" 2>&1 &
 smtp_pid=$!
-
-for _attempt in {1..50}; do
-  curl --silent --fail \
-    -H "Authorization: test-pexels-key" \
-    "http://127.0.0.1:$pexels_port/v1/search?query=health&per_page=30&orientation=square" \
-    >/dev/null && break
-  kill -0 "$pexels_pid" >/dev/null 2>&1 || {
-    sed -n '1,200p' "$pexels_log" >&2
-    exit 1
-  }
-  sleep .1
-done
 
 for _attempt in {1..50}; do
   php -r '
@@ -86,8 +65,6 @@ done
 POLYMIND_DB_PATH="$test_db" \
 POLYMIND_API_SECRET="$test_secret" \
 POLYMIND_ALLOWED_ORIGINS="http://localhost:5183" \
-POLYMIND_PEXELS_API_KEY="test-pexels-key" \
-POLYMIND_PEXELS_API_BASE_URL="http://127.0.0.1:$pexels_port/v1/search" \
 POLYMIND_APP_URL="http://127.0.0.1:$test_port" \
 POLYMIND_MAIL_HOST="127.0.0.1" \
 POLYMIND_MAIL_PORT="$smtp_port" \
@@ -116,7 +93,7 @@ suffix="$(php -r 'echo bin2hex(random_bytes(5));')"
 password="correct-horse-battery"
 
 migration_count="$(sqlite3 "$test_db" 'SELECT COUNT(*) FROM polymind_schema_migrations;')"
-[[ "$migration_count" == 38 ]] || {
+[[ "$migration_count" == 40 ]] || {
   echo "The API did not apply the complete database migration sequence." >&2
   exit 1
 }
@@ -1487,6 +1464,37 @@ flashcard_image_url="$(json_field image_url <<<"$flashcard_response")"
   exit 1
 }
 
+flashcard_audio_payload="$(php -r '
+  $bytes = "\x1A\x45\xDF\xA3" . str_repeat("\0", 124);
+  echo json_encode([
+    "audio" => "data:audio/webm;base64," . base64_encode($bytes),
+  ], JSON_THROW_ON_ERROR);
+')"
+flashcard_audio_response="$(curl --silent --show-error --fail \
+  -X POST -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "$flashcard_audio_payload" \
+  "$api_url/flashcards/$flashcard_id/audio/front")"
+flashcard_audio_file="$(json_field front_audio_file <<<"$flashcard_audio_response")"
+flashcard_audio_url="$(json_field front_audio_url <<<"$flashcard_audio_response")"
+[[ "$flashcard_audio_file" =~ ^[a-f0-9]{48}\.webm$ && -z "$flashcard_audio_url" ]] || {
+  echo "Uploading front-face audio did not persist the recording." >&2
+  exit 1
+}
+flashcard_audio_headers="$test_dir/flashcard-audio-headers.txt"
+curl --silent --show-error --fail \
+  --dump-header "$flashcard_audio_headers" \
+  --output "$test_dir/flashcard-audio.webm" \
+  "$api_url/flashcard-audio/$flashcard_audio_file"
+grep -qi '^Content-Type: audio/webm' "$flashcard_audio_headers" || {
+  echo "The uploaded flashcard recording was not served as WebM audio." >&2
+  exit 1
+}
+[[ "$(wc -c < "$test_dir/flashcard-audio.webm")" == 128 ]] || {
+  echo "The served flashcard recording did not match the uploaded audio." >&2
+  exit 1
+}
+
 invalid_flashcard_image_url_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
   -X PATCH -H "Content-Type: application/json" \
   -H "Authorization: Bearer $alice_token" \
@@ -1526,170 +1534,6 @@ php -r '
   }
 ' "$test_dir/flashcard.jpg"
 
-php -r '
-  $pdo = new PDO("sqlite:" . $argv[1]);
-  $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-  $pdo->exec(<<<SQL
-    INSERT INTO image_sources (id, name, language, source_url, license_name, license_url, attribution)
-    VALUES ("integration", "Integration seed", "mul", "https://example.test", "Test data", "https://example.test/license", "");
-    INSERT INTO image_concepts (
-      id, source_key, canonical_name, part_of_speech, semantic_category,
-      definition, search_query, search_text
-    ) VALUES (
-      900001, "integration:bicycle", "bicycle", "noun", "noun.artifact",
-      "A vehicle with two wheels.", "bicycle", "bicycle vélo bicicleta Fahrrad"
-    );
-    SQL);
-  $statement = $pdo->prepare(<<<SQL
-    INSERT INTO image_assets (
-      id, provider, provider_id, filename, content_sha256, source_url, download_url,
-      photographer, photographer_url, photographer_id, alt, source_width,
-      source_height, average_color, license_name, license_url, fetched_at
-    ) VALUES (
-      900001, "pexels", "integration-photo", :filename,
-      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "https://www.pexels.com/photo/integration-photo/",
-      "https://images.pexels.com/photos/integration-photo.jpeg",
-      "Integration Photographer", "https://www.pexels.com/@integration", "123",
-      "A bicycle used by the image library integration test.", 512, 512, "#445566",
-      "Pexels License", "https://www.pexels.com/license/", "2026-08-07T12:00:00.000Z"
-    );
-    SQL);
-  $statement->execute(["filename" => $argv[2]]);
-  $pdo->exec(<<<SQL
-    INSERT INTO image_concept_assets (concept_id, image_id, result_rank, linked_at)
-    VALUES (900001, 900001, 1, "2026-08-07T12:00:00.000Z");
-    SQL);
-' "$test_db" "$flashcard_image_file"
-
-unauthenticated_image_search_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
-  "$api_url/image-library/search?query=bicycle")"
-[[ "$unauthenticated_image_search_status" == 401 ]] || {
-  echo "The image library search endpoint allowed unauthenticated access." >&2
-  exit 1
-}
-
-image_library_response="$(curl --silent --show-error --fail \
-  -H "Authorization: Bearer $alice_token" \
-  "$api_url/image-library/search?query=v%C3%A9lo&perPage=30")"
-image_library_summary="$(php -r '
-  $data = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
-  $image = $data["items"][0] ?? [];
-  echo implode(":", [
-    $data["totalItems"] ?? 0,
-    $image["id"] ?? 0,
-    $image["photographer"] ?? "",
-    $image["concept"]["name"] ?? "",
-  ]);
-' <<<"$image_library_response")"
-[[ "$image_library_summary" == "1:900001:Integration Photographer:bicycle" ]] || {
-  echo "The multilingual image library search did not return cached attribution data." >&2
-  exit 1
-}
-
-pending_image_search="pendingimage$suffix"
-php -r '
-  $pdo = new PDO("sqlite:" . $argv[1]);
-  $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-  $statement = $pdo->prepare(<<<SQL
-    INSERT INTO image_concepts (
-      id, source_key, canonical_name, part_of_speech, semantic_category,
-      definition, search_query, search_text
-    ) VALUES (
-      900002, :source_key, :name, "noun", "integration.pending",
-      "An image concept waiting for its first Pexels search.", :name, :name
-    )
-    SQL);
-  $statement->execute([
-    "source_key" => "integration:" . $argv[2],
-    "name" => $argv[2],
-  ]);
-' "$test_db" "$pending_image_search"
-pending_image_response="$(curl --silent --show-error --fail --get \
-  -H "Authorization: Bearer $alice_token" \
-  --data-urlencode "query=$pending_image_search" \
-  "$api_url/image-library/search")"
-pending_image_summary="$(php -r '
-  $data = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
-  $image = $data["items"][0] ?? [];
-  echo implode(":", [
-    $data["totalItems"] ?? 0,
-    $image["photographer"] ?? "",
-    $image["concept"]["name"] ?? "",
-  ]);
-' <<<"$pending_image_response")"
-pending_database_summary="$(sqlite3 "$test_db" \
-  'SELECT pexels_searched || ":" || pexels_result_count || ":" ||
-    (SELECT COUNT(*) FROM image_concept_assets WHERE concept_id = 900002)
-   FROM image_concepts WHERE id = 900002;')"
-[[ "$pending_image_summary" == "1:Mock Photographer:$pending_image_search" \
-  && "$pending_database_summary" == "1:1:1" ]] || {
-  echo "A pending image concept was not fetched and returned on a cache miss." >&2
-  exit 1
-}
-
-on_demand_search="ondemandimage$suffix"
-on_demand_response="$(curl --silent --show-error --fail --get \
-  -H "Authorization: Bearer $alice_token" \
-  --data-urlencode "query=$on_demand_search" \
-  "$api_url/image-library/search")"
-on_demand_repeat="$(curl --silent --show-error --fail --get \
-  -H "Authorization: Bearer $alice_token" \
-  --data-urlencode "query=$on_demand_search" \
-  "$api_url/image-library/search")"
-on_demand_summary="$(php -r '
-  $first = json_decode($argv[1], true, 512, JSON_THROW_ON_ERROR);
-  $second = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
-  echo ($first["totalItems"] ?? 0) . ":" . ($second["totalItems"] ?? 0) . ":"
-    . ($first["items"][0]["photographer"] ?? "");
-' "$on_demand_response" <<<"$on_demand_repeat")"
-on_demand_database_summary="$(sqlite3 "$test_db" \
-  "SELECT COUNT(*) || ':' || MAX(pexels_searched) || ':' || MAX(pexels_result_count)
-   FROM image_concepts WHERE canonical_name = '$on_demand_search'
-     AND source_key LIKE 'on-demand:%';")"
-[[ "$on_demand_summary" == "1:1:Mock Photographer" \
-  && "$on_demand_database_summary" == "1:1:1" ]] || {
-  echo "An unknown image query did not create, fetch, and reuse its cache concept." >&2
-  exit 1
-}
-
-zero_result_search="noresults$suffix"
-for _attempt in 1 2; do
-  zero_result_response="$(curl --silent --show-error --fail --get \
-    -H "Authorization: Bearer $alice_token" \
-    --data-urlencode "query=$zero_result_search" \
-    "$api_url/image-library/search")"
-  [[ "$(json_field totalItems <<<"$zero_result_response")" == 0 ]] || {
-    echo "A zero-result Pexels search unexpectedly returned an image." >&2
-    exit 1
-  }
-done
-zero_result_database_summary="$(sqlite3 "$test_db" \
-  "SELECT COUNT(*) || ':' || MAX(pexels_searched) || ':' || MAX(pexels_result_count)
-   FROM image_concepts WHERE canonical_name = '$zero_result_search'
-     AND source_key LIKE 'on-demand:%';")"
-[[ "$zero_result_database_summary" == "1:1:0" ]] || {
-  echo "A searched zero-result image concept was duplicated or left pending." >&2
-  exit 1
-}
-
-library_flashcard_response="$(curl --silent --show-error --fail \
-  -X POST -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $alice_token" \
-  --data '{"image_id":900001}' \
-  "$api_url/flashcards/$flashcard_id/library-image")"
-library_flashcard_summary="$(php -r '
-  $data = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
-  echo implode(":", [
-    $data["library_image_id"] ?? 0,
-    $data["image_file"] ?? "",
-    $data["image_metadata"]["photographer"] ?? "",
-  ]);
-' <<<"$library_flashcard_response")"
-[[ "$library_flashcard_summary" == "900001:$flashcard_image_file:Integration Photographer" ]] || {
-  echo "Selecting a cached library image did not preserve its file and attribution." >&2
-  exit 1
-}
 
 flashcard_import_payload='{"rows":[{"front":"Imported chisel","back":"formón","note":"Carving tool","tags":["algebra","Imported"]},{"front":"Imported plane","back":"cepillo","note":"","tags":[]}]}'
 flashcard_import_response="$(curl --silent --show-error --fail \
@@ -2046,9 +1890,10 @@ manual_session_id="$(json_field id <<<"$manual_session_response")"
 manual_session_summary="$(php -r '
   $data = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
   echo $data["total_cards"] . ":" . $data["queue_state"][0]["note"] . ":"
-    . $data["queue_state"][0]["image"];
+    . $data["queue_state"][0]["image"] . ":"
+    . $data["queue_state"][0]["frontAudio"];
 ' <<<"$manual_session_response")"
-[[ "$manual_session_summary" == "1:Basic addition:/flashcard-images/$flashcard_image_file" ]] || {
+[[ "$manual_session_summary" == "1:Basic addition:/flashcard-images/$flashcard_image_file:/flashcard-audio/$flashcard_audio_file" ]] || {
   echo "A Review set did not snapshot its matching card queue." >&2
   exit 1
 }
@@ -2176,9 +2021,10 @@ interval_flashcard_snapshot="$(php -r '
     . $snapshot["backSeconds"] . ":" . ((int) $snapshot["speechEnabled"])
     . ":" . $snapshot["backSpeechRepeatCount"] . ":" . $snapshot["cardSides"]
     . ":" . ((int) $snapshot["noteBeforeBack"])
-    . ":" . count($snapshot["cards"]) . ":" . $snapshot["cards"][0]["image"];
+    . ":" . count($snapshot["cards"]) . ":" . $snapshot["cards"][0]["image"]
+    . ":" . $snapshot["cards"][0]["frontAudio"];
 ' <<<"$interval_flashcard_session_response")"
-[[ "$interval_flashcard_snapshot" == "$passive_review_set_id:3:4:1:3:back:1:1:/flashcard-images/$flashcard_image_file" ]] || {
+[[ "$interval_flashcard_snapshot" == "$passive_review_set_id:3:4:1:3:back:1:1:/flashcard-images/$flashcard_image_file:/flashcard-audio/$flashcard_audio_file" ]] || {
   echo "An interval did not snapshot its attached Passive Review set." >&2
   exit 1
 }

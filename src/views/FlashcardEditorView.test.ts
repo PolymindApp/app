@@ -67,6 +67,7 @@ function mountEditor() {
   return mount(FlashcardEditorView, {
     global: {
       stubs: {
+        FlashcardAudioSection: true,
         AppForm: AppFormStub,
         ConfirmDialog: true,
         FlashcardImageField: true,

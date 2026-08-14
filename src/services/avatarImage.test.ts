@@ -119,22 +119,6 @@ describe('avatar cropping', () => {
       existingUrl: '',
       existingSource: 'none',
     })).toBe(false)
-    expect(squareImageSourceIsValid({
-      source: 'library',
-      url: '',
-      existingUrl: '',
-      existingSource: 'none',
-      libraryImage: {
-        id: 42,
-        imageUrl: '/api/flashcard-images/cached.jpg',
-        alt: '',
-        photographer: '',
-        photographerUrl: '',
-        sourceUrl: 'https://www.pexels.com/photo/42/',
-        licenseName: 'Pexels License',
-        licenseUrl: 'https://www.pexels.com/license/',
-      },
-    })).toBe(true)
   })
 
   it('tracks a pending upload as a form change without serializing its bytes', () => {
@@ -147,22 +131,4 @@ describe('avatar cropping', () => {
     })).toContain('image/jpeg:5')
   })
 
-  it('tracks the selected library image as a form change', () => {
-    expect(squareImageSourceSignature({
-      source: 'library',
-      url: '',
-      existingUrl: '',
-      existingSource: 'none',
-      libraryImage: {
-        id: 42,
-        imageUrl: '/api/flashcard-images/cached.jpg',
-        alt: '',
-        photographer: '',
-        photographerUrl: '',
-        sourceUrl: 'https://www.pexels.com/photo/42/',
-        licenseName: 'Pexels License',
-        licenseUrl: 'https://www.pexels.com/license/',
-      },
-    })).toContain('"libraryImage":42')
-  })
 })
