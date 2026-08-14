@@ -155,6 +155,20 @@ async function resendConfirmation() {
   }
 }
 
+async function returnToSignIn() {
+  auth.clearError()
+  pageError.value = ''
+  success.value = ''
+  backendOffline.value = false
+  registrationEmail.value = ''
+  password.value = ''
+  passwordConfirm.value = ''
+  mode.value = 'login'
+
+  if (route.name !== 'auth') await router.push({ name: 'auth' })
+  else await focusCurrentField()
+}
+
 async function signInWithPasskey() {
   backendOffline.value = false
   try {
@@ -222,7 +236,7 @@ async function signInWithPasskey() {
             <v-alert v-if="success" type="success" variant="tonal" class="mb-5 text-left" density="compact">
               {{ success }}
             </v-alert>
-            <v-btn block color="secondary" size="large" :to="{ name: 'auth' }">
+            <v-btn block color="secondary" size="large" @click="returnToSignIn">
               Back to sign in
             </v-btn>
             <v-btn
@@ -242,7 +256,7 @@ async function signInWithPasskey() {
             <v-alert v-if="success" type="success" variant="tonal" class="mb-5 text-left" density="compact">
               {{ success }}
             </v-alert>
-            <v-btn v-if="!auth.loading" block color="secondary" size="large" :to="{ name: 'auth' }">
+            <v-btn v-if="!auth.loading" block color="secondary" size="large" @click="returnToSignIn">
               Continue to sign in
             </v-btn>
           </div>
@@ -252,7 +266,7 @@ async function signInWithPasskey() {
             <v-alert type="success" variant="tonal" class="mb-5 text-left" density="compact">
               {{ success }}
             </v-alert>
-            <v-btn block color="secondary" size="large" :to="{ name: 'auth' }">
+            <v-btn block color="secondary" size="large" @click="returnToSignIn">
               Back to sign in
             </v-btn>
           </div>
@@ -326,7 +340,7 @@ async function signInWithPasskey() {
               block
               variant="text"
               class="mt-2"
-              :to="{ name: 'auth' }"
+              @click="returnToSignIn"
             >
               Back to sign in
             </v-btn>
