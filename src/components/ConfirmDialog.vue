@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import AppDialog from '@/components/AppDialog.vue'
+
 withDefaults(defineProps<{
   modelValue: boolean
   title: string
@@ -21,9 +23,8 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <v-dialog
+  <AppDialog
     :model-value="modelValue"
-    :z-index="2600"
     max-width="400"
     @update:model-value="emit('update:modelValue', $event)"
   >
@@ -50,7 +51,7 @@ const emit = defineEmits<{
         </v-btn>
       </div>
     </v-card>
-  </v-dialog>
+  </AppDialog>
 </template>
 
 <style scoped>

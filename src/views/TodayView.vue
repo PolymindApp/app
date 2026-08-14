@@ -7,6 +7,7 @@ import { storeToRefs } from 'pinia'
 import { useDisplay } from 'vuetify'
 import { useRouter } from 'vue-router'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
+import AppDialog from '@/components/AppDialog.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import TaskCard from '@/components/TaskCard.vue'
 import TrackingLogBottomSheet from '@/components/TrackingLogBottomSheet.vue'
@@ -1106,7 +1107,7 @@ async function saveTaskLogEntry() {
       </div>
     </v-card>
 
-    <v-dialog
+    <AppDialog
       v-model="exactDialog"
       max-width="440"
       :transition="smAndUp ? 'dialog-transition' : 'digit-pad-scale-transition'"
@@ -1226,7 +1227,7 @@ async function saveTaskLogEntry() {
           </v-btn>
         </div>
       </v-card>
-    </v-dialog>
+    </AppDialog>
 
     <TrackingLogBottomSheet
       v-model="trackingSheetOpen"

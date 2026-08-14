@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import AppDialog from '@/components/AppDialog.vue'
 
 defineOptions({
   inheritAttrs: false,
@@ -101,7 +102,7 @@ function applyCustomColor() {
     </div>
   </fieldset>
 
-  <v-dialog
+  <AppDialog
     v-model="customColorDialog"
     :aria-label="customLabel"
     max-width="390"
@@ -130,7 +131,7 @@ function applyCustomColor() {
         </v-btn>
       </v-card-actions>
     </v-card>
-  </v-dialog>
+  </AppDialog>
 </template>
 
 <style scoped>

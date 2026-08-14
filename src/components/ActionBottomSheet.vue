@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, shallowRef, useId, watch } from 'vue'
 import { useDisplay } from 'vuetify'
+import { useOverlayStack } from '@/services/overlayStack'
 
 const props = withDefaults(defineProps<{
   title: string
@@ -16,6 +17,7 @@ const props = withDefaults(defineProps<{
 const model = defineModel<boolean>({ default: false })
 const { smAndDown } = useDisplay()
 const sheetId = useId()
+const zIndex = useOverlayStack(model)
 const desktopTarget = shallowRef<string | Element | [number, number]>()
 let lastInteractionElement: Element | undefined
 let lastPointerPosition: [number, number] | undefined
@@ -192,9 +194,10 @@ watch(model, (open) => {
   clearInlineGestureStyles()
 })
 
-watch(model, (open) => {
+watch([model, zIndex, smAndDown], ([open, activeZIndex]) => {
   const scrim = sheetElement()?.nextElementSibling
   if (!(scrim instanceof HTMLElement) || !scrim.classList.contains('v-navigation-drawer__scrim')) return
+  scrim.style.setProperty('z-index', String(activeZIndex - 1), 'important')
   if (open) scrim.style.removeProperty('pointer-events')
   else scrim.style.setProperty('pointer-events', 'none', 'important')
 }, { flush: 'post' })
@@ -229,6 +232,7 @@ onBeforeUnmount(() => {
     location="bottom end"
     :close-on-content-click="false"
     :max-width="430"
+    :z-index="zIndex"
     :aria-label="ariaLabel"
   >
     <v-list
@@ -268,6 +272,9 @@ onBeforeUnmount(() => {
       touchless
       :width="430"
       class="action-bottom-sheet"
+      :style="{
+        '--action-sheet-z-index': zIndex,
+      }"
       :aria-label="ariaLabel"
     >
       <div
@@ -309,7 +316,7 @@ onBeforeUnmount(() => {
 .action-menu__content + .action-menu__list { border-top: .0625rem solid rgb(var(--v-theme-on-surface) / .08); }
 
 .action-bottom-sheet {
-  z-index: 2500 !important;
+  z-index: var(--action-sheet-z-index) !important;
   bottom: max(
     env(safe-area-inset-bottom, 0px),
     var(--safe-area-inset-bottom, 0px)
@@ -367,7 +374,6 @@ onBeforeUnmount(() => {
    follow-up tap meant for the page beneath the sheet. */
 :global(.action-bottom-sheet + .v-navigation-drawer__scrim) {
   position: fixed;
-  z-index: 2499 !important;
   inset: 0;
   width: auto;
   height: auto;

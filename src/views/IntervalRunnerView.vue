@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import { isValid, parseISO } from 'date-fns'
 import { useRoute, useRouter } from 'vue-router'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
+import AppDialog from '@/components/AppDialog.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import FlashcardCardDialog from '@/components/FlashcardCardDialog.vue'
 import FlashcardContextActions from '@/components/FlashcardContextActions.vue'
@@ -1754,7 +1755,7 @@ async function runAgain(repetitions?: number) {
       @saved="handleIntervalFlashcardSaved"
     />
 
-    <v-dialog
+    <AppDialog
       v-model="flashcardSettingsDialog"
       persistent
       scrollable
@@ -1823,7 +1824,7 @@ async function runAgain(repetitions?: number) {
           />
         </ActionBottomSheet>
       </v-card>
-    </v-dialog>
+    </AppDialog>
 
     <ConfirmDialog
       :model-value="flashcardEjectDialog"
@@ -1858,7 +1859,7 @@ async function runAgain(repetitions?: number) {
       @confirm="endEarly"
     />
 
-    <v-dialog v-model="noteDialog" max-width="480" :persistent="noteSaving">
+    <AppDialog v-model="noteDialog" max-width="480" :persistent="noteSaving">
       <v-card class="pa-5">
         <div class="note-dialog-heading">
           <div class="note-dialog-icon">
@@ -1887,9 +1888,9 @@ async function runAgain(repetitions?: number) {
           <v-btn color="secondary" size="large" :loading="noteSaving" :disabled="!noteChanged" @click="saveSessionNote">Save note</v-btn>
         </div>
       </v-card>
-    </v-dialog>
+    </AppDialog>
 
-    <v-dialog
+    <AppDialog
       :model-value="repetitionDialog"
       max-width="440"
       :persistent="starting"
@@ -1923,7 +1924,7 @@ async function runAgain(repetitions?: number) {
           <v-btn color="secondary" size="large" prepend-icon="mdi-play" :loading="starting" @click="confirmRepetitionStart">Start</v-btn>
         </div>
       </v-card>
-    </v-dialog>
+    </AppDialog>
 
     <ActionBottomSheet
       v-model="attributionSheet"

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useDisplay } from 'vuetify'
+import AppDialog from '@/components/AppDialog.vue'
 import ImageLibrarySearchPanel from '@/components/ImageLibrarySearchPanel.vue'
 import type { ImageLibraryAsset } from '@/types/domain'
 
@@ -30,7 +31,7 @@ function select(image: ImageLibraryAsset) {
 </script>
 
 <template>
-  <v-dialog
+  <AppDialog
     :model-value="modelValue"
     :fullscreen="smAndDown"
     max-width="64rem"
@@ -63,7 +64,7 @@ function select(image: ImageLibraryAsset) {
         />
       </v-card-text>
     </v-card>
-  </v-dialog>
+  </AppDialog>
 </template>
 
 <style scoped>

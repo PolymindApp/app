@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { format, isValid, parseISO } from 'date-fns'
+import AppDialog from '@/components/AppDialog.vue'
 
 defineProps<{
   label: string
@@ -59,7 +60,7 @@ function confirmDateTime() {
 </script>
 
 <template>
-  <v-dialog v-model="dialogOpen" max-width="22.5rem">
+  <AppDialog v-model="dialogOpen" max-width="22.5rem">
     <template #activator="{ props: activatorProps }">
       <v-text-field
         v-bind="activatorProps"
@@ -109,5 +110,5 @@ function confirmDateTime() {
         <v-btn color="secondary" variant="flat" size="large" :disabled="!canConfirm" @click="confirmDateTime">Done</v-btn>
       </v-card-actions>
     </v-card>
-  </v-dialog>
+  </AppDialog>
 </template>

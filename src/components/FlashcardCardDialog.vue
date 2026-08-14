@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, reactive, ref, watch } from 'vue'
+import AppDialog from '@/components/AppDialog.vue'
 import AppForm from '@/components/AppForm.vue'
 import FlashcardImageField from '@/components/FlashcardImageField.vue'
 import FlashcardTagCombobox from '@/components/FlashcardTagCombobox.vue'
@@ -96,7 +97,7 @@ async function save() {
 </script>
 
 <template>
-  <v-dialog
+  <AppDialog
     :model-value="modelValue"
     persistent
     scrollable
@@ -168,7 +169,7 @@ async function save() {
         </v-btn>
       </v-card-actions>
     </v-card>
-  </v-dialog>
+  </AppDialog>
 </template>
 
 <style scoped>

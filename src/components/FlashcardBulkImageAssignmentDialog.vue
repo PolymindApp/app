@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import AppDialog from '@/components/AppDialog.vue'
 import ImageLibrarySearchPanel from '@/components/ImageLibrarySearchPanel.vue'
 import { useFlashcardStore } from '@/stores/flashcards'
 import type { Flashcard, ImageLibraryAsset } from '@/types/domain'
@@ -93,7 +94,7 @@ function finish() {
 </script>
 
 <template>
-  <v-dialog
+  <AppDialog
     :model-value="modelValue"
     fullscreen
     :persistent="saving"
@@ -246,7 +247,7 @@ function finish() {
         </div>
       </footer>
     </v-card>
-  </v-dialog>
+  </AppDialog>
 </template>
 
 <style scoped>

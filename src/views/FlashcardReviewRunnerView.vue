@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import AppForm from '@/components/AppForm.vue'
+import AppDialog from '@/components/AppDialog.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import FlashcardCardDialog from '@/components/FlashcardCardDialog.vue'
 import FlashcardContextActions from '@/components/FlashcardContextActions.vue'
@@ -1529,7 +1530,7 @@ async function leaveRunner() {
       </template>
     </v-snackbar>
 
-    <v-dialog
+    <AppDialog
       v-model="sessionSettingsDialog"
       persistent
       scrollable
@@ -1598,7 +1599,7 @@ async function leaveRunner() {
           />
         </ActionBottomSheet>
       </v-card>
-    </v-dialog>
+    </AppDialog>
 
     <ConfirmDialog
       v-model="endDialog"

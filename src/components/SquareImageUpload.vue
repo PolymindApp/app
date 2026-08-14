@@ -3,6 +3,7 @@ import { Camera, CameraDirection, EncodingType } from '@capacitor/camera'
 import { Capacitor } from '@capacitor/core'
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
+import AppDialog from '@/components/AppDialog.vue'
 import {
   clampSquareImageCrop,
   compressSquareImage,
@@ -283,7 +284,7 @@ defineExpose({ choose })
     />
   </ActionBottomSheet>
 
-  <v-dialog :model-value="cropDialog" max-width="520" persistent>
+  <AppDialog :model-value="cropDialog" max-width="520" persistent>
     <v-card class="crop-card">
       <div class="crop-header">
         <div>
@@ -354,7 +355,7 @@ defineExpose({ choose })
         </v-btn>
       </div>
     </v-card>
-  </v-dialog>
+  </AppDialog>
 </template>
 
 <style scoped>
