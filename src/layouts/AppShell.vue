@@ -8,6 +8,7 @@ import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import MainNavigationIcon from '@/components/MainNavigationIcon.vue'
 import { localDataChangedEvent } from '@/lib/localDatabase'
+import { preloadMainNavigationView } from '@/services/mainNavigationViews'
 import {
   bottomNavigationFontSize,
   mainMenuTransitionDirection,
@@ -48,7 +49,10 @@ const discardAllIssuesDialog = ref(false)
 const discardingAllIssues = ref(false)
 const syncSheet = ref(false)
 const pageTransition = ref('page-level-forward')
+const pageTransitionStage = ref<HTMLElement>()
+const pendingMainNavigationPath = ref<string>()
 const isIos = Capacitor.getPlatform() === 'ios'
+const isAndroid = Capacitor.getPlatform() === 'android'
 const isBrowser = Capacitor.getPlatform() === 'web'
 const storedMenuOrder = ref(readStoredMainMenuOrder())
 const storedHiddenMenuItems = ref(readStoredHiddenMainMenuItems())
@@ -63,6 +67,11 @@ const documentTitle = typeof document === 'undefined'
 let documentTitleFrame = 0
 let documentTitleTimer: number | undefined
 let localRefreshTimer: number | undefined
+let mainNavigationPreloadTimer: number | undefined
+let pendingMainNavigationPointerId: number | undefined
+let earlyLeavingPage: HTMLElement | undefined
+let earlyLeavingRoute: string | undefined
+let earlyLeaveResetTimer: number | undefined
 
 const items = computed(() => visibleMainNavItems(
   storedMenuOrder.value ?? auth.user?.settings?.mainMenuOrder,
@@ -133,6 +142,43 @@ const current = computed({
   },
   set: (path: string) => router.push(path),
 })
+const selectedMainNavigationPath = computed(() => pendingMainNavigationPath.value ?? current.value)
+
+function preloadMainNavigationPath(path: string) {
+  const preload = preloadMainNavigationView(path)
+  if (preload) void preload.catch(() => undefined)
+}
+
+function beginMainNavigationPress(path: string, event: PointerEvent) {
+  if (!event.isPrimary || event.pointerType === 'mouse') return
+  pendingMainNavigationPointerId = event.pointerId
+  pendingMainNavigationPath.value = path
+  preloadMainNavigationPath(path)
+  if (router.currentRoute.value.path !== path) beginEarlyPageLeave(path)
+}
+
+function finishMainNavigationPress(path: string, event: PointerEvent) {
+  if (pendingMainNavigationPointerId !== event.pointerId) return
+  pendingMainNavigationPointerId = undefined
+  const bounds = (event.currentTarget as HTMLElement).getBoundingClientRect()
+  const releasedInside = event.clientX >= bounds.left
+    && event.clientX <= bounds.right
+    && event.clientY >= bounds.top
+    && event.clientY <= bounds.bottom
+  if (!releasedInside) cancelMainNavigationPress(path)
+}
+
+function cancelMainNavigationPress(path: string, event?: PointerEvent) {
+  if (event && pendingMainNavigationPointerId !== event.pointerId) return
+  pendingMainNavigationPointerId = undefined
+  if (pendingMainNavigationPath.value !== path) return
+  pendingMainNavigationPath.value = undefined
+  restoreEarlyPageLeave(path)
+}
+
+function preloadVisibleMainNavigationViews() {
+  items.value.forEach(item => preloadMainNavigationPath(item.to))
+}
 
 function menuItemHasActiveSession(itemId: string) {
   if (itemId === 'intervals') return intervalSessionIsActive.value
@@ -184,7 +230,45 @@ function syncDocumentTitle() {
 
 watch([sessionIsRunning, reducedMotion], syncDocumentTitle, { immediate: true })
 
+function clearEarlyLeaveResetTimer() {
+  if (earlyLeaveResetTimer === undefined) return
+  window.clearTimeout(earlyLeaveResetTimer)
+  earlyLeaveResetTimer = undefined
+}
+
+function beginEarlyPageLeave(route: string) {
+  const page = pageTransitionStage.value?.firstElementChild
+  if (!(page instanceof HTMLElement)) return
+  clearEarlyLeaveResetTimer()
+  if (earlyLeavingPage && earlyLeavingPage !== page) {
+    earlyLeavingPage.classList.remove('page-route-early-leave', 'page-route-early-leave-resetting')
+  }
+  earlyLeavingPage = page
+  earlyLeavingRoute = route
+  page.classList.remove('page-route-early-leave-resetting')
+  page.classList.add('page-route-early-leave')
+}
+
+function restoreEarlyPageLeave(route?: string) {
+  if (route && earlyLeavingRoute !== route) return
+  const page = earlyLeavingPage
+  earlyLeavingPage = undefined
+  earlyLeavingRoute = undefined
+  if (!page) return
+  clearEarlyLeaveResetTimer()
+  page.classList.remove('page-route-early-leave')
+  page.classList.add('page-route-early-leave-resetting')
+  earlyLeaveResetTimer = window.setTimeout(() => {
+    earlyLeaveResetTimer = undefined
+    page.classList.remove('page-route-early-leave-resetting')
+  }, 240)
+}
+
 const removeTransitionGuard = router.beforeEach((to, from) => {
+  if (to.meta.auth && from.meta.auth && to.path !== from.path) {
+    beginEarlyPageLeave(to.fullPath)
+  }
+
   const menuDirection = mainMenuTransitionDirection(items.value, from.path, to.path)
   if (menuDirection) {
     pageTransition.value = menuDirection === 'forward'
@@ -206,6 +290,16 @@ const removeTransitionGuard = router.beforeEach((to, from) => {
     pageTransition.value = toOrder >= fromOrder ? 'page-level-forward' : 'page-level-back'
   }
 })
+const removeNavigationFeedbackGuard = router.afterEach((to, _from, failure) => {
+  pendingMainNavigationPointerId = undefined
+  pendingMainNavigationPath.value = undefined
+  if (failure) {
+    restoreEarlyPageLeave(to.fullPath)
+  } else if (earlyLeavingRoute === to.fullPath) {
+    earlyLeavingRoute = undefined
+  }
+})
+const removeNavigationErrorHandler = router.onError(() => restoreEarlyPageLeave())
 
 function refreshStoredMenuSettings() {
   storedMenuOrder.value = readStoredMainMenuOrder()
@@ -236,16 +330,27 @@ onMounted(() => {
     !intervalStore.loading ? intervalStore.load() : Promise.resolve(),
     !flashcardStore.loading ? flashcardStore.load() : Promise.resolve(),
   ])
+  if (isAndroid) {
+    mainNavigationPreloadTimer = window.setTimeout(() => {
+      mainNavigationPreloadTimer = undefined
+      preloadVisibleMainNavigationViews()
+    }, 600)
+  }
 })
 
 onBeforeUnmount(() => {
   stopDocumentTitleAnimation()
   removeTransitionGuard()
+  removeNavigationFeedbackGuard()
+  removeNavigationErrorHandler()
+  restoreEarlyPageLeave()
+  clearEarlyLeaveResetTimer()
   window.removeEventListener(MAIN_MENU_ORDER_CHANGED_EVENT, refreshStoredMenuSettings)
   window.removeEventListener(MAIN_MENU_VISIBILITY_CHANGED_EVENT, refreshStoredMenuSettings)
   window.removeEventListener('storage', refreshStoredMenuSettings)
   window.removeEventListener(localDataChangedEvent, scheduleLocalRefresh)
   if (localRefreshTimer !== undefined) window.clearTimeout(localRefreshTimer)
+  if (mainNavigationPreloadTimer !== undefined) window.clearTimeout(mainNavigationPreloadTimer)
 })
 
 async function logout() {
@@ -298,10 +403,15 @@ function pinLeavingPage(element: Element) {
 
 function releaseLeavingPage(element: Element) {
   if (!(element instanceof HTMLElement)) return
-  element.classList.remove('page-route-leaving-pinned')
+  element.classList.remove(
+    'page-route-early-leave',
+    'page-route-early-leave-resetting',
+    'page-route-leaving-pinned',
+  )
   element.style.removeProperty('--page-leave-top')
   element.style.removeProperty('--page-leave-left')
   element.style.removeProperty('--page-leave-width')
+  if (earlyLeavingPage === element) earlyLeavingPage = undefined
 }
 
 </script>
@@ -400,7 +510,7 @@ function releaseLeavingPage(element: Element) {
         'app-scroll--with-bar': !immersive && !mobileKeyboardVisible,
       }"
     >
-      <div class="page-transition-stage">
+      <div ref="pageTransitionStage" class="page-transition-stage">
         <router-view v-slot="{ Component, route: viewRoute }">
           <transition
             :name="pageTransition"
@@ -426,9 +536,12 @@ function releaseLeavingPage(element: Element) {
           :key="item.to"
           :to="item.to"
           class="bottom-nav__link"
-          :class="{ 'bottom-nav__link--active': current === item.to }"
+          :class="{ 'bottom-nav__link--active': selectedMainNavigationPath === item.to }"
           :aria-current="current === item.to ? 'page' : undefined"
           :aria-label="menuItemLabel(item)"
+          @pointerdown="beginMainNavigationPress(item.to, $event)"
+          @pointerup="finishMainNavigationPress(item.to, $event)"
+          @pointercancel="cancelMainNavigationPress(item.to, $event)"
         >
           <MainNavigationIcon
             :icon="item.icon"
@@ -750,9 +863,8 @@ function releaseLeavingPage(element: Element) {
   font-weight: 800;
   line-height: 1.25;
   text-decoration: none;
-  transition:
-    color 160ms ease,
-    font-size 160ms ease;
+  touch-action: manipulation;
+  transition: font-size 160ms ease;
 }
 
 .bottom-nav__link--active {
@@ -844,6 +956,17 @@ function releaseLeavingPage(element: Element) {
   margin: 0 !important;
 }
 
+.page-route-early-leave,
+.page-route-early-leave-resetting {
+  transition: opacity 240ms ease !important;
+}
+
+.page-route-early-leave {
+  opacity: 0;
+  pointer-events: none;
+  will-change: opacity;
+}
+
 :where(
   .page-level-forward-enter-from,
   .page-level-forward-leave-to,
@@ -867,6 +990,11 @@ function releaseLeavingPage(element: Element) {
 .page-depth-higher-leave-to > :not(.page-action-area) { transform: translateY(1rem); }
 
 @media (prefers-reduced-motion: reduce) {
+  .page-route-early-leave,
+  .page-route-early-leave-resetting {
+    transition-duration: .01ms !important;
+  }
+
   :where(
     .page-level-forward-enter-from,
     .page-level-forward-leave-to,

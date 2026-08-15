@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { api } from '@/lib/api'
+import { MAIN_NAVIGATION_VIEW_LOADERS } from '@/services/mainNavigationViews'
 import { isNativeAndroidOrIosApp } from '@/services/platformAccess'
 
 const router = createRouter({
@@ -23,10 +24,10 @@ const router = createRouter({
       component: () => import('@/layouts/AppShell.vue'),
       meta: { auth: true },
       children: [
-        { path: 'tasks', name: 'tasks', component: () => import('@/views/TodayView.vue'), meta: { title: 'Tasks', pageDepth: 0, pageOrder: 0 } },
+        { path: 'tasks', name: 'tasks', component: MAIN_NAVIGATION_VIEW_LOADERS['/tasks'], meta: { title: 'Tasks', pageDepth: 0, pageOrder: 0 } },
         { path: 'today', redirect: '/tasks' },
-        { path: 'intervals', name: 'intervals', component: () => import('@/views/IntervalsView.vue'), meta: { title: 'Intervals', pageDepth: 0, pageOrder: 1 } },
-        { path: 'flashcards', name: 'flashcards', component: () => import('@/views/FlashcardsView.vue'), meta: { title: 'Flashcards', pageDepth: 0, pageOrder: 2 } },
+        { path: 'intervals', name: 'intervals', component: MAIN_NAVIGATION_VIEW_LOADERS['/intervals'], meta: { title: 'Intervals', pageDepth: 0, pageOrder: 1 } },
+        { path: 'flashcards', name: 'flashcards', component: MAIN_NAVIGATION_VIEW_LOADERS['/flashcards'], meta: { title: 'Flashcards', pageDepth: 0, pageOrder: 2 } },
         { path: 'flashcards/cards', name: 'flashcard-cards', component: () => import('@/views/FlashcardCardsView.vue'), meta: { title: 'Manage cards', pageDepth: 1, pageOrder: 2, backTo: '/flashcards' } },
         { path: 'flashcards/tags', name: 'flashcard-tags', component: () => import('@/views/FlashcardTagsView.vue'), meta: { title: 'Manage tags', pageDepth: 2, pageOrder: 2, backTo: '/flashcards/cards' } },
         { path: 'flashcards/cards/import', name: 'flashcard-import', component: () => import('@/views/FlashcardImportView.vue'), meta: { title: 'Import cards', pageDepth: 2, pageOrder: 2, backTo: '/flashcards/cards' } },
@@ -40,8 +41,8 @@ const router = createRouter({
         { path: 'flashcards/review-sets/:reviewSetId/cards/:id/edit', name: 'flashcard-review-set-card-edit', component: () => import('@/views/FlashcardEditorView.vue'), meta: { title: 'Edit shared card', pageDepth: 3, pageOrder: 2, backTo: '/flashcards' } },
         { path: 'flashcards/review/set/:reviewSetId', name: 'flashcard-review-set-runner', component: () => import('@/views/FlashcardReviewRunnerView.vue'), meta: { title: 'Review', immersive: true, pageDepth: 2, pageOrder: 2, backTo: '/flashcards' } },
         { path: 'flashcards/review/:sessionId', name: 'flashcard-review-runner', component: () => import('@/views/FlashcardReviewRunnerView.vue'), meta: { title: 'Review', immersive: true, pageDepth: 2, pageOrder: 2, backTo: '/flashcards' } },
-        { path: 'tracking', name: 'tracking', component: () => import('@/views/TrackingView.vue'), meta: { title: 'Tracking', pageDepth: 0, pageOrder: 3 } },
-        { path: 'journal', name: 'journal', component: () => import('@/views/JournalView.vue'), meta: { title: 'Journal', pageDepth: 0, pageOrder: 4 } },
+        { path: 'tracking', name: 'tracking', component: MAIN_NAVIGATION_VIEW_LOADERS['/tracking'], meta: { title: 'Tracking', pageDepth: 0, pageOrder: 3 } },
+        { path: 'journal', name: 'journal', component: MAIN_NAVIGATION_VIEW_LOADERS['/journal'], meta: { title: 'Journal', pageDepth: 0, pageOrder: 4 } },
         { path: 'journal/new', name: 'journal-new', component: () => import('@/views/JournalEditorView.vue'), meta: { title: 'New reflection', pageDepth: 1, pageOrder: 4, backTo: '/journal' } },
         { path: 'journal/:id/edit', name: 'journal-edit', component: () => import('@/views/JournalEditorView.vue'), meta: { title: 'Edit reflection', pageDepth: 1, pageOrder: 4, backTo: '/journal' } },
         { path: 'tracking/new', name: 'tracking-new', component: () => import('@/views/TrackingEditorView.vue'), meta: { title: 'New tracker', pageDepth: 1, pageOrder: 3, backTo: '/tracking' } },
