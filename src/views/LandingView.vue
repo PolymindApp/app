@@ -151,8 +151,8 @@ function scrollToFeatures() {
 
         <section id="features" class="feature-section px-6 px-lg-10">
           <div class="section-intro">
-            <h2>Five sections. One feedback loop<span class="text-secondary">.</span></h2>
-            <p>Each section does one job well. Together, they turn a plan into practice, evidence, and a better next step.</p>
+            <h2>Five tools. One feedback loop<span class="text-secondary">.</span></h2>
+            <p>Each tool does one job well. Together, they turn a plan into practice, evidence, and a better next step.</p>
           </div>
 
           <v-row class="app-section-grid mt-10" align="stretch">
