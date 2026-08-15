@@ -189,8 +189,7 @@ async function signInWithPasskey() {
             <img src="/brand/backontrack-wordmark.png" alt="BackOnTrack" />
           </div>
           <h1 class="display-title auth-title mt-3">
-            <span class="auth-title__lead">MAKE LIFE</span>
-            <span class="auth-title__programmable text-secondary">PROGRAMMABLE.</span>
+            BUILD YOUR WAY <span class="text-secondary">FORWARD.</span>
           </h1>
           <p class="auth-copy mt-5">
               Plan tasks and workouts, run intervals, review flashcards with audio, track habits and Health Connect progress, explore insights, and journal reflections, all in one flexible system for real life.
@@ -433,20 +432,7 @@ async function signInWithPasskey() {
 }
 
 .auth-title {
-  display: inline-flex;
-  flex-direction: column;
-  align-items: flex-start;
-  font-size: clamp(3.6rem, 17vw, 7rem);
-}
-
-.auth-title__lead {
-  font-size: .83em;
-  line-height: 1;
-}
-
-.auth-title__programmable {
-  font-size: .52em;
-  line-height: 1;
+  font-size: clamp(1.65rem, 5vw, 3.5rem);
 }
 
 .auth-copy {

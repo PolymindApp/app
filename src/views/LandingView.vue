@@ -86,7 +86,7 @@ function scrollToFeatures() {
           <div class="hero-glow" aria-hidden="true" />
           <v-row class="hero-grid" align="center">
             <v-col cols="12" lg="5" order="2" order-lg="1" class="hero-copy">
-              <h1>Program your life. <span class="text-secondary">Precisely.</span></h1>
+              <h1>Build your way <span class="text-secondary">forward.</span></h1>
               <p class="mt-6">
                 BackOnTrack turns what matters to you into a system you can fine-tune, from daily actions and multi-step routines to precise timers, learning, tracking, and reflection.
               </p>
@@ -170,7 +170,7 @@ function scrollToFeatures() {
 
       <footer class="landing-footer px-6 px-lg-10">
         <img src="/brand/backontrack-wordmark.png" alt="BackOnTrack" />
-        <span>Make life programmable.</span>
+        <span>Build your way forward.</span>
       </footer>
     </v-main>
   </v-app>

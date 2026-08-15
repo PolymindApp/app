@@ -313,7 +313,7 @@ function releaseLeavingPage(element: Element) {
         <div class="brand-mark mb-3">
           <img src="/brand/backontrack-wordmark.png" alt="BackOnTrack" />
         </div>
-        <p class="text-caption text-medium-emphasis mt-2">Make life programmable.</p>
+        <p class="text-caption text-medium-emphasis mt-2">Build your way forward.</p>
       </div>
 
       <v-list nav class="px-3 mt-6">
