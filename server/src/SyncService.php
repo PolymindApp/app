@@ -119,6 +119,7 @@ final class SyncService
     private function applyOperation(array $operation, string $account, string $clientId): array
     {
         $operationId = $this->identifier($operation['operationId'] ?? null, 'operationId', 120);
+        $isHealthConnectDailyEntry = $this->isHealthConnectDailyEntryOperation($operation);
         $receipt = $this->database->pdo->prepare(
             'SELECT response FROM sync_operation_receipts
              WHERE account_id = :account AND client_id = :client AND operation_id = :operation',
@@ -142,6 +143,13 @@ final class SyncService
         try {
             $response = $this->mutate($operation, $account, $clientId);
             $response['operationId'] = $operationId;
+            if ($isHealthConnectDailyEntry) {
+                $resource = $response['resource'] ?? null;
+                $recordId = is_array($resource) && is_string($resource['id'] ?? null)
+                    ? (string) $resource['id']
+                    : (string) ($operation['recordId'] ?? '');
+                $this->compactHealthConnectDailyEntryHistory($account, $recordId);
+            }
             $pdo->exec('RELEASE SAVEPOINT sync_operation');
         } catch (ApiException $exception) {
             $pdo->exec('ROLLBACK TO SAVEPOINT sync_operation');
@@ -161,19 +169,57 @@ final class SyncService
             throw $exception;
         }
 
-        $insert = $pdo->prepare(
-            'INSERT INTO sync_operation_receipts (
-                account_id, client_id, operation_id, response, applied_at
-             ) VALUES (:account, :client, :operation, :response, :applied)',
-        );
-        $insert->execute([
-            'account' => $account,
-            'client' => $clientId,
-            'operation' => $operationId,
-            'response' => json_encode($response, JSON_THROW_ON_ERROR),
-            'applied' => $this->now(),
-        ]);
+        if (!$isHealthConnectDailyEntry) {
+            $insert = $pdo->prepare(
+                'INSERT INTO sync_operation_receipts (
+                    account_id, client_id, operation_id, response, applied_at
+                 ) VALUES (:account, :client, :operation, :response, :applied)',
+            );
+            $insert->execute([
+                'account' => $account,
+                'client' => $clientId,
+                'operation' => $operationId,
+                'response' => json_encode($response, JSON_THROW_ON_ERROR),
+                'applied' => $this->now(),
+            ]);
+        }
         return $response;
+    }
+
+    private function isHealthConnectDailyEntryOperation(array $operation): bool
+    {
+        if (($operation['resource'] ?? null) !== 'entries'
+            || !in_array($operation['kind'] ?? null, ['create', 'patch'], true)) {
+            return false;
+        }
+        $payload = $operation['payload'] ?? null;
+        return is_array($payload)
+            && is_string($payload['source_session'] ?? null)
+            && str_starts_with((string) $payload['source_session'], 'health-connect:');
+    }
+
+    private function compactHealthConnectDailyEntryHistory(string $account, string $recordId): void
+    {
+        if ($recordId === '') {
+            return;
+        }
+        $changes = $this->database->pdo->prepare(
+            "DELETE FROM sync_change_log
+             WHERE account_id = :account AND resource = 'entries' AND record_id = :record
+               AND sequence < (
+                   SELECT MAX(sequence) FROM sync_change_log
+                   WHERE account_id = :account AND resource = 'entries' AND record_id = :record
+               )",
+        );
+        $changes->execute(['account' => $account, 'record' => $recordId]);
+
+        $receipts = $this->database->pdo->prepare(
+            "DELETE FROM sync_operation_receipts
+             WHERE account_id = :account
+               AND json_extract(response, '$.resource.resource') = 'entries'
+               AND json_extract(response, '$.resource.id') = :record",
+        );
+        $receipts->execute(['account' => $account, 'record' => $recordId]);
     }
 
     private function mutate(array $operation, string $account, string $clientId): array
@@ -602,6 +648,25 @@ final class SyncService
                 'resource' => $this->readOwnedEnvelope($resource, $config, $recordId, $account),
             ];
         }
+        $healthConnectStatus = count($accepted) === count($values) ? 'applied' : 'merged';
+        $isHealthConnectDailyEntry = $resource === 'entries'
+            && is_string($normalizedCurrent['source_session'] ?? null)
+            && str_starts_with((string) $normalizedCurrent['source_session'], 'health-connect:');
+        if ($isHealthConnectDailyEntry) {
+            foreach ($accepted as $field => $value) {
+                if (array_key_exists($field, $normalizedCurrent)
+                    && $this->syncValuesMatch($normalizedCurrent[$field], $value)) {
+                    unset($accepted[$field]);
+                }
+            }
+            if ($accepted === []) {
+                $this->saveFieldClocks($account, $resource, $recordId, $mergedClocks);
+                return [
+                    'status' => $healthConnectStatus,
+                    'resource' => $this->readOwnedEnvelope($resource, $config, $recordId, $account),
+                ];
+            }
+        }
         if ($resource === 'journal_entries') {
             $accepted['updated_at'] = $this->now();
         }
@@ -652,9 +717,20 @@ final class SyncService
         }
         $this->saveFieldClocks($account, $resource, $recordId, $mergedClocks);
         return [
-            'status' => count($accepted) === count($values) ? 'applied' : 'merged',
+            'status' => $isHealthConnectDailyEntry
+                ? $healthConnectStatus
+                : (count($accepted) === count($values) ? 'applied' : 'merged'),
             'resource' => $this->readOwnedEnvelope($resource, $config, $recordId, $account),
         ];
+    }
+
+    private function syncValuesMatch(mixed $current, mixed $incoming): bool
+    {
+        if ((is_int($current) || is_float($current))
+            && (is_int($incoming) || is_float($incoming))) {
+            return (float) $current === (float) $incoming;
+        }
+        return $current === $incoming;
     }
 
     private function deleteOwnedRecord(string $resource, array $config, string $recordId, string $account): array

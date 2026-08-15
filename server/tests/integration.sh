@@ -692,6 +692,91 @@ task_note_suggestions_enabled="$(json_field entry_note_suggestions_enabled <<<"$
   exit 1
 }
 
+health_entry_id="health-entry-$suffix"
+health_source_session="health-connect:2026-07-29"
+health_create_body="$(php -r '
+  $payload = [
+      "task" => $argv[2], "occurrence" => "", "program_step" => "",
+      "entry_date" => "2026-07-29", "value" => 1200, "kind" => "quantity",
+      "unit" => "steps", "note" => "", "source_type" => "",
+      "source_session" => $argv[3],
+  ];
+  echo json_encode([
+      "clientId" => "integration-client", "cursor" => 0,
+      "operations" => [[
+          "operationId" => "health-create-" . $argv[1],
+          "resource" => "entries", "recordId" => $argv[1], "kind" => "create",
+          "payload" => $payload,
+          "fieldClocks" => array_fill_keys(
+              array_keys($payload),
+              "9999999999999-000010-integration-client",
+          ),
+          "dependsOn" => [],
+      ]],
+  ], JSON_THROW_ON_ERROR);
+' "$health_entry_id" "$task_id" "$health_source_session")"
+curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "$health_create_body" \
+  "$api_url/sync/exchange" >/dev/null
+
+health_patch_body() {
+  local operation_id="$1"
+  local value="$2"
+  local clock="$3"
+  php -r '
+    $payload = [
+        "occurrence" => "", "entry_date" => "2026-07-29", "value" => (int) $argv[3],
+        "kind" => "quantity", "unit" => "steps", "note" => "", "source_type" => "",
+        "source_session" => $argv[5],
+    ];
+    echo json_encode([
+        "clientId" => "integration-client", "cursor" => 0,
+        "operations" => [[
+            "operationId" => $argv[1], "resource" => "entries",
+            "recordId" => $argv[2], "kind" => "patch", "payload" => $payload,
+            "fieldClocks" => array_fill_keys(array_keys($payload), $argv[4]),
+            "dependsOn" => [],
+        ]],
+    ], JSON_THROW_ON_ERROR);
+  ' "$operation_id" "$health_entry_id" "$value" "$clock" "$health_source_session"
+}
+
+health_first_patch="$(health_patch_body \
+  "health-patch-first-$suffix" 4800 "9999999999999-000011-integration-client")"
+health_latest_patch="$(health_patch_body \
+  "health-patch-latest-$suffix" 8200 "9999999999999-000012-integration-client")"
+for health_patch in "$health_first_patch" "$health_latest_patch" "$health_latest_patch"; do
+  health_patch_response="$(curl --silent --show-error --fail \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $alice_token" \
+    --data "$health_patch" \
+    "$api_url/sync/exchange")"
+done
+health_patch_value="$(php -r '
+  $response = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+  echo $response["acknowledgements"][0]["resource"]["data"]["value"] ?? "";
+' <<<"$health_patch_response")"
+health_entry_state="$(sqlite3 "$test_db" "
+  SELECT (SELECT COUNT(*) FROM entries WHERE id = '$health_entry_id') || ':'
+      || (SELECT CAST(value AS INTEGER) FROM entries WHERE id = '$health_entry_id') || ':'
+      || (SELECT revision FROM sync_record_versions
+          WHERE account_id = '$alice_id' AND resource = 'entries' AND record_id = '$health_entry_id') || ':'
+      || (SELECT COUNT(*) FROM sync_change_log
+          WHERE account_id = '$alice_id' AND resource = 'entries' AND record_id = '$health_entry_id') || ':'
+      || (SELECT COUNT(*) FROM sync_operation_receipts
+          WHERE operation_id IN (
+              'health-create-$health_entry_id',
+              'health-patch-first-$suffix',
+              'health-patch-latest-$suffix'
+          ));
+")"
+[[ "$health_patch_value" == 8200 && "$health_entry_state" == "1:8200:3:1:0" ]] || {
+  echo "Health Connect sync retained intermediate daily values or history: $health_entry_state" >&2
+  exit 1
+}
+
 task_note_settings_response="$(curl --silent --show-error --fail \
   -X PATCH -H "Content-Type: application/json" \
   -H "Authorization: Bearer $alice_token" \

@@ -1162,6 +1162,37 @@ describe('step-counter task progress', () => {
     expect(store.makeProgress(stepTask, selectedDate).value).toBe(9484)
   })
 
+  it('does not persist an unchanged Health Connect daily aggregate again', async () => {
+    const store = useTaskStore()
+    const stepTask: Task = {
+      ...task,
+      id: 'step-task',
+      name: 'Daily steps',
+      type: 'step_counter',
+      targetValue: 8000,
+      targetOperator: 'gte',
+      unit: 'steps',
+    }
+    store.tasks = [stepTask]
+    store.occurrences = [{ ...completedOccurrence, id: 'step-occurrence', task: stepTask.id }]
+    store.entries = [{
+      ...entry('health-connect-entry', 9234),
+      task: stepTask.id,
+      occurrence: 'step-occurrence',
+      kind: 'quantity',
+      unit: 'steps',
+      note: '',
+      sourceSession: 'health-connect:2026-07-29',
+    }]
+    healthMocks.readHealthConnectSteps.mockResolvedValue(9234)
+
+    await store.refreshStepCount(selectedDate)
+
+    expect(apiMocks.updateEntry).not.toHaveBeenCalled()
+    expect(apiMocks.createEntry).not.toHaveBeenCalled()
+    expect(store.makeProgress(stepTask, selectedDate).value).toBe(9234)
+  })
+
   it('keeps the last persisted total when Health Connect cannot refresh', async () => {
     const store = useTaskStore()
     const stepTask: Task = {

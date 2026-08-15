@@ -458,6 +458,18 @@ export const useTaskStore = defineStore('tasks', () => {
           source_type: '',
           source_session: healthConnectEntrySession(entryDate),
         }
+        const unchanged = existing
+          && existing.occurrence === payload.occurrence
+          && existing.value === payload.value
+          && existing.kind === payload.kind
+          && existing.unit === payload.unit
+          && (existing.note || '') === payload.note
+          && !existing.sourceType
+          && existing.sourceSession === payload.source_session
+        if (unchanged) {
+          await syncEntryProgress(makeProgress(task, date))
+          continue
+        }
         const record = existing
           ? await api.collection('entries').update(existing.id, payload)
           : await api.collection('entries').create({
