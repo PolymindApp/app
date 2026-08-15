@@ -85,7 +85,7 @@ interface FlashcardBulkActionResponse {
   deleted_ids: string[]
 }
 
-const AUTH_STORAGE_KEY = 'polymind-api-auth'
+const AUTH_STORAGE_KEY = 'backontrack-api-auth'
 const baseUrl = (import.meta.env.VITE_API_URL || '/api').replace(/\/+$/, '')
 
 export function apiAssetUrl(value: string) {

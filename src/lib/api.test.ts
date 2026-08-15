@@ -14,7 +14,7 @@ const jsonResponse = (body: unknown, status = 200) =>
     headers: { 'Content-Type': 'application/json' },
   })
 
-describe('Polymind API client adapter', () => {
+describe('BackOnTrack API client adapter', () => {
   beforeEach(() => {
     localStorage.clear()
     vi.resetModules()
@@ -49,7 +49,7 @@ describe('Polymind API client adapter', () => {
       method: 'POST',
       body: JSON.stringify({ email: 'person@example.com', password: 'password123' }),
     }))
-    expect(localStorage.getItem('polymind-api-auth')).toContain(token)
+    expect(localStorage.getItem('backontrack-api-auth')).toContain(token)
   })
 
   it('runs the email confirmation and password recovery requests', async () => {
@@ -102,7 +102,7 @@ describe('Polymind API client adapter', () => {
       }),
     }))
     expect(api.authStore.record).toBeNull()
-    expect(localStorage.getItem('polymind-api-auth')).toBeNull()
+    expect(localStorage.getItem('backontrack-api-auth')).toBeNull()
   })
 
   it('completes a passkey login and persists the returned session', async () => {
@@ -137,12 +137,12 @@ describe('Polymind API client adapter', () => {
       }),
     }))
     expect(api.authStore.isValid).toBe(true)
-    expect(localStorage.getItem('polymind-api-auth')).toContain(token)
+    expect(localStorage.getItem('backontrack-api-auth')).toContain(token)
   })
 
   it('gets the authenticated user passkey registration status', async () => {
     const token = futureToken()
-    localStorage.setItem('polymind-api-auth', JSON.stringify({
+    localStorage.setItem('backontrack-api-auth', JSON.stringify({
       token,
       record: { id: 'user-1', email: 'person@example.com' },
     }))
@@ -160,7 +160,7 @@ describe('Polymind API client adapter', () => {
 
   it('disconnects the authenticated user biometric credentials', async () => {
     const token = futureToken()
-    localStorage.setItem('polymind-api-auth', JSON.stringify({
+    localStorage.setItem('backontrack-api-auth', JSON.stringify({
       token,
       record: { id: 'user-1', email: 'person@example.com' },
     }))
@@ -185,7 +185,7 @@ describe('Polymind API client adapter', () => {
 
   it('updates the account name and refreshes the persisted auth record', async () => {
     const token = futureToken()
-    localStorage.setItem('polymind-api-auth', JSON.stringify({
+    localStorage.setItem('backontrack-api-auth', JSON.stringify({
       token,
       record: { id: 'user-1', email: 'person@example.com', name: 'Person' },
     }))
@@ -205,13 +205,13 @@ describe('Polymind API client adapter', () => {
       body: JSON.stringify({ name: 'Updated Person' }),
     }))
     expect(api.authStore.record?.name).toBe('Updated Person')
-    expect(JSON.parse(localStorage.getItem('polymind-api-auth') || '{}').record.name)
+    expect(JSON.parse(localStorage.getItem('backontrack-api-auth') || '{}').record.name)
       .toBe('Updated Person')
   })
 
   it('updates user settings and refreshes the persisted auth record', async () => {
     const token = futureToken()
-    localStorage.setItem('polymind-api-auth', JSON.stringify({
+    localStorage.setItem('backontrack-api-auth', JSON.stringify({
       token,
       record: { id: 'user-1', email: 'person@example.com', settings: {} },
     }))
@@ -239,13 +239,13 @@ describe('Polymind API client adapter', () => {
       body: JSON.stringify({ quickInterval }),
     }))
     expect(api.authStore.record?.settings).toEqual({ quickInterval })
-    expect(JSON.parse(localStorage.getItem('polymind-api-auth') || '{}').record.settings)
+    expect(JSON.parse(localStorage.getItem('backontrack-api-auth') || '{}').record.settings)
       .toEqual({ quickInterval })
   })
 
   it('paginates getFullList calls and sends the bearer token', async () => {
     const token = futureToken()
-    localStorage.setItem('polymind-api-auth', JSON.stringify({
+    localStorage.setItem('backontrack-api-auth', JSON.stringify({
       token,
       record: { id: 'user-1', email: 'person@example.com' },
     }))
@@ -277,7 +277,7 @@ describe('Polymind API client adapter', () => {
 
   it('leaves interval flashcard snapshot generation to the server for remote creates', async () => {
     const token = futureToken()
-    localStorage.setItem('polymind-api-auth', JSON.stringify({
+    localStorage.setItem('backontrack-api-auth', JSON.stringify({
       token,
       record: { id: 'user-1', email: 'person@example.com' },
     }))
@@ -296,7 +296,7 @@ describe('Polymind API client adapter', () => {
 
   it('persists excluded cards with Review set preferences', async () => {
     const token = futureToken()
-    localStorage.setItem('polymind-api-auth', JSON.stringify({
+    localStorage.setItem('backontrack-api-auth', JSON.stringify({
       token,
       record: { id: 'review-preference-user', email: 'person@example.com' },
     }))
@@ -331,7 +331,7 @@ describe('Polymind API client adapter', () => {
 
   it('expires the remote token but preserves the cached offline account after an unauthorized response', async () => {
     const token = futureToken()
-    localStorage.setItem('polymind-api-auth', JSON.stringify({
+    localStorage.setItem('backontrack-api-auth', JSON.stringify({
       token,
       record: { id: 'user-1', email: 'person@example.com' },
     }))
@@ -343,7 +343,7 @@ describe('Polymind API client adapter', () => {
     const { ApiError, api } = await import('./api')
     await expect(api.collection('tasks').getList()).rejects.toBeInstanceOf(ApiError)
     expect(api.authStore.isValid).toBe(false)
-    expect(JSON.parse(localStorage.getItem('polymind-api-auth') || '{}')).toEqual({
+    expect(JSON.parse(localStorage.getItem('backontrack-api-auth') || '{}')).toEqual({
       token: '',
       record: { id: 'user-1', email: 'person@example.com', avatar: '' },
     })

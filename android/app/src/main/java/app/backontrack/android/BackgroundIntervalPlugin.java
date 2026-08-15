@@ -1,4 +1,4 @@
-package app.polymind.android;
+package app.backontrack.android;
 
 import android.Manifest;
 import android.content.Intent;

@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-use Polymind\Api\Api;
-use Polymind\Api\ApiException;
-use Polymind\Api\Config;
-use Polymind\Api\Database;
+use BackOnTrack\Api\Api;
+use BackOnTrack\Api\ApiException;
+use BackOnTrack\Api\Config;
+use BackOnTrack\Api\Database;
 
 require dirname(__DIR__) . '/src/ApiException.php';
 
@@ -39,7 +39,7 @@ try {
     }
     echo json_encode($body, JSON_UNESCAPED_SLASHES);
 } catch (Throwable $exception) {
-    error_log('[polymind-api/bootstrap] ' . $exception->getMessage());
+    error_log('[backontrack-api/bootstrap] ' . $exception->getMessage());
     header('Content-Type: application/json; charset=utf-8');
     header('Cache-Control: no-store');
     http_response_code(500);

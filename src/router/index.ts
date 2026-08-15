@@ -12,7 +12,7 @@ const router = createRouter({
       path: '/',
       name: 'landing',
       component: () => import('@/views/LandingView.vue'),
-      meta: { webOnly: true, title: 'Polymind — Make life programmable.' },
+      meta: { webOnly: true, title: 'BackOnTrack — Make life programmable.' },
     },
     { path: '/auth', name: 'auth', component: () => import('@/views/AuthView.vue'), meta: { guest: true } },
     { path: '/forgot-password', name: 'forgot-password', component: () => import('@/views/AuthView.vue'), meta: { guest: true, title: 'Forgot password' } },

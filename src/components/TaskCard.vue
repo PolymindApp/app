@@ -6,7 +6,7 @@ import { taskCanLogAmounts } from '@/services/taskCardActions'
 import { TASK_TYPE_PRESENTATION } from '@/services/taskTypes'
 import type { TaskProgress, TrackingTaskTracker } from '@/types/domain'
 
-const TASK_CARD_EXPANSION_STORAGE_PREFIX = 'polymind-task-card-expanded'
+const TASK_CARD_EXPANSION_STORAGE_PREFIX = 'backontrack-task-card-expanded'
 const MIN_STEP_SYNC_INDICATOR_MS = 1000
 
 function expansionStorageKey(progress: TaskProgress) {

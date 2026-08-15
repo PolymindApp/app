@@ -1,4 +1,4 @@
-package app.polymind.android
+package app.backontrack.android
 
 import android.content.Intent
 import androidx.activity.result.ActivityResult
@@ -116,7 +116,7 @@ class HealthConnectPlugin : Plugin() {
                 val granted = client.permissionController.getGrantedPermissions()
                 if (!granted.contains(readStepsPermission)) {
                     call.reject(
-                        "Allow Polymind to read steps in Health Connect.",
+                        "Allow BackOnTrack to read steps in Health Connect.",
                         "HEALTH_CONNECT_PERMISSION_REQUIRED",
                     )
                     return@launch
@@ -132,7 +132,7 @@ class HealthConnectPlugin : Plugin() {
                 call.resolve(JSObject().put("steps", steps))
             } catch (exception: SecurityException) {
                 call.reject(
-                    "Allow Polymind to read steps in Health Connect.",
+                    "Allow BackOnTrack to read steps in Health Connect.",
                     "HEALTH_CONNECT_PERMISSION_REQUIRED",
                     exception,
                 )
@@ -194,5 +194,5 @@ class HealthConnectPlugin : Plugin() {
 
     private fun healthErrorMessage(exception: Exception): String =
         exception.message?.takeIf { it.isNotBlank() }
-            ?: "Polymind could not communicate with Health Connect."
+            ?: "BackOnTrack could not communicate with Health Connect."
 }

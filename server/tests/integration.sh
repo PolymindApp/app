@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-source_db="${POLYMIND_TEST_SOURCE_DB:-private/data.db}"
-test_port="${POLYMIND_TEST_PORT:-$((18100 + RANDOM % 800))}"
+source_db="${BACKONTRACK_TEST_SOURCE_DB:-private/data.db}"
+test_port="${BACKONTRACK_TEST_PORT:-$((18100 + RANDOM % 800))}"
 smtp_port="$((test_port + 3000))"
-test_secret="polymind-api-integration-secret-at-least-32-characters"
+test_secret="backontrack-api-integration-secret-at-least-32-characters"
 test_root="${TMPDIR:-/tmp}"
-test_dir="$(mktemp -d "$test_root/polymind-api-test.XXXXXX")"
+test_dir="$(mktemp -d "$test_root/backontrack-api-test.XXXXXX")"
 test_db="$test_dir/data.db"
 test_log="$test_dir/server.log"
 smtp_log="$test_dir/smtp.log"
@@ -28,7 +28,7 @@ cleanup() {
     sed -n '1,240p' "$test_log" >&2
   fi
   case "$test_dir" in
-    "$test_root"/polymind-api-test.*) rm -rf -- "$test_dir" ;;
+    "$test_root"/backontrack-api-test.*) rm -rf -- "$test_dir" ;;
   esac
 }
 trap cleanup EXIT
@@ -62,20 +62,20 @@ for _attempt in {1..50}; do
   sleep .1
 done
 
-POLYMIND_DB_PATH="$test_db" \
-POLYMIND_API_SECRET="$test_secret" \
-POLYMIND_ALLOWED_ORIGINS="http://localhost:5183" \
-POLYMIND_APP_URL="http://127.0.0.1:$test_port" \
-POLYMIND_MAIL_HOST="127.0.0.1" \
-POLYMIND_MAIL_PORT="$smtp_port" \
-POLYMIND_MAIL_USERNAME="" \
-POLYMIND_MAIL_PASSWORD="" \
-POLYMIND_MAIL_ENCRYPTION="none" \
-POLYMIND_MAIL_FROM_ADDRESS="polymind@example.test" \
-POLYMIND_MAIL_FROM_NAME="Polymind" \
-POLYMIND_PASSKEY_RP_ID="polymind.example.test" \
-POLYMIND_PASSKEY_ANDROID_PACKAGE="app.polymind.android" \
-POLYMIND_PASSKEY_ANDROID_KEY_HASHES="q9nLBq6siknwb9S8EaFfsZ-C1d5y_mHhbfaYSRnGE0k" \
+BACKONTRACK_DB_PATH="$test_db" \
+BACKONTRACK_API_SECRET="$test_secret" \
+BACKONTRACK_ALLOWED_ORIGINS="http://localhost:5183" \
+BACKONTRACK_APP_URL="http://127.0.0.1:$test_port" \
+BACKONTRACK_MAIL_HOST="127.0.0.1" \
+BACKONTRACK_MAIL_PORT="$smtp_port" \
+BACKONTRACK_MAIL_USERNAME="" \
+BACKONTRACK_MAIL_PASSWORD="" \
+BACKONTRACK_MAIL_ENCRYPTION="none" \
+BACKONTRACK_MAIL_FROM_ADDRESS="backontrack@example.test" \
+BACKONTRACK_MAIL_FROM_NAME="BackOnTrack" \
+BACKONTRACK_PASSKEY_RP_ID="backontrack.example.test" \
+BACKONTRACK_PASSKEY_ANDROID_PACKAGE="app.backontrack.android" \
+BACKONTRACK_PASSKEY_ANDROID_KEY_HASHES="q9nLBq6siknwb9S8EaFfsZ-C1d5y_mHhbfaYSRnGE0k" \
   php -S "127.0.0.1:$test_port" -t server/public server/router.php >"$test_log" 2>&1 &
 server_pid=$!
 
@@ -92,8 +92,8 @@ api_url="http://127.0.0.1:$test_port"
 suffix="$(php -r 'echo bin2hex(random_bytes(5));')"
 password="correct-horse-battery"
 
-migration_count="$(sqlite3 "$test_db" 'SELECT COUNT(*) FROM polymind_schema_migrations;')"
-[[ "$migration_count" == 40 ]] || {
+migration_count="$(sqlite3 "$test_db" 'SELECT COUNT(*) FROM backontrack_schema_migrations;')"
+[[ "$migration_count" == 41 ]] || {
   echo "The API did not apply the complete database migration sequence." >&2
   exit 1
 }
@@ -175,15 +175,16 @@ alice_verification_token="$(mail_token verify-email)"
   echo "Registration did not send an email confirmation link." >&2
   exit 1
 }
-grep -q 'bgcolor=3D' "$smtp_mailbox" \
-  && grep -q 'background-color:#C7F464' "$smtp_mailbox" \
-  && grep -q 'border:12px solid #C7F464' "$smtp_mailbox" \
-  && grep -q 'color:#191c19' "$smtp_mailbox" || {
-  echo "The account email did not use the Polymind action button colors." >&2
+decoded_mailbox="$(php -r 'echo quoted_printable_decode(file_get_contents($argv[1]));' "$smtp_mailbox")"
+grep -q 'bgcolor="#C7F464"' <<<"$decoded_mailbox" \
+  && grep -q 'background-color:#C7F464' <<<"$decoded_mailbox" \
+  && grep -q 'border:12px solid #C7F464' <<<"$decoded_mailbox" \
+  && grep -q 'color:#191c19' <<<"$decoded_mailbox" || {
+  echo "The account email did not use the BackOnTrack action button colors." >&2
   exit 1
 }
 raw_verification_tokens="$(sqlite3 "$test_db" \
-  "SELECT COUNT(*) FROM polymind_auth_tokens WHERE token_hash = '$alice_verification_token';")"
+  "SELECT COUNT(*) FROM backontrack_auth_tokens WHERE token_hash = '$alice_verification_token';")"
 [[ "$raw_verification_tokens" == 0 ]] || {
   echo "The raw email verification token was stored in the database." >&2
   exit 1
@@ -214,7 +215,7 @@ reset_token="$(mail_token reset-password)"
   exit 1
 }
 raw_reset_tokens="$(sqlite3 "$test_db" \
-  "SELECT COUNT(*) FROM polymind_auth_tokens WHERE token_hash = '$reset_token';")"
+  "SELECT COUNT(*) FROM backontrack_auth_tokens WHERE token_hash = '$reset_token';")"
 [[ "$raw_reset_tokens" == 0 ]] || {
   echo "The raw password reset token was stored in the database." >&2
   exit 1
@@ -585,7 +586,7 @@ passkey_ceremony="$(json_field ceremonyId <<<"$passkey_options")"
 passkey_request_json="$(json_field requestJson <<<"$passkey_options")"
 php -r '
   $request = json_decode($argv[1], true, 512, JSON_THROW_ON_ERROR);
-  if (($request["rp"]["id"] ?? null) !== "polymind.example.test"
+  if (($request["rp"]["id"] ?? null) !== "backontrack.example.test"
       || ($request["authenticatorSelection"]["residentKey"] ?? null) !== "required"
       || ($request["authenticatorSelection"]["userVerification"] ?? null) !== "required") {
       fwrite(STDERR, "Passkey registration options are invalid.\n");
@@ -594,7 +595,7 @@ php -r '
 ' "$passkey_request_json"
 
 stored_challenge_count="$(sqlite3 "$test_db" \
-  "SELECT COUNT(*) FROM polymind_passkey_challenges WHERE id = '$passkey_ceremony' AND purpose = 'register';")"
+  "SELECT COUNT(*) FROM backontrack_passkey_challenges WHERE id = '$passkey_ceremony' AND purpose = 'register';")"
 [[ "$stored_challenge_count" == 1 ]] || {
   echo "The passkey registration challenge was not stored." >&2
   exit 1
@@ -609,7 +610,7 @@ fake_client_data="$(php -r '
     "type" => "webauthn.create",
     "challenge" => $argv[1],
     "origin" => "android:apk-key-hash:q9nLBq6siknwb9S8EaFfsZ-C1d5y_mHhbfaYSRnGE0k",
-    "androidPackageName" => "app.polymind.android",
+    "androidPackageName" => "app.backontrack.android",
     "crossOrigin" => false,
   ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
   echo rtrim(strtr(base64_encode($data), "+/", "-_"), "=");
@@ -624,14 +625,14 @@ invalid_passkey_status="$(curl --silent --output /dev/null --write-out '%{http_c
   exit 1
 }
 consumed_challenge_count="$(sqlite3 "$test_db" \
-  "SELECT COUNT(*) FROM polymind_passkey_challenges WHERE id = '$passkey_ceremony';")"
+  "SELECT COUNT(*) FROM backontrack_passkey_challenges WHERE id = '$passkey_ceremony';")"
 [[ "$consumed_challenge_count" == 0 ]] || {
   echo "A used passkey challenge was not consumed." >&2
   exit 1
 }
 
 sqlite3 "$test_db" "
-  INSERT INTO polymind_passkeys (
+  INSERT INTO backontrack_passkeys (
     credential_id, user_id, user_handle, public_key, signature_counter,
     transports, backup_eligible, backed_up, created, last_used
   ) VALUES (
@@ -665,9 +666,9 @@ disconnected_removed="$(json_field removed <<<"$disconnect_response")"
   exit 1
 }
 remaining_passkeys="$(sqlite3 "$test_db" \
-  "SELECT COUNT(*) FROM polymind_passkeys WHERE user_id = '$alice_id';")"
+  "SELECT COUNT(*) FROM backontrack_passkeys WHERE user_id = '$alice_id';")"
 remaining_registration_challenges="$(sqlite3 "$test_db" \
-  "SELECT COUNT(*) FROM polymind_passkey_challenges WHERE id = '$pending_passkey_ceremony';")"
+  "SELECT COUNT(*) FROM backontrack_passkey_challenges WHERE id = '$pending_passkey_ceremony';")"
 [[ "$remaining_passkeys" == 0 && "$remaining_registration_challenges" == 0 ]] || {
   echo "Disconnecting biometrics did not revoke all account credentials and pending setup requests." >&2
   exit 1

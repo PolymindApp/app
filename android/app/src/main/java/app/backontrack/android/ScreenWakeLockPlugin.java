@@ -1,4 +1,4 @@
-package app.polymind.android;
+package app.backontrack.android;
 
 import android.app.Activity;
 import android.view.WindowManager;

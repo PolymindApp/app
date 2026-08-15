@@ -1,4 +1,4 @@
-package app.polymind.android;
+package app.backontrack.android;
 
 import android.app.Notification;
 import android.app.NotificationChannel;
@@ -34,8 +34,8 @@ import java.util.Locale;
 
 public class BackgroundIntervalService extends Service {
 
-    public static final String ACTION_START = "app.polymind.android.interval.START";
-    public static final String ACTION_STOP = "app.polymind.android.interval.STOP";
+    public static final String ACTION_START = "app.backontrack.android.interval.START";
+    public static final String ACTION_STOP = "app.backontrack.android.interval.STOP";
     public static final String EXTRA_SESSION_ID = "sessionId";
     public static final String EXTRA_SESSION_NAME = "sessionName";
     public static final String EXTRA_STEPS = "steps";
@@ -46,7 +46,7 @@ public class BackgroundIntervalService extends Service {
     public static final String EXTRA_VIBRATION_ENABLED = "vibrationEnabled";
     public static final String EXTRA_FLASHCARD_REVIEW = "flashcardReview";
 
-    private static final String CHANNEL_ID = "polymind_interval_timer";
+    private static final String CHANNEL_ID = "backontrack_interval_timer";
     private static final int NOTIFICATION_ID = 4107;
     private static final long TICK_MS = 250L;
     static final long REVIEW_EDGE_PAUSE_MS = 4_000L;
@@ -494,7 +494,7 @@ public class BackgroundIntervalService extends Service {
             availability == TextToSpeech.LANG_MISSING_DATA
             || availability == TextToSpeech.LANG_NOT_SUPPORTED
         ) return;
-        String utteranceId = "polymind-background-interval-flashcard-" + System.nanoTime();
+        String utteranceId = "backontrack-background-interval-flashcard-" + System.nanoTime();
         int result = volumeBoost.speak(
             speech,
             text,
@@ -618,7 +618,7 @@ public class BackgroundIntervalService extends Service {
         launchIntent.setAction(Intent.ACTION_VIEW);
         launchIntent.setData(
             new Uri.Builder()
-                .scheme("polymind")
+                .scheme("backontrack")
                 .authority("interval")
                 .appendQueryParameter(EXTRA_SESSION_ID, sessionId)
                 .build()
@@ -665,7 +665,7 @@ public class BackgroundIntervalService extends Service {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
         NotificationChannel channel = new NotificationChannel(
             CHANNEL_ID,
-            "Polymind intervals",
+            "BackOnTrack intervals",
             NotificationManager.IMPORTANCE_LOW
         );
         channel.setDescription("Keeps interval sessions and cue sounds running in the background.");
@@ -676,7 +676,7 @@ public class BackgroundIntervalService extends Service {
     private void acquireWakeLock() {
         releaseWakeLock();
         PowerManager manager = (PowerManager) getSystemService(POWER_SERVICE);
-        wakeLock = manager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "polymind:interval-timer");
+        wakeLock = manager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "backontrack:interval-timer");
         wakeLock.acquire();
     }
 

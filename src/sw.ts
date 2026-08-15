@@ -7,8 +7,8 @@ declare const self: ServiceWorkerGlobalScope & {
   __WB_MANIFEST: Array<{ url: string; revision?: string }>
 }
 
-const CACHE_NAME = 'polymind-shell-v7'
-const MEDIA_CACHE_NAME = 'polymind-media-v1'
+const CACHE_NAME = 'backontrack-shell-v7'
+const MEDIA_CACHE_NAME = 'backontrack-media-v1'
 const precacheUrls = self.__WB_MANIFEST.map(entry => new URL(entry.url, self.location.origin).pathname)
 
 self.addEventListener('install', event => {
@@ -70,11 +70,11 @@ async function staleWhileRevalidate(request: Request, cacheName: string) {
 
 self.addEventListener('sync', (event: Event) => {
   const syncEvent = event as Event & { tag?: string; waitUntil(promise: Promise<unknown>): void }
-  if (syncEvent.tag === 'polymind-sync') syncEvent.waitUntil(runBackgroundSync())
+  if (syncEvent.tag === 'backontrack-sync') syncEvent.waitUntil(runBackgroundSync())
 })
 
 async function runBackgroundSync() {
-  const database = new Dexie('polymind-offline')
+  const database = new Dexie('backontrack-offline')
   database.version(1).stores({
     outbox: '&operationId,[accountId+status],accountId,status,sequence,nextAttemptAt,[accountId+resource+recordId]',
     metadata: '&accountId,clientId',

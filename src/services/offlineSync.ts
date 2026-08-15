@@ -36,7 +36,7 @@ import {
 } from '@/services/syncPolling'
 
 const baseUrl = (import.meta.env.VITE_API_URL || '/api').replace(/\/+$/, '')
-const STATUS_EVENT = 'polymind-sync-status-changed'
+const STATUS_EVENT = 'backontrack-sync-status-changed'
 const MUTATION_SYNC_DELAY_MS = 50
 const MAX_SYNC_REQUEST_BYTES = 2_400_000
 
@@ -240,7 +240,7 @@ export async function clearBackgroundSyncStage() {
 
 export async function clearOfflineMediaCache() {
   if (!('caches' in window)) return
-  await caches.delete('polymind-media-v1')
+  await caches.delete('backontrack-media-v1')
 }
 
 async function performSync() {
@@ -349,7 +349,7 @@ async function warmMediaCache(resources: SyncBootstrapResponse['resources']) {
       add(card?.backAudio)
     })
   }
-  const cache = await caches.open('polymind-media-v1')
+  const cache = await caches.open('backontrack-media-v1')
   await Promise.allSettled([...urls].map(async url => {
     const request = new Request(url, { mode: new URL(url, location.href).origin === location.origin ? 'same-origin' : 'no-cors' })
     if (await cache.match(request)) return
@@ -477,7 +477,7 @@ async function registerWebBackgroundSync() {
     const registration = await navigator.serviceWorker.ready
     await (registration as ServiceWorkerRegistration & {
       sync?: { register(tag: string): Promise<void> }
-    }).sync?.register('polymind-sync')
+    }).sync?.register('backontrack-sync')
   } catch {
     // Unsupported browsers retry on the next focus, online event, or app open.
   }

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Polymind\Api;
+namespace BackOnTrack\Api;
 
 use PHPMailer\PHPMailer\PHPMailer;
 use Throwable;
@@ -20,7 +20,7 @@ final class Mailer
             $email,
             'Confirm your email',
             'Confirm your email',
-            'Confirm ' . $email . ' to finish creating your Polymind account.',
+            'Confirm ' . $email . ' to finish creating your BackOnTrack account.',
             'Confirm email',
             $url,
             'This link expires in 24 hours.',
@@ -34,7 +34,7 @@ final class Mailer
             $email,
             'Reset your password',
             'Reset your password',
-            'Use this link to choose a new password for your Polymind account.',
+            'Use this link to choose a new password for your BackOnTrack account.',
             'Reset password',
             $url,
             'This link expires in 1 hour. Ignore this email if you did not request it.',
@@ -83,7 +83,7 @@ final class Mailer
             $mail->AltBody = implode("\n\n", [$heading, $message, $action . ': ' . $url, $footer]);
             $mail->send();
         } catch (Throwable $exception) {
-            error_log('[polymind-api/mail] ' . $exception->getMessage());
+            error_log('[backontrack-api/mail] ' . $exception->getMessage());
             throw new ApiException(
                 503,
                 'We could not send the email. Please try again.',
@@ -109,7 +109,7 @@ final class Mailer
         return '<!doctype html><html lang="en"><body style="margin:0;padding:32px;'
             . 'font-family:Arial,sans-serif;color:#191c19;background:#ffffff">'
             . '<main style="max-width:520px;margin:0 auto">'
-            . '<p style="margin:0 0 24px;font-size:14px;font-weight:700">Polymind</p>'
+            . '<p style="margin:0 0 24px;font-size:14px;font-weight:700">BackOnTrack</p>'
             . '<h1 style="margin:0 0 16px;font-size:24px;line-height:1.2">'
             . $escape($heading) . '</h1>'
             . '<p style="margin:0 0 24px;font-size:16px;line-height:1.5">'

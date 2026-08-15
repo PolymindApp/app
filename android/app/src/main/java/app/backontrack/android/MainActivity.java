@@ -1,4 +1,4 @@
-package app.polymind.android;
+package app.backontrack.android;
 
 import android.content.res.Configuration;
 import android.graphics.Color;

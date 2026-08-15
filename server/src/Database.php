@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Polymind\Api;
+namespace BackOnTrack\Api;
 
 use PDO;
 use PDOException;
@@ -97,20 +97,20 @@ final class Database
                 'timezone_offset', 'task', 'tracker', 'task_snapshot',
                 'tracker_snapshot', 'image_url', 'image_file', 'created_at', 'updated_at',
             ],
-            'polymind_rate_limits' => ['rate_key', 'window_start', 'hits'],
-            'polymind_auth_tokens' => [
+            'backontrack_rate_limits' => ['rate_key', 'window_start', 'hits'],
+            'backontrack_auth_tokens' => [
                 'token_hash', 'user_id', 'purpose', 'expires_at', 'created_at',
             ],
-            'polymind_passkey_challenges' => [
+            'backontrack_passkey_challenges' => [
                 'id', 'purpose', 'user_id', 'user_handle', 'challenge',
                 'expires_at', 'created_at',
             ],
-            'polymind_passkeys' => [
+            'backontrack_passkeys' => [
                 'credential_id', 'user_id', 'user_handle', 'public_key',
                 'signature_counter', 'transports', 'backup_eligible', 'backed_up',
                 'created', 'last_used',
             ],
-            'polymind_schema_migrations' => ['version', 'name', 'checksum', 'applied_at'],
+            'backontrack_schema_migrations' => ['version', 'name', 'checksum', 'applied_at'],
         ];
         $tableNames = array_keys($required);
         $placeholders = implode(',', array_fill(0, count($tableNames), '?'));
@@ -121,7 +121,7 @@ final class Database
         $found = $statement->fetchAll(PDO::FETCH_COLUMN);
         $missing = array_values(array_diff($tableNames, $found));
         if ($missing !== []) {
-            throw new ApiException(500, 'The SQLite database does not have the expected Polymind schema.');
+            throw new ApiException(500, 'The SQLite database does not have the expected BackOnTrack schema.');
         }
 
         foreach ($required as $table => $columns) {
@@ -130,7 +130,7 @@ final class Database
             if (array_diff($columns, $foundColumns) !== []) {
                 throw new ApiException(
                     500,
-                    "The SQLite {$table} table does not have the expected Polymind schema.",
+                    "The SQLite {$table} table does not have the expected BackOnTrack schema.",
                 );
             }
         }

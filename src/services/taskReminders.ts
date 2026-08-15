@@ -10,8 +10,8 @@ import { isTaskScheduled, toDateKey } from '@/services/schedule'
 import type { Task } from '@/types/domain'
 
 const CHANNEL_ID = 'task-reminders'
-const TASK_EXTRA_KIND = 'polymind-task-reminder'
-const LEGACY_TRACKING_EXTRA_KIND = 'polymind-tracking-reminder'
+const TASK_EXTRA_KIND = 'backontrack-task-reminder'
+const LEGACY_TRACKING_EXTRA_KIND = 'backontrack-tracking-reminder'
 const TASK_REMINDER_LOOKAHEAD_DAYS = 30
 const MAX_SCHEDULED_TASK_REMINDERS = 400
 
@@ -101,7 +101,7 @@ export async function checkTaskReminderCapabilities(): Promise<TaskReminderCapab
   if (nativeStatus.doNotDisturbActive && !nativeStatus.bypassesDoNotDisturb) {
     issues.push({
       code: 'do_not_disturb',
-      message: 'Do Not Disturb is silencing task reminders. Allow Polymind under Apps.',
+      message: 'Do Not Disturb is silencing task reminders. Allow BackOnTrack under Apps.',
       action: 'Allow during Do Not Disturb',
     })
   }

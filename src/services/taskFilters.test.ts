@@ -42,7 +42,7 @@ describe('task filters', () => {
 
   it('ignores unknown filters left in session storage', () => {
     sessionStorage.setItem(
-      'polymind-task-filter-selection',
+      'backontrack-task-filter-selection',
       JSON.stringify(['completed', 'retired']),
     )
 

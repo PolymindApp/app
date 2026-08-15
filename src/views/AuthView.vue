@@ -186,7 +186,7 @@ async function signInWithPasskey() {
       <v-container class="auth-wrap px-5">
         <section class="auth-intro">
           <div class="logo-box">
-            <img src="/brand/polymind-wordmark.png" alt="Polymind" />
+            <img src="/brand/backontrack-wordmark.png" alt="BackOnTrack" />
           </div>
           <h1 class="display-title auth-title mt-3">
             <span class="auth-title__lead">MAKE LIFE</span>
@@ -213,7 +213,7 @@ async function signInWithPasskey() {
               :color="mode === 'register' ? 'secondary' : undefined"
               @click="mode = 'register'"
             >
-              Join Polymind
+              Join BackOnTrack
             </v-btn>
           </div>
 

@@ -39,7 +39,7 @@ const reviewSet = (
   tags: [],
   tagDetails: [],
   owner: 'user-1',
-  ownerName: 'Polymind User',
+  ownerName: 'BackOnTrack User',
   ownerAvatar: '',
   accessRole: 'owner',
   matchingCardCount: 12,

@@ -436,13 +436,13 @@ CREATE INDEX idx_journal_entries_task_date
 CREATE INDEX idx_journal_entries_tracker_date
     ON journal_entries (tracker, local_date, occurred_at DESC);
 
-CREATE TABLE polymind_rate_limits (
+CREATE TABLE backontrack_rate_limits (
     rate_key TEXT PRIMARY KEY NOT NULL,
     window_start INTEGER NOT NULL,
     hits INTEGER NOT NULL
 );
 
-CREATE TABLE polymind_auth_tokens (
+CREATE TABLE backontrack_auth_tokens (
     token_hash TEXT PRIMARY KEY NOT NULL,
     user_id TEXT NOT NULL,
     purpose TEXT NOT NULL CHECK (purpose IN ('email_verification', 'password_reset')),
@@ -452,10 +452,10 @@ CREATE TABLE polymind_auth_tokens (
     UNIQUE (user_id, purpose)
 );
 
-CREATE INDEX idx_polymind_auth_tokens_expiry
-    ON polymind_auth_tokens (expires_at);
+CREATE INDEX idx_backontrack_auth_tokens_expiry
+    ON backontrack_auth_tokens (expires_at);
 
-CREATE TABLE polymind_passkey_challenges (
+CREATE TABLE backontrack_passkey_challenges (
     id TEXT PRIMARY KEY NOT NULL,
     purpose TEXT NOT NULL CHECK (purpose IN ('register', 'login')),
     user_id TEXT,
@@ -465,10 +465,10 @@ CREATE TABLE polymind_passkey_challenges (
     created_at INTEGER NOT NULL
 );
 
-CREATE INDEX idx_polymind_passkey_challenges_expiry
-    ON polymind_passkey_challenges (expires_at);
+CREATE INDEX idx_backontrack_passkey_challenges_expiry
+    ON backontrack_passkey_challenges (expires_at);
 
-CREATE TABLE polymind_passkeys (
+CREATE TABLE backontrack_passkeys (
     credential_id TEXT PRIMARY KEY NOT NULL,
     user_id TEXT NOT NULL,
     user_handle TEXT NOT NULL,
@@ -482,7 +482,7 @@ CREATE TABLE polymind_passkeys (
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
-CREATE INDEX idx_polymind_passkeys_user ON polymind_passkeys (user_id);
+CREATE INDEX idx_backontrack_passkeys_user ON backontrack_passkeys (user_id);
 
 CREATE TABLE sync_record_versions (
     account_id TEXT NOT NULL,
@@ -526,7 +526,7 @@ CREATE TABLE sync_clients (
     PRIMARY KEY (account_id, client_id)
 );
 
-CREATE TABLE polymind_schema_migrations (
+CREATE TABLE backontrack_schema_migrations (
     version TEXT PRIMARY KEY NOT NULL,
     name TEXT NOT NULL,
     checksum TEXT NOT NULL,

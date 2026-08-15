@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-use Polymind\Api\ApiException;
-use Polymind\Api\Config;
-use Polymind\Api\Database;
+use BackOnTrack\Api\ApiException;
+use BackOnTrack\Api\Config;
+use BackOnTrack\Api\Database;
 
 require __DIR__ . '/src/ApiException.php';
 require __DIR__ . '/src/Config.php';
@@ -32,7 +32,7 @@ try {
     $config = Config::load(__DIR__);
 
     if (!$isCli) {
-        $providedKey = $_SERVER['HTTP_X_POLYMIND_MIGRATION_KEY'] ?? '';
+        $providedKey = $_SERVER['HTTP_X_BACKONTRACK_MIGRATION_KEY'] ?? '';
         if (
             !is_string($providedKey)
             || strlen($config->migrationKey) < 32
@@ -48,7 +48,7 @@ try {
 
     $database = new Database($config->databasePath);
     $versions = $database->pdo
-        ->query('SELECT version FROM polymind_schema_migrations ORDER BY version')
+        ->query('SELECT version FROM backontrack_schema_migrations ORDER BY version')
         ->fetchAll(PDO::FETCH_COLUMN);
     $appliedMigrations = $database->migrationsApplied;
     $currentVersion = $versions === [] ? null : (string) end($versions);
@@ -86,14 +86,14 @@ try {
     );
 } catch (ApiException $exception) {
     if (!$isCli) {
-        error_log('[polymind-migration] ' . $exception->getMessage());
+        error_log('[backontrack-migration] ' . $exception->getMessage());
         respondToMigrationRequest(500, ['message' => 'Migration failed.']);
     }
     fwrite(STDERR, 'Migration failed: ' . $exception->getMessage() . PHP_EOL);
     exit(1);
 } catch (Throwable $exception) {
     if (!$isCli) {
-        error_log('[polymind-migration] ' . $exception->getMessage());
+        error_log('[backontrack-migration] ' . $exception->getMessage());
         respondToMigrationRequest(500, ['message' => 'Migration failed unexpectedly.']);
     }
     fwrite(STDERR, 'Migration failed unexpectedly: ' . $exception->getMessage() . PHP_EOL);

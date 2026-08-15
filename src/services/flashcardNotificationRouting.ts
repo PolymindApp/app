@@ -12,7 +12,7 @@ interface AppUrlSource {
 export function flashcardSessionIdFromNotificationUrl(url: string) {
   try {
     const parsed = new URL(url)
-    if (parsed.protocol !== 'polymind:' || parsed.hostname !== 'flashcards') return undefined
+    if (parsed.protocol !== 'backontrack:' || parsed.hostname !== 'flashcards') return undefined
     const sessionId = parsed.searchParams.get('sessionId')?.trim()
     if (!sessionId || sessionId.length > 255 || /[\u0000-\u001f]/.test(sessionId)) return undefined
     return sessionId

@@ -1,4 +1,4 @@
 interface:
-  display_name: "Polymind UI Direction"
-  short_description: "Design interfaces in the established Polymind style"
-  default_prompt: "Use $local to design this interface in the established Polymind visual language."
+  display_name: "BackOnTrack UI Direction"
+  short_description: "Design interfaces in the established BackOnTrack style"
+  default_prompt: "Use $local to design this interface in the established BackOnTrack visual language."

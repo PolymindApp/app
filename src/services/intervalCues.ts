@@ -236,9 +236,9 @@ export async function notifyIntervalTransition(title: string, body: string) {
   if (!('Notification' in window) || Notification.permission !== 'granted' || document.visibilityState === 'visible') return
   const options = {
     body,
-    icon: '/brand/polymind-mark.png',
-    badge: '/brand/polymind-mark.png',
-    tag: 'polymind-interval',
+    icon: '/brand/backontrack-mark.png',
+    badge: '/brand/backontrack-mark.png',
+    tag: 'backontrack-interval',
     renotify: true,
   }
   const registration = await navigator.serviceWorker?.getRegistration()

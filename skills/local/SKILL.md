@@ -1,9 +1,9 @@
 ---
 name: default
-description: Preserve and extend the Polymind application's established UI direction. Use when designing, implementing, reviewing, or refining Vue and Vuetify views, components, navigation, cards, forms, dialogs, bottom sheets, transitions, responsive layouts, Android interactions, or other user-facing interface work in this repository.
+description: Preserve and extend the BackOnTrack application's established UI direction. Use when designing, implementing, reviewing, or refining Vue and Vuetify views, components, navigation, cards, forms, dialogs, bottom sheets, transitions, responsive layouts, Android interactions, or other user-facing interface work in this repository.
 ---
 
-# Polymind UI Direction
+# BackOnTrack UI Direction
 
 ## After each tasks
 

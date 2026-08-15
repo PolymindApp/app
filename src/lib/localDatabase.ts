@@ -8,9 +8,9 @@ import type {
 } from '@/types/sync'
 import { healthConnectEntrySession } from '@/services/healthConnectEntries'
 
-const CLIENT_ID_KEY = 'polymind-sync-client-id'
-const SYNC_DATA_CHANGED_EVENT = 'polymind-sync-data-changed'
-const SYNC_OUTBOX_CHANGED_EVENT = 'polymind-sync-outbox-changed'
+const CLIENT_ID_KEY = 'backontrack-sync-client-id'
+const SYNC_DATA_CHANGED_EVENT = 'backontrack-sync-data-changed'
+const SYNC_OUTBOX_CHANGED_EVENT = 'backontrack-sync-outbox-changed'
 
 interface LocalMediaBlob {
   id: string
@@ -28,7 +28,7 @@ interface LocalAlias {
   remoteId: string
 }
 
-class PolymindLocalDatabase extends Dexie {
+class BackOnTrackLocalDatabase extends Dexie {
   resources!: EntityTable<LocalSyncResource, 'key'>
   outbox!: EntityTable<SyncOperation, 'operationId'>
   metadata!: EntityTable<SyncMetadata, 'accountId'>
@@ -37,7 +37,7 @@ class PolymindLocalDatabase extends Dexie {
   aliases!: EntityTable<LocalAlias, 'key'>
 
   constructor() {
-    super('polymind-offline')
+    super('backontrack-offline')
     this.version(1).stores({
       resources: '&key,[accountId+resource],accountId,resource,id',
       outbox: '&operationId,[accountId+status],accountId,status,sequence,nextAttemptAt,[accountId+resource+recordId]',
@@ -49,7 +49,7 @@ class PolymindLocalDatabase extends Dexie {
   }
 }
 
-export const localDatabase = new PolymindLocalDatabase()
+export const localDatabase = new BackOnTrackLocalDatabase()
 
 let logicalCounter = 0
 let operationCounter = 0

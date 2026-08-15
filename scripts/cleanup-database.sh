@@ -3,14 +3,14 @@
 set -euo pipefail
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-database_path="${POLYMIND_DB_PATH:-private/data.db}"
+database_path="${BACKONTRACK_DB_PATH:-private/data.db}"
 backup_path=""
 apply_cleanup=false
 assume_yes=false
 
 usage() {
   cat <<'EOF'
-Inspect or clean Polymind's SQLite sync bookkeeping.
+Inspect or clean BackOnTrack's SQLite sync bookkeeping.
 
 Usage:
   pnpm db:cleanup
@@ -18,7 +18,7 @@ Usage:
   pnpm db:cleanup -- --apply --yes
 
 Options:
-  --database PATH  SQLite database to inspect (default: POLYMIND_DB_PATH or private/data.db).
+  --database PATH  SQLite database to inspect (default: BACKONTRACK_DB_PATH or private/data.db).
   --backup PATH    Backup destination used with --apply (default: DATABASE.backup-UTC_TIMESTAMP).
   --apply          Delete operation receipts, compact the change log, and vacuum the database.
   --yes            Skip the interactive confirmation. Intended for controlled automation.
@@ -82,7 +82,7 @@ schema_tables="$(sqlite3 -readonly "$database_path" \
   "SELECT COUNT(*) FROM sqlite_schema
    WHERE type = 'table'
      AND name IN ('sync_operation_receipts', 'sync_change_log', 'sync_clients');")"
-[[ "$schema_tables" == "3" ]] || fail "database does not contain the expected Polymind sync schema."
+[[ "$schema_tables" == "3" ]] || fail "database does not contain the expected BackOnTrack sync schema."
 
 integrity="$(sqlite3 -readonly "$database_path" 'PRAGMA quick_check;')"
 [[ "$integrity" == "ok" ]] || fail "database integrity check failed before cleanup: $integrity"

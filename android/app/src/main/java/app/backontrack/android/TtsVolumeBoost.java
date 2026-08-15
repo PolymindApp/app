@@ -1,4 +1,4 @@
-package app.polymind.android;
+package app.backontrack.android;
 
 import android.content.Context;
 import android.media.AudioAttributes;
@@ -42,7 +42,7 @@ final class TtsVolumeBoost {
         clearPlayback();
 
         try {
-            synthesizedAudio = File.createTempFile("polymind-tts-", ".wav", context.getCacheDir());
+            synthesizedAudio = File.createTempFile("backontrack-tts-", ".wav", context.getCacheDir());
         } catch (IOException error) {
             return TextToSpeech.ERROR;
         }

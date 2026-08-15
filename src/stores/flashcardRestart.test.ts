@@ -18,7 +18,7 @@ vi.mock('@/lib/api', () => ({
   },
   apiAssetUrl: (value: string) => value,
   api: {
-    authStore: { record: { id: 'user-1', name: 'Polymind User', avatar: '' } },
+    authStore: { record: { id: 'user-1', name: 'BackOnTrack User', avatar: '' } },
     collection: (name: string) => {
       if (name === 'flashcard_review_sessions') return { update: mocks.updateSession }
       if (name === 'flashcard_review_events') {
@@ -86,7 +86,7 @@ describe('flashcard Review set restart', () => {
       tags: ['tag-1'],
       tagDetails: [],
       owner: 'user-1',
-      ownerName: 'Polymind User',
+      ownerName: 'BackOnTrack User',
       ownerAvatar: '',
       accessRole: 'owner',
       matchingCardCount: 2,
@@ -173,7 +173,7 @@ describe('flashcard Review set restart', () => {
     const store = useFlashcardStore()
     store.reviewSets = [{
       id: 'set-1', name: 'Vocabulary', tags: [], tagDetails: [], owner: 'user-1',
-      ownerName: 'Polymind User', ownerAvatar: '', accessRole: 'owner', matchingCardCount: 2,
+      ownerName: 'BackOnTrack User', ownerAvatar: '', accessRole: 'owner', matchingCardCount: 2,
       mode: 'manual', cardSides: 'both', indefinite: false, maxCards: 2,
       frontSeconds: 5, backSeconds: 5, backSpeechRepeatCount: 1, noteBeforeBack: false,
       speechEnabled: false, frontLanguage: '', backLanguage: '', sortMode: 'recently_added',

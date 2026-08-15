@@ -175,7 +175,7 @@ async function main() {
     return
   }
 
-  const workspace = await mkdtemp(join(tmpdir(), 'polymind-normalize-mp3-'))
+  const workspace = await mkdtemp(join(tmpdir(), 'backontrack-normalize-mp3-'))
   const normalizedFiles = []
   try {
     for (const [index, input] of files.entries()) {

@@ -7,7 +7,7 @@ interface BackgroundSyncStagePlugin {
 }
 
 const NativeBackgroundSyncStage = registerPlugin<BackgroundSyncStagePlugin>('BackgroundSyncStage')
-const RUNNER_LABEL = 'app.polymind.sync'
+const RUNNER_LABEL = 'app.backontrack.sync'
 let lastStagedValue: string | undefined
 
 function usesAndroidStageBridge() {

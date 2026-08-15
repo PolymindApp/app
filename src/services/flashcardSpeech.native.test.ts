@@ -71,7 +71,7 @@ describe('native flashcard speech', () => {
       'Synthesized fallback',
       'en-CA',
       '',
-      'https://polymind.app/server/flashcard-audio/missing.webm',
+      'https://backontrack.app/server/flashcard-audio/missing.webm',
     )
 
     expect(nativeSpeech.speak).toHaveBeenCalledWith({

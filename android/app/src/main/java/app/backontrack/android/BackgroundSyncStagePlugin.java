@@ -1,4 +1,4 @@
-package app.polymind.android;
+package app.backontrack.android;
 
 import android.content.Context;
 import android.content.SharedPreferences;
@@ -11,8 +11,8 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 @CapacitorPlugin(name = "BackgroundSyncStage")
 public class BackgroundSyncStagePlugin extends Plugin {
 
-    private static final String PREFERENCES_NAME = "app.polymind.sync";
-    private static final String STAGED_SYNC_KEY = "polymind.background-sync";
+    private static final String PREFERENCES_NAME = "app.backontrack.sync";
+    private static final String STAGED_SYNC_KEY = "backontrack.background-sync";
 
     @PluginMethod
     public void set(PluginCall call) {

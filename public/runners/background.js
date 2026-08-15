@@ -1,4 +1,4 @@
-const STAGED_SYNC_KEY = 'polymind.background-sync'
+const STAGED_SYNC_KEY = 'backontrack.background-sync'
 
 addEventListener('stageSync', (resolve, reject, args) => {
   try {

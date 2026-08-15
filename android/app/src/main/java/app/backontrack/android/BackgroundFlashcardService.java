@@ -1,4 +1,4 @@
-package app.polymind.android;
+package app.backontrack.android;
 
 import android.app.Notification;
 import android.app.NotificationChannel;
@@ -33,12 +33,12 @@ import java.util.Locale;
 
 public class BackgroundFlashcardService extends Service {
 
-    public static final String ACTION_START = "app.polymind.android.flashcards.START";
-    public static final String PREFERENCES = "polymind_flashcard_speech";
+    public static final String ACTION_START = "app.backontrack.android.flashcards.START";
+    public static final String PREFERENCES = "backontrack_flashcard_speech";
     public static final String KEY_CONFIG = "background_config";
     public static final String KEY_STATE = "background_state";
 
-    private static final String CHANNEL_ID = "polymind_flashcard_review";
+    private static final String CHANNEL_ID = "backontrack_flashcard_review";
     private static final int NOTIFICATION_ID = 4207;
     private static final long TICK_MS = 200L;
     private static volatile BackgroundFlashcardService activeInstance;
@@ -310,7 +310,7 @@ public class BackgroundFlashcardService extends Service {
             availability == TextToSpeech.LANG_MISSING_DATA
             || availability == TextToSpeech.LANG_NOT_SUPPORTED
         ) return;
-        String utteranceId = "polymind-background-flashcard-" + System.nanoTime();
+        String utteranceId = "backontrack-background-flashcard-" + System.nanoTime();
         int result = volumeBoost.speak(
             speech,
             text,
@@ -410,7 +410,7 @@ public class BackgroundFlashcardService extends Service {
         launchIntent.setAction(Intent.ACTION_VIEW);
         launchIntent.setData(
             new Uri.Builder()
-                .scheme("polymind")
+                .scheme("backontrack")
                 .authority("flashcards")
                 .appendQueryParameter("sessionId", sessionId)
                 .build()
@@ -452,7 +452,7 @@ public class BackgroundFlashcardService extends Service {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
         NotificationChannel channel = new NotificationChannel(
             CHANNEL_ID,
-            "Polymind flashcard reviews",
+            "BackOnTrack flashcard reviews",
             NotificationManager.IMPORTANCE_LOW
         );
         channel.setDescription("Keeps passive flashcard speech and timing active in the background.");
@@ -465,7 +465,7 @@ public class BackgroundFlashcardService extends Service {
         PowerManager manager = (PowerManager) getSystemService(POWER_SERVICE);
         wakeLock = manager.newWakeLock(
             PowerManager.PARTIAL_WAKE_LOCK,
-            "polymind:flashcard-review"
+            "backontrack:flashcard-review"
         );
         wakeLock.acquire();
     }

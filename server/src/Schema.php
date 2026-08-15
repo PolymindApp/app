@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Polymind\Api;
+namespace BackOnTrack\Api;
 
 final class Schema
 {

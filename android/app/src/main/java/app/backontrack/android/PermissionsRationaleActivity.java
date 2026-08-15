@@ -1,4 +1,4 @@
-package app.polymind.android;
+package app.backontrack.android;
 
 import android.graphics.Color;
 import android.os.Bundle;
@@ -30,9 +30,9 @@ public class PermissionsRationaleActivity extends AppCompatActivity {
 
         TextView body = new TextView(this);
         body.setText(
-            "Polymind reads aggregated step totals from Health Connect only after you grant permission. "
+            "BackOnTrack reads aggregated step totals from Health Connect only after you grant permission. "
                 + "Those totals are used to calculate progress for your step-counter tasks. "
-                + "Polymind does not write step data to Health Connect. You can revoke access at any time "
+                + "BackOnTrack does not write step data to Health Connect. You can revoke access at any time "
                 + "from Health Connect settings."
         );
         body.setTextColor(Color.rgb(190, 196, 190));

@@ -179,7 +179,7 @@ const reviewSet: FlashcardReviewSet = {
   tags: [],
   tagDetails: [],
   owner: 'user-1',
-  ownerName: 'Polymind User',
+  ownerName: 'BackOnTrack User',
   ownerAvatar: '',
   accessRole: 'owner',
   matchingCardCount: 1,
@@ -560,7 +560,7 @@ describe('FlashcardReviewRunnerView Review set preview', () => {
       speechEnabled: true,
       backLanguage: 'fr-CA',
     }
-    localStorage.setItem(`polymind-flashcard-passive:${active.id}`, JSON.stringify({
+    localStorage.setItem(`backontrack-flashcard-passive:${active.id}`, JSON.stringify({
       cardId: 'card-1',
       side: 'back',
       remainingMs: 15_000,

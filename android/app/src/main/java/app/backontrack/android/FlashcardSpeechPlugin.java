@@ -1,4 +1,4 @@
-package app.polymind.android;
+package app.backontrack.android;
 
 import android.Manifest;
 import android.content.Context;
@@ -163,7 +163,7 @@ public class FlashcardSpeechPlugin extends Plugin {
         }
         overAmplificationEnabled = Boolean.TRUE.equals(call.getBoolean("overAmplified", false));
         backgroundIntervalSpeechKey = "";
-        String utteranceId = "polymind-flashcard-" + System.nanoTime();
+        String utteranceId = "backontrack-flashcard-" + System.nanoTime();
         int result = volumeBoost.speak(
             speech,
             text,

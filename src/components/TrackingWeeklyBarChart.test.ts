@@ -160,7 +160,7 @@ describe('TrackingWeeklyBarChart', () => {
 
   it('restores inactive legends and remembers subsequent changes', async () => {
     localStorage.setItem(
-      'polymind-tracking-chart-inactive-trackers',
+      'backontrack-tracking-chart-inactive-trackers',
       JSON.stringify(['meditation']),
     )
     const wrapper = mount(TrackingWeeklyBarChart, {
@@ -183,7 +183,7 @@ describe('TrackingWeeklyBarChart', () => {
 
     await legendItems[1]!.trigger('click')
 
-    expect(JSON.parse(localStorage.getItem('polymind-tracking-chart-inactive-trackers') || '[]'))
+    expect(JSON.parse(localStorage.getItem('backontrack-tracking-chart-inactive-trackers') || '[]'))
       .toEqual(['meditation', 'mood'])
   })
 

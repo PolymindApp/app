@@ -383,7 +383,7 @@ function initializeLocalState(value: FlashcardReviewSession) {
 }
 
 function passiveStorageKey(id: string) {
-  return `polymind-flashcard-passive:${id}`
+  return `backontrack-flashcard-passive:${id}`
 }
 
 function restorePassiveState(value: FlashcardReviewSession) {
@@ -780,7 +780,7 @@ async function syncNativeBackground() {
   nativeBackgroundReady.value = started
   backgroundSpeechWarning.value = started
     ? ''
-    : 'Speech will pause if Polymind is sent to the background on this device.'
+    : 'Speech will pause if BackOnTrack is sent to the background on this device.'
   return started
 }
 

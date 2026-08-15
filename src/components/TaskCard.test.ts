@@ -231,7 +231,7 @@ describe('TaskCard amount actions', () => {
     const wrapper = mount(TaskCard, {
       props: {
         progress: stepProgress,
-        stepCountError: 'Open Polymind on a supported Android device to load steps from Health Connect.',
+        stepCountError: 'Open BackOnTrack on a supported Android device to load steps from Health Connect.',
       },
       global: {
         stubs: {
@@ -258,7 +258,7 @@ describe('TaskCard amount actions', () => {
       & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     await healthConnectButton.trigger('click')
     expect(wrapper.emitted('syncSteps')).toEqual([[stepProgress]])
-    expect(sourceMessage.text()).toContain('Open Polymind on a supported Android device')
+    expect(sourceMessage.text()).toContain('Open BackOnTrack on a supported Android device')
     expect(wrapper.find('.step-source').exists()).toBe(false)
   })
 

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Polymind\Api;
+namespace BackOnTrack\Api;
 
 use DateTimeImmutable;
 use DateTimeZone;
@@ -477,7 +477,7 @@ final class Api
             $this->respond($body, $exception->status);
         } catch (Throwable $exception) {
             error_log(sprintf(
-                '[polymind-api] %s in %s:%d',
+                '[backontrack-api] %s in %s:%d',
                 $exception->getMessage(),
                 $exception->getFile(),
                 $exception->getLine(),
@@ -799,7 +799,7 @@ final class Api
                 'updated' => $this->now(),
                 'id' => $authToken['user_id'],
             ]);
-            $statement = $pdo->prepare('DELETE FROM polymind_auth_tokens WHERE user_id = :user_id');
+            $statement = $pdo->prepare('DELETE FROM backontrack_auth_tokens WHERE user_id = :user_id');
             $statement->execute(['user_id' => $authToken['user_id']]);
             $pdo->exec('COMMIT');
             $transactionOpen = false;
@@ -1764,7 +1764,7 @@ final class Api
         $webAuthn = $this->passkeyWebAuthn();
 
         $statement = $this->database->pdo->prepare(
-            'SELECT user_handle FROM polymind_passkeys WHERE user_id = :user_id LIMIT 1',
+            'SELECT user_handle FROM backontrack_passkeys WHERE user_id = :user_id LIMIT 1',
         );
         $statement->execute(['user_id' => $user['id']]);
         $encodedUserHandle = $statement->fetchColumn();
@@ -1773,7 +1773,7 @@ final class Api
             : random_bytes(32);
 
         $statement = $this->database->pdo->prepare(
-            'SELECT credential_id FROM polymind_passkeys WHERE user_id = :user_id',
+            'SELECT credential_id FROM backontrack_passkeys WHERE user_id = :user_id',
         );
         $statement->execute(['user_id' => $user['id']]);
         $excludeCredentialIds = array_map(
@@ -1863,7 +1863,7 @@ final class Api
         $now = $this->now();
         try {
             $statement = $this->database->pdo->prepare(
-                'INSERT INTO polymind_passkeys (
+                'INSERT INTO backontrack_passkeys (
                     credential_id, user_id, user_handle, public_key, signature_counter,
                     transports, backup_eligible, backed_up, created, last_used
                 ) VALUES (
@@ -1904,7 +1904,7 @@ final class Api
         $this->passkeyWebAuthn();
 
         $statement = $this->database->pdo->prepare(
-            'SELECT 1 FROM polymind_passkeys WHERE user_id = :user_id LIMIT 1',
+            'SELECT 1 FROM backontrack_passkeys WHERE user_id = :user_id LIMIT 1',
         );
         $statement->execute(['user_id' => $user['id']]);
 
@@ -1922,13 +1922,13 @@ final class Api
 
         try {
             $statement = $pdo->prepare(
-                'DELETE FROM polymind_passkeys WHERE user_id = :user_id',
+                'DELETE FROM backontrack_passkeys WHERE user_id = :user_id',
             );
             $statement->execute(['user_id' => $user['id']]);
             $removed = $statement->rowCount();
 
             $statement = $pdo->prepare(
-                'DELETE FROM polymind_passkey_challenges
+                'DELETE FROM backontrack_passkey_challenges
                  WHERE user_id = :user_id AND purpose = \'register\'',
             );
             $statement->execute(['user_id' => $user['id']]);
@@ -2001,12 +2001,12 @@ final class Api
         $statement = $this->database->pdo->prepare(
             'SELECT
                 users.*,
-                polymind_passkeys.user_handle AS passkey_user_handle,
-                polymind_passkeys.public_key AS passkey_public_key,
-                polymind_passkeys.signature_counter AS passkey_signature_counter
-             FROM polymind_passkeys
-             INNER JOIN users ON users.id = polymind_passkeys.user_id
-             WHERE polymind_passkeys.credential_id = :credential_id
+                backontrack_passkeys.user_handle AS passkey_user_handle,
+                backontrack_passkeys.public_key AS passkey_public_key,
+                backontrack_passkeys.signature_counter AS passkey_signature_counter
+             FROM backontrack_passkeys
+             INNER JOIN users ON users.id = backontrack_passkeys.user_id
+             WHERE backontrack_passkeys.credential_id = :credential_id
              LIMIT 1',
         );
         $statement->execute(['credential_id' => $credentialId]);
@@ -2046,7 +2046,7 @@ final class Api
         }
 
         $statement = $this->database->pdo->prepare(
-            'UPDATE polymind_passkeys
+            'UPDATE backontrack_passkeys
              SET signature_counter = :signature_counter, last_used = :last_used
              WHERE credential_id = :credential_id',
         );
@@ -2075,7 +2075,7 @@ final class Api
             throw new ApiException(503, 'Biometric sign-in is not configured.');
         }
 
-        $webAuthn = new WebAuthn('Polymind', $this->config->passkeyRpId, ['none'], true);
+        $webAuthn = new WebAuthn('BackOnTrack', $this->config->passkeyRpId, ['none'], true);
         $webAuthn->addAndroidKeyHashes($this->config->passkeyAndroidKeyHashes);
         return $webAuthn;
     }
@@ -2088,12 +2088,12 @@ final class Api
     ): string {
         $now = time();
         $this->database->pdo->prepare(
-            'DELETE FROM polymind_passkey_challenges WHERE expires_at < :now',
+            'DELETE FROM backontrack_passkey_challenges WHERE expires_at < :now',
         )->execute(['now' => $now]);
 
         $id = $this->base64UrlEncode(random_bytes(24));
         $statement = $this->database->pdo->prepare(
-            'INSERT INTO polymind_passkey_challenges (
+            'INSERT INTO backontrack_passkey_challenges (
                 id, purpose, user_id, user_handle, challenge, expires_at, created_at
              ) VALUES (
                 :id, :purpose, :user_id, :user_handle, :challenge, :expires_at, :created_at
@@ -2125,7 +2125,7 @@ final class Api
         try {
             $statement = $pdo->prepare(
                 'SELECT challenge, user_id, user_handle, expires_at
-                 FROM polymind_passkey_challenges
+                 FROM backontrack_passkey_challenges
                  WHERE id = :id AND purpose = :purpose
                  LIMIT 1',
             );
@@ -2137,7 +2137,7 @@ final class Api
             }
 
             $delete = $pdo->prepare(
-                'DELETE FROM polymind_passkey_challenges WHERE id = :id AND purpose = :purpose',
+                'DELETE FROM backontrack_passkey_challenges WHERE id = :id AND purpose = :purpose',
             );
             $delete->execute(['id' => $id, 'purpose' => $purpose]);
             if ($delete->rowCount() !== 1) {
@@ -7186,10 +7186,10 @@ final class Api
         $token = bin2hex(random_bytes(32));
         $now = time();
         $this->database->pdo->prepare(
-            'DELETE FROM polymind_auth_tokens WHERE expires_at < :now',
+            'DELETE FROM backontrack_auth_tokens WHERE expires_at < :now',
         )->execute(['now' => $now]);
         $statement = $this->database->pdo->prepare(
-            'INSERT INTO polymind_auth_tokens (
+            'INSERT INTO backontrack_auth_tokens (
                 token_hash, user_id, purpose, expires_at, created_at
              ) VALUES (
                 :token_hash, :user_id, :purpose, :expires_at, :created_at
@@ -7220,7 +7220,7 @@ final class Api
     private function requireAuthToken(string $token, string $purpose): array
     {
         $statement = $this->database->pdo->prepare(
-            'SELECT user_id FROM polymind_auth_tokens
+            'SELECT user_id FROM backontrack_auth_tokens
              WHERE token_hash = :token_hash
                AND purpose = :purpose
                AND expires_at >= :now
@@ -7241,7 +7241,7 @@ final class Api
     private function deleteAuthToken(string $token, string $purpose): void
     {
         $statement = $this->database->pdo->prepare(
-            'DELETE FROM polymind_auth_tokens WHERE token_hash = :token_hash AND purpose = :purpose',
+            'DELETE FROM backontrack_auth_tokens WHERE token_hash = :token_hash AND purpose = :purpose',
         );
         $statement->execute([
             'token_hash' => $this->authTokenHash($token),
@@ -7289,7 +7289,7 @@ final class Api
         $cutoff = $now - $windowSeconds;
         $rateKey = hash_hmac('sha256', $key, $this->config->secret);
         $statement = $this->database->pdo->prepare(
-            'INSERT INTO polymind_rate_limits (rate_key, window_start, hits)
+            'INSERT INTO backontrack_rate_limits (rate_key, window_start, hits)
              VALUES (:rate_key, :now, 1)
              ON CONFLICT(rate_key) DO UPDATE SET
                 hits = CASE WHEN window_start <= :cutoff THEN 1 ELSE hits + 1 END,
@@ -7298,7 +7298,7 @@ final class Api
         $statement->execute(['rate_key' => $rateKey, 'now' => $now, 'cutoff' => $cutoff]);
 
         $statement = $this->database->pdo->prepare(
-            'SELECT window_start, hits FROM polymind_rate_limits WHERE rate_key = :rate_key',
+            'SELECT window_start, hits FROM backontrack_rate_limits WHERE rate_key = :rate_key',
         );
         $statement->execute(['rate_key' => $rateKey]);
         $limit = $statement->fetch();
@@ -7309,7 +7309,7 @@ final class Api
 
         if (random_int(1, 100) === 1) {
             $cleanup = $this->database->pdo->prepare(
-                'DELETE FROM polymind_rate_limits WHERE window_start < :expired',
+                'DELETE FROM backontrack_rate_limits WHERE window_start < :expired',
             );
             $cleanup->execute(['expired' => $now - 86400]);
         }

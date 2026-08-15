@@ -11,7 +11,7 @@ export interface TaskTimerState {
   updatedAt: string
 }
 
-const STORAGE_PREFIX = 'polymind-task-timer'
+const STORAGE_PREFIX = 'backontrack-task-timer'
 
 export function createTaskTimer(
   taskId: string,

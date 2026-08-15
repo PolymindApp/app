@@ -31,17 +31,17 @@ const screenshots = [
   {
     title: 'Tasks',
     src: '/images/tasks.jpeg',
-    alt: 'Polymind Tasks screen showing a weekly plan, completion progress, and programmable targets.',
+    alt: 'BackOnTrack Tasks screen showing a weekly plan, completion progress, and programmable targets.',
   },
   {
     title: 'Intervals',
     src: '/images/intervals.jpeg',
-    alt: 'Polymind Intervals screen running a programmed exercise sequence with timing and repetition progress.',
+    alt: 'BackOnTrack Intervals screen running a programmed exercise sequence with timing and repetition progress.',
   },
   {
     title: 'Tracking',
     src: '/images/tracking.jpeg',
-    alt: 'Polymind Tracking screen showing configurable wellbeing trackers and weekly patterns.',
+    alt: 'BackOnTrack Tracking screen showing configurable wellbeing trackers and weekly patterns.',
   },
 ]
 
@@ -61,14 +61,14 @@ function scrollToFeatures() {
   <v-app theme="forgeDark">
     <v-main class="landing-page app-scroll">
       <header class="landing-header px-6 px-lg-10">
-        <router-link to="/" class="landing-brand" aria-label="Polymind home">
-          <img src="/brand/polymind-wordmark.png" alt="Polymind" />
+        <router-link to="/" class="landing-brand" aria-label="BackOnTrack home">
+          <img src="/brand/backontrack-wordmark.png" alt="BackOnTrack" />
         </router-link>
         <div class="landing-header__actions">
           <v-btn
             variant="outlined"
             size="large"
-            href="https://github.com/PolymindApp/app/releases/latest"
+            href="https://github.com/BackOnTrackApp/app/releases/latest"
             target="_blank"
             rel="noopener noreferrer"
             prepend-icon="mdi-cellphone-arrow-down"
@@ -88,7 +88,7 @@ function scrollToFeatures() {
             <v-col cols="12" lg="5" order="2" order-lg="1" class="hero-copy">
               <h1>Program your life. <span class="text-secondary">Precisely.</span></h1>
               <p class="mt-6">
-                Polymind turns what matters to you into a system you can fine-tune, from daily actions and multi-step routines to precise timers, learning, tracking, and reflection.
+                BackOnTrack turns what matters to you into a system you can fine-tune, from daily actions and multi-step routines to precise timers, learning, tracking, and reflection.
               </p>
               <div class="hero-actions mt-8">
                 <v-btn color="secondary" size="x-large" to="/auth" append-icon="mdi-arrow-right">
@@ -107,7 +107,7 @@ function scrollToFeatures() {
             </v-col>
 
             <v-col cols="12" lg="7" order="1" order-lg="2">
-              <div class="phone-gallery" aria-label="Polymind mobile app screenshots">
+              <div class="phone-gallery" aria-label="BackOnTrack mobile app screenshots">
                 <div
                   v-for="(screenshot, index) in screenshots"
                   :key="screenshot.title"
@@ -169,7 +169,7 @@ function scrollToFeatures() {
       </main>
 
       <footer class="landing-footer px-6 px-lg-10">
-        <img src="/brand/polymind-wordmark.png" alt="Polymind" />
+        <img src="/brand/backontrack-wordmark.png" alt="BackOnTrack" />
         <span>Make life programmable.</span>
       </footer>
     </v-main>

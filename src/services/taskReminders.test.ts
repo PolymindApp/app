@@ -91,8 +91,8 @@ beforeEach(() => {
   })
   mocks.getPending.mockResolvedValue({
     notifications: [
-      { id: 1, extra: { kind: 'polymind-tracking-reminder' } },
-      { id: 2, extra: { kind: 'polymind-task-reminder' } },
+      { id: 1, extra: { kind: 'backontrack-tracking-reminder' } },
+      { id: 2, extra: { kind: 'backontrack-task-reminder' } },
       { id: 3, extra: { kind: 'another-feature' } },
     ],
   })
@@ -149,7 +149,7 @@ describe('task reminders', () => {
       body: task().name,
       schedule: { at: date.toISOString() },
       extra: {
-        kind: 'polymind-task-reminder',
+        kind: 'backontrack-task-reminder',
         taskId: task().id,
         scheduledDate,
         route: '/tasks',
@@ -187,7 +187,7 @@ describe('task reminders', () => {
           body: task().name,
           schedule: { at },
           extra: {
-            kind: 'polymind-task-reminder',
+            kind: 'backontrack-task-reminder',
             taskId: task().id,
             scheduledDate: '2026-08-10',
             route: '/tasks',
@@ -270,7 +270,7 @@ describe('task reminders', () => {
     })
 
     await installTaskNotificationRouting({ push } as never)
-    listener?.({ notification: { extra: { kind: 'polymind-task-reminder', route: '/tasks' } } })
+    listener?.({ notification: { extra: { kind: 'backontrack-task-reminder', route: '/tasks' } } })
     listener?.({ notification: { extra: { kind: 'another-feature', route: '/tasks' } } })
 
     expect(push).toHaveBeenCalledTimes(1)

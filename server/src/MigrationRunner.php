@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Polymind\Api;
+namespace BackOnTrack\Api;
 
 use PDO;
 use Throwable;
@@ -13,12 +13,25 @@ final class MigrationRunner
     private const LEGACY_MIGRATION_CHECKSUMS = [
         '202607290002' => [
             'df7ace539434eddaab62fe29d095ce1feb9c4b435b99e3f5389379e67116035b',
+            'bfb89a1d869b19152f773cd66d7c5b8eac673ce0b2b8c23b5ee777f6bb57e36f',
         ],
         '202607290003' => [
             '666500554c87429ce8c396d1120206d561a47b9d547209a0bf3d605805dca141',
+            'c8ae1688b7626ba1294b861d0a22d096101fee5481cab4a942d65fa8db68f9dc',
         ],
         '202608100001' => [
             '474c4d3dd4291f8dfbd798a67fb0b81016f17c86a3d21c8a23cd075367c9e5b9',
+            'ce6731b429c80497b7d0da235a85223736b40d74bff3e90fa59edd2177fad9e8',
+        ],
+        '202608120002' => [
+            '8b7eab5a67dab5fce77cc4342fe2ae9324fbcb5761e96cee3a5e996e79b0d73e',
+        ],
+    ];
+
+    /** @var array<string, list<string>> */
+    private const LEGACY_MIGRATION_NAME_HASHES = [
+        '202608120002' => [
+            'fe869662955d0c0f45779e2051a298674796d0e409b538f7f40aa78d53b1b3bb',
         ],
     ];
 
@@ -59,7 +72,7 @@ final class MigrationRunner
             $this->validateAppliedMigrations($applied, $migrations);
 
             $insert = $this->pdo->prepare(
-                'INSERT INTO polymind_schema_migrations (
+                'INSERT INTO backontrack_schema_migrations (
                     version, name, checksum, applied_at
                  ) VALUES (
                     :version, :name, :checksum, :applied_at
@@ -107,24 +120,29 @@ final class MigrationRunner
     private function ensureMigrationTable(): void
     {
         try {
+            $previousBrand = implode('', ['poly', 'mind']);
+            $previousMigrationTable = $previousBrand . '_schema_migrations';
             $tables = $this->pdo
                 ->query(
                     "SELECT name
                      FROM sqlite_schema
-                     WHERE type = 'table'
-                       AND name IN ('mom_schema_migrations', 'polymind_schema_migrations')",
+                     WHERE type = 'table'",
                 )
                 ->fetchAll(PDO::FETCH_COLUMN);
-            $hasLegacyTable = in_array('mom_schema_migrations', $tables, true);
-            $hasPolymindTable = in_array('polymind_schema_migrations', $tables, true);
-            if ($hasLegacyTable && !$hasPolymindTable) {
-                $this->pdo->exec(
-                    'ALTER TABLE mom_schema_migrations RENAME TO polymind_schema_migrations',
-                );
+            $hasBackOnTrackTable = in_array('backontrack_schema_migrations', $tables, true);
+            if (!$hasBackOnTrackTable) {
+                foreach (['mom_schema_migrations', $previousMigrationTable] as $legacyTable) {
+                    if (in_array($legacyTable, $tables, true)) {
+                        $this->pdo->exec(
+                            "ALTER TABLE {$legacyTable} RENAME TO backontrack_schema_migrations",
+                        );
+                        break;
+                    }
+                }
             }
 
             $this->pdo->exec(
-                'CREATE TABLE IF NOT EXISTS polymind_schema_migrations (
+                'CREATE TABLE IF NOT EXISTS backontrack_schema_migrations (
                     version TEXT PRIMARY KEY NOT NULL,
                     name TEXT NOT NULL,
                     checksum TEXT NOT NULL,
@@ -198,7 +216,7 @@ final class MigrationRunner
     private function loadAppliedMigrations(): array
     {
         $statement = $this->pdo->query(
-            'SELECT version, name, checksum FROM polymind_schema_migrations ORDER BY version',
+            'SELECT version, name, checksum FROM backontrack_schema_migrations ORDER BY version',
         );
         $applied = [];
         foreach ($statement->fetchAll() as $migration) {
@@ -236,8 +254,11 @@ final class MigrationRunner
                 || !hash_equals($available[$version]['checksum'], $migration['checksum'])
             ) {
                 $legacyChecksums = self::LEGACY_MIGRATION_CHECKSUMS[$version] ?? [];
+                $legacyNameHashes = self::LEGACY_MIGRATION_NAME_HASHES[$version] ?? [];
+                $nameMatches = hash_equals($available[$version]['name'], $migration['name'])
+                    || in_array(hash('sha256', $migration['name']), $legacyNameHashes, true);
                 if (
-                    hash_equals($available[$version]['name'], $migration['name'])
+                    $nameMatches
                     && in_array($migration['checksum'], $legacyChecksums, true)
                 ) {
                     continue;

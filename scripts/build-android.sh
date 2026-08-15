@@ -4,7 +4,7 @@ set -euo pipefail
 
 build_variant="${1:-debug}"
 signing_properties="private/android-signing.properties"
-release_keystore="private/polymind-release.jks"
+release_keystore="private/backontrack-release.jks"
 termux_aapt2="private/android-sdk/qemu/aapt2"
 
 if [[ -z "${JAVA_HOME:-}" || ! -x "$JAVA_HOME/bin/java" ]]; then

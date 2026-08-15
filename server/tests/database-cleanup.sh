@@ -3,13 +3,13 @@
 set -euo pipefail
 
 test_root="${TMPDIR:-/tmp}"
-test_dir="$(mktemp -d "$test_root/polymind-database-cleanup-test.XXXXXX")"
+test_dir="$(mktemp -d "$test_root/backontrack-database-cleanup-test.XXXXXX")"
 test_db="$test_dir/data.db"
 backup_db="$test_dir/data.backup.db"
 
 cleanup() {
   case "$test_dir" in
-    "$test_root"/polymind-database-cleanup-test.*) rm -rf -- "$test_dir" ;;
+    "$test_root"/backontrack-database-cleanup-test.*) rm -rf -- "$test_dir" ;;
   esac
 }
 trap cleanup EXIT

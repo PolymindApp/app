@@ -1,6 +1,6 @@
 import type { Task, TaskProgress } from '@/types/domain'
 
-const TASK_FILTER_SELECTION_STORAGE_KEY = 'polymind-task-filter-selection'
+const TASK_FILTER_SELECTION_STORAGE_KEY = 'backontrack-task-filter-selection'
 
 export const TASK_FILTER_ITEMS = [
   {

@@ -35,15 +35,15 @@ describe('flashcard speech helpers', () => {
 
     await expect(toggleFlashcardSpeechOverAmplification()).resolves.toBe(true)
     expect(flashcardSpeechOverAmplificationIsEnabled()).toBe(true)
-    expect(localStorage.getItem('polymind-flashcard-speech:over-amplification')).toBe('true')
+    expect(localStorage.getItem('backontrack-flashcard-speech:over-amplification')).toBe('true')
 
     await expect(toggleFlashcardSpeechOverAmplification()).resolves.toBe(false)
     expect(flashcardSpeechOverAmplificationIsEnabled()).toBe(false)
-    expect(localStorage.getItem('polymind-flashcard-speech:over-amplification')).toBe('false')
+    expect(localStorage.getItem('backontrack-flashcard-speech:over-amplification')).toBe('false')
   })
 
   it('restores over-amplification from device storage after reloading', async () => {
-    localStorage.setItem('polymind-flashcard-speech:over-amplification', 'true')
+    localStorage.setItem('backontrack-flashcard-speech:over-amplification', 'true')
     vi.resetModules()
 
     const reloadedSpeech = await import('@/services/flashcardSpeech')

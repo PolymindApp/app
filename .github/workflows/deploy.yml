@@ -135,15 +135,15 @@ jobs:
     steps:
       - name: Run server migrations
         env:
-          MIGRATION_URL: ${{ vars.MIGRATION_URL || 'https://polymind.app/server/migrate.php' }}
-          POLYMIND_MIGRATION_KEY: ${{ secrets.POLYMIND_MIGRATION_KEY }}
+          MIGRATION_URL: ${{ vars.MIGRATION_URL || 'https://backontrack.app/server/migrate.php' }}
+          BACKONTRACK_MIGRATION_KEY: ${{ secrets.BACKONTRACK_MIGRATION_KEY }}
         run: |
           if [[ "$MIGRATION_URL" != https://* ]]; then
             echo "MIGRATION_URL must use HTTPS." >&2
             exit 1
           fi
-          if (( ${#POLYMIND_MIGRATION_KEY} < 32 )); then
-            echo "POLYMIND_MIGRATION_KEY must contain at least 32 characters." >&2
+          if (( ${#BACKONTRACK_MIGRATION_KEY} < 32 )); then
+            echo "BACKONTRACK_MIGRATION_KEY must contain at least 32 characters." >&2
             exit 1
           fi
 
@@ -159,7 +159,7 @@ jobs:
               --proto '=https' \
               --request GET \
               --header "Accept: application/json" \
-              --header "X-Polymind-Migration-Key: $POLYMIND_MIGRATION_KEY" \
+              --header "X-BackOnTrack-Migration-Key: $BACKONTRACK_MIGRATION_KEY" \
               --output "$response_file" \
               --write-out '%{http_code}' \
               "$MIGRATION_URL"
@@ -223,7 +223,7 @@ jobs:
 
       - name: Prepare production environment
         env:
-          VITE_API_URL: ${{ vars.VITE_API_URL || 'https://polymind.app/server' }}
+          VITE_API_URL: ${{ vars.VITE_API_URL || 'https://backontrack.app/server' }}
         run: printf 'VITE_API_URL=%s\n' "$VITE_API_URL" > .env.prod
 
       - name: Restore Android signing files
@@ -239,14 +239,14 @@ jobs:
 
           mkdir -p private
           printf '%s' "$ANDROID_KEYSTORE_BASE64" \
-            | base64 --decode > private/polymind-release.jks
+            | base64 --decode > private/backontrack-release.jks
           printf '%s' "$ANDROID_SIGNING_PROPERTIES_BASE64" \
             | base64 --decode > private/android-signing.properties
-          chmod 600 private/polymind-release.jks private/android-signing.properties
+          chmod 600 private/backontrack-release.jks private/android-signing.properties
           sed -i $'s/\r$//' private/android-signing.properties
 
           keystore_sha256="$(
-            sha256sum private/polymind-release.jks \
+            sha256sum private/backontrack-release.jks \
               | cut -d ' ' -f 1
           )"
           echo "Decoded keystore SHA-256: $keystore_sha256"
@@ -272,12 +272,12 @@ jobs:
           )"
           if [[ "$signing_store_file" == "mom-release.jks" ]]; then
             sed -i \
-              's/^storeFile=mom-release\.jks$/storeFile=polymind-release.jks/' \
+              's/^storeFile=mom-release\.jks$/storeFile=backontrack-release.jks/' \
               private/android-signing.properties
-            signing_store_file="polymind-release.jks"
+            signing_store_file="backontrack-release.jks"
           fi
           if [[
-            "$signing_store_file" != "polymind-release.jks"
+            "$signing_store_file" != "backontrack-release.jks"
             || -z "$signing_store_password"
             || -z "$signing_key_alias"
           ]]; then
@@ -285,7 +285,7 @@ jobs:
             exit 1
           fi
           if ! keytool -list \
-            -keystore private/polymind-release.jks \
+            -keystore private/backontrack-release.jks \
             -storepass "$signing_store_password" \
             -alias "$signing_key_alias" >/dev/null 2>&1; then
             echo "The decoded keystore is invalid or does not match the signing properties." >&2
@@ -320,7 +320,7 @@ jobs:
       - name: Upload Android release
         uses: actions/upload-artifact@v7
         with:
-          name: polymind-android-release-${{ github.run_number }}
+          name: backontrack-android-release-${{ github.run_number }}
           path: |
             android/app/build/outputs/apk/release/app-release.apk
             android/app/build/outputs/apk/release/app-release.apk.sha256
@@ -329,7 +329,7 @@ jobs:
 
       - name: Remove signing files
         if: always()
-        run: rm -f private/polymind-release.jks private/android-signing.properties
+        run: rm -f private/backontrack-release.jks private/android-signing.properties
 
   build_ios:
     name: Build signed iOS IPA
@@ -371,7 +371,7 @@ jobs:
 
       - name: Prepare production environment
         env:
-          VITE_API_URL: ${{ vars.VITE_API_URL || 'https://polymind.app/server' }}
+          VITE_API_URL: ${{ vars.VITE_API_URL || 'https://backontrack.app/server' }}
         run: printf 'VITE_API_URL=%s\n' "$VITE_API_URL" > .env.prod
 
       - name: Restore iOS signing files
@@ -390,10 +390,10 @@ jobs:
             exit 1
           fi
 
-          certificate_path="$RUNNER_TEMP/polymind-distribution.p12"
-          profile_source_path="$RUNNER_TEMP/polymind.mobileprovision"
-          profile_plist_path="$RUNNER_TEMP/polymind-profile.plist"
-          keychain_path="$RUNNER_TEMP/polymind-signing.keychain-db"
+          certificate_path="$RUNNER_TEMP/backontrack-distribution.p12"
+          profile_source_path="$RUNNER_TEMP/backontrack.mobileprovision"
+          profile_plist_path="$RUNNER_TEMP/backontrack-profile.plist"
+          keychain_path="$RUNNER_TEMP/backontrack-signing.keychain-db"
           keychain_password="$(openssl rand -hex 32)"
 
           printf '%s' "$IOS_CERTIFICATE_BASE64" \
@@ -443,8 +443,8 @@ jobs:
               "$profile_plist_path"
           )"
 
-          if [[ "$application_identifier" != "$application_identifier_prefix.app.polymind.ios" ]]; then
-            echo "The provisioning profile does not target app.polymind.ios." >&2
+          if [[ "$application_identifier" != "$application_identifier_prefix.app.backontrack.ios" ]]; then
+            echo "The provisioning profile does not target app.backontrack.ios." >&2
             exit 1
           fi
 
@@ -479,7 +479,7 @@ jobs:
       - name: Upload iOS release
         uses: actions/upload-artifact@v7
         with:
-          name: polymind-ios-release-${{ github.run_number }}
+          name: backontrack-ios-release-${{ github.run_number }}
           path: |
             ios/App/output/*.ipa
             ios/App/output/*.ipa.sha256
@@ -491,11 +491,11 @@ jobs:
         env:
           INSTALLED_PROFILE: ${{ steps.ios_signing.outputs.installed_profile }}
         run: |
-          security delete-keychain "$RUNNER_TEMP/polymind-signing.keychain-db" >/dev/null 2>&1 || true
+          security delete-keychain "$RUNNER_TEMP/backontrack-signing.keychain-db" >/dev/null 2>&1 || true
           if [[ -n "$INSTALLED_PROFILE" ]]; then
             rm -f -- "$INSTALLED_PROFILE"
           fi
           rm -f -- \
-            "$RUNNER_TEMP/polymind-distribution.p12" \
-            "$RUNNER_TEMP/polymind.mobileprovision" \
-            "$RUNNER_TEMP/polymind-profile.plist"
+            "$RUNNER_TEMP/backontrack-distribution.p12" \
+            "$RUNNER_TEMP/backontrack.mobileprovision" \
+            "$RUNNER_TEMP/backontrack-profile.plist"

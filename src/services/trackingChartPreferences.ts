@@ -1,4 +1,4 @@
-const TRACKING_CHART_INACTIVE_TRACKERS_STORAGE_KEY = 'polymind-tracking-chart-inactive-trackers'
+const TRACKING_CHART_INACTIVE_TRACKERS_STORAGE_KEY = 'backontrack-tracking-chart-inactive-trackers'
 
 function normalizeTrackerIds(value: unknown) {
   if (!Array.isArray(value)) return []

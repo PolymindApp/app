@@ -6,9 +6,9 @@ import {
 
 describe('flashcard notification routing', () => {
   it('accepts only flashcard notification URLs with a session ID', () => {
-    expect(flashcardSessionIdFromNotificationUrl('polymind://flashcards?sessionId=review-1')).toBe('review-1')
-    expect(flashcardSessionIdFromNotificationUrl('polymind://interval?sessionId=review-1')).toBeUndefined()
-    expect(flashcardSessionIdFromNotificationUrl('polymind://flashcards')).toBeUndefined()
+    expect(flashcardSessionIdFromNotificationUrl('backontrack://flashcards?sessionId=review-1')).toBe('review-1')
+    expect(flashcardSessionIdFromNotificationUrl('backontrack://interval?sessionId=review-1')).toBeUndefined()
+    expect(flashcardSessionIdFromNotificationUrl('backontrack://flashcards')).toBeUndefined()
     expect(flashcardSessionIdFromNotificationUrl('not a URL')).toBeUndefined()
   })
 
@@ -20,7 +20,7 @@ describe('flashcard notification routing', () => {
       replace,
     }
     const app = {
-      getLaunchUrl: vi.fn(async () => ({ url: 'polymind://flashcards?sessionId=cold-review' })),
+      getLaunchUrl: vi.fn(async () => ({ url: 'backontrack://flashcards?sessionId=cold-review' })),
       addListener: vi.fn(async (_event: 'appUrlOpen', callback: (event: { url: string }) => void) => {
         listener = callback
       }),
@@ -32,7 +32,7 @@ describe('flashcard notification routing', () => {
       params: { sessionId: 'cold-review' },
     })
 
-    listener?.({ url: 'polymind://flashcards?sessionId=active-review' })
+    listener?.({ url: 'backontrack://flashcards?sessionId=active-review' })
     await vi.waitFor(() => expect(replace).toHaveBeenLastCalledWith({
       name: 'flashcard-review-runner',
       params: { sessionId: 'active-review' },

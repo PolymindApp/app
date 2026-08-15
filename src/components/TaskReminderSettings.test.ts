@@ -88,7 +88,7 @@ describe('TaskReminderSettings', () => {
   it('shows missing capabilities and rechecks after returning from settings', async () => {
     reminderMocks.checkCapabilities.mockResolvedValueOnce([{
       code: 'do_not_disturb',
-      message: 'Do Not Disturb is silencing task reminders. Allow Polymind under Apps.',
+      message: 'Do Not Disturb is silencing task reminders. Allow BackOnTrack under Apps.',
       action: 'Allow during Do Not Disturb',
     }]).mockResolvedValueOnce([])
     const wrapper = mountSettings(true, ['08:00'])

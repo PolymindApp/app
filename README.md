@@ -1,4 +1,4 @@
-# Polymind — Make life programmable.
+# BackOnTrack — Make life programmable.
 
 A mobile-first personal management app for tasks, plans, habits, workouts, and programmable intervals. The client uses Vue 3, Vuetify, and TypeScript. A PHP API provides password/passkey authentication and secure SQLite access.
 
@@ -16,7 +16,7 @@ An expired bearer token pauses remote exchange without locking the user out of c
 - pnpm 11+
 - PHP 8.1+ with cURL, GD, PDO_SQLITE, and SQLite FTS5
 - Composer 2
-- A writable Polymind SQLite database
+- A writable BackOnTrack SQLite database
 - An SMTP account for registration confirmation and password recovery
 - Android Studio 2025.2.1+ and an Android SDK for Android builds
 
@@ -57,19 +57,19 @@ For a separate API subdomain or a native app build, set an absolute HTTPS URL:
 
 ```dotenv
 VITE_API_URL=https://api.your-domain.example
-POLYMIND_ALLOWED_ORIGINS=https://your-domain.example,http://localhost,capacitor://localhost
-POLYMIND_APP_URL=https://your-domain.example
+BACKONTRACK_ALLOWED_ORIGINS=https://your-domain.example,http://localhost,capacitor://localhost
+BACKONTRACK_APP_URL=https://your-domain.example
 ```
 
-Generate a different `POLYMIND_API_SECRET` for each production installation:
+Generate a different `BACKONTRACK_API_SECRET` for each production installation:
 
 ```bash
 php -r 'echo bin2hex(random_bytes(32)), PHP_EOL;'
 ```
 
-Generate a second, independent value for `POLYMIND_MIGRATION_KEY`. Store it in the host's root `.env` and as the `POLYMIND_MIGRATION_KEY` secret in the GitHub `Web` environment so the release workflow can run migrations after uploading the server.
+Generate a second, independent value for `BACKONTRACK_MIGRATION_KEY`. Store it in the host's root `.env` and as the `BACKONTRACK_MIGRATION_KEY` secret in the GitHub `Web` environment so the release workflow can run migrations after uploading the server.
 
-The PHP server reads the root `.env` itself. Vite exposes only variables beginning with `VITE_`, so `POLYMIND_API_SECRET`, `POLYMIND_DB_PATH`, and other server settings are not embedded in browser JavaScript.
+The PHP server reads the root `.env` itself. Vite exposes only variables beginning with `VITE_`, so `BACKONTRACK_API_SECRET`, `BACKONTRACK_DB_PATH`, and other server settings are not embedded in browser JavaScript.
 
 Prepare the web build with:
 
@@ -79,7 +79,7 @@ composer install --no-dev --optimize-autoloader
 pnpm build:prod
 ```
 
-For the prepared `polymind.app` deployment, this loads `.env.prod` and embeds `https://polymind.app/server` as the browser API URL. Upload the contents of `dist` as the web application, then upload the `server` and Composer-generated `vendor` directories. Back up the database before releasing. The GitHub release workflow calls the authenticated migration endpoint after its upload job succeeds. The generated `dist/.htaccess` routes `/server/*` to the protected PHP front controller without exposing `/public` in the URL.
+For the prepared `backontrack.app` deployment, this loads `.env.prod` and embeds `https://backontrack.app/server` as the browser API URL. Upload the contents of `dist` as the web application, then upload the `server` and Composer-generated `vendor` directories. Back up the database before releasing. The GitHub release workflow calls the authenticated migration endpoint after its upload job succeeds. The generated `dist/.htaccess` routes `/server/*` to the protected PHP front controller without exposing `/public` in the URL.
 
 On the host, place a copy of `.env.prod` named `.env` at the project root because the PHP runtime reads `.env`. Prefer keeping both environment files and `private` outside the public document root. When shared hosting requires them at the deployment root, the included Apache rules deny browser access to `.env`, `private`, and the server implementation. The PHP process must be able to read the root `.env` and read/write `private/data.db`.
 
@@ -113,15 +113,15 @@ On the host, place a copy of `.env.prod` named `.env` at the project root becaus
 
 The Capacitor iOS project targets iOS 15 or newer and requires Xcode 26 or newer. Tag releases and `ios` manual workflow runs build a signed IPA on the `macos-26` GitHub runner and retain it as a workflow artifact for 30 days.
 
-The native applications use `app.polymind.android` on Android and `app.polymind.ios` on iOS. The Capacitor configuration selects the matching identifier from the platform argument so iOS export options and Android project syncs stay aligned with their signing profiles.
+The native applications use `app.backontrack.android` on Android and `app.backontrack.ios` on iOS. The Capacitor configuration selects the matching identifier from the platform argument so iOS export options and Android project syncs stay aligned with their signing profiles.
 
 Create a GitHub environment named `iOS` with these secrets:
 
 - `IOS_CERTIFICATE_BASE64` — the base64-encoded Apple distribution `.p12` certificate
 - `IOS_CERTIFICATE_PASSWORD` — the `.p12` password
-- `IOS_PROVISIONING_PROFILE_BASE64` — a base64-encoded distribution provisioning profile for `app.polymind.ios`
+- `IOS_PROVISIONING_PROFILE_BASE64` — a base64-encoded distribution provisioning profile for `app.backontrack.ios`
 
-The environment may also define `VITE_API_URL` and `IOS_EXPORT_METHOD`. The API defaults to `https://polymind.app/server`; the export method defaults to `app-store-connect` and may instead be `release-testing`, `enterprise`, or `debugging` when it matches the provisioning profile.
+The environment may also define `VITE_API_URL` and `IOS_EXPORT_METHOD`. The API defaults to `https://backontrack.app/server`; the export method defaults to `app-store-connect` and may instead be `release-testing`, `enterprise`, or `debugging` when it matches the provisioning profile.
 
 Encode each binary signing file without line breaks before saving it as a GitHub secret:
 
@@ -185,11 +185,11 @@ DELETE /collections/{collection}/records/{id}
 
 Only the application’s known collections, fields, sorts, and filters are accepted. Every data request requires a signed bearer token, and `owner` is always derived from that token. Related task, occurrence, program-step, tag, and interval records are checked for matching ownership before writes. The interval flashcard route updates only the existing Review set snapshot of an active, owned session; generic interval writes still reject client-authored snapshots.
 
-Passwords are stored as bcrypt hashes. Signed tokens are bound to a per-user `token_key`, and `polymind_rate_limits` provides login and registration throttling.
+Passwords are stored as bcrypt hashes. Signed tokens are bound to a per-user `token_key`, and `backontrack_rate_limits` provides login and registration throttling.
 
 Passkeys are exposed only by the native Android client. A signed-in user creates one from the account menu, then can use “Sign in with passkey” without entering an email. The PHP API stores only the credential public key, requires Android user verification, and issues the same bearer session used by password login.
 
-The web build publishes `/.well-known/assetlinks.json`, which binds `polymind.app` to the Android package and the configured release/debug signing certificates. It must remain reachable over HTTPS with status `200`, no redirect, and an `application/json` content type. If the signing key changes, update both that file’s SHA-256 fingerprint and `POLYMIND_PASSKEY_ANDROID_KEY_HASHES` in `.env.prod` before installing the newly signed app.
+The web build publishes `/.well-known/assetlinks.json`, which binds `backontrack.app` to the Android package and the configured release/debug signing certificates. It must remain reachable over HTTPS with status `200`, no redirect, and an `application/json` content type. If the signing key changes, update both that file’s SHA-256 fingerprint and `BACKONTRACK_PASSKEY_ANDROID_KEY_HASHES` in `.env.prod` before installing the newly signed app.
 
 ## Client API URL
 
@@ -203,9 +203,9 @@ pnpm android:build
 pnpm android:bundle
 ```
 
-Both builds embed `https://polymind.app/server`. The debug APK is written to `android/app/build/outputs/apk/debug/app-debug.apk`, the signed release APK to `android/app/build/outputs/apk/release/app-release.apk`, and the signed AAB to `android/app/build/outputs/bundle/release/app-release.aab`.
+Both builds embed `https://backontrack.app/server`. The debug APK is written to `android/app/build/outputs/apk/debug/app-debug.apk`, the signed release APK to `android/app/build/outputs/apk/release/app-release.apk`, and the signed AAB to `android/app/build/outputs/bundle/release/app-release.aab`.
 
-Release signing uses `private/polymind-release.jks` and `private/android-signing.properties`. Both files are ignored by Git and required for every future update. Back them up together in a secure password manager or encrypted archive; losing the keystore prevents signing updates as the same Android application.
+Release signing uses `private/backontrack-release.jks` and `private/android-signing.properties`. Both files are ignored by Git and required for every future update. Back them up together in a secure password manager or encrypted archive; losing the keystore prevents signing updates as the same Android application.
 
 ## Android live development
 
@@ -215,7 +215,7 @@ Connect one phone with USB or wireless debugging enabled, then run:
 pnpm android:dev
 ```
 
-The command starts the PHP API and Vite when needed, forwards ports `5183` and `8090`, installs Polymind, and stays attached for hot updates. Press `Ctrl+C` to stop it.
+The command starts the PHP API and Vite when needed, forwards ports `5183` and `8090`, installs BackOnTrack, and stays attached for hot updates. Press `Ctrl+C` to stop it.
 
 If more than one device is connected, select one explicitly:
 

@@ -20,7 +20,7 @@ if ($server === false) {
 }
 
 while ($connection = @stream_socket_accept($server, -1)) {
-    fwrite($connection, "220 localhost Polymind test SMTP\r\n");
+    fwrite($connection, "220 localhost BackOnTrack test SMTP\r\n");
     $dataMode = false;
     $message = '';
 

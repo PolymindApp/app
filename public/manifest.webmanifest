@@ -1,6 +1,6 @@
 {
-  "name": "Polymind — Make life programmable.",
-  "short_name": "Polymind",
+  "name": "BackOnTrack — Make life programmable.",
+  "short_name": "BackOnTrack",
   "description": "Manage tasks, plans, habits, workouts, and timed sessions in one flexible personal system.",
   "start_url": "/",
   "display": "standalone",
@@ -8,7 +8,7 @@
   "theme_color": "#101310",
   "icons": [
     {
-      "src": "/brand/polymind-app-icon.png",
+      "src": "/brand/backontrack-app-icon.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"

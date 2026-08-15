@@ -58,7 +58,7 @@ const reducedMotion = ref(
   && window.matchMedia('(prefers-reduced-motion: reduce)').matches,
 )
 const documentTitle = typeof document === 'undefined'
-  ? 'Polymind — Make life programmable.'
+  ? 'BackOnTrack — Make life programmable.'
   : document.title
 let documentTitleFrame = 0
 let documentTitleTimer: number | undefined
@@ -107,7 +107,7 @@ const lastSyncedLabel = computed(() => {
 const visibleSyncIssues = computed(() => syncStore.issues.slice(0, 5))
 
 const immersive = computed(() => Boolean(router.currentRoute.value.meta.immersive))
-const pageTitle = computed(() => String(router.currentRoute.value.meta.title || 'Polymind'))
+const pageTitle = computed(() => String(router.currentRoute.value.meta.title || 'BackOnTrack'))
 const canGoBack = computed(() => Number(router.currentRoute.value.meta.pageDepth ?? 0) > 0)
 const accountName = computed(() => auth.user?.name || auth.firstName || 'You')
 const accountEmail = computed(() => auth.user?.email || '')
@@ -311,7 +311,7 @@ function releaseLeavingPage(element: Element) {
     <v-navigation-drawer v-if="mdAndUp && !immersive" permanent width="224" color="background">
       <div class="pa-6 pt-8">
         <div class="brand-mark mb-3">
-          <img src="/brand/polymind-wordmark.png" alt="Polymind" />
+          <img src="/brand/backontrack-wordmark.png" alt="BackOnTrack" />
         </div>
         <p class="text-caption text-medium-emphasis mt-2">Make life programmable.</p>
       </div>

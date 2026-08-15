@@ -2,16 +2,16 @@ import type { CapacitorConfig } from '@capacitor/cli'
 import { KeyboardResize } from '@capacitor/keyboard'
 
 const nativeAppId = process.argv.includes('ios')
-  ? 'app.polymind.ios'
-  : 'app.polymind.android'
+  ? 'app.backontrack.ios'
+  : 'app.backontrack.android'
 
 const config: CapacitorConfig = {
   appId: nativeAppId,
-  appName: 'Polymind',
+  appName: 'BackOnTrack',
   webDir: 'dist',
   plugins: {
     BackgroundRunner: {
-      label: 'app.polymind.sync',
+      label: 'app.backontrack.sync',
       src: 'runners/background.js',
       event: 'backgroundSync',
       repeat: true,

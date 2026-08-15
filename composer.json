@@ -1,6 +1,6 @@
 {
-    "name": "polymind/server",
-    "description": "Private PHP API for Polymind",
+    "name": "backontrack/server",
+    "description": "Private PHP API for BackOnTrack",
     "type": "project",
     "license": "proprietary",
     "require": {

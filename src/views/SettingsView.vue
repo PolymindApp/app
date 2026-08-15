@@ -66,17 +66,17 @@ const connectionTitle = computed(() => {
 })
 
 const connectionCopy = computed(() => {
-  if (!isAndroidApp) return 'Open this page in the Polymind Android app to connect your step data.'
+  if (!isAndroidApp) return 'Open this page in the BackOnTrack Android app to connect your step data.'
   if (healthStatus.value.availability === 'update_required') {
-    return 'Install or update Health Connect before Polymind can read your steps.'
+    return 'Install or update Health Connect before BackOnTrack can read your steps.'
   }
   if (healthStatus.value.availability === 'unavailable') {
     return 'This device does not currently provide Health Connect.'
   }
   if (healthStatus.value.authorized) {
-    return 'Polymind can read aggregated step totals. You can change this permission at any time.'
+    return 'BackOnTrack can read aggregated step totals. You can change this permission at any time.'
   }
-  return 'Allow Polymind to read steps before using step-counter tasks.'
+  return 'Allow BackOnTrack to read steps before using step-counter tasks.'
 })
 
 const connectionColor = computed(() => healthStatus.value.authorized ? 'success' : 'info')
