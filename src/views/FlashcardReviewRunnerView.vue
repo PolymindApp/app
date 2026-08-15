@@ -110,7 +110,7 @@ const speechPlaybackWarning = ref('')
 const backgroundSpeechWarning = ref('')
 const speechFailureSnackbar = ref(false)
 const reconcilingBackground = ref(false)
-let tickTimer: ReturnType<typeof setInterval> | undefined
+let animationFrame: number | undefined
 let lastTickAt = 0
 let mounted = true
 let skipLeavePause = false
@@ -312,7 +312,7 @@ onMounted(async () => {
       const restoredBackground = await reconcileBackgroundReview()
       if (!restoredBackground) await syncNativeBackground()
     }
-    tickTimer = setInterval(tick, 100)
+    animationFrame = window.requestAnimationFrame(updateProgressFrame)
     document.addEventListener('visibilitychange', handleVisibilityChange)
     if (shouldKeepScreenAwake.value && document.visibilityState === 'visible') void acquireWakeLock()
   } catch (cause) {
@@ -333,7 +333,7 @@ onBeforeRouteLeave(async () => {
 
 onBeforeUnmount(() => {
   mounted = false
-  if (tickTimer) clearInterval(tickTimer)
+  if (animationFrame !== undefined) window.cancelAnimationFrame(animationFrame)
   if (manualCardTapResetTimer) window.clearTimeout(manualCardTapResetTimer)
   document.removeEventListener('visibilitychange', handleVisibilityChange)
   void releaseWakeLock()
@@ -441,6 +441,12 @@ function tick() {
     if (passiveRemainingMs.value === 0 && !passiveAdvancing) void advancePassive()
   }
   tickVersion.value++
+}
+
+function updateProgressFrame() {
+  if (!mounted) return
+  tick()
+  animationFrame = window.requestAnimationFrame(updateProgressFrame)
 }
 
 async function advancePassive() {
@@ -1129,6 +1135,7 @@ async function leaveRunner() {
 
       <v-progress-linear
         v-if="!isReviewSetPreview"
+        class="review-progress"
         :model-value="progress"
         color="primary"
         bg-color="surface-variant"
@@ -1313,6 +1320,7 @@ async function leaveRunner() {
               </span>
             </div>
             <v-progress-linear
+              class="review-progress"
               :model-value="passiveProgress"
               color="secondary"
               bg-color="surface-variant"
@@ -1629,6 +1637,8 @@ async function leaveRunner() {
 
 <style scoped>
 .review-runner { position: fixed; z-index: 1003; inset: 0; display: flex; width: 100%; max-width: 100vw; height: 100dvh; min-height: 0; flex-direction: column; overflow: hidden; background: radial-gradient(circle at 50% 26%, rgba(var(--v-theme-secondary), .08), transparent 34rem), rgb(var(--v-theme-background)); color: rgb(var(--v-theme-on-background)); }
+.review-progress,
+.review-progress :deep(.v-progress-linear__determinate) { transition: none; }
 .runner-header { display: grid; min-height: calc(4rem + max(env(safe-area-inset-top), var(--safe-area-inset-top, 0rem))); padding: max(env(safe-area-inset-top), var(--safe-area-inset-top, 0rem)) 1rem 0; grid-template-columns: 2.75rem minmax(0, 1fr) auto; align-items: center; gap: .75rem; }
 .runner-header__title { display: flex; flex-direction: column; align-items: center; }
 .runner-header__title strong { max-width: 100%; font-size: .88rem; }

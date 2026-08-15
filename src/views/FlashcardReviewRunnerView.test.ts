@@ -551,6 +551,12 @@ describe('FlashcardReviewRunnerView Review set preview', () => {
   it('restores a card at 25% without replaying before the 50% TTS checkpoint', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-08-13T12:00:00Z'))
+    let progressFrame: FrameRequestCallback | undefined
+    const requestFrame = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      progressFrame = callback
+      return 1
+    })
+    const cancelFrame = vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => undefined)
     const active = {
       ...runningSession(),
       mode: 'passive' as const,
@@ -576,11 +582,14 @@ describe('FlashcardReviewRunnerView Review set preview', () => {
       expect(mocks.speakFlashcardText).not.toHaveBeenCalled()
 
       await vi.advanceTimersByTimeAsync(5_000)
+      progressFrame?.(performance.now())
       await flushPromises()
       expect(mocks.speakFlashcardText).toHaveBeenCalledTimes(1)
       expect(mocks.speakFlashcardText).toHaveBeenCalledWith('Maison', 'fr-CA')
     } finally {
       wrapper.unmount()
+      requestFrame.mockRestore()
+      cancelFrame.mockRestore()
       vi.useRealTimers()
     }
   })

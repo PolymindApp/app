@@ -161,7 +161,7 @@ const pendingCompletion = ref<{
 const backgroundError = ref('')
 const timerEffect = ref<'count' | ''>('')
 const timerEffectKey = ref(0)
-let ticker: number | undefined
+let animationFrame: number | undefined
 let wakeLock: { release: () => Promise<void> } | undefined
 let runnerMounted = false
 let lastCountCue = ''
@@ -464,7 +464,7 @@ onMounted(async () => {
     }
     displayRemainingMs.value = session.value.runtime.remainingMs
     await tick()
-    ticker = window.setInterval(tick, 250)
+    animationFrame = window.requestAnimationFrame(updateProgressFrame)
     document.addEventListener('visibilitychange', handleVisibility)
     cueHandoff.recordVisibility(document.visibilityState)
     window.addEventListener('pagehide', handlePageHide)
@@ -492,7 +492,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   runnerMounted = false
-  if (ticker) window.clearInterval(ticker)
+  if (animationFrame !== undefined) window.cancelAnimationFrame(animationFrame)
   if (timerEffectTimeout) window.clearTimeout(timerEffectTimeout)
   document.removeEventListener('visibilitychange', handleVisibility)
   window.removeEventListener('pagehide', handlePageHide)
@@ -764,6 +764,12 @@ async function tick() {
   } finally {
     syncing.value = false
   }
+}
+
+function updateProgressFrame() {
+  if (!runnerMounted) return
+  void tick()
+  animationFrame = window.requestAnimationFrame(updateProgressFrame)
 }
 
 async function completeSession(
@@ -2335,7 +2341,8 @@ async function runAgain(repetitions?: number) {
 .interval-review-card__quick-tag.v-chip--variant-outlined { border-color: rgba(var(--v-theme-on-surface), .18); }
 .interval-review-card__tag-menu-button { min-width: 0; padding-inline: .65rem; grid-column: 3; justify-self: end; }
 .interval-review-card :deep(.v-progress-linear) { border-radius: 0; }
-.interval-review-card__progress :deep(.v-progress-linear__determinate) { opacity: .3; }
+.interval-review-card__progress { transition: none; }
+.interval-review-card__progress :deep(.v-progress-linear__determinate) { opacity: .3; transition: none; }
 .runner-progress {
   display: flex;
   width: 100%;
@@ -2354,6 +2361,7 @@ async function runAgain(repetitions?: number) {
   container-type: inline-size;
   isolation: isolate;
 }
+.progress-rings :deep(.v-progress-circular__overlay) { transition: none; }
 .progress-ring {
   position: absolute;
   z-index: 1;
