@@ -2,7 +2,7 @@ import { computed, nextTick, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { addDays, endOfWeek, format, parseISO, startOfWeek, subDays } from 'date-fns'
 import { api } from '@/lib/api'
-import { hasLocalBootstrap, listLocalRecords, repairLegacyHealthConnectEntrySync } from '@/lib/localDatabase'
+import { createLocalRecordId, hasLocalBootstrap, listLocalRecords, repairLegacyHealthConnectEntrySync } from '@/lib/localDatabase'
 import { readHealthConnectSteps } from '@/services/healthConnect'
 import { healthConnectEntrySession, isHealthConnectEntry } from '@/services/healthConnectEntries'
 import { completedIntervalFlashcardReviewSeconds } from '@/services/intervals'
@@ -130,14 +130,20 @@ export const useTaskStore = defineStore('tasks', () => {
   const error = ref('')
   const stepCountLoading = ref(false)
   const stepCountError = ref('')
-  const optimisticOccurrenceStatuses = ref<Partial<Record<string, Occurrence['status']>>>({})
+  const optimisticOccurrencePatches = ref<Partial<Record<string, {
+    revision: number
+    status?: Occurrence['status']
+    sealed?: boolean
+  }>>>({})
   let stepCountRequest = 0
   let progressRangeRequest = 0
   let initialProgressSince = ''
   let reconciledSessionProgressKey = ''
   let reminderSyncPromise: Promise<void> | undefined
   let reminderSyncRequested = false
+  let optimisticOccurrenceRevision = 0
   const loadedProgressRanges = new Set<string>()
+  const pendingOccurrenceCreates = new Map<string, Promise<Occurrence>>()
 
   const activeTasks = computed(() => tasks.value.filter((task) => task.active))
 
@@ -171,7 +177,7 @@ export const useTaskStore = defineStore('tasks', () => {
   function makeProgress(task: Task, date: Date, step?: ProgramStep): TaskProgress {
     const occurrence = occurrenceFor(task, date, step)
     const dateKey = toDateKey(date)
-    const optimisticStatus = optimisticOccurrenceStatuses.value[
+    const optimisticPatch = optimisticOccurrencePatches.value[
       occurrenceStatusKey(task.id, dateKey, step?.id)
     ]
     const trackingTrackerIds = !step && task.type === 'tracking'
@@ -204,30 +210,41 @@ export const useTaskStore = defineStore('tasks', () => {
       : task.type === 'journal' && !step
         ? value > 0
       : meetsTarget(value, target, operator)
-    const storedStatus = optimisticStatus ?? occurrence?.status ?? 'pending'
+    const storedStatus = optimisticPatch?.status ?? occurrence?.status ?? 'pending'
     const occurrenceComplete = storedStatus === 'completed'
+    const occurrenceSkipped = storedStatus === 'skipped'
     const isOccurrenceDriven = (step && ['check', 'interval', 'flashcards'].includes(step.completionType))
       || (!step && ['check', 'interval', 'flashcards'].includes(task.type) && !isSessionDuration)
+    const occurrenceSealed = optimisticPatch?.sealed ?? Boolean(occurrence?.sealed)
+    const manuallyCompleted = isSessionDuration && occurrenceComplete && occurrenceSealed
     const isDailyTotal = !step && task.type === 'daily_total'
-    const sealed = isDailyTotal && Boolean(occurrence?.sealed)
-    const complete = isOccurrenceDriven
-      ? occurrenceComplete
-      : isDailyTotal
-        ? sealed
-        : operator !== 'lte' && targetReached
+    const sealed = (isDailyTotal || isSessionDuration) && occurrenceSealed
+    const complete = occurrenceSkipped
+      ? false
+      : isOccurrenceDriven
+        ? occurrenceComplete
+        : manuallyCompleted
+          ? true
+          : isDailyTotal
+            ? sealed
+            : operator !== 'lte' && targetReached
     return {
       task,
       scheduledDate: toDateKey(date),
       occurrence,
       value,
-      percent: isOccurrenceDriven ? (occurrenceComplete ? 100 : 0) : progressPercent(value, target, operator),
+      percent: isOccurrenceDriven || manuallyCompleted
+        ? (occurrenceComplete ? 100 : 0)
+        : progressPercent(value, target, operator),
       complete,
       sealed,
-      status: complete
-        ? 'completed'
-        : !isOccurrenceDriven && storedStatus === 'completed'
-          ? 'pending'
-          : storedStatus,
+      status: occurrenceSkipped
+        ? 'skipped'
+        : complete
+          ? 'completed'
+          : !isOccurrenceDriven && storedStatus === 'completed'
+            ? 'pending'
+            : storedStatus,
       programStep: step,
       locked: step ? isStepLocked(task, step, date) : false,
     }
@@ -276,7 +293,7 @@ export const useTaskStore = defineStore('tasks', () => {
   const selectedProgress = computed(() => progressForDate(selectedDate.value))
 
   function completionRateForDate(date: Date) {
-    const progress = progressForDate(date)
+    const progress = progressForDate(date).filter(item => item.status !== 'skipped')
     if (!progress.length) return undefined
     const earnedProgress = progress.reduce(
       (total, item) => {
@@ -465,33 +482,100 @@ export const useTaskStore = defineStore('tasks', () => {
 
   async function ensureOccurrence(task: Task, date: Date, step?: ProgramStep) {
     const existing = occurrenceFor(task, date, step)
-    if (existing) return existing
-    const record = await api.collection('occurrences').create({
-      owner: api.authStore.record!.id,
+    const key = occurrenceStatusKey(task.id, toDateKey(date), step?.id)
+    if (existing) return pendingOccurrenceCreates.get(key) || existing
+
+    const occurrence: Occurrence = {
+      id: createLocalRecordId(),
       task: task.id,
-      program_step: step?.id || '',
-      scheduled_date: toDateKey(date),
+      programStep: step?.id,
+      scheduledDate: toDateKey(date),
       status: 'pending',
       sealed: false,
-      snapshot_name: step?.name || task.name,
-      snapshot_target: step?.targetValue || task.targetValue || 0,
-      snapshot_unit: step?.customUnit || step?.unit || task.customUnit || task.unit || '',
-    })
-    const occurrence = mapOccurrence(record)
+      snapshotName: step?.name || task.name,
+      snapshotTarget: step?.targetValue || task.targetValue || 0,
+      snapshotUnit: step?.customUnit || step?.unit || task.customUnit || task.unit || '',
+    }
     occurrences.value.push(occurrence)
-    return occurrences.value[occurrences.value.length - 1]!
+
+    const persistence = (async () => {
+      try {
+        const record = await api.collection('occurrences').create({
+          owner: api.authStore.record!.id,
+          task: task.id,
+          program_step: step?.id || '',
+          scheduled_date: occurrence.scheduledDate,
+          status: 'pending',
+          sealed: false,
+          snapshot_name: occurrence.snapshotName,
+          snapshot_target: occurrence.snapshotTarget,
+          snapshot_unit: occurrence.snapshotUnit || '',
+        })
+        Object.assign(occurrence, mapOccurrence(record))
+        return occurrence
+      } catch (cause) {
+        occurrences.value = occurrences.value.filter(item => item !== occurrence)
+        throw cause
+      } finally {
+        pendingOccurrenceCreates.delete(key)
+      }
+    })()
+    pendingOccurrenceCreates.set(key, persistence)
+    return persistence
+  }
+
+  async function updateOccurrenceOptimistically(
+    progress: TaskProgress,
+    patch: {
+      status?: Occurrence['status']
+      sealed?: boolean
+      completedAt?: string
+    },
+    waitFor?: Promise<unknown>,
+  ) {
+    const progressDate = parseISO(progress.scheduledDate)
+    const key = occurrenceStatusKey(
+      progress.task.id,
+      progress.scheduledDate,
+      progress.programStep?.id,
+    )
+    const revision = ++optimisticOccurrenceRevision
+    optimisticOccurrencePatches.value = {
+      ...optimisticOccurrencePatches.value,
+      [key]: {
+        revision,
+        ...(patch.status !== undefined ? { status: patch.status } : {}),
+        ...(patch.sealed !== undefined ? { sealed: patch.sealed } : {}),
+      },
+    }
+    try {
+      if (waitFor) await waitFor
+      const occurrence = await ensureOccurrence(progress.task, progressDate, progress.programStep)
+      const payload: Record<string, unknown> = {}
+      if (patch.status !== undefined) payload.status = patch.status
+      if (patch.sealed !== undefined) payload.sealed = patch.sealed
+      if (patch.completedAt !== undefined) payload.completed_at = patch.completedAt
+      const record = await api.collection('occurrences').update(occurrence.id, payload)
+      Object.assign(occurrence, mapOccurrence(record))
+      return occurrence
+    } finally {
+      if (optimisticOccurrencePatches.value[key]?.revision === revision) {
+        const nextPatches = { ...optimisticOccurrencePatches.value }
+        delete nextPatches[key]
+        optimisticOccurrencePatches.value = nextPatches
+      }
+    }
   }
 
   async function toggleComplete(progress: TaskProgress, complete: boolean) {
     const progressDate = parseISO(progress.scheduledDate)
-    const occurrence = await ensureOccurrence(progress.task, progressDate, progress.programStep)
-    if ((occurrence.status === 'completed') === complete) return
-    const record = await api.collection('occurrences').update(occurrence.id, {
+    const existing = occurrenceFor(progress.task, progressDate, progress.programStep)
+    if (existing && (existing.status === 'completed') === complete) return
+    await updateOccurrenceOptimistically(progress, {
       status: complete ? 'completed' : 'pending',
-      completed_at: complete ? new Date().toISOString() : '',
+      completedAt: complete ? new Date().toISOString() : '',
     })
-    Object.assign(occurrence, mapOccurrence(record))
-    await syncTaskReminders()
+    void syncTaskReminders()
   }
 
   async function completeAttributedTask(taskId: string, dateKey: string, programStepId = '') {
@@ -753,33 +837,15 @@ export const useTaskStore = defineStore('tasks', () => {
 
   async function setStatus(progress: TaskProgress, status: Occurrence['status']) {
     const progressDate = parseISO(progress.scheduledDate)
-    const statusKey = occurrenceStatusKey(
-      progress.task.id,
-      progress.scheduledDate,
-      progress.programStep?.id,
-    )
-    optimisticOccurrenceStatuses.value = {
-      ...optimisticOccurrenceStatuses.value,
-      [statusKey]: status,
-    }
-    try {
-      const occurrence = await ensureOccurrence(progress.task, progressDate, progress.programStep)
-      const record = await api.collection('occurrences').update(occurrence.id, {
-        status,
-        sealed: status === 'completed',
-        completed_at: status === 'completed' ? new Date().toISOString() : '',
-      })
-      Object.assign(occurrence, mapOccurrence(record))
-      if (status === 'carried') {
-        await ensureOccurrence(progress.task, addDays(progressDate, 1), progress.programStep)
-      }
-    } finally {
-      if (optimisticOccurrenceStatuses.value[statusKey] === status) {
-        const nextStatuses = { ...optimisticOccurrenceStatuses.value }
-        delete nextStatuses[statusKey]
-        optimisticOccurrenceStatuses.value = nextStatuses
-      }
-    }
+    const statusUpdate = updateOccurrenceOptimistically(progress, {
+      status,
+      sealed: status === 'completed',
+      completedAt: status === 'completed' ? new Date().toISOString() : '',
+    })
+    const carriedOccurrence = status === 'carried'
+      ? ensureOccurrence(progress.task, addDays(progressDate, 1), progress.programStep)
+      : undefined
+    await Promise.all([statusUpdate, carriedOccurrence])
     void syncTaskReminders()
   }
 
@@ -872,9 +938,53 @@ export const useTaskStore = defineStore('tasks', () => {
   }
 
   async function toggleTaskActive(task: Task) {
-    const record = await api.collection('tasks').update(task.id, { active: !task.active })
-    Object.assign(task, mapTask(record))
-    await syncTaskReminders()
+    const previous = { ...task }
+    task.active = !task.active
+    try {
+      const record = await api.collection('tasks').update(task.id, { active: task.active })
+      Object.assign(task, mapTask(record))
+    } catch (cause) {
+      Object.assign(task, previous)
+      throw cause
+    } finally {
+      void syncTaskReminders()
+    }
+  }
+
+  function progressIsScheduled(progress: TaskProgress) {
+    const date = parseISO(progress.scheduledDate)
+    if (progress.programStep) {
+      return stepsForDate(progress.task, steps.value, date)
+        .some(step => step.id === progress.programStep?.id)
+    }
+    return progress.task.type !== 'program' && isTaskScheduled(progress.task, date)
+  }
+
+  async function toggleSkipped(progress: TaskProgress, skipped: boolean) {
+    if (skipped) {
+      await setStatus(progress, 'skipped')
+      return
+    }
+    const occurrence = occurrenceFor(
+      progress.task,
+      parseISO(progress.scheduledDate),
+      progress.programStep,
+    )
+    if (!occurrence || occurrence.status !== 'skipped') return
+    if (progressIsScheduled(progress)) {
+      await setStatus(progress, 'pending')
+      return
+    }
+    const index = occurrences.value.indexOf(occurrence)
+    occurrences.value.splice(index, 1)
+    try {
+      await api.collection('occurrences').delete(occurrence.id)
+    } catch (cause) {
+      occurrences.value.splice(index, 0, occurrence)
+      throw cause
+    } finally {
+      void syncTaskReminders()
+    }
   }
 
   function upsertOccurrenceRecord(record: Record<string, any>) {
@@ -1000,6 +1110,8 @@ export const useTaskStore = defineStore('tasks', () => {
     loadEntryNoteHistory,
     loadEntriesForDay,
     setStatus,
+    progressIsScheduled,
+    toggleSkipped,
     shiftProgram,
     saveTask,
     toggleTaskActive,

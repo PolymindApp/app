@@ -538,7 +538,7 @@ describe('TaskCard amount actions', () => {
     })
 
     expect(wrapper.get('.schedule-status').text()).toBe('Not scheduled')
-    expect(wrapper.find('.task-card-body').exists()).toBe(false)
+    expect(wrapper.get('.task-card-body').isVisible()).toBe(false)
     expect(wrapper.get('.task-card-header-main').attributes()).not.toHaveProperty('role')
     expect(wrapper.get('.task-card-header-main').attributes()).not.toHaveProperty('aria-expanded')
 

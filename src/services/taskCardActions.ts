@@ -3,6 +3,16 @@ import type { TaskProgress } from '@/types/domain'
 
 export const TASK_CARD_ACTION_ITEMS = [
   {
+    id: 'complete-task',
+    title: 'Mark completed',
+    icon: 'mdi-check-circle-outline',
+  },
+  {
+    id: 'skip-task',
+    title: 'Skip',
+    icon: 'mdi-skip-next-outline',
+  },
+  {
     id: 'log-additional-value',
     title: 'Log additional value',
     icon: 'mdi-plus-minus-variant',
@@ -25,6 +35,16 @@ export const TASK_CARD_ACTION_ITEMS = [
 ] as const
 
 export type TaskCardActionId = typeof TASK_CARD_ACTION_ITEMS[number]['id']
+
+export function taskIsResolved(progress: TaskProgress) {
+  return progress.complete || progress.status === 'skipped'
+}
+
+export function taskCanBeMarkedCompleted(progress?: TaskProgress) {
+  if (!progress || progress.complete || progress.locked || progress.status === 'skipped') return false
+  const completionType = progress.programStep?.completionType || progress.task.type
+  return completionType === 'interval' || completionType === 'flashcards'
+}
 
 export function taskCanLogAmounts(progress?: TaskProgress) {
   if (!progress) return false

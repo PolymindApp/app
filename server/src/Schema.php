@@ -165,7 +165,7 @@ final class Schema
                     'program_step' => self::relation(false, true),
                     'scheduled_date' => self::dateKey(true),
                     'status' => self::choice(
-                        ['pending', 'completed', 'missed', 'carried', 'rescheduled'],
+                        ['pending', 'completed', 'missed', 'carried', 'rescheduled', 'skipped'],
                         true,
                     ),
                     'completed_at' => self::timestamp(false, true),

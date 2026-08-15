@@ -4,7 +4,7 @@ export type StepSource = 'health_connect'
 export type RecurrenceType = 'daily' | 'weekdays' | 'interval_weeks'
 export type GoalPeriod = 'occurrence' | 'week'
 export type TargetOperator = 'gte' | 'lte' | 'eq'
-export type OccurrenceStatus = 'pending' | 'completed' | 'missed' | 'carried' | 'rescheduled'
+export type OccurrenceStatus = 'pending' | 'completed' | 'missed' | 'carried' | 'rescheduled' | 'skipped'
 export type SessionCountMode = 'task' | 'linked'
 export type SessionGoalType = 'complete' | 'duration'
 

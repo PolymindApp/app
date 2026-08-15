@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { TASK_CARD_ACTION_ITEMS, taskCanLogAdditionalValue, taskCanLogAmounts, taskIntervalCanStart, taskNeedsReview } from './taskCardActions'
+import { TASK_CARD_ACTION_ITEMS, taskCanBeMarkedCompleted, taskCanLogAdditionalValue, taskCanLogAmounts, taskIntervalCanStart, taskIsResolved, taskNeedsReview } from './taskCardActions'
 import type { ProgramStep, Task, TaskProgress, TaskType } from '@/types/domain'
 
 function progress(type: TaskType, completionType?: ProgramStep['completionType']) {
@@ -10,13 +10,32 @@ function progress(type: TaskType, completionType?: ProgramStep['completionType']
 }
 
 describe('task card actions', () => {
-  it('puts the additional-value action first in the shared menu', () => {
+  it('defines the shared task menu order', () => {
     expect(TASK_CARD_ACTION_ITEMS.map(item => item.id)).toEqual([
+      'complete-task',
+      'skip-task',
       'log-additional-value',
       'edit-task',
       'toggle-task-status',
       'view-log-history',
     ])
+  })
+
+  it('offers manual completion only for unfinished interval and Review set work', () => {
+    expect(taskCanBeMarkedCompleted(progress('interval'))).toBe(true)
+    expect(taskCanBeMarkedCompleted(progress('flashcards'))).toBe(true)
+    expect(taskCanBeMarkedCompleted(progress('program', 'interval'))).toBe(true)
+    expect(taskCanBeMarkedCompleted(progress('program', 'flashcards'))).toBe(true)
+    expect(taskCanBeMarkedCompleted(progress('check'))).toBe(false)
+    expect(taskCanBeMarkedCompleted({ ...progress('interval'), complete: true })).toBe(false)
+    expect(taskCanBeMarkedCompleted({ ...progress('flashcards'), locked: true })).toBe(false)
+    expect(taskCanBeMarkedCompleted({ ...progress('interval'), status: 'skipped' })).toBe(false)
+  })
+
+  it('treats completed and skipped work as resolved', () => {
+    expect(taskIsResolved({ ...progress('check'), complete: true })).toBe(true)
+    expect(taskIsResolved({ ...progress('check'), status: 'skipped' })).toBe(true)
+    expect(taskIsResolved({ ...progress('check'), complete: false, status: 'pending' })).toBe(false)
   })
 
   it('limits additional values to top-level step-counter tasks', () => {

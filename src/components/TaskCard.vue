@@ -51,7 +51,7 @@ const props = defineProps<{
   canWriteJournal?: boolean
   syncing?: boolean
   stepCountError?: string
-  scheduleStatus?: 'not-scheduled' | 'paused'
+  scheduleStatus?: 'not-scheduled' | 'paused' | 'skipped'
 }>()
 const emit = defineEmits<{
   toggle: [progress: TaskProgress, complete: boolean]
@@ -173,7 +173,9 @@ const numericGoalStatus = computed(() => {
 const taskTypePresentation = computed(() => TASK_TYPE_PRESENTATION[task.value.type])
 const taskColor = computed(() => task.value.color || taskTypePresentation.value.color)
 const isPausedTask = computed(() => props.scheduleStatus === 'paused')
+const isSkippedTask = computed(() => props.scheduleStatus === 'skipped')
 const stateColor = computed(() => {
+  if (isSkippedTask.value) return 'warning'
   if (numericGoalStatus.value?.tone === 'text-success') return 'success'
   if (numericGoalStatus.value?.tone === 'text-warning') return 'warning'
   if (numericGoalStatus.value?.tone === 'text-error') return 'error'
@@ -183,15 +185,17 @@ const stateColor = computed(() => {
 })
 const stateIcon = computed(() => {
   if (isPausedTask.value) return 'mdi-pause'
+  if (isSkippedTask.value) return 'mdi-skip-next-outline'
   if (displayedComplete.value) return 'mdi-check-bold'
   if (props.progress.locked) return 'mdi-lock-outline'
   return taskTypePresentation.value.icon
 })
 const showingTaskTypeIcon = computed(() =>
-  !isPausedTask.value && !displayedComplete.value && !props.progress.locked,
+  !isPausedTask.value && !isSkippedTask.value && !displayedComplete.value && !props.progress.locked,
 )
 const stateIconColor = computed(() => {
   if (isPausedTask.value) return 'on-surface'
+  if (isSkippedTask.value) return 'warning'
   if (showingTaskTypeIcon.value) return '#191C19'
   if (displayedComplete.value) return 'white'
   return stateColor.value
@@ -336,13 +340,22 @@ onBeforeUnmount(() => clearTimeout(stepSyncHideTimer))
         </div>
 
         <div class="flex-grow-1 min-width-0">
-          <div class="d-flex align-center ga-2 flex-wrap">
-            <h3 class="task-title">{{ title }}</h3>
-            <span v-if="task.mandatory" class="required-dot">Required</span>
-            <span v-if="scheduleStatus" class="schedule-status">
-              {{ scheduleStatus === 'paused' ? 'Paused' : 'Not scheduled' }}
-            </span>
-          </div>
+          <h3 class="task-title">{{ title }}</h3>
+          <v-expand-transition>
+            <div
+              v-if="task.mandatory || scheduleStatus"
+              class="task-card-tags d-flex align-center ga-2 mt-1"
+            >
+              <span v-if="task.mandatory" class="required-dot">Required</span>
+              <Transition name="task-tag">
+                <span v-if="scheduleStatus" :key="scheduleStatus" class="schedule-status">
+                  {{ scheduleStatus === 'paused'
+                    ? 'Paused'
+                    : scheduleStatus === 'skipped' ? 'Skipped' : 'Not scheduled' }}
+                </span>
+              </Transition>
+            </div>
+          </v-expand-transition>
           <p class="task-subtitle text-truncate mt-1">{{ subtitle || 'Personal' }}</p>
         </div>
       </div>
@@ -390,8 +403,7 @@ onBeforeUnmount(() => clearTimeout(stepSyncHideTimer))
 
     <v-expand-transition>
       <div
-        v-if="!scheduleStatus"
-        v-show="expanded"
+        v-show="!scheduleStatus && expanded"
         :id="detailsId"
         class="task-card-body"
       >
@@ -761,6 +773,11 @@ onBeforeUnmount(() => clearTimeout(stepSyncHideTimer))
   line-height: 1.25;
 }
 
+.task-card-tags {
+  min-height: 1.125rem;
+  overflow: hidden;
+}
+
 .task-subtitle {
   max-width: 230px;
   color: rgb(var(--v-theme-on-surface) / .5);
@@ -781,7 +798,26 @@ onBeforeUnmount(() => clearTimeout(stepSyncHideTimer))
 }
 
 .schedule-status {
+  display: inline-block;
+  max-width: 8rem;
+  overflow: hidden;
   color: rgb(var(--v-theme-on-surface) / .62);
+  white-space: nowrap;
+}
+
+.task-tag-enter-active,
+.task-tag-leave-active {
+  transition:
+    max-width .2s cubic-bezier(.22, 1, .36, 1),
+    padding-inline .2s cubic-bezier(.22, 1, .36, 1),
+    opacity .16s ease;
+}
+
+.task-tag-enter-from,
+.task-tag-leave-to {
+  max-width: 0;
+  padding-inline: 0;
+  opacity: 0;
 }
 
 .period-pill {

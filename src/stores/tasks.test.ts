@@ -4,6 +4,7 @@ import type { Entry, JournalEntry, Occurrence, ProgramStep, Task, TrackingEntry 
 
 const apiMocks = vi.hoisted(() => ({
   createOccurrence: vi.fn(),
+  deleteOccurrence: vi.fn(),
   createEntry: vi.fn(),
   updateEntry: vi.fn(),
   deleteEntry: vi.fn(),
@@ -31,6 +32,7 @@ vi.mock('@/lib/api', () => ({
       if (name === 'occurrences') return {
         create: apiMocks.createOccurrence,
         update: apiMocks.updateOccurrence,
+        delete: apiMocks.deleteOccurrence,
       }
       if (name === 'tasks') return { update: apiMocks.updateTask }
       throw new Error(`Unexpected collection: ${name}`)
@@ -101,6 +103,7 @@ describe('quantitative task completion', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     apiMocks.createOccurrence.mockReset()
+    apiMocks.deleteOccurrence.mockReset()
     apiMocks.createEntry.mockReset()
     apiMocks.updateEntry.mockReset()
     apiMocks.deleteEntry.mockReset()
@@ -521,6 +524,153 @@ describe('quantitative task completion', () => {
 
     expect(store.makeProgress(reviewTask, selectedDate).status).toBe('pending')
     expect(store.reviewProgressForDate(reviewDate)).toHaveLength(1)
+  })
+
+  it('persists an unplanned skip without adding it to the selected day', async () => {
+    const store = useTaskStore()
+    const unplannedTask = {
+      ...task,
+      id: 'unplanned-task',
+      recurrenceType: 'weekdays' as const,
+      weekdays: [4],
+    }
+    const pendingRecord = {
+      id: 'skipped-occurrence',
+      task: unplannedTask.id,
+      program_step: '',
+      scheduled_date: '2026-07-29',
+      status: 'pending',
+      sealed: false,
+      completed_at: '',
+      snapshot_name: unplannedTask.name,
+      snapshot_target: 4,
+      snapshot_unit: 'hours',
+    }
+    store.selectedDate = selectedDate
+    store.tasks = [unplannedTask]
+    apiMocks.createOccurrence.mockResolvedValue(pendingRecord)
+    apiMocks.updateOccurrence.mockResolvedValue({ ...pendingRecord, status: 'skipped' })
+
+    await store.setStatus(store.makeProgress(unplannedTask, selectedDate), 'skipped')
+
+    expect(apiMocks.updateOccurrence).toHaveBeenCalledWith(pendingRecord.id, {
+      status: 'skipped',
+      sealed: false,
+      completed_at: '',
+    })
+    expect(store.occurrences[0]?.status).toBe('skipped')
+    expect(store.selectedProgress[0]).toMatchObject({ status: 'skipped' })
+    expect(store.completionRateForDate(selectedDate)).toBeUndefined()
+  })
+
+  it('unskips an unplanned task by removing its date-specific occurrence', async () => {
+    const store = useTaskStore()
+    const unplannedTask = {
+      ...task,
+      id: 'unplanned-task',
+      recurrenceType: 'weekdays' as const,
+      weekdays: [4],
+    }
+    store.occurrences = [{
+      ...completedOccurrence,
+      id: 'skipped-occurrence',
+      task: unplannedTask.id,
+      status: 'skipped',
+      completedAt: undefined,
+    }]
+    apiMocks.deleteOccurrence.mockResolvedValue(undefined)
+
+    await store.toggleSkipped(store.makeProgress(unplannedTask, selectedDate), false)
+
+    expect(apiMocks.deleteOccurrence).toHaveBeenCalledWith('skipped-occurrence')
+    expect(store.occurrences).toEqual([])
+  })
+
+  it('keeps skipped quantitative work skipped even when its target was reached', () => {
+    const store = useTaskStore()
+    store.occurrences = [{
+      ...completedOccurrence,
+      status: 'skipped',
+      completedAt: undefined,
+    }]
+    store.entries = [entry('target-entry', 4)]
+
+    expect(store.makeProgress(task, selectedDate)).toMatchObject({
+      complete: false,
+      status: 'skipped',
+    })
+  })
+
+  it('unskips scheduled work by returning its occurrence to pending', async () => {
+    const store = useTaskStore()
+    const skippedOccurrence = {
+      ...completedOccurrence,
+      status: 'skipped' as const,
+      completedAt: undefined,
+    }
+    store.occurrences = [skippedOccurrence]
+    apiMocks.updateOccurrence.mockResolvedValue({
+      id: skippedOccurrence.id,
+      task: task.id,
+      program_step: '',
+      scheduled_date: '2026-07-29',
+      status: 'pending',
+      sealed: false,
+      completed_at: '',
+      snapshot_name: task.name,
+      snapshot_target: 4,
+      snapshot_unit: 'hours',
+    })
+
+    await store.toggleSkipped(store.makeProgress(task, selectedDate), false)
+
+    expect(apiMocks.updateOccurrence).toHaveBeenCalledWith(skippedOccurrence.id, {
+      status: 'pending',
+      sealed: false,
+      completed_at: '',
+    })
+    expect(store.occurrences[0]?.status).toBe('pending')
+  })
+
+  it('allows a session duration objective to be manually flagged complete', async () => {
+    const store = useTaskStore()
+    const intervalTask = {
+      ...task,
+      id: 'manual-duration-interval',
+      type: 'interval' as const,
+      intervalTemplate: 'template-1',
+      sessionGoalType: 'duration' as const,
+      sessionTargetSeconds: 20 * 60,
+    }
+    const pendingRecord = {
+      id: 'manual-duration-occurrence',
+      task: intervalTask.id,
+      program_step: '',
+      scheduled_date: '2026-07-29',
+      status: 'pending',
+      sealed: false,
+      completed_at: '',
+      snapshot_name: intervalTask.name,
+      snapshot_target: 20 * 60,
+      snapshot_unit: 'seconds',
+    }
+    store.tasks = [intervalTask]
+    apiMocks.createOccurrence.mockResolvedValue(pendingRecord)
+    apiMocks.updateOccurrence.mockResolvedValue({
+      ...pendingRecord,
+      status: 'completed',
+      sealed: true,
+      completed_at: '2026-07-29T12:00:00.000Z',
+    })
+
+    await store.setStatus(store.makeProgress(intervalTask, selectedDate), 'completed')
+
+    expect(store.makeProgress(intervalTask, selectedDate)).toMatchObject({
+      complete: true,
+      percent: 100,
+      sealed: true,
+      status: 'completed',
+    })
   })
 
   it('returns a completed occurrence to pending when an entry drops below its target', async () => {

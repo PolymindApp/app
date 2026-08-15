@@ -18,7 +18,7 @@ import { isNativeHealthConnectSupported } from '@/services/healthConnect'
 import { isHealthConnectEntry } from '@/services/healthConnectEntries'
 import { formatIntervalDuration, intervalDuration } from '@/services/intervals'
 import { taskCompletionMarkerColor, toDateKey } from '@/services/schedule'
-import { TASK_CARD_ACTION_ITEMS, taskCanLogAdditionalValue, taskCanLogAmounts, taskIntervalCanStart } from '@/services/taskCardActions'
+import { TASK_CARD_ACTION_ITEMS, taskCanBeMarkedCompleted, taskCanLogAdditionalValue, taskCanLogAmounts, taskIntervalCanStart, taskIsResolved } from '@/services/taskCardActions'
 import type { TaskCardActionId } from '@/services/taskCardActions'
 import { formatTrackingValue } from '@/services/tracking'
 import {
@@ -79,6 +79,8 @@ const taskSheetMode = ref<'actions' | 'history'>('actions')
 const taskActionProgress = ref<TaskProgress>()
 const taskStatusDialog = ref(false)
 const taskStatusUpdating = ref(false)
+const taskSkipDialog = ref(false)
+const taskSkipUpdating = ref(false)
 const taskLogEntries = ref<Entry[]>([])
 const taskLogLoading = ref(false)
 const taskLogError = ref('')
@@ -143,24 +145,34 @@ const taskSheetDescription = computed(() => taskSheetMode.value === 'history'
   ? `${taskActionTitle.value} · ${format(selectedDate.value, 'EEEE, MMMM d')}`
   : undefined)
 const taskCardActionItems = computed(() => TASK_CARD_ACTION_ITEMS.filter((action) =>
-  action.id === 'log-additional-value'
-    ? taskCanLogAdditionalValue(taskActionProgress.value)
-    : action.id !== 'view-log-history'
-      || taskCanLogAmounts(taskActionProgress.value)
-      || (taskCanLogAdditionalValue(taskActionProgress.value) && taskActionProgress.value
-        ? store.entriesFor(
-            taskActionProgress.value.task,
-            parseISO(taskActionProgress.value.scheduledDate),
-            taskActionProgress.value.programStep,
-          ).length > 0
-        : false),
+  action.id === 'complete-task'
+    ? taskCanBeMarkedCompleted(taskActionProgress.value)
+    : action.id === 'skip-task'
+      ? Boolean(taskActionProgress.value)
+      : action.id === 'log-additional-value'
+        ? taskCanLogAdditionalValue(taskActionProgress.value)
+        : action.id !== 'view-log-history'
+          || taskCanLogAmounts(taskActionProgress.value)
+          || (taskCanLogAdditionalValue(taskActionProgress.value) && taskActionProgress.value
+            ? store.entriesFor(
+                taskActionProgress.value.task,
+                parseISO(taskActionProgress.value.scheduledDate),
+                taskActionProgress.value.programStep,
+              ).length > 0
+            : false),
 ).map(action => action.id === 'toggle-task-status'
   ? {
       ...action,
       title: taskActionProgress.value?.task.active ? 'Pause task' : 'Unpause task',
       icon: taskActionProgress.value?.task.active ? 'mdi-pause' : 'mdi-play',
     }
-  : action))
+  : action.id === 'skip-task'
+    ? {
+        ...action,
+        title: taskActionProgress.value?.status === 'skipped' ? 'Unskip' : 'Skip',
+        icon: taskActionProgress.value?.status === 'skipped' ? 'mdi-backup-restore' : 'mdi-skip-next-outline',
+      }
+    : action))
 const visibleWeekDates = computed(() => Array.from(
   { length: 7 },
   (_, index) => addDays(visibleWeekStart.value, index),
@@ -180,10 +192,16 @@ const notScheduledProgress = computed(() => tasksWithoutProgress(
   store.tasks,
   selectedProgress.value,
 ).map(task => store.makeProgress(task, selectedDate.value)))
+const selectedProgressForDisplay = computed(() => selectedProgress.value.filter(progress =>
+  progress.status !== 'skipped'
+  || store.progressIsScheduled(progress)
+  || showNotScheduled.value
+  || showCompleted.value,
+))
 const displayedProgress = computed(() => {
   const progressItems = showNotScheduled.value
-    ? [...selectedProgress.value, ...notScheduledProgress.value]
-    : selectedProgress.value
+    ? [...selectedProgressForDisplay.value, ...notScheduledProgress.value]
+    : selectedProgressForDisplay.value
   return [...progressItems].sort((left, right) => (
     Number(right.task.mandatory) - Number(left.task.mandatory)
     || left.task.sortOrder - right.task.sortOrder
@@ -195,7 +213,8 @@ const optional = computed(() => displayedProgress.value.filter((item) => !item.t
 const visibleRequired = computed(() => required.value.filter(taskIsVisible))
 const visibleOptional = computed(() => optional.value.filter(taskIsVisible))
 const reviewItems = computed(() => store.reviewProgressForDate(selectedDate.value))
-const doneCount = computed(() => selectedProgress.value.filter((item) => item.complete).length)
+const scoredProgress = computed(() => selectedProgress.value.filter(item => item.status !== 'skipped'))
+const doneCount = computed(() => scoredProgress.value.filter((item) => item.complete).length)
 const taskFiltersActive = computed(() => showCompleted.value || showNotScheduled.value)
 let appStateListener: Awaited<ReturnType<typeof App.addListener>> | undefined
 let stepCountResumeTimer: ReturnType<typeof setTimeout> | undefined
@@ -310,7 +329,7 @@ function visibilityKey(progress: TaskProgress) {
 
 function taskIsVisible(progress: TaskProgress) {
   return showCompleted.value
-    || !progress.complete
+    || !taskIsResolved(progress)
     || recentlyCompletedKeys.value.has(visibilityKey(progress))
 }
 
@@ -330,6 +349,7 @@ function toggleTaskFilter(filter: TaskFilterId) {
 }
 
 function taskScheduleStatus(progress: TaskProgress) {
+  if (progress.status === 'skipped') return 'skipped' as const
   if (!showNotScheduled.value || selectedProgress.value.some(item => item.task.id === progress.task.id)) {
     return undefined
   }
@@ -382,17 +402,17 @@ function keepCompletedTaskVisible(key: string) {
 watch(
   () => selectedProgress.value.map(progress => ({
     key: visibilityKey(progress),
-    complete: progress.complete,
+    resolved: taskIsResolved(progress),
   })),
   (current, previous = []) => {
-    const previousByKey = new Map(previous.map(item => [item.key, item.complete]))
-    const currentByKey = new Map(current.map(item => [item.key, item.complete]))
+    const previousByKey = new Map(previous.map(item => [item.key, item.resolved]))
+    const currentByKey = new Map(current.map(item => [item.key, item.resolved]))
 
     current.forEach((item) => {
-      if (item.complete && previousByKey.get(item.key) === false) {
+      if (item.resolved && previousByKey.get(item.key) === false) {
         keepCompletedTaskVisible(item.key)
       }
-      if (!item.complete) clearCompletedTaskVisibility(item.key)
+      if (!item.resolved) clearCompletedTaskVisibility(item.key)
     })
 
     previous.forEach((item) => {
@@ -569,6 +589,19 @@ async function openTaskLogHistory() {
 }
 
 function runTaskCardAction(action: TaskCardActionId) {
+  if (action === 'complete-task') {
+    const progress = taskActionProgress.value
+    if (!progress) return
+    taskSheet.value = false
+    void runForProgress(progress, () => store.setStatus(progress, 'completed'))
+    return
+  }
+  if (action === 'skip-task') {
+    if (!taskActionProgress.value) return
+    taskSheet.value = false
+    taskSkipDialog.value = true
+    return
+  }
   if (action === 'edit-task') {
     const taskId = taskActionProgress.value?.task.id
     if (!taskId) return
@@ -590,6 +623,21 @@ function runTaskCardAction(action: TaskCardActionId) {
     return
   }
   if (action === 'view-log-history') void openTaskLogHistory()
+}
+
+async function confirmTaskSkipChange() {
+  const progress = taskActionProgress.value
+  if (!progress || taskSkipUpdating.value) return
+  const skipping = progress.status !== 'skipped'
+  if (skipping) keepCompletedTaskVisible(visibilityKey(progress))
+  taskSkipUpdating.value = true
+  try {
+    await store.toggleSkipped(progress, skipping)
+    taskSkipDialog.value = false
+    taskActionProgress.value = undefined
+  } finally {
+    taskSkipUpdating.value = false
+  }
 }
 
 async function confirmTaskStatusChange() {
@@ -902,7 +950,7 @@ async function saveTaskLogEntry() {
             <span class="score-number">{{ completionRate }}</span><span class="score-percent">%</span>
           </div>
           <p class="text-caption text-medium-emphasis mt-1">
-            {{ doneCount }} of {{ selectedProgress.length }} scheduled tasks complete
+            {{ doneCount }} of {{ scoredProgress.length }} scheduled tasks complete
           </p>
         </div>
         <v-progress-circular
@@ -1351,6 +1399,19 @@ async function saveTaskLogEntry() {
       :icon="taskActionProgress?.task.active ? 'mdi-pause' : 'mdi-play'"
       :loading="taskStatusUpdating"
       @confirm="confirmTaskStatusChange"
+    />
+
+    <ConfirmDialog
+      v-model="taskSkipDialog"
+      :title="taskActionProgress?.status === 'skipped' ? 'Unskip this task?' : 'Skip this task?'"
+      :message="taskActionProgress?.status === 'skipped'
+        ? `${taskActionTitle} will return to this day.`
+        : `${taskActionTitle} will be excluded from this day’s completion score.`"
+      :confirm-text="taskActionProgress?.status === 'skipped' ? 'Unskip' : 'Skip'"
+      :confirm-color="taskActionProgress?.status === 'skipped' ? 'secondary' : 'warning'"
+      :icon="taskActionProgress?.status === 'skipped' ? 'mdi-backup-restore' : 'mdi-skip-next-outline'"
+      :loading="taskSkipUpdating"
+      @confirm="confirmTaskSkipChange"
     />
 
     <ConfirmDialog
