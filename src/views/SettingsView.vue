@@ -57,6 +57,9 @@ const isAndroidApp = isNativeHealthConnectSupported()
 const stepSources = [
   { title: 'Health Connect', value: 'health_connect' },
 ]
+const healthConnected = computed(() => (
+  healthStatus.value.availability === 'available' && healthStatus.value.authorized
+))
 
 const connectionTitle = computed(() => {
   if (!isAndroidApp) return 'Android app required'
@@ -357,9 +360,18 @@ async function previewIntervalTypeSound(kind: IntervalStepKind, sound: IntervalC
           label="Steps source"
           :items="stepSources"
           hide-details
-        />
+        >
+          <template v-if="healthConnected" #append-inner>
+            <v-icon
+              icon="mdi-check-circle-outline"
+              color="success"
+              title="Connected"
+            />
+          </template>
+        </v-select>
 
         <v-alert
+          v-if="!healthConnected"
           :type="connectionColor"
           variant="tonal"
           :icon="connectionIcon"
