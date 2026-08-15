@@ -130,6 +130,7 @@ export const useTaskStore = defineStore('tasks', () => {
   const error = ref('')
   const stepCountLoading = ref(false)
   const stepCountError = ref('')
+  const optimisticOccurrenceStatuses = ref<Partial<Record<string, Occurrence['status']>>>({})
   let stepCountRequest = 0
   let progressRangeRequest = 0
   let initialProgressSince = ''
@@ -139,6 +140,10 @@ export const useTaskStore = defineStore('tasks', () => {
   const loadedProgressRanges = new Set<string>()
 
   const activeTasks = computed(() => tasks.value.filter((task) => task.active))
+
+  function occurrenceStatusKey(taskId: string, scheduledDate: string, programStepId = '') {
+    return `${scheduledDate}:${taskId}:${programStepId}`
+  }
 
   function entriesFor(task: Task, date: Date, step?: ProgramStep) {
     let start = toDateKey(date)
@@ -166,6 +171,9 @@ export const useTaskStore = defineStore('tasks', () => {
   function makeProgress(task: Task, date: Date, step?: ProgramStep): TaskProgress {
     const occurrence = occurrenceFor(task, date, step)
     const dateKey = toDateKey(date)
+    const optimisticStatus = optimisticOccurrenceStatuses.value[
+      occurrenceStatusKey(task.id, dateKey, step?.id)
+    ]
     const trackingTrackerIds = !step && task.type === 'tracking'
       ? [...new Set(task.trackingTrackers ?? [])]
       : []
@@ -196,7 +204,8 @@ export const useTaskStore = defineStore('tasks', () => {
       : task.type === 'journal' && !step
         ? value > 0
       : meetsTarget(value, target, operator)
-    const occurrenceComplete = occurrence?.status === 'completed'
+    const storedStatus = optimisticStatus ?? occurrence?.status ?? 'pending'
+    const occurrenceComplete = storedStatus === 'completed'
     const isOccurrenceDriven = (step && ['check', 'interval', 'flashcards'].includes(step.completionType))
       || (!step && ['check', 'interval', 'flashcards'].includes(task.type) && !isSessionDuration)
     const isDailyTotal = !step && task.type === 'daily_total'
@@ -206,7 +215,6 @@ export const useTaskStore = defineStore('tasks', () => {
       : isDailyTotal
         ? sealed
         : operator !== 'lte' && targetReached
-    const storedStatus = occurrence?.status || 'pending'
     return {
       task,
       scheduledDate: toDateKey(date),
@@ -745,17 +753,34 @@ export const useTaskStore = defineStore('tasks', () => {
 
   async function setStatus(progress: TaskProgress, status: Occurrence['status']) {
     const progressDate = parseISO(progress.scheduledDate)
-    const occurrence = await ensureOccurrence(progress.task, progressDate, progress.programStep)
-    const record = await api.collection('occurrences').update(occurrence.id, {
-      status,
-      sealed: status === 'completed',
-      completed_at: status === 'completed' ? new Date().toISOString() : '',
-    })
-    Object.assign(occurrence, mapOccurrence(record))
-    if (status === 'carried') {
-      await ensureOccurrence(progress.task, addDays(progressDate, 1), progress.programStep)
+    const statusKey = occurrenceStatusKey(
+      progress.task.id,
+      progress.scheduledDate,
+      progress.programStep?.id,
+    )
+    optimisticOccurrenceStatuses.value = {
+      ...optimisticOccurrenceStatuses.value,
+      [statusKey]: status,
     }
-    await syncTaskReminders()
+    try {
+      const occurrence = await ensureOccurrence(progress.task, progressDate, progress.programStep)
+      const record = await api.collection('occurrences').update(occurrence.id, {
+        status,
+        sealed: status === 'completed',
+        completed_at: status === 'completed' ? new Date().toISOString() : '',
+      })
+      Object.assign(occurrence, mapOccurrence(record))
+      if (status === 'carried') {
+        await ensureOccurrence(progress.task, addDays(progressDate, 1), progress.programStep)
+      }
+    } finally {
+      if (optimisticOccurrenceStatuses.value[statusKey] === status) {
+        const nextStatuses = { ...optimisticOccurrenceStatuses.value }
+        delete nextStatuses[statusKey]
+        optimisticOccurrenceStatuses.value = nextStatuses
+      }
+    }
+    void syncTaskReminders()
   }
 
   async function saveTask(draft: TaskDraft) {

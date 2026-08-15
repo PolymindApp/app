@@ -445,7 +445,7 @@ describe('quantitative task completion', () => {
     expect(store.occurrences[0]?.status).toBe('completed')
   })
 
-  it('reactively updates review progress when setting a newly created occurrence to missed', async () => {
+  it('optimistically removes newly missed work from review progress before persistence finishes', async () => {
     const store = useTaskStore()
     const reviewTask = {
       ...task,
@@ -466,21 +466,61 @@ describe('quantitative task completion', () => {
       snapshot_unit: '',
     }
     let resolveUpdate!: (record: typeof pendingRecord) => void
-    store.selectedDate = selectedDate
+    const reviewDate = new Date(2026, 6, 30)
+    store.selectedDate = reviewDate
     store.tasks = [reviewTask]
     apiMocks.createOccurrence.mockResolvedValue(pendingRecord)
     apiMocks.updateOccurrence.mockReturnValue(new Promise((resolve) => {
       resolveUpdate = resolve
     }))
 
-    const statusUpdate = store.setStatus(store.selectedProgress[0]!, 'missed')
+    expect(store.reviewProgressForDate(reviewDate)).toHaveLength(1)
+
+    const statusUpdate = store.setStatus(store.reviewProgressForDate(reviewDate)[0]!, 'missed')
+    expect(store.reviewProgressForDate(reviewDate)).toHaveLength(0)
+
     await vi.waitFor(() => expect(apiMocks.updateOccurrence).toHaveBeenCalled())
-    expect(store.selectedProgress[0]?.status).toBe('pending')
 
     resolveUpdate({ ...pendingRecord, status: 'missed' })
     await statusUpdate
 
-    expect(store.selectedProgress[0]?.status).toBe('missed')
+    expect(store.makeProgress(reviewTask, selectedDate).status).toBe('missed')
+    expect(store.reviewProgressForDate(reviewDate)).toHaveLength(0)
+  })
+
+  it('rolls an optimistic status back when persistence fails', async () => {
+    const store = useTaskStore()
+    const reviewTask = {
+      ...task,
+      id: 'review-task',
+      type: 'check' as const,
+      reviewWhenMissed: true,
+    }
+    const pendingOccurrence: Occurrence = {
+      id: 'review-occurrence',
+      task: reviewTask.id,
+      scheduledDate: '2026-07-29',
+      status: 'pending',
+      sealed: false,
+      snapshotName: reviewTask.name,
+      snapshotTarget: 1,
+    }
+    let rejectUpdate!: (cause: Error) => void
+    const reviewDate = new Date(2026, 6, 30)
+    store.tasks = [reviewTask]
+    store.occurrences = [pendingOccurrence]
+    apiMocks.updateOccurrence.mockReturnValue(new Promise((_resolve, reject) => {
+      rejectUpdate = reject
+    }))
+
+    const statusUpdate = store.setStatus(store.reviewProgressForDate(reviewDate)[0]!, 'missed')
+    expect(store.reviewProgressForDate(reviewDate)).toHaveLength(0)
+
+    rejectUpdate(new Error('Could not save status'))
+    await expect(statusUpdate).rejects.toThrow('Could not save status')
+
+    expect(store.makeProgress(reviewTask, selectedDate).status).toBe('pending')
+    expect(store.reviewProgressForDate(reviewDate)).toHaveLength(1)
   })
 
   it('returns a completed occurrence to pending when an entry drops below its target', async () => {

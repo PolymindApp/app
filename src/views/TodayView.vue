@@ -499,8 +499,9 @@ async function runForProgress(progress: TaskProgress, action: () => Promise<void
 }
 
 async function resolveReview(item: TaskProgress, status: 'missed' | 'carried') {
-  await run(() => store.setStatus(item, status))
-  reviewSheet.value = false
+  const update = runForProgress(item, () => store.setStatus(item, status))
+  if (!reviewItems.value.length) reviewSheet.value = false
+  await update
 }
 
 function openTaskActions(progress: TaskProgress) {
@@ -1377,7 +1378,7 @@ async function saveTaskLogEntry() {
             variant="tonal"
             color="error"
             prepend-icon="mdi-close-circle-outline"
-            :disabled="busy"
+            :disabled="progressIsBusy(item)"
             @click="resolveReview(item, 'missed')"
           >
             Mark missed
@@ -1386,7 +1387,7 @@ async function saveTaskLogEntry() {
             size="large"
             variant="tonal"
             prepend-icon="mdi-arrow-right-bold"
-            :disabled="busy"
+            :disabled="progressIsBusy(item)"
             @click="resolveReview(item, 'carried')"
           >
             Carry forward
@@ -1396,8 +1397,8 @@ async function saveTaskLogEntry() {
             size="large"
             variant="tonal"
             prepend-icon="mdi-calendar-arrow-right"
-            :disabled="busy"
-            @click="run(() => store.shiftProgram(item))"
+            :disabled="progressIsBusy(item)"
+            @click="runForProgress(item, () => store.shiftProgram(item))"
           >
             Shift program
           </v-btn>
