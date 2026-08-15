@@ -92,6 +92,17 @@ function mapSession(record: Record<string, any>): IntervalSession {
   }
 }
 
+function mapSessionWithSpeechPause(
+  record: Record<string, any>,
+  speechPaused: boolean | undefined,
+) {
+  const session = mapSession(record)
+  if (speechPaused !== undefined && session.flashcardReview) {
+    session.flashcardReview.speechPaused = speechPaused
+  }
+  return session
+}
+
 function loadRecovery(): { sessionId: string; runtime: IntervalRuntimeState } | undefined {
   try {
     return JSON.parse(localStorage.getItem(RECOVERY_KEY) || '') || undefined
@@ -318,7 +329,10 @@ export const useIntervalStore = defineStore('intervals', () => {
     sessionId: string,
     changes: {
       status?: IntervalSessionStatus
+      definition?: IntervalDefinition
+      cues?: IntervalCueSettings
       runtime?: IntervalRuntimeState
+      plannedSeconds?: number
       elapsedSeconds?: number
       endedAt?: string
       note?: string
@@ -326,7 +340,10 @@ export const useIntervalStore = defineStore('intervals', () => {
   ) {
     const payload: Record<string, unknown> = {}
     if (changes.status) payload.status = changes.status
+    if (changes.definition) payload.definition_snapshot = changes.definition
+    if (changes.cues) payload.cue_snapshot = changes.cues
     if (changes.runtime) payload.runtime_state = changes.runtime
+    if (changes.plannedSeconds !== undefined) payload.planned_seconds = changes.plannedSeconds
     if (changes.elapsedSeconds !== undefined) payload.elapsed_seconds = changes.elapsedSeconds
     if (changes.endedAt !== undefined) payload.ended_at = changes.endedAt
     if (changes.note !== undefined) payload.note = changes.note
@@ -337,7 +354,10 @@ export const useIntervalStore = defineStore('intervals', () => {
     const session = sessions.value[index]!
     const previous = { ...session }
     if (changes.status !== undefined) session.status = changes.status
+    if (changes.definition !== undefined) session.definition = changes.definition
+    if (changes.cues !== undefined) session.cues = changes.cues
     if (changes.runtime !== undefined) session.runtime = changes.runtime
+    if (changes.plannedSeconds !== undefined) session.plannedSeconds = changes.plannedSeconds
     if (changes.elapsedSeconds !== undefined) session.elapsedSeconds = changes.elapsedSeconds
     if (changes.endedAt !== undefined) session.endedAt = changes.endedAt || undefined
     if (changes.note !== undefined) session.note = changes.note || undefined
@@ -345,7 +365,9 @@ export const useIntervalStore = defineStore('intervals', () => {
     else localStorage.removeItem(RECOVERY_KEY)
     try {
       const record = await api.collection('interval_sessions').update(sessionId, payload)
-      Object.assign(session, mapSession(record))
+      const speechPaused = session.flashcardReview?.speechPaused
+      const updated = mapSessionWithSpeechPause(record, speechPaused)
+      Object.assign(session, updated)
       return session
     } catch (cause) {
       Object.assign(session, previous)
@@ -360,14 +382,16 @@ export const useIntervalStore = defineStore('intervals', () => {
   ) {
     const index = sessions.value.findIndex((session) => session.id === sessionId)
     if (index < 0) {
-      return mapSession(await api.updateIntervalSessionFlashcards(sessionId, flashcardReview))
+      const record = await api.updateIntervalSessionFlashcards(sessionId, flashcardReview)
+      return mapSessionWithSpeechPause(record, flashcardReview.speechPaused)
     }
     const session = sessions.value[index]!
     const previous = session.flashcardReview
     session.flashcardReview = flashcardReview
     try {
       const record = await api.updateIntervalSessionFlashcards(sessionId, flashcardReview)
-      Object.assign(session, mapSession(record))
+      const updated = mapSessionWithSpeechPause(record, flashcardReview.speechPaused)
+      Object.assign(session, updated)
       if (session.status === 'running' || session.status === 'paused') saveRecovery(session.id, session.runtime)
       return session
     } catch (cause) {

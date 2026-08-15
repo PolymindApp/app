@@ -682,6 +682,52 @@ export function createRuntimeState(definition: IntervalDefinition, now = new Dat
   }
 }
 
+export function rebaseIntervalRuntimeForDefinition(
+  previousDefinition: IntervalDefinition,
+  nextDefinition: IntervalDefinition,
+  runtime: IntervalRuntimeState,
+  now = new Date(),
+): IntervalRuntimeState {
+  const previousStep = resolveIntervalStep(previousDefinition, runtime.stepIndex)
+  const nextStepCount = intervalStepCount(nextDefinition)
+  let nextStepIndex = Math.min(runtime.stepIndex, Math.max(0, nextStepCount - 1))
+
+  if (previousStep) {
+    let occurrence = 0
+    for (let index = 0; index <= runtime.stepIndex; index += 1) {
+      if (resolveIntervalStep(previousDefinition, index)?.step.id === previousStep.step.id) {
+        occurrence += 1
+      }
+    }
+    const matchingIndexes: number[] = []
+    for (let index = 0; index < nextStepCount; index += 1) {
+      if (resolveIntervalStep(nextDefinition, index)?.step.id === previousStep.step.id) {
+        matchingIndexes.push(index)
+      }
+    }
+    nextStepIndex = matchingIndexes[Math.min(Math.max(occurrence - 1, 0), matchingIndexes.length - 1)]
+      ?? nextStepIndex
+  }
+
+  const nextStep = resolveIntervalStep(nextDefinition, nextStepIndex)
+  const previousDurationMs = previousStep
+    ? intervalStepDurationSeconds(previousStep.step) * 1000
+    : 0
+  const elapsedInStepMs = Math.max(0, previousDurationMs - runtime.remainingMs)
+  const nextDurationMs = nextStep ? intervalStepDurationSeconds(nextStep.step) * 1000 : 0
+  const timestamp = now.toISOString()
+
+  return {
+    ...runtime,
+    stepIndex: nextStepIndex,
+    remainingMs: Math.max(0, nextDurationMs - elapsedInStepMs),
+    stepStartedAt: runtime.stepStartedAt && nextStep?.step.kind !== 'confirmation'
+      ? timestamp
+      : undefined,
+    updatedAt: timestamp,
+  }
+}
+
 export function reconcileIntervalRuntime(
   definition: IntervalDefinition,
   runtime: IntervalRuntimeState,

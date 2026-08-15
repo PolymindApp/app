@@ -29,11 +29,17 @@ export function intervalRunnerSessionMenuItems(
   return [
     ...(state.speechAvailable ? [amplificationItem(state.amplified, state.busy)] : []),
     {
+      action: 'settings' as const,
+      title: 'Settings',
+      icon: 'mdi-tune-variant',
+      disabled: state.preview || state.busy,
+      divider: state.speechAvailable,
+    },
+    {
       action: 'restart' as const,
       title: 'Restart interval',
       icon: 'mdi-restart',
       disabled: state.preview || state.busy,
-      divider: state.speechAvailable,
     },
     {
       action: 'end' as const,

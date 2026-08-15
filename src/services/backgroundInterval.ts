@@ -114,7 +114,7 @@ export async function syncBackgroundInterval(session: IntervalSession) {
               frontSeconds: session.flashcardReview.frontSeconds,
               backSeconds: session.flashcardReview.backSeconds,
               backSpeechRepeatCount: session.flashcardReview.backSpeechRepeatCount,
-              speechEnabled: true,
+              speechEnabled: !session.flashcardReview.speechPaused,
               frontLanguage: session.flashcardReview.frontLanguage,
               backLanguage: session.flashcardReview.backLanguage,
               overAmplified: flashcardSpeechOverAmplificationIsEnabled(),

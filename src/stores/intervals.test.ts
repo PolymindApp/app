@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
-import type { IntervalFlashcardReviewSnapshot, IntervalTemplate } from '@/types/domain'
+import type { IntervalDefinition, IntervalFlashcardReviewSnapshot, IntervalTemplate } from '@/types/domain'
 
 const apiMocks = vi.hoisted(() => ({
   authRecord: { id: 'user-1', settings: {} as Record<string, unknown> },
@@ -459,6 +459,133 @@ describe('interval task attribution', () => {
     expect(store.sessions[0]?.status).toBe('paused')
   })
 
+  it('optimistically updates an active session definition and cue settings', async () => {
+    const sessionRecord = {
+      id: 'session-settings',
+      source: 'template',
+      status: 'paused',
+      snapshot_name: 'Editable interval',
+      definition_snapshot: {
+        version: 1,
+        children: [{
+          id: 'work',
+          type: 'step',
+          name: 'Work',
+          kind: 'work',
+          durationSeconds: 60,
+        }],
+      },
+      cue_snapshot: { soundEnabled: true, vibrationEnabled: true },
+      started_at: '2026-08-15T14:00:00.000Z',
+      planned_seconds: 60,
+      elapsed_seconds: 10,
+      runtime_state: {
+        stepIndex: 0,
+        remainingMs: 50_000,
+        accumulatedMs: 10_000,
+        updatedAt: '2026-08-15T14:00:10.000Z',
+      },
+    }
+    const definition: IntervalDefinition = {
+      version: 1,
+      children: [{
+        id: 'work',
+        type: 'step',
+        name: 'Work',
+        kind: 'work',
+        durationSeconds: 90,
+      }],
+    }
+    const cues = { soundEnabled: false, vibrationEnabled: true }
+    const runtime = { ...sessionRecord.runtime_state, remainingMs: 80_000 }
+    let resolveUpdate!: (value: Record<string, unknown>) => void
+    apiMocks.getIntervalSessions.mockResolvedValue({ items: [sessionRecord] })
+    apiMocks.updateIntervalSession.mockReturnValue(new Promise((resolve) => {
+      resolveUpdate = resolve
+    }))
+    const store = useIntervalStore()
+    await store.load({ reconcileActiveSession: false })
+
+    const update = store.updateSession('session-settings', {
+      definition,
+      cues,
+      runtime,
+      plannedSeconds: 90,
+    })
+
+    expect(store.sessions[0]).toMatchObject({ definition, cues, runtime, plannedSeconds: 90 })
+    expect(apiMocks.updateIntervalSession).toHaveBeenCalledWith('session-settings', {
+      definition_snapshot: definition,
+      cue_snapshot: cues,
+      runtime_state: runtime,
+      planned_seconds: 90,
+    })
+
+    resolveUpdate({
+      ...sessionRecord,
+      definition_snapshot: definition,
+      cue_snapshot: cues,
+      runtime_state: runtime,
+      planned_seconds: 90,
+    })
+    await update
+
+    expect(store.sessions[0]?.plannedSeconds).toBe(90)
+  })
+
+  it.each([true, false])(
+    'keeps the current session TTS pause state through runtime updates (%s)',
+    async (speechPaused) => {
+      const flashcardSnapshot = {
+        reviewSet: 'set-1',
+        name: 'Spanish',
+        tags: [],
+        sortMode: 'difficult',
+        cardSides: 'both',
+        frontSeconds: 5,
+        backSeconds: 5,
+        backSpeechRepeatCount: 1,
+        noteBeforeBack: false,
+        speechEnabled: true,
+        frontLanguage: 'es',
+        backLanguage: 'en',
+        cards: [{ id: 'card-1', front: 'Hola', back: 'Hello', note: '', image: '', tags: [] }],
+      }
+      const sessionRecord = {
+        id: 'session-tts',
+        source: 'template',
+        status: 'running',
+        snapshot_name: 'Study',
+        definition_snapshot: { version: 1, children: [] },
+        cue_snapshot: { soundEnabled: true, vibrationEnabled: true },
+        flashcard_snapshot: { ...flashcardSnapshot, speechPaused },
+        started_at: '2026-08-15T14:00:00.000Z',
+        planned_seconds: 60,
+        elapsed_seconds: 5,
+        runtime_state: {
+          stepIndex: 0,
+          remainingMs: 55_000,
+          accumulatedMs: 5_000,
+          updatedAt: '2026-08-15T14:00:05.000Z',
+        },
+      }
+      apiMocks.getIntervalSessions.mockResolvedValue({ items: [sessionRecord] })
+      apiMocks.updateIntervalSession.mockResolvedValue({
+        ...sessionRecord,
+        flashcard_snapshot: {
+          ...flashcardSnapshot,
+          speechPaused: !speechPaused,
+        },
+      })
+      const store = useIntervalStore()
+      await store.load({ reconcileActiveSession: false })
+
+      await store.updateSession('session-tts', { elapsedSeconds: 6 })
+
+      expect(store.sessions[0]?.flashcardReview?.speechPaused).toBe(speechPaused)
+    },
+  )
+
   it('persists changes to the active interval flashcard snapshot', async () => {
     const flashcardReview = {
       reviewSet: 'set-1',
@@ -471,6 +598,7 @@ describe('interval task attribution', () => {
       backSpeechRepeatCount: 1,
       noteBeforeBack: true,
       speechEnabled: false,
+      speechPaused: true,
       frontLanguage: '',
       backLanguage: '',
       cards: [{ id: 'card-1', front: 'Hola', back: 'Hello', note: '', image: '', tags: ['tag-1'] }],
@@ -482,7 +610,7 @@ describe('interval task attribution', () => {
       snapshot_name: 'Study',
       definition_snapshot: { version: 1, children: [] },
       cue_snapshot: { soundEnabled: true, vibrationEnabled: true },
-      flashcard_snapshot: flashcardReview,
+      flashcard_snapshot: { ...flashcardReview, speechPaused: false },
       started_at: '2026-08-08T14:00:00.000Z',
       planned_seconds: 60,
       elapsed_seconds: 5,
@@ -498,5 +626,6 @@ describe('interval task attribution', () => {
 
     expect(apiMocks.updateIntervalSessionFlashcards).toHaveBeenCalledWith('session-1', flashcardReview)
     expect(updated.flashcardReview?.cards[0]?.front).toBe('Hola')
+    expect(updated.flashcardReview?.speechPaused).toBe(true)
   })
 })

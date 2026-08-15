@@ -1,30 +1,48 @@
 <script setup lang="ts">
-const features = [
+const appSections = [
   {
-    title: 'Program your routines',
-    description: 'Turn an ambition into actions, targets, schedules, or repeating multi-step programs. Choose exactly what done means.',
+    title: 'Tasks',
+    role: 'Plan',
+    description: 'Schedule actions, targets, intervals, Review sets, check-ins, or complete multi-step programs.',
+    connection: 'Launch the right practice at the right time',
     icon: 'mdi-clipboard-check-outline',
   },
   {
-    title: 'Build every interval',
-    description: 'Arrange timed steps and repeatable groups for workouts, focus, recovery, or any routine. Tune the timing, order, repeats, and cues.',
+    title: 'Intervals',
+    role: 'Practise',
+    description: 'Build timed sequences for focus, workouts, recovery, and any routine that benefits from structure.',
+    connection: 'Include a Flashcard Review set in a routine',
     icon: 'mdi-timer-outline',
   },
   {
-    title: 'Tune how you learn',
-    description: 'Create or import cards, build focused Review sets, choose the order and pace, and add audio or passive review.',
+    title: 'Flashcards',
+    role: 'Learn',
+    description: 'Create focused Review sets with your own cards, order, pace, audio, and active or passive review.',
+    connection: 'Review alone, from a task, or inside an interval',
     icon: 'mdi-cards-outline',
   },
   {
-    title: 'Measure your progress',
-    description: 'Define the signals that matter, choose scales and targets, and compare factors with outcomes.',
+    title: 'Tracking',
+    role: 'Measure',
+    description: 'Log the factors and outcomes that matter, then compare them with your completed activity.',
+    connection: 'Relate outcomes to tasks, intervals, and reviews',
     icon: 'mdi-chart-timeline-variant',
   },
   {
-    title: 'Connect the full picture',
-    description: 'Link reflections to tasks and trackers so your notes add helpful context to your numbers and routines.',
+    title: 'Journal',
+    role: 'Reflect',
+    description: 'Write privately with the task and tracker snapshots that give each day its real context.',
+    connection: 'Use what you learn to tune the next plan',
     icon: 'mdi-notebook-outline',
   },
+]
+
+const systemFlow = [
+  { label: 'Plan', icon: 'mdi-clipboard-check-outline' },
+  { label: 'Practise', icon: 'mdi-timer-outline' },
+  { label: 'Learn', icon: 'mdi-cards-outline' },
+  { label: 'Measure', icon: 'mdi-chart-timeline-variant' },
+  { label: 'Reflect', icon: 'mdi-notebook-outline' },
 ]
 
 const screenshots = [
@@ -156,31 +174,64 @@ function scrollToFeatures() {
 
         <section id="features" class="feature-section px-6 px-lg-10">
           <div class="section-intro">
-            <h2>Fine-tune every part<span class="text-secondary">.</span></h2>
-            <p>Choose the schedule, targets, sequence, timing, and feedback that work for you. Connect each part into one personal system.</p>
+            <h2>Five sections. One feedback loop<span class="text-secondary">.</span></h2>
+            <p>Each section does one job well. Together, they turn a plan into practice, evidence, and a better next step.</p>
           </div>
 
-          <v-row class="feature-grid mt-8">
-            <v-col v-for="feature in features" :key="feature.title" cols="12" md="6" lg="4">
-              <v-card class="feature-card surface-card pa-6" height="100%">
-                <div class="feature-icon mb-5">
-                  <v-icon :icon="feature.icon" size="27" />
+          <v-row class="app-section-grid mt-10" align="stretch">
+            <v-col
+              v-for="(section, index) in appSections"
+              :key="section.title"
+              class="app-section-col"
+              cols="12"
+              sm="6"
+              lg
+            >
+              <v-card class="app-section-card surface-card pa-5" height="100%">
+                <div class="app-section-card__top">
+                  <div class="feature-icon">
+                    <v-icon :icon="section.icon" size="25" />
+                  </div>
+                  <span class="app-section-card__number">0{{ index + 1 }}</span>
                 </div>
-                <h3>{{ feature.title }}</h3>
-                <p class="mt-3">{{ feature.description }}</p>
-              </v-card>
-            </v-col>
-
-            <v-col cols="12" md="6" lg="4">
-              <v-card class="feature-card feature-card--summary pa-6" color="secondary" height="100%">
-                <div class="feature-icon feature-icon--dark mb-5">
-                  <v-icon icon="mdi-account-heart-outline" size="27" />
+                <p class="app-section-card__role mt-5">{{ section.role }}</p>
+                <h3 class="mt-1">{{ section.title }}</h3>
+                <p class="app-section-card__description mt-3">{{ section.description }}</p>
+                <div class="app-section-card__connection mt-5">
+                  <v-icon icon="mdi-link-variant" size="16" />
+                  <span>{{ section.connection }}</span>
                 </div>
-                <h3>Your life, your system</h3>
-                <p class="mt-3">Program each part in detail, connect it to the rest, and keep tuning it as your priorities change.</p>
               </v-card>
             </v-col>
           </v-row>
+
+          <v-card class="system-flow surface-card mt-6 pa-5 pa-md-6" aria-label="How the main sections work together">
+            <div class="system-flow__intro">
+              <div class="system-flow__loop">
+                <v-icon icon="mdi-sync" size="23" />
+              </div>
+              <div>
+                <strong>Everything stays connected</strong>
+                <p>Schedule the work, do it your way, see what changed, and carry that context into tomorrow.</p>
+              </div>
+            </div>
+
+            <div class="system-flow__steps">
+              <template v-for="(step, index) in systemFlow" :key="step.label">
+                <div class="system-flow__step">
+                  <v-icon :icon="step.icon" size="18" />
+                  <span>{{ step.label }}</span>
+                </div>
+                <v-icon
+                  v-if="index < systemFlow.length - 1"
+                  class="system-flow__arrow"
+                  icon="mdi-arrow-right"
+                  size="17"
+                />
+              </template>
+              <v-icon class="system-flow__return" icon="mdi-arrow-u-left-top" size="19" />
+            </div>
+          </v-card>
         </section>
 
         <section class="learning-section px-6 px-lg-10">
@@ -476,10 +527,6 @@ function scrollToFeatures() {
   line-height: 1.6;
 }
 
-.feature-card {
-  background: rgb(var(--v-theme-surface));
-}
-
 .feature-icon {
   width: 3.25rem;
   height: 3.25rem;
@@ -490,29 +537,152 @@ function scrollToFeatures() {
   color: rgb(var(--v-theme-secondary));
 }
 
-.feature-icon--dark {
-  background: rgba(var(--v-theme-on-secondary), .1);
-  color: rgb(var(--v-theme-on-secondary));
+.app-section-grid {
+  margin-inline: -.5rem;
 }
 
-.feature-card h3 {
+.app-section-col {
+  min-width: 0;
+  padding: .5rem;
+}
+
+.app-section-card {
+  display: flex;
+  min-height: 20.5rem;
+  flex-direction: column;
+  background:
+    linear-gradient(150deg, rgba(var(--v-theme-secondary), .045), transparent 48%),
+    rgb(var(--v-theme-surface));
+}
+
+.app-section-card__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.app-section-card__number {
+  color: rgb(var(--v-theme-on-surface) / .24);
+  font-size: .72rem;
+  font-weight: 900;
+  letter-spacing: .1em;
+}
+
+.app-section-card__role {
+  color: rgb(var(--v-theme-secondary));
+  font-size: .7rem;
+  font-weight: 900;
+  letter-spacing: .12em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.app-section-card h3 {
   font-size: 1.25rem;
   font-weight: 900;
   letter-spacing: -.02em;
 }
 
-.feature-card p {
+.app-section-card__description {
+  flex: 1;
   color: rgb(var(--v-theme-on-surface) / .62);
-  font-size: .9rem;
-  line-height: 1.65;
+  font-size: .86rem;
+  line-height: 1.6;
 }
 
-.feature-card--summary {
+.app-section-card__connection {
+  display: flex;
+  align-items: flex-start;
+  gap: .5rem;
+  padding-top: 1rem;
+  border-top: .0625rem solid rgba(var(--v-theme-on-surface), .08);
+  color: rgb(var(--v-theme-on-surface) / .72);
+  font-size: .75rem;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.app-section-card__connection .v-icon {
+  flex: 0 0 auto;
+  margin-top: .08rem;
+  color: rgb(var(--v-theme-secondary));
+}
+
+.system-flow {
+  display: grid;
+  grid-template-columns: minmax(17rem, .8fr) minmax(0, 1.2fr);
+  align-items: center;
+  gap: 2rem;
+  border-color: rgba(var(--v-theme-secondary), .2);
+  background:
+    linear-gradient(105deg, rgba(var(--v-theme-secondary), .09), transparent 42%),
+    rgb(var(--v-theme-surface));
+}
+
+.system-flow__intro {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 1rem;
+}
+
+.system-flow__loop {
+  width: 3rem;
+  height: 3rem;
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: .9rem;
+  background: rgb(var(--v-theme-secondary));
   color: rgb(var(--v-theme-on-secondary));
 }
 
-.feature-card--summary p {
-  color: rgb(var(--v-theme-on-secondary) / .72);
+.system-flow__intro strong {
+  font-size: .95rem;
+  font-weight: 900;
+}
+
+.system-flow__intro p {
+  margin-top: .2rem;
+  color: rgb(var(--v-theme-on-surface) / .58);
+  font-size: .78rem;
+  line-height: 1.5;
+}
+
+.system-flow__steps {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: .4rem;
+}
+
+.system-flow__step {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: .4rem;
+  color: rgb(var(--v-theme-on-surface) / .82);
+  font-size: .74rem;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.system-flow__step .v-icon,
+.system-flow__arrow,
+.system-flow__return {
+  color: rgb(var(--v-theme-secondary));
+}
+
+.system-flow__arrow {
+  flex: 0 0 auto;
+  opacity: .55;
+}
+
+.system-flow__return {
+  flex: 0 0 auto;
+  margin-left: .1rem;
 }
 
 .learning-section {
@@ -726,6 +896,15 @@ function scrollToFeatures() {
   .learning-step__arrow {
     display: none;
   }
+
+  .system-flow {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
+
+  .system-flow__steps {
+    justify-content: flex-start;
+  }
 }
 
 @media (max-width: 47.998rem) {
@@ -769,6 +948,30 @@ function scrollToFeatures() {
 
   .hero-copy h1 {
     font-size: clamp(2.75rem, 10vw, 3.75rem);
+  }
+
+  .app-section-card {
+    min-height: auto;
+  }
+
+  .system-flow__intro {
+    align-items: flex-start;
+  }
+
+  .system-flow__steps {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: .35rem;
+    padding-left: .9rem;
+  }
+
+  .system-flow__arrow {
+    margin-left: .05rem;
+    transform: rotate(90deg);
+  }
+
+  .system-flow__return {
+    display: none;
   }
 
   .phone-gallery {

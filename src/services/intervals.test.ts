@@ -19,6 +19,7 @@ import {
   moveIntervalNodeToGroup,
   normalizeQuickIntervalSettings,
   quickIntervalDefinition,
+  rebaseIntervalRuntimeForDefinition,
   reconcileIntervalRuntime,
   resolveIntervalStep,
   validateIntervalDefinition,
@@ -611,6 +612,42 @@ describe('quick intervals', () => {
 })
 
 describe('interval runtime recovery', () => {
+  it('keeps the same repeated step occurrence and elapsed time after settings change', () => {
+    const work = createIntervalStep('Work', 'work', 30)
+    const rest = createIntervalStep('Rest', 'rest', 10)
+    const rounds = createIntervalGroup('Rounds', 3)
+    rounds.children = [work, rest]
+    const previous: IntervalDefinition = { version: 1, children: [rounds] }
+    const nextRounds = createIntervalGroup('Rounds', 3)
+    nextRounds.children = [
+      { ...work, durationSeconds: 45 },
+      { ...rest },
+    ]
+    const next: IntervalDefinition = {
+      version: 1,
+      children: [createIntervalStep('Prepare', 'prepare', 5), nextRounds],
+    }
+    const runtime = {
+      ...createRuntimeState(previous, new Date('2026-08-15T12:00:00.000Z')),
+      stepIndex: 2,
+      remainingMs: 20_000,
+      stepStartedAt: undefined,
+      accumulatedMs: 50_000,
+    }
+
+    const rebased = rebaseIntervalRuntimeForDefinition(
+      previous,
+      next,
+      runtime,
+      new Date('2026-08-15T12:01:00.000Z'),
+    )
+
+    expect(resolveIntervalStep(next, rebased.stepIndex)?.step.id).toBe(work.id)
+    expect(rebased.stepIndex).toBe(3)
+    expect(rebased.remainingMs).toBe(35_000)
+    expect(rebased.accumulatedMs).toBe(50_000)
+  })
+
   it('catches up across multiple transitions using timestamps', () => {
     const definition: IntervalDefinition = {
       version: 1,

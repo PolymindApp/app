@@ -10,6 +10,7 @@ import FlashcardContextActions from '@/components/FlashcardContextActions.vue'
 import FlashcardResponseText from '@/components/FlashcardResponseText.vue'
 import FlashcardReviewSettingsFields from '@/components/FlashcardReviewSettingsFields.vue'
 import AppForm from '@/components/AppForm.vue'
+import IntervalSettingsFields from '@/components/IntervalSettingsFields.vue'
 import IntervalTypeIcon from '@/components/IntervalTypeIcon.vue'
 import LabeledSlider from '@/components/LabeledSlider.vue'
 import RunnerStartScreen from '@/components/RunnerStartScreen.vue'
@@ -48,6 +49,7 @@ import {
   requestIntervalWakeLock,
 } from '@/services/intervalCues'
 import {
+  cloneIntervalTemplateDraft,
   createRuntimeState,
   formatIntervalDuration,
   intervalDefinitionWithRepetitions,
@@ -56,11 +58,13 @@ import {
   intervalGlobalRepetitionSettings,
   intervalRunProgress,
   reconcileIntervalRuntime,
+  rebaseIntervalRuntimeForDefinition,
   resolveIntervalStep,
   intervalStepDurationSeconds,
   intervalStepFlashcardReviewPlaybackIsActive,
   MAX_GLOBAL_REPETITIONS,
   MIN_GLOBAL_REPETITIONS,
+  validateIntervalDefinition,
 } from '@/services/intervals'
 import { isTaskScheduled, stepsForDate, toDateKey } from '@/services/schedule'
 import { intervalRunnerSessionMenuItems } from '@/services/runnerSessionActions'
@@ -78,6 +82,7 @@ import type {
   IntervalFlashcardReviewSnapshot,
   IntervalRuntimeState,
   IntervalSession,
+  IntervalSettingsApplyTarget,
   RunnerSessionAction,
 } from '@/types/domain'
 
@@ -92,6 +97,11 @@ const starting = ref(false)
 const speechOverAmplified = ref(flashcardSpeechOverAmplificationIsEnabled())
 const speechOverAmplificationBusy = ref(false)
 const sessionActionsSheet = ref(false)
+const intervalSettingsDialog = ref(false)
+const intervalSettingsApplyMenu = ref(false)
+const intervalSettingsSaveTarget = ref<IntervalSettingsApplyTarget>()
+const intervalSettingsError = ref('')
+const intervalSettingsOriginal = ref('')
 const endDialog = ref(false)
 const noteDialog = ref(false)
 const noteDraft = ref('')
@@ -160,10 +170,19 @@ let lastSpokenFlashcardKey = ''
 let reconcilingVisibilitySpeech = false
 let resumeAfterFlashcardContext = false
 let resumeAfterFlashcardModal = false
+let resumeAfterIntervalSettings = false
 let flashcardSaveWork: Promise<void> = Promise.resolve()
 const cueHandoff = createIntervalCueHandoff(document.visibilityState)
 
 const previewSession = ref<IntervalSession>()
+const intervalSettingsDraft = reactive({
+  definition: {
+    version: 1 as const,
+    children: [],
+    globalRepetition: { enabled: false, defaultCount: MIN_GLOBAL_REPETITIONS },
+  } as IntervalDefinition,
+  cues: { soundEnabled: true, vibrationEnabled: true },
+})
 const isTemplatePreview = computed(() => Boolean(route.params.templateId))
 const previewTemplate = computed(() => store.templates.find((item) => item.id === route.params.templateId))
 const persistedSession = computed(() => store.sessions.find((item) => item.id === route.params.sessionId))
@@ -225,6 +244,7 @@ const flashcardReviewSet = computed(() => flashcardStore.reviewSets
 const canManageIntervalCards = computed(() => Boolean(
   flashcardReviewSet.value && flashcardReviewSet.value.accessRole !== 'readonly',
 ))
+const sessionTtsPaused = computed(() => Boolean(session.value?.flashcardReview?.speechPaused))
 const sessionActionItems = computed(() => intervalRunnerSessionMenuItems({
   speechAvailable: Boolean(session.value?.flashcardReview?.speechEnabled && flashcardPhase.value),
   amplified: speechOverAmplified.value,
@@ -232,6 +252,23 @@ const sessionActionItems = computed(() => intervalRunnerSessionMenuItems({
   preview: isTemplatePreview.value,
 }))
 const sessionActionsDisabled = computed(() => sessionActionItems.value.every(item => item.disabled))
+const intervalSettingsSourceTemplate = computed(() => store.templates.find(
+  template => template.id === session.value?.template,
+))
+const intervalSettingsChanged = computed(() => intervalSettingsDialog.value
+  && JSON.stringify(intervalSettingsDraft) !== intervalSettingsOriginal.value)
+const canSaveIntervalSettings = computed(() => intervalSettingsChanged.value
+  && validateIntervalDefinition(intervalSettingsDraft.definition).length === 0)
+const intervalSettingsSaving = computed(() => Boolean(intervalSettingsSaveTarget.value))
+const intervalSettingsApplyItems = computed(() => [
+  { target: 'session' as const, title: 'Current session', icon: 'mdi-timer-outline' },
+  {
+    target: 'interval' as const,
+    title: 'Interval',
+    icon: 'mdi-timer-cog-outline',
+    disabled: !intervalSettingsSourceTemplate.value,
+  },
+])
 const intervalFlashcardSource = computed(() => {
   const reviewSet = flashcardReviewSet.value
   if (!reviewSet) return []
@@ -359,6 +396,7 @@ const selectedRepetitionDuration = computed(() => repetitionDefinition.value
 watch([
   () => session.value?.status,
   () => session.value?.flashcardReview?.speechEnabled,
+  () => session.value?.flashcardReview?.speechPaused,
   () => flashcardReviewPlaybackEnabled.value,
   () => flashcardPhase.value?.key,
 ], () => {
@@ -484,11 +522,12 @@ async function speakCurrentFlashcardSide() {
   if (
     item?.status !== 'running'
     || !review?.speechEnabled
+    || review.speechPaused
     || !flashcardReviewPlaybackEnabled.value
     || !phase
     || !key
   ) {
-    if (!item || !review?.speechEnabled || !phase || !key) {
+    if (!item || !review?.speechEnabled || review.speechPaused || !phase || !key) {
       lastSpokenFlashcardKey = ''
     }
     await stopFlashcardSpeech()
@@ -525,8 +564,105 @@ async function toggleSpeechOverAmplification() {
 
 function handleRunnerSessionAction(action: RunnerSessionAction) {
   if (action === 'amplification') void toggleSpeechOverAmplification()
+  else if (action === 'settings') void openIntervalSettings()
   else if (action === 'restart') void restart()
   else if (action === 'end') endDialog.value = true
+}
+
+function cloneIntervalSettings<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T
+}
+
+async function openIntervalSettings() {
+  const item = session.value
+  if (!item || isTemplatePreview.value || syncing.value || intervalSettingsSaving.value) return
+  resumeAfterIntervalSettings = item.status === 'running'
+  intervalSettingsError.value = ''
+  try {
+    if (resumeAfterIntervalSettings) await pause()
+    const currentSession = session.value
+    if (!currentSession || finished.value) {
+      resumeAfterIntervalSettings = false
+      return
+    }
+    intervalSettingsDraft.definition = cloneIntervalSettings(currentSession.definition)
+    intervalSettingsDraft.cues = cloneIntervalSettings(currentSession.cues)
+    intervalSettingsOriginal.value = JSON.stringify(intervalSettingsDraft)
+    intervalSettingsDialog.value = true
+  } catch (cause) {
+    resumeAfterIntervalSettings = false
+    error.value = cause instanceof Error ? cause.message : 'Could not open the interval settings.'
+  }
+}
+
+async function closeIntervalSettings() {
+  intervalSettingsApplyMenu.value = false
+  intervalSettingsDialog.value = false
+  intervalSettingsError.value = ''
+  const shouldResume = resumeAfterIntervalSettings
+  resumeAfterIntervalSettings = false
+  if (!shouldResume || session.value?.status !== 'paused') return
+  try {
+    await resume()
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : 'Could not resume this interval.'
+  }
+}
+
+async function saveIntervalSettings(target: IntervalSettingsApplyTarget) {
+  const item = session.value
+  if (!item || intervalSettingsSaving.value || !intervalSettingsChanged.value) return
+  const definitionErrors = validateIntervalDefinition(intervalSettingsDraft.definition)
+  if (definitionErrors.length) {
+    intervalSettingsError.value = definitionErrors[0] || 'Check the interval sequence.'
+    return
+  }
+
+  intervalSettingsSaveTarget.value = target
+  intervalSettingsError.value = ''
+  try {
+    const definition = cloneIntervalSettings(intervalSettingsDraft.definition)
+    const cues = cloneIntervalSettings(intervalSettingsDraft.cues)
+    if (target === 'interval') {
+      const template = intervalSettingsSourceTemplate.value
+      if (!template) throw new Error('This session is not linked to a saved interval.')
+      await store.saveTemplate({
+        ...cloneIntervalTemplateDraft(template),
+        definition,
+        cues,
+      })
+      await closeIntervalSettings()
+      return
+    }
+
+    const runtime = rebaseIntervalRuntimeForDefinition(
+      item.definition,
+      definition,
+      item.runtime,
+    )
+    const updated = await store.updateSession(item.id, {
+      definition,
+      cues,
+      runtime,
+      plannedSeconds: intervalDuration(definition),
+      elapsedSeconds: Math.round(runtime.accumulatedMs / 1000),
+    })
+    displayRemainingMs.value = updated.runtime.remainingMs
+    lastCountCue = ''
+    lastSpokenFlashcardKey = ''
+    await closeIntervalSettings()
+  } catch (cause) {
+    intervalSettingsError.value = cause instanceof Error
+      ? cause.message
+      : 'Could not update the interval settings.'
+  } finally {
+    intervalSettingsSaveTarget.value = undefined
+  }
+}
+
+function applyIntervalSettingsTo(target: IntervalSettingsApplyTarget) {
+  intervalSettingsApplyMenu.value = false
+  void saveIntervalSettings(target)
 }
 
 function pulseTimer(effect: 'count') {
@@ -1034,6 +1170,31 @@ async function updateFlashcardSnapshot(review: IntervalFlashcardReviewSnapshot) 
   lastSpokenFlashcardKey = ''
 }
 
+async function toggleSessionTts() {
+  const item = session.value
+  const review = item?.flashcardReview
+  if (!item || !review?.speechEnabled || syncing.value) return
+
+  const shouldResume = resumeAfterFlashcardContext || item.status === 'running'
+  resumeAfterFlashcardContext = false
+  try {
+    await updateFlashcardSnapshot({
+      ...review,
+      speechPaused: !review.speechPaused,
+    })
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : 'Could not update session TTS.'
+  } finally {
+    if (shouldResume && session.value?.status === 'paused') {
+      try {
+        await resume()
+      } catch (cause) {
+        error.value = cause instanceof Error ? cause.message : 'Could not resume this interval.'
+      }
+    }
+  }
+}
+
 function snapshotCard(card: Flashcard) {
   return {
     id: card.id,
@@ -1264,7 +1425,10 @@ async function saveFlashcardSettings(target: FlashcardSettingsApplyTarget = 'ses
       intervalFlashcardSource.value,
     )
     if (!snapshot) throw new Error('These settings do not match any available cards.')
-    await updateFlashcardSnapshot(snapshot)
+    await updateFlashcardSnapshot({
+      ...snapshot,
+      ...(context.review.speechPaused ? { speechPaused: true } : {}),
+    })
     await closeFlashcardSettings()
   } catch (cause) {
     flashcardSettingsError.value = cause instanceof Error
@@ -1284,6 +1448,7 @@ function handleFlashcardContextAction(action: FlashcardContextAction) {
   if (action === 'add' || action === 'edit') void openFlashcardEditor(action)
   else if (action === 'eject') void requestFlashcardEjection()
   else if (action === 'remove') void requestFlashcardRemoval()
+  else if (action === 'toggle_tts') void toggleSessionTts()
   else if (action === 'settings') void openFlashcardSettings()
 }
 
@@ -1713,12 +1878,83 @@ async function runAgain(repetitions?: number) {
       @action="handleRunnerSessionAction"
     />
 
+    <AppDialog
+      v-model="intervalSettingsDialog"
+      persistent
+      scrollable
+      fullscreen
+    >
+      <v-card class="interval-settings-card" rounded="0">
+        <v-card-title class="interval-settings-header d-flex align-center ga-3">
+          <v-icon icon="mdi-timer-cog-outline" color="secondary" />
+          <span>Settings</span>
+        </v-card-title>
+        <v-card-text class="interval-settings-body px-4 py-4">
+          <v-alert
+            v-if="intervalSettingsError"
+            type="error"
+            variant="tonal"
+            density="compact"
+            class="mb-4"
+          >
+            {{ intervalSettingsError }}
+          </v-alert>
+          <AppForm @submit.prevent="saveIntervalSettings('session')">
+            <IntervalSettingsFields
+              v-model:definition="intervalSettingsDraft.definition"
+              v-model:cues="intervalSettingsDraft.cues"
+              :review-set-speech-enabled="session?.flashcardReview?.speechEnabled === true"
+            />
+          </AppForm>
+        </v-card-text>
+        <v-divider />
+        <v-card-actions class="interval-settings-actions ga-2">
+          <v-btn
+            class="interval-settings-actions__cancel"
+            variant="text"
+            :disabled="intervalSettingsSaving"
+            @click="closeIntervalSettings"
+          >
+            Cancel
+          </v-btn>
+          <v-btn
+            class="interval-settings-actions__primary apply-interval-settings-menu"
+            color="secondary"
+            variant="flat"
+            :loading="intervalSettingsSaving"
+            :disabled="!canSaveIntervalSettings || intervalSettingsSaving"
+            @click="intervalSettingsApplyMenu = true"
+          >
+            Apply to...
+          </v-btn>
+        </v-card-actions>
+        <ActionBottomSheet
+          v-model="intervalSettingsApplyMenu"
+          title="Apply to..."
+          aria-label="Choose where to apply interval settings"
+        >
+          <v-list-item
+            v-for="item in intervalSettingsApplyItems"
+            :key="item.target"
+            :class="`apply-interval-settings-target--${item.target}`"
+            :title="item.title"
+            :prepend-icon="item.icon"
+            :disabled="item.disabled"
+            rounded="lg"
+            @click="applyIntervalSettingsTo(item.target)"
+          />
+        </ActionBottomSheet>
+      </v-card>
+    </AppDialog>
+
     <FlashcardContextActions
       v-model="flashcardContextSheet"
       :busy="syncing || starting"
       :can-manage-card="!isTemplatePreview && canManageIntervalCards && Boolean(flashcardPhase)"
       :can-add-card="!isTemplatePreview && canManageIntervalCards"
       :can-eject-card="!isTemplatePreview && Boolean(flashcardPhase)"
+      :can-toggle-tts="!isTemplatePreview && session?.flashcardReview?.speechEnabled === true"
+      :tts-paused="sessionTtsPaused"
       @action="handleFlashcardContextAction"
     />
 
@@ -2190,15 +2426,19 @@ async function runAgain(repetitions?: number) {
   color: rgb(var(--v-theme-secondary));
 }
 .note-dialog-actions { display: flex; justify-content: flex-end; gap: .5rem; }
-.flashcard-settings-card { min-height: 100dvh; }
-.flashcard-settings-header {
+.flashcard-settings-card,
+.interval-settings-card { min-height: 100dvh; }
+.interval-settings-body { width: 100%; max-width: 56.25rem; margin: 0 auto; }
+.flashcard-settings-header,
+.interval-settings-header {
   padding:
     calc(1.25rem + max(env(safe-area-inset-top, 0rem), var(--safe-area-inset-top, 0rem)))
     calc(1.25rem + env(safe-area-inset-right, 0rem))
     1rem
     calc(1.25rem + env(safe-area-inset-left, 0rem)) !important;
 }
-.flashcard-settings-actions {
+.flashcard-settings-actions,
+.interval-settings-actions {
   display: flex;
   align-items: center;
   padding:
@@ -2207,16 +2447,22 @@ async function runAgain(repetitions?: number) {
     calc(1rem + max(env(safe-area-inset-bottom, 0rem), var(--safe-area-inset-bottom, 0rem)))
     calc(1rem + env(safe-area-inset-left, 0rem)) !important;
 }
-.flashcard-settings-actions > .v-btn { height: 3rem; }
+.flashcard-settings-actions > .v-btn,
+.interval-settings-actions > .v-btn { height: 3rem; }
 .flashcard-settings-actions__cancel,
-.flashcard-settings-actions__primary {
+.flashcard-settings-actions__primary,
+.interval-settings-actions__cancel,
+.interval-settings-actions__primary {
   min-width: 0;
   flex: 1 1 0;
 }
 @media (min-width: 60rem) {
-  .flashcard-settings-actions { justify-content: flex-end; }
+  .flashcard-settings-actions,
+  .interval-settings-actions { justify-content: flex-end; }
   .flashcard-settings-actions__cancel,
-  .flashcard-settings-actions__primary { max-width: 10rem; }
+  .flashcard-settings-actions__primary,
+  .interval-settings-actions__cancel,
+  .interval-settings-actions__primary { max-width: 10rem; }
 }
 .repetition-summary {
   color: rgb(var(--v-theme-on-surface) / .62);

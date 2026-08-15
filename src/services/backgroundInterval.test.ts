@@ -103,6 +103,18 @@ describe('background interval Review set playback', () => {
     }))
   })
 
+  it('keeps Review set timing configured while session TTS is paused', async () => {
+    const pausedSession = session()
+    pausedSession.flashcardReview!.speechPaused = true
+
+    await syncBackgroundInterval(pausedSession)
+
+    expect(nativeMocks.plugin.start).toHaveBeenCalledWith(expect.objectContaining({
+      elapsedMs: 1_250,
+      flashcardReview: expect.objectContaining({ speechEnabled: false }),
+    }))
+  })
+
   it('marks an assigned sound-pack cue as a transition signal', async () => {
     await playNativeIntervalCue('cine-hit', true)
 

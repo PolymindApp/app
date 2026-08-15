@@ -2,7 +2,7 @@ import { defineComponent, h, reactive } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { speakFlashcardText } from '@/services/flashcardSpeech'
 import IntervalRunnerView from '@/views/IntervalRunnerView.vue'
-import type { FlashcardReviewSet, IntervalSession } from '@/types/domain'
+import type { FlashcardReviewSet, IntervalSession, IntervalTemplate } from '@/types/domain'
 
 const mocks = vi.hoisted(() => ({
   route: {
@@ -13,10 +13,11 @@ const mocks = vi.hoisted(() => ({
   speechOverAmplificationIsEnabled: vi.fn(),
   intervalStore: {
     loaded: true,
-    templates: [],
+    templates: [] as IntervalTemplate[],
     sessions: [] as IntervalSession[],
     activeSession: undefined,
     load: vi.fn(),
+    saveTemplate: vi.fn(),
     updateSession: vi.fn(),
     updateSessionFlashcardReview: vi.fn(),
     completeSession: vi.fn(),
@@ -162,6 +163,23 @@ const FlashcardReviewSettingsFieldsStub = defineComponent({
       type: 'button',
       onClick: () => { props.modelValue.frontSeconds = 9 },
     }, 'Change settings')
+  },
+})
+
+const IntervalSettingsFieldsStub = defineComponent({
+  props: {
+    definition: { type: Object, required: true },
+    cues: { type: Object, required: true },
+  },
+  setup(props) {
+    return () => h('button', {
+      class: 'change-interval-settings',
+      type: 'button',
+      onClick: () => {
+        const step = (props.definition as IntervalSession['definition']).children[0]
+        if (step?.type === 'step') step.durationSeconds = 900
+      },
+    }, 'Change interval')
   },
 })
 
@@ -321,6 +339,7 @@ function mountRunner() {
         FlashcardContextActions: FlashcardContextActionsStub,
         FlashcardResponseText: true,
         FlashcardReviewSettingsFields: FlashcardReviewSettingsFieldsStub,
+        IntervalSettingsFields: IntervalSettingsFieldsStub,
         IntervalTypeIcon: true,
         LabeledSlider: true,
         RunnerSessionActions: RunnerSessionActionsStub,
@@ -357,6 +376,7 @@ describe('IntervalRunnerView flashcard area', () => {
       Object.assign(session, updates)
       return session
     })
+    mocks.intervalStore.saveTemplate.mockReset().mockResolvedValue('template-1')
     mocks.intervalStore.load.mockReset().mockResolvedValue(undefined)
     mocks.intervalStore.endSession.mockReset().mockResolvedValue(undefined)
     mocks.flashcardStore.load.mockReset().mockResolvedValue(undefined)
@@ -441,6 +461,7 @@ describe('IntervalRunnerView flashcard area', () => {
     const menuItems = wrapper.findAll('.runner-session-actions button')
     expect(menuItems.map(button => button.text())).toEqual([
       'Enable TTS amplification',
+      'Settings',
       'Restart interval',
       'End session',
     ])
@@ -456,6 +477,72 @@ describe('IntervalRunnerView flashcard area', () => {
     expect(wrapper.get('[data-action="amplification"]').text()).toBe('Disable TTS amplification')
     expect(wrapper.get('[data-action="amplification"]').attributes('aria-pressed')).toBe('true')
 
+    wrapper.unmount()
+  })
+
+  it('applies edited interval settings to the current session', async () => {
+    const active = intervalSession('running')
+    active.source = 'template'
+    active.template = 'template-1'
+    mocks.intervalStore.sessions = reactive([active])
+    mocks.intervalStore.templates = [intervalTemplate()]
+
+    const wrapper = mountRunner()
+    await flushPromises()
+
+    await wrapper.get('.runner-actions-button').trigger('click')
+    await wrapper.get('[data-action="settings"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('.change-interval-settings').trigger('click')
+    await wrapper.get('.apply-interval-settings-menu').trigger('click')
+
+    expect(wrapper.get('.action-bottom-sheet-stub').findAll('button').map(item => item.text()))
+      .toEqual(['Current session', 'Interval'])
+
+    await wrapper.get('.apply-interval-settings-target--session').trigger('click')
+    await flushPromises()
+
+    expect(mocks.intervalStore.updateSession).toHaveBeenCalledWith(
+      active.id,
+      expect.objectContaining({
+        definition: expect.objectContaining({
+          children: [expect.objectContaining({ durationSeconds: 900 })],
+        }),
+        plannedSeconds: 900,
+      }),
+    )
+    expect(mocks.intervalStore.saveTemplate).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('applies edited session settings to the saved interval without changing its snapshot', async () => {
+    const active = intervalSession('running')
+    active.source = 'template'
+    active.template = 'template-1'
+    mocks.intervalStore.sessions = reactive([active])
+    mocks.intervalStore.templates = [intervalTemplate()]
+
+    const wrapper = mountRunner()
+    await flushPromises()
+
+    await wrapper.get('.runner-actions-button').trigger('click')
+    await wrapper.get('[data-action="settings"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('.change-interval-settings').trigger('click')
+    await wrapper.get('.apply-interval-settings-menu').trigger('click')
+    await wrapper.get('.apply-interval-settings-target--interval').trigger('click')
+    await flushPromises()
+
+    expect(mocks.intervalStore.saveTemplate).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'template-1',
+      definition: expect.objectContaining({
+        children: [expect.objectContaining({ durationSeconds: 900 })],
+      }),
+    }))
+    expect(mocks.intervalStore.updateSession).not.toHaveBeenCalledWith(
+      active.id,
+      expect.objectContaining({ definition: expect.anything() }),
+    )
     wrapper.unmount()
   })
 

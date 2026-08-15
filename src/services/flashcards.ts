@@ -82,6 +82,32 @@ export const FLASHCARD_REVIEW_SESSION_MENU_ITEMS = [
   },
 ] as const
 
+export function flashcardReviewSessionMenuItems(options: {
+  showUndoEject: boolean
+  showTtsToggle: boolean
+  ttsPaused: boolean
+}) {
+  const settingsItem = FLASHCARD_REVIEW_SESSION_MENU_ITEMS.find(item => item.action === 'settings')!
+  const cardItems = FLASHCARD_REVIEW_SESSION_MENU_ITEMS.filter(item => (
+    item.action !== 'settings'
+    && (item.action !== 'undo_eject' || options.showUndoEject)
+  ))
+
+  return [
+    ...cardItems,
+    ...(options.showTtsToggle ? [{
+      action: 'toggle_tts' as const,
+      title: options.ttsPaused ? 'Resume' : 'Pause',
+      icon: options.ttsPaused ? 'mdi-play-circle-outline' : 'mdi-pause-circle-outline',
+      divider: true,
+    }] : []),
+    {
+      ...settingsItem,
+      divider: !options.showTtsToggle,
+    },
+  ]
+}
+
 export const FLASHCARD_SETTINGS_APPLY_MENU_ITEMS: Array<{
   target: FlashcardSettingsApplyTarget
   title: string

@@ -190,6 +190,7 @@ export interface IntervalFlashcardReviewSnapshot {
   backSpeechRepeatCount: number
   noteBeforeBack: boolean
   speechEnabled: boolean
+  speechPaused?: boolean
   frontLanguage: string
   backLanguage: string
   cards: FlashcardReviewQueueCard[]
@@ -268,9 +269,17 @@ export type FlashcardReviewSort = 'difficult' | 'never_reviewed' | 'least_recent
 export type FlashcardReviewStatus = 'running' | 'paused' | 'completed' | 'ended'
 export type FlashcardReviewOutcome = 'success' | 'error' | 'passive' | 'ejected'
 export type FlashcardReviewAction = 'success' | 'error' | 'view' | 'previous' | 'next' | 'push' | 'eject' | 'undo_eject' | 'pause' | 'resume' | 'restart' | 'end'
-export type FlashcardContextAction = 'add' | 'edit' | 'eject' | 'undo_eject' | 'remove' | 'settings'
+export type FlashcardContextAction =
+  | 'add'
+  | 'edit'
+  | 'eject'
+  | 'undo_eject'
+  | 'remove'
+  | 'toggle_tts'
+  | 'settings'
 export type FlashcardSettingsApplyTarget = 'session' | 'review-set'
-export type RunnerSessionAction = 'options' | 'amplification' | 'eject' | 'restart' | 'end'
+export type IntervalSettingsApplyTarget = 'session' | 'interval'
+export type RunnerSessionAction = 'options' | 'settings' | 'amplification' | 'eject' | 'restart' | 'end'
 
 export interface RunnerSessionMenuItem {
   action: RunnerSessionAction

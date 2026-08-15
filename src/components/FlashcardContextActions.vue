@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
-import { FLASHCARD_REVIEW_SESSION_MENU_ITEMS } from '@/services/flashcards'
+import { flashcardReviewSessionMenuItems } from '@/services/flashcards'
 import type { FlashcardContextAction } from '@/types/domain'
 
 const props = withDefaults(defineProps<{
@@ -12,6 +12,8 @@ const props = withDefaults(defineProps<{
   canEjectCard?: boolean
   showUndoEject?: boolean
   canUndoEject?: boolean
+  canToggleTts?: boolean
+  ttsPaused?: boolean
 }>(), {
   busy: false,
   canManageCard: true,
@@ -19,6 +21,8 @@ const props = withDefaults(defineProps<{
   canEjectCard: true,
   showUndoEject: false,
   canUndoEject: false,
+  canToggleTts: false,
+  ttsPaused: false,
 })
 
 const emit = defineEmits<{
@@ -31,9 +35,11 @@ function select(action: FlashcardContextAction) {
   emit('action', action)
 }
 
-const items = computed(() => FLASHCARD_REVIEW_SESSION_MENU_ITEMS.filter(item => (
-  item.action !== 'undo_eject' || props.showUndoEject
-)))
+const items = computed(() => flashcardReviewSessionMenuItems({
+  showUndoEject: props.showUndoEject,
+  showTtsToggle: props.canToggleTts,
+  ttsPaused: props.ttsPaused,
+}))
 
 function itemDisabled(permission?: 'add' | 'manage' | 'eject' | 'undo_eject') {
   if (props.busy) return true
