@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
-import type { Entry, JournalEntry, Occurrence, ProgramStep, Task, TrackingEntry } from '@/types/domain'
+import type { Entry, JournalEntry, Occurrence, ProgramStep, Task, TaskDraft, TrackingEntry } from '@/types/domain'
 
 const apiMocks = vi.hoisted(() => ({
   createOccurrence: vi.fn(),
@@ -10,7 +10,10 @@ const apiMocks = vi.hoisted(() => ({
   deleteEntry: vi.fn(),
   getEntries: vi.fn(),
   updateOccurrence: vi.fn(),
+  createTask: vi.fn(),
   updateTask: vi.fn(),
+  createStep: vi.fn(),
+  updateStep: vi.fn(),
 }))
 const healthMocks = vi.hoisted(() => ({
   readHealthConnectSteps: vi.fn(),
@@ -34,7 +37,8 @@ vi.mock('@/lib/api', () => ({
         update: apiMocks.updateOccurrence,
         delete: apiMocks.deleteOccurrence,
       }
-      if (name === 'tasks') return { update: apiMocks.updateTask }
+      if (name === 'tasks') return { create: apiMocks.createTask, update: apiMocks.updateTask }
+      if (name === 'program_steps') return { create: apiMocks.createStep, update: apiMocks.updateStep }
       throw new Error(`Unexpected collection: ${name}`)
     },
   },
@@ -109,6 +113,10 @@ describe('quantitative task completion', () => {
     apiMocks.deleteEntry.mockReset()
     apiMocks.getEntries.mockReset()
     apiMocks.updateOccurrence.mockReset()
+    apiMocks.createTask.mockReset()
+    apiMocks.updateTask.mockReset()
+    apiMocks.createStep.mockReset()
+    apiMocks.updateStep.mockReset()
     healthMocks.readHealthConnectSteps.mockReset()
     reminderMocks.reconcileTaskReminders.mockReset()
     reminderMocks.reconcileTaskReminders.mockResolvedValue(undefined)
@@ -146,6 +154,67 @@ describe('quantitative task completion', () => {
     await Promise.all([first, second, third])
 
     expect(reminderMocks.reconcileTaskReminders).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps an edited task local while persistence finishes without reloading the store', async () => {
+    const store = useTaskStore()
+    let finishUpdate!: () => void
+    store.tasks = [{ ...task }]
+    apiMocks.updateTask.mockImplementation((id, payload) => new Promise((resolve) => {
+      finishUpdate = () => resolve({ id, ...payload })
+    }))
+    const draft: TaskDraft = {
+      ...task,
+      name: 'Focused writing',
+      steps: [],
+    }
+
+    const persistence = store.saveTask(draft)
+
+    expect(store.tasks).toEqual([
+      expect.objectContaining({ id: task.id, name: 'Focused writing' }),
+    ])
+    expect(store.loading).toBe(false)
+
+    finishUpdate()
+    await persistence
+
+    expect(store.tasks).toEqual([
+      expect.objectContaining({ id: task.id, name: 'Focused writing' }),
+    ])
+    expect(store.loading).toBe(false)
+  })
+
+  it('reconciles persisted task and step ids into a new optimistic program', async () => {
+    const store = useTaskStore()
+    apiMocks.createTask.mockImplementation(async payload => ({ id: 'program-1', ...payload }))
+    apiMocks.createStep.mockImplementation(async payload => ({ id: 'step-1', ...payload }))
+    const draft: TaskDraft = {
+      ...task,
+      id: undefined,
+      name: 'Training plan',
+      type: 'program',
+      cycleLength: 1,
+      steps: [{
+        name: 'Strength',
+        description: '',
+        sortOrder: 0,
+        cycleDays: [1],
+        completionType: 'check',
+        active: true,
+      }],
+    }
+
+    const persistence = store.saveTask(draft)
+
+    expect(store.tasks[0]).toMatchObject({ name: 'Training plan', type: 'program' })
+    expect(store.tasks[0]?.id).not.toBe('program-1')
+    expect(store.steps[0]).toMatchObject({ name: 'Strength', task: store.tasks[0]?.id })
+
+    await persistence
+
+    expect(store.tasks[0]).toMatchObject({ id: 'program-1', name: 'Training plan' })
+    expect(store.steps[0]).toMatchObject({ id: 'step-1', task: 'program-1', name: 'Strength' })
   })
 
   it('does not remain complete when adjustments reduce a four-hour task to zero', () => {

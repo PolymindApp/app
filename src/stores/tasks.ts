@@ -920,6 +920,7 @@ export const useTaskStore = defineStore('tasks', () => {
   }
 
   async function saveTask(draft: TaskDraft) {
+    error.value = ''
     const sortOrder = draft.id
       ? draft.sortOrder
       : tasks.value.reduce((highest, task) => Math.max(highest, task.sortOrder), -1) + 1
@@ -970,8 +971,9 @@ export const useTaskStore = defineStore('tasks', () => {
     const taskIndex = draft.id ? tasks.value.findIndex(task => task.id === draft.id) : -1
     if (taskIndex >= 0) tasks.value = tasks.value.toSpliced(taskIndex, 1, optimisticTask)
     else tasks.value = [...tasks.value, optimisticTask]
+    let optimisticSteps: ProgramStep[] = []
     if (draft.type === 'program') {
-      const optimisticSteps = draft.steps.map((step, index) => mapStep({
+      optimisticSteps = draft.steps.map((step, index) => mapStep({
         id: step.id || createLocalRecordId(),
         task: optimisticTask.id,
         name: step.name,
@@ -997,6 +999,10 @@ export const useTaskStore = defineStore('tasks', () => {
         ? await api.collection('tasks').update(draft.id, payload)
         : await api.collection('tasks').create(payload)
       const taskId = record.id
+      Object.assign(optimisticTask, mapTask(record))
+      optimisticSteps.forEach((step) => {
+        step.task = taskId
+      })
 
       if (draft.type === 'program') {
         const existing = previousSteps.filter((step) => step.task === taskId)
@@ -1008,7 +1014,7 @@ export const useTaskStore = defineStore('tasks', () => {
             flashcard_review_set: '',
           }),
         ))
-        await Promise.all(
+        const stepRecords = await Promise.all(
           draft.steps.map((step, index) => {
             const stepPayload = {
               owner: api.authStore.record!.id,
@@ -1031,12 +1037,18 @@ export const useTaskStore = defineStore('tasks', () => {
               : api.collection('program_steps').create(stepPayload)
           }),
         )
+        stepRecords.forEach((stepRecord, index) => {
+          const optimisticStep = optimisticSteps[index]
+          if (optimisticStep) Object.assign(optimisticStep, mapStep(stepRecord))
+        })
       }
-      await load()
+      void syncTaskReminders()
       return taskId
     } catch (cause) {
       tasks.value = previousTasks
       steps.value = previousSteps
+      error.value = cause instanceof Error ? cause.message : 'Could not save the task.'
+      void syncTaskReminders()
       throw cause
     }
   }

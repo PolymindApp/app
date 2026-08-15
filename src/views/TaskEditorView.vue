@@ -383,8 +383,9 @@ async function save() {
     if (draft.reminderEnabled && reminderAvailable && !await requestTaskReminderPermission()) {
       throw new Error('Notification permission is required to enable daily reminders.')
     }
-    await store.saveTask(draft)
+    const persistence = store.saveTask(draft)
     await router.replace('/tasks')
+    await persistence
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Could not save the task.'
   } finally {
