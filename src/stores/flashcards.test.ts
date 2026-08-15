@@ -139,6 +139,25 @@ describe('flashcard store', () => {
     expect(apiMocks.createTag).not.toHaveBeenCalled()
   })
 
+  it('shows a new tag before local persistence finishes', async () => {
+    let resolveCreate!: (value: Record<string, unknown>) => void
+    apiMocks.createTag.mockReturnValue(new Promise((resolve) => {
+      resolveCreate = resolve
+    }))
+    const store = useFlashcardStore()
+
+    const update = store.createTag('Immediate')
+
+    expect(store.tags).toEqual([
+      expect.objectContaining({ name: 'Immediate' }),
+    ])
+
+    resolveCreate({ id: 'tag-persisted', name: 'Immediate' })
+    await update
+
+    expect(store.tags[0]?.id).toBe('tag-persisted')
+  })
+
   it('updates card aggregates and task progress from an atomic review action', async () => {
     const store = useFlashcardStore()
     store.cards = [{

@@ -1,6 +1,7 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { ApiError, api, apiAssetUrl } from '@/lib/api'
+import { createLocalRecordId } from '@/lib/localDatabase'
 import { useSnackbarStore } from '@/stores/snackbar'
 import { useTaskStore } from '@/stores/tasks'
 import {
@@ -163,27 +164,45 @@ export const useIntervalStore = defineStore('intervals', () => {
       sound: 'beep',
       sort_order: draft.sortOrder,
     }
-    const record = draft.id
-      ? await api.collection('interval_templates').update(draft.id, payload)
-      : await api.collection('interval_templates').create(payload)
-    const template = mapTemplate(record)
-    const existing = templates.value.findIndex((item) => item.id === template.id)
+    const existing = draft.id ? templates.value.findIndex(item => item.id === draft.id) : -1
+    const previous = existing >= 0 ? templates.value[existing] : undefined
+    const template = mapTemplate({ id: draft.id || createLocalRecordId(), ...payload })
     if (existing >= 0) templates.value.splice(existing, 1, template)
     else templates.value.push(template)
     templates.value.sort((a, b) => a.sortOrder - b.sortOrder)
-    return template.id
+    try {
+      const record = draft.id
+        ? await api.collection('interval_templates').update(draft.id, payload)
+        : await api.collection('interval_templates').create(payload)
+      Object.assign(template, mapTemplate(record))
+      templates.value.sort((a, b) => a.sortOrder - b.sortOrder)
+      return template.id
+    } catch (cause) {
+      const optimisticIndex = templates.value.indexOf(template)
+      if (previous && optimisticIndex >= 0) templates.value.splice(optimisticIndex, 1, previous)
+      else if (optimisticIndex >= 0) templates.value.splice(optimisticIndex, 1)
+      throw cause
+    }
   }
 
   async function deleteTemplate(templateId: string) {
     error.value = ''
+    const previousTemplates = templates.value
+    const previousSessionTemplates = new Map(
+      sessions.value.map(session => [session.id, session.template]),
+    )
+    templates.value = templates.value.filter(template => template.id !== templateId)
+    sessions.value.forEach((session) => {
+      if (session.template === templateId) session.template = undefined
+    })
     try {
       await api.collection('interval_templates').delete(templateId)
-      templates.value = templates.value.filter((template) => template.id !== templateId)
-      sessions.value.forEach((session) => {
-        if (session.template === templateId) session.template = undefined
-      })
       useSnackbarStore().showDeletion('Interval')
     } catch (cause) {
+      templates.value = previousTemplates
+      sessions.value.forEach((session) => {
+        session.template = previousSessionTemplates.get(session.id)
+      })
       const attachedTasks = cause instanceof ApiError && Array.isArray(cause.details.tasks)
         ? cause.details.tasks
           .map((task) => task && typeof task === 'object' && 'name' in task ? String(task.name) : '')
@@ -322,25 +341,50 @@ export const useIntervalStore = defineStore('intervals', () => {
     if (changes.elapsedSeconds !== undefined) payload.elapsed_seconds = changes.elapsedSeconds
     if (changes.endedAt !== undefined) payload.ended_at = changes.endedAt
     if (changes.note !== undefined) payload.note = changes.note
-    const record = await api.collection('interval_sessions').update(sessionId, payload)
-    const mapped = mapSession(record)
     const index = sessions.value.findIndex((session) => session.id === sessionId)
-    if (index >= 0) sessions.value.splice(index, 1, mapped)
-    if (mapped.status === 'running' || mapped.status === 'paused') saveRecovery(mapped.id, mapped.runtime)
+    if (index < 0) {
+      return mapSession(await api.collection('interval_sessions').update(sessionId, payload))
+    }
+    const session = sessions.value[index]!
+    const previous = { ...session }
+    if (changes.status !== undefined) session.status = changes.status
+    if (changes.runtime !== undefined) session.runtime = changes.runtime
+    if (changes.elapsedSeconds !== undefined) session.elapsedSeconds = changes.elapsedSeconds
+    if (changes.endedAt !== undefined) session.endedAt = changes.endedAt || undefined
+    if (changes.note !== undefined) session.note = changes.note || undefined
+    if (session.status === 'running' || session.status === 'paused') saveRecovery(session.id, session.runtime)
     else localStorage.removeItem(RECOVERY_KEY)
-    return mapped
+    try {
+      const record = await api.collection('interval_sessions').update(sessionId, payload)
+      Object.assign(session, mapSession(record))
+      return session
+    } catch (cause) {
+      Object.assign(session, previous)
+      if (session.status === 'running' || session.status === 'paused') saveRecovery(session.id, session.runtime)
+      throw cause
+    }
   }
 
   async function updateSessionFlashcardReview(
     sessionId: string,
     flashcardReview: IntervalFlashcardReviewSnapshot,
   ) {
-    const record = await api.updateIntervalSessionFlashcards(sessionId, flashcardReview)
-    const mapped = mapSession(record)
     const index = sessions.value.findIndex((session) => session.id === sessionId)
-    if (index >= 0) sessions.value.splice(index, 1, mapped)
-    if (mapped.status === 'running' || mapped.status === 'paused') saveRecovery(mapped.id, mapped.runtime)
-    return mapped
+    if (index < 0) {
+      return mapSession(await api.updateIntervalSessionFlashcards(sessionId, flashcardReview))
+    }
+    const session = sessions.value[index]!
+    const previous = session.flashcardReview
+    session.flashcardReview = flashcardReview
+    try {
+      const record = await api.updateIntervalSessionFlashcards(sessionId, flashcardReview)
+      Object.assign(session, mapSession(record))
+      if (session.status === 'running' || session.status === 'paused') saveRecovery(session.id, session.runtime)
+      return session
+    } catch (cause) {
+      session.flashcardReview = previous
+      throw cause
+    }
   }
 
   async function completeSession(
@@ -351,12 +395,13 @@ export const useIntervalStore = defineStore('intervals', () => {
       endedAt: string
     },
   ) {
-    const response = await api.completeIntervalSession(sessionId, {
-      runtimeState: changes.runtime,
-      elapsedSeconds: changes.elapsedSeconds,
-      endedAt: changes.endedAt,
-    })
-    return mergeFinishedSession(response)
+    return finishSessionOptimistically(sessionId, 'completed', changes, () => (
+      api.completeIntervalSession(sessionId, {
+        runtimeState: changes.runtime,
+        elapsedSeconds: changes.elapsedSeconds,
+        endedAt: changes.endedAt,
+      })
+    ))
   }
 
   async function endSession(
@@ -367,12 +412,47 @@ export const useIntervalStore = defineStore('intervals', () => {
       endedAt: string
     },
   ) {
-    const response = await api.endIntervalSession(sessionId, {
-      runtimeState: changes.runtime,
-      elapsedSeconds: changes.elapsedSeconds,
-      endedAt: changes.endedAt,
-    })
-    return mergeFinishedSession(response)
+    return finishSessionOptimistically(sessionId, 'ended', changes, () => (
+      api.endIntervalSession(sessionId, {
+        runtimeState: changes.runtime,
+        elapsedSeconds: changes.elapsedSeconds,
+        endedAt: changes.endedAt,
+      })
+    ))
+  }
+
+  async function finishSessionOptimistically(
+    sessionId: string,
+    status: Extract<IntervalSessionStatus, 'completed' | 'ended'>,
+    changes: { runtime: IntervalRuntimeState; elapsedSeconds: number; endedAt: string },
+    persist: () => Promise<{
+      session: Record<string, any>
+      occurrence: Record<string, any> | null
+      occurrences?: Record<string, any>[]
+      entries?: Record<string, any>[]
+      local?: boolean
+    }>,
+  ) {
+    const session = sessions.value.find(item => item.id === sessionId)
+    const previous = session ? { ...session } : undefined
+    if (session) {
+      session.status = status
+      session.runtime = changes.runtime
+      session.elapsedSeconds = changes.elapsedSeconds
+      session.endedAt = changes.endedAt
+      localStorage.removeItem(RECOVERY_KEY)
+    }
+    try {
+      return await mergeFinishedSession(await persist())
+    } catch (cause) {
+      if (session && previous) {
+        Object.assign(session, previous)
+        if (session.status === 'running' || session.status === 'paused') {
+          saveRecovery(session.id, session.runtime)
+        }
+      }
+      throw cause
+    }
   }
 
   async function mergeFinishedSession(response: {
@@ -476,12 +556,19 @@ export const useIntervalStore = defineStore('intervals', () => {
   }
 
   async function rememberQuickIntervalSettings(settings: QuickIntervalSettings) {
-    const saved = await api.updateUserSettings({ quickInterval: settings })
-    quickIntervalSettings.value = normalizeQuickIntervalSettings(saved.quickInterval)
-    if (!quickIntervalSettings.value) {
-      throw new Error('The saved quick interval settings are invalid.')
+    const previous = quickIntervalSettings.value
+    quickIntervalSettings.value = normalizeQuickIntervalSettings(settings)
+    try {
+      const saved = await api.updateUserSettings({ quickInterval: settings })
+      quickIntervalSettings.value = normalizeQuickIntervalSettings(saved.quickInterval)
+      if (!quickIntervalSettings.value) {
+        throw new Error('The saved quick interval settings are invalid.')
+      }
+      return quickIntervalSettings.value
+    } catch (cause) {
+      quickIntervalSettings.value = previous
+      throw cause
     }
-    return quickIntervalSettings.value
   }
 
   return {

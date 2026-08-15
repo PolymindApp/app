@@ -662,11 +662,10 @@ export const useTaskStore = defineStore('tasks', () => {
       upsertEntryRecord(record)
       const updated = makeProgress(task, date)
       if (updated.complete && occurrence.status !== 'completed') {
-        const updatedOccurrence = await api.collection('occurrences').update(occurrence.id, {
+        await updateOccurrenceOptimistically(updated, {
           status: 'completed',
-          completed_at: input.completedAt,
+          completedAt: input.completedAt,
         })
-        Object.assign(occurrence, mapOccurrence(updatedOccurrence))
       }
     }
     if (syncReminders) await syncTaskReminders()
@@ -746,64 +745,124 @@ export const useTaskStore = defineStore('tasks', () => {
 
   async function setDailyTotalSealed(progress: TaskProgress) {
     if (progress.task.type !== 'daily_total' || progress.programStep) return
-    const progressDate = parseISO(progress.scheduledDate)
-    const occurrence = await ensureOccurrence(progress.task, progressDate, progress.programStep)
-    const sealed = !occurrence.sealed
-    const record = await api.collection('occurrences').update(occurrence.id, {
+    const sealed = !progress.sealed
+    await updateOccurrenceOptimistically(progress, {
       sealed,
       status: sealed ? 'completed' : 'pending',
-      completed_at: sealed ? new Date().toISOString() : '',
+      completedAt: sealed ? new Date().toISOString() : '',
     })
-    Object.assign(occurrence, mapOccurrence(record))
-    await syncTaskReminders()
+    void syncTaskReminders()
   }
 
   async function addEntry(progress: TaskProgress, amount: number, kind?: Entry['kind'], note = '') {
     if (progress.sealed) return
     if (amount === 0) throw new Error('Task log entries cannot have a value of zero.')
     const progressDate = parseISO(progress.scheduledDate)
-    const occurrence = await ensureOccurrence(progress.task, progressDate, progress.programStep)
+    const occurrencePromise = ensureOccurrence(progress.task, progressDate, progress.programStep)
+    const occurrence = occurrenceFor(progress.task, progressDate, progress.programStep)!
     const unit = progress.programStep?.customUnit || progress.programStep?.unit || progress.task.customUnit || progress.task.unit || (progress.task.type === 'duration' ? 'hours' : '')
-    const record = await api.collection('entries').create({
-      owner: api.authStore.record!.id,
+    const entry: Entry = {
+      id: createLocalRecordId(),
       task: progress.task.id,
       occurrence: occurrence.id,
-      program_step: progress.programStep?.id || '',
-      entry_date: progress.scheduledDate,
+      programStep: progress.programStep?.id,
+      entryDate: progress.scheduledDate,
+      createdAt: new Date().toISOString(),
       value: amount,
       kind: kind || (progress.task.type === 'duration' ? 'duration' : 'quantity'),
       unit,
       note: sanitizeTaskEntryNote(note).trim(),
-    })
-    entries.value.unshift(mapEntry(record))
-    await syncEntryProgress(progress)
+    }
+    entries.value.unshift(entry)
+    const persistence = (async () => {
+      const persistedOccurrence = await occurrencePromise
+      entry.occurrence = persistedOccurrence.id
+      const record = await api.collection('entries').create({
+        owner: api.authStore.record!.id,
+        task: entry.task,
+        occurrence: entry.occurrence,
+        program_step: entry.programStep || '',
+        entry_date: entry.entryDate,
+        value: entry.value,
+        kind: entry.kind,
+        unit: entry.unit,
+        note: entry.note || '',
+      })
+      Object.assign(entry, mapEntry(record))
+      return entry
+    })()
+    const progressSync = syncEntryProgress(progress, persistence)
+    try {
+      await Promise.all([persistence, progressSync])
+    } catch (cause) {
+      entries.value = entries.value.filter(item => item !== entry)
+      throw cause
+    }
   }
 
   async function updateEntry(progress: TaskProgress, entryId: string, amount: number, note = '') {
     if (progress.sealed) return undefined
     if (amount === 0) throw new Error('Task log entries cannot have a value of zero.')
-    const record = await api.collection('entries').update(entryId, {
+    const nextNote = sanitizeTaskEntryNote(note).trim()
+    const index = entries.value.findIndex(item => item.id === entryId)
+    const previous = index >= 0 ? { ...entries.value[index]! } : undefined
+    const entry = index >= 0
+      ? entries.value[index]!
+      : {
+          id: entryId,
+          task: progress.task.id,
+          occurrence: progress.occurrence?.id,
+          programStep: progress.programStep?.id,
+          entryDate: progress.scheduledDate,
+          createdAt: new Date().toISOString(),
+          value: amount,
+          kind: progress.task.type === 'duration' ? 'duration' : 'quantity',
+          unit: progress.programStep?.customUnit
+            || progress.programStep?.unit
+            || progress.task.customUnit
+            || progress.task.unit
+            || '',
+          note: nextNote || undefined,
+        } satisfies Entry
+    entry.value = amount
+    entry.note = nextNote || undefined
+    if (index < 0) entries.value.unshift(entry)
+    const persistence = api.collection('entries').update(entryId, {
       value: amount,
-      note: sanitizeTaskEntryNote(note).trim(),
+      note: nextNote,
+    }).then((record) => {
+      Object.assign(entry, mapEntry(record))
+      return entry
     })
-    const entry = mapEntry(record)
-    const index = entries.value.findIndex(item => item.id === entry.id)
-    if (index >= 0) entries.value.splice(index, 1, entry)
-    else entries.value.unshift(entry)
-    await syncEntryProgress(progress)
-    return entry
+    const progressSync = syncEntryProgress(progress, persistence)
+    try {
+      await Promise.all([persistence, progressSync])
+      return entry
+    } catch (cause) {
+      if (previous) Object.assign(entry, previous)
+      else entries.value = entries.value.filter(item => item !== entry)
+      throw cause
+    }
   }
 
   async function deleteEntry(progress: TaskProgress, entryId: string) {
     if (progress.sealed) return false
-    await api.collection('entries').delete(entryId)
-    entries.value = entries.value.filter(entry => entry.id !== entryId)
-    await syncEntryProgress(progress)
+    const index = entries.value.findIndex(entry => entry.id === entryId)
+    const entry = index >= 0 ? entries.value[index] : undefined
+    if (index >= 0) entries.value.splice(index, 1)
+    const persistence = api.collection('entries').delete(entryId)
+    const progressSync = syncEntryProgress(progress, persistence)
+    try {
+      await Promise.all([persistence, progressSync])
+    } catch (cause) {
+      if (entry && !entries.value.includes(entry)) entries.value.splice(index, 0, entry)
+      throw cause
+    }
     useSnackbarStore().showDeletion('Log')
     return true
   }
 
-  async function syncEntryProgress(progress: TaskProgress) {
+  async function syncEntryProgress(progress: TaskProgress, waitFor?: Promise<unknown>) {
     const progressDate = parseISO(progress.scheduledDate)
     const updated = makeProgress(progress.task, progressDate, progress.programStep)
     const isCheck = progress.programStep
@@ -818,11 +877,10 @@ export const useTaskStore = defineStore('tasks', () => {
       const shouldComplete = updated.complete
       const nextStatus = shouldComplete ? 'completed' : 'pending'
       if (occurrence.status !== nextStatus) {
-        const updatedOccurrence = await api.collection('occurrences').update(occurrence.id, {
+        await updateOccurrenceOptimistically(updated, {
           status: nextStatus,
-          completed_at: shouldComplete ? new Date().toISOString() : '',
-        })
-        Object.assign(occurrence, mapOccurrence(updatedOccurrence))
+          completedAt: shouldComplete ? new Date().toISOString() : '',
+        }, waitFor)
       }
     }
     void syncTaskReminders()
@@ -906,47 +964,81 @@ export const useTaskStore = defineStore('tasks', () => {
       reminder_enabled: draft.reminderEnabled,
       reminder_times: [...new Set(draft.reminderTimes)],
     }
-    const record = draft.id
-      ? await api.collection('tasks').update(draft.id, payload)
-      : await api.collection('tasks').create(payload)
-    const taskId = record.id
-
+    const previousTasks = tasks.value
+    const previousSteps = steps.value
+    const optimisticTask = mapTask({ id: draft.id || createLocalRecordId(), ...payload })
+    const taskIndex = draft.id ? tasks.value.findIndex(task => task.id === draft.id) : -1
+    if (taskIndex >= 0) tasks.value = tasks.value.toSpliced(taskIndex, 1, optimisticTask)
+    else tasks.value = [...tasks.value, optimisticTask]
     if (draft.type === 'program') {
-      const existing = steps.value.filter((step) => step.task === taskId)
-      const retainedIds = new Set(draft.steps.map((step) => step.id).filter(Boolean))
-      await Promise.all(existing.filter((step) => !retainedIds.has(step.id)).map((step) =>
-        api.collection('program_steps').update(step.id, {
-          active: false,
-          interval_template: '',
-          flashcard_review_set: '',
-        }),
-      ))
-      await Promise.all(
-        draft.steps.map((step, index) => {
-          const stepPayload = {
-            owner: api.authStore.record!.id,
-            task: taskId,
-            name: step.name,
-            description: step.description,
-            sort_order: index,
-            cycle_days: [index + 1],
-            completion_type: step.completionType,
-            target_value: step.targetValue || 0,
-            target_operator: step.targetOperator || 'gte',
-            unit: step.unit || '',
-            custom_unit: step.customUnit || '',
-            active: true,
-            interval_template: step.completionType === 'interval' ? step.intervalTemplate || '' : '',
-            flashcard_review_set: step.completionType === 'flashcards' ? step.flashcardReviewSet || '' : '',
-          }
-          return step.id
-            ? api.collection('program_steps').update(step.id, stepPayload)
-            : api.collection('program_steps').create(stepPayload)
-        }),
-      )
+      const optimisticSteps = draft.steps.map((step, index) => mapStep({
+        id: step.id || createLocalRecordId(),
+        task: optimisticTask.id,
+        name: step.name,
+        description: step.description,
+        sort_order: index,
+        cycle_days: [index + 1],
+        completion_type: step.completionType,
+        target_value: step.targetValue || 0,
+        target_operator: step.targetOperator || 'gte',
+        unit: step.unit || '',
+        custom_unit: step.customUnit || '',
+        active: true,
+        interval_template: step.completionType === 'interval' ? step.intervalTemplate || '' : '',
+        flashcard_review_set: step.completionType === 'flashcards' ? step.flashcardReviewSet || '' : '',
+      }))
+      steps.value = [
+        ...steps.value.filter(step => step.task !== optimisticTask.id),
+        ...optimisticSteps,
+      ]
     }
-    await load()
-    return taskId
+    try {
+      const record = draft.id
+        ? await api.collection('tasks').update(draft.id, payload)
+        : await api.collection('tasks').create(payload)
+      const taskId = record.id
+
+      if (draft.type === 'program') {
+        const existing = previousSteps.filter((step) => step.task === taskId)
+        const retainedIds = new Set(draft.steps.map((step) => step.id).filter(Boolean))
+        await Promise.all(existing.filter((step) => !retainedIds.has(step.id)).map((step) =>
+          api.collection('program_steps').update(step.id, {
+            active: false,
+            interval_template: '',
+            flashcard_review_set: '',
+          }),
+        ))
+        await Promise.all(
+          draft.steps.map((step, index) => {
+            const stepPayload = {
+              owner: api.authStore.record!.id,
+              task: taskId,
+              name: step.name,
+              description: step.description,
+              sort_order: index,
+              cycle_days: [index + 1],
+              completion_type: step.completionType,
+              target_value: step.targetValue || 0,
+              target_operator: step.targetOperator || 'gte',
+              unit: step.unit || '',
+              custom_unit: step.customUnit || '',
+              active: true,
+              interval_template: step.completionType === 'interval' ? step.intervalTemplate || '' : '',
+              flashcard_review_set: step.completionType === 'flashcards' ? step.flashcardReviewSet || '' : '',
+            }
+            return step.id
+              ? api.collection('program_steps').update(step.id, stepPayload)
+              : api.collection('program_steps').create(stepPayload)
+          }),
+        )
+      }
+      await load()
+      return taskId
+    } catch (cause) {
+      tasks.value = previousTasks
+      steps.value = previousSteps
+      throw cause
+    }
   }
 
   async function toggleTaskActive(task: Task) {
@@ -1073,21 +1165,41 @@ export const useTaskStore = defineStore('tasks', () => {
   }
 
   async function deleteTask(taskId: string) {
-    await api.collection('tasks').delete(taskId)
+    const previousTasks = tasks.value
+    const previousSteps = steps.value
+    const previousOccurrences = occurrences.value
+    const previousEntries = entries.value
     tasks.value = tasks.value.filter((task) => task.id !== taskId)
     steps.value = steps.value.filter((step) => step.task !== taskId)
     occurrences.value = occurrences.value.filter((occurrence) => occurrence.task !== taskId)
     entries.value = entries.value.filter((entry) => entry.task !== taskId)
-    await syncTaskReminders()
+    try {
+      await api.collection('tasks').delete(taskId)
+    } catch (cause) {
+      tasks.value = previousTasks
+      steps.value = previousSteps
+      occurrences.value = previousOccurrences
+      entries.value = previousEntries
+      throw cause
+    } finally {
+      void syncTaskReminders()
+    }
     useSnackbarStore().showDeletion('Routine')
   }
 
   async function shiftProgram(progress: TaskProgress) {
-    await setStatus(progress, 'rescheduled')
+    const previousStart = progress.task.startDate
     const shiftedStart = toDateKey(addDays(parseISO(progress.task.startDate), 1))
-    await api.collection('tasks').update(progress.task.id, { start_date: shiftedStart })
     progress.task.startDate = shiftedStart
-    await syncTaskReminders()
+    try {
+      await setStatus(progress, 'rescheduled')
+      await api.collection('tasks').update(progress.task.id, { start_date: shiftedStart })
+    } catch (cause) {
+      progress.task.startDate = previousStart
+      throw cause
+    } finally {
+      void syncTaskReminders()
+    }
   }
 
   return {

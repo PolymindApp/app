@@ -2,6 +2,7 @@ import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { format, subDays } from 'date-fns'
 import { api } from '@/lib/api'
+import { createLocalRecordId } from '@/lib/localDatabase'
 import { aggregateTrackingEntries } from '@/services/tracking'
 import { useSnackbarStore } from '@/stores/snackbar'
 import { useTaskStore } from '@/stores/tasks'
@@ -120,18 +121,27 @@ export const useTrackingStore = defineStore('tracking', () => {
       color: draft.color,
       icon: draft.icon,
     }
-    const record = draft.id
-      ? await api.collection('tracking_trackers').update(draft.id, payload)
-      : await api.collection('tracking_trackers').create(payload)
-    const tracker = mapTrackingTracker(record)
-    const index = trackers.value.findIndex((item) => item.id === tracker.id)
+    const index = draft.id ? trackers.value.findIndex(item => item.id === draft.id) : -1
+    const previous = index >= 0 ? trackers.value[index] : undefined
+    const tracker = mapTrackingTracker({ id: draft.id || createLocalRecordId(), ...payload })
     if (index >= 0) trackers.value.splice(index, 1, tracker)
     else trackers.value.push(tracker)
-    return tracker
+    try {
+      const record = draft.id
+        ? await api.collection('tracking_trackers').update(draft.id, payload)
+        : await api.collection('tracking_trackers').create(payload)
+      Object.assign(tracker, mapTrackingTracker(record))
+      return tracker
+    } catch (cause) {
+      const optimisticIndex = trackers.value.indexOf(tracker)
+      if (previous && optimisticIndex >= 0) trackers.value.splice(optimisticIndex, 1, previous)
+      else if (optimisticIndex >= 0) trackers.value.splice(optimisticIndex, 1)
+      throw cause
+    }
   }
 
   async function addEntry(draft: TrackingEntryDraft) {
-    const record = await api.collection('tracking_entries').create({
+    const payload = {
       owner: api.authStore.record!.id,
       tracker: draft.tracker,
       occurred_at: draft.occurredAt,
@@ -139,48 +149,96 @@ export const useTrackingStore = defineStore('tracking', () => {
       timezone_offset: draft.timezoneOffset,
       value: draft.value,
       note: draft.note,
-    })
-    const entry = mapTrackingEntry(record)
+    }
+    const entry = mapTrackingEntry({ id: createLocalRecordId(), ...payload })
     entries.value.unshift(entry)
-    await useTaskStore().syncTaskReminders()
-    return entry
+    void useTaskStore().syncTaskReminders()
+    try {
+      const record = await api.collection('tracking_entries').create(payload)
+      Object.assign(entry, mapTrackingEntry(record))
+      return entry
+    } catch (cause) {
+      entries.value = entries.value.filter(item => item !== entry)
+      void useTaskStore().syncTaskReminders()
+      throw cause
+    }
   }
 
   async function updateEntry(draft: TrackingEntryDraft & { id: string }) {
-    const record = await api.collection('tracking_entries').update(draft.id, {
+    const payload = {
       tracker: draft.tracker,
       occurred_at: draft.occurredAt,
       local_date: draft.localDate,
       timezone_offset: draft.timezoneOffset,
       value: draft.value,
       note: draft.note,
-    })
-    const entry = mapTrackingEntry(record)
-    const index = entries.value.findIndex((item) => item.id === entry.id)
+    }
+    const index = entries.value.findIndex(item => item.id === draft.id)
+    const previous = index >= 0 ? entries.value[index] : undefined
+    const entry = mapTrackingEntry({ id: draft.id, ...payload })
     if (index >= 0) entries.value.splice(index, 1, entry)
-    await useTaskStore().syncTaskReminders()
-    return entry
+    else entries.value.unshift(entry)
+    void useTaskStore().syncTaskReminders()
+    try {
+      const record = await api.collection('tracking_entries').update(draft.id, payload)
+      Object.assign(entry, mapTrackingEntry(record))
+      return entry
+    } catch (cause) {
+      const optimisticIndex = entries.value.indexOf(entry)
+      if (previous && optimisticIndex >= 0) entries.value.splice(optimisticIndex, 1, previous)
+      else if (optimisticIndex >= 0) entries.value.splice(optimisticIndex, 1)
+      void useTaskStore().syncTaskReminders()
+      throw cause
+    }
   }
 
   async function deleteEntry(id: string) {
-    await api.collection('tracking_entries').delete(id)
-    entries.value = entries.value.filter((entry) => entry.id !== id)
-    await useTaskStore().syncTaskReminders()
+    const index = entries.value.findIndex(entry => entry.id === id)
+    const entry = index >= 0 ? entries.value[index] : undefined
+    if (index >= 0) entries.value.splice(index, 1)
+    void useTaskStore().syncTaskReminders()
+    try {
+      await api.collection('tracking_entries').delete(id)
+    } catch (cause) {
+      if (entry && !entries.value.includes(entry)) entries.value.splice(index, 0, entry)
+      void useTaskStore().syncTaskReminders()
+      throw cause
+    }
     useSnackbarStore().showDeletion('Log')
   }
 
   async function archiveTracker(id: string) {
-    const record = await api.collection('tracking_trackers').update(id, { active: false })
-    const tracker = mapTrackingTracker(record)
     const index = trackers.value.findIndex((item) => item.id === id)
-    if (index >= 0) trackers.value.splice(index, 1, tracker)
+    if (index < 0) {
+      await api.collection('tracking_trackers').update(id, { active: false })
+      return
+    }
+    const tracker = trackers.value[index]!
+    const previous = { ...tracker }
+    tracker.active = false
+    try {
+      const record = await api.collection('tracking_trackers').update(id, { active: false })
+      Object.assign(tracker, mapTrackingTracker(record))
+    } catch (cause) {
+      Object.assign(tracker, previous)
+      throw cause
+    }
   }
 
   async function deleteTracker(id: string) {
-    await api.collection('tracking_trackers').delete(id)
-    trackers.value = trackers.value.filter((tracker) => tracker.id !== id)
-    entries.value = entries.value.filter((entry) => entry.tracker !== id)
-    await useTaskStore().syncTaskReminders()
+    const previousTrackers = trackers.value
+    const previousEntries = entries.value
+    trackers.value = trackers.value.filter(tracker => tracker.id !== id)
+    entries.value = entries.value.filter(entry => entry.tracker !== id)
+    void useTaskStore().syncTaskReminders()
+    try {
+      await api.collection('tracking_trackers').delete(id)
+    } catch (cause) {
+      trackers.value = previousTrackers
+      entries.value = previousEntries
+      void useTaskStore().syncTaskReminders()
+      throw cause
+    }
     useSnackbarStore().showDeletion('Tracker')
   }
 

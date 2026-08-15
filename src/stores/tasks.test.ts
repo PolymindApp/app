@@ -491,6 +491,101 @@ describe('quantitative task completion', () => {
     expect(store.reviewProgressForDate(reviewDate)).toHaveLength(0)
   })
 
+  it('creates local occurrence state before first-time persistence finishes', async () => {
+    const store = useTaskStore()
+    const checkTask = {
+      ...task,
+      id: 'first-time-check',
+      type: 'check' as const,
+      targetValue: 1,
+    }
+    let resolveCreate!: (record: Record<string, unknown>) => void
+    store.tasks = [checkTask]
+    apiMocks.createOccurrence.mockReturnValue(new Promise((resolve) => {
+      resolveCreate = resolve
+    }))
+    apiMocks.updateOccurrence.mockImplementation(async (id, payload) => ({
+      id,
+      task: checkTask.id,
+      program_step: '',
+      scheduled_date: '2026-07-29',
+      sealed: false,
+      completed_at: '',
+      snapshot_name: checkTask.name,
+      snapshot_target: 1,
+      snapshot_unit: '',
+      ...payload,
+    }))
+
+    const update = store.setStatus(store.makeProgress(checkTask, selectedDate), 'completed')
+
+    expect(store.occurrences).toEqual([
+      expect.objectContaining({ task: checkTask.id, status: 'pending' }),
+    ])
+    expect(store.makeProgress(checkTask, selectedDate)).toMatchObject({
+      complete: true,
+      status: 'completed',
+    })
+    expect(apiMocks.updateOccurrence).not.toHaveBeenCalled()
+
+    resolveCreate({
+      id: 'persisted-occurrence',
+      task: checkTask.id,
+      program_step: '',
+      scheduled_date: '2026-07-29',
+      status: 'pending',
+      sealed: false,
+      completed_at: '',
+      snapshot_name: checkTask.name,
+      snapshot_target: 1,
+      snapshot_unit: '',
+    })
+    await update
+
+    expect(apiMocks.updateOccurrence).toHaveBeenCalledWith(
+      'persisted-occurrence',
+      expect.objectContaining({ status: 'completed' }),
+    )
+    expect(store.occurrences[0]).toMatchObject({
+      id: 'persisted-occurrence',
+      status: 'completed',
+    })
+  })
+
+  it('updates an amount in local progress before entry persistence finishes', async () => {
+    const store = useTaskStore()
+    let resolveCreate!: (record: Record<string, unknown>) => void
+    store.tasks = [task]
+    store.occurrences = [{
+      ...completedOccurrence,
+      status: 'pending',
+      completedAt: undefined,
+    }]
+    apiMocks.createEntry.mockReturnValue(new Promise((resolve) => {
+      resolveCreate = resolve
+    }))
+
+    const update = store.addEntry(store.makeProgress(task, selectedDate), 1)
+
+    expect(store.makeProgress(task, selectedDate)).toMatchObject({ value: 1, percent: 25 })
+
+    resolveCreate({
+      id: 'persisted-entry',
+      task: task.id,
+      occurrence: completedOccurrence.id,
+      program_step: '',
+      entry_date: '2026-07-29',
+      created_at: '2026-07-29T12:00:00.000Z',
+      value: 1,
+      kind: 'duration',
+      unit: 'hours',
+      note: '',
+    })
+    await update
+
+    expect(store.entries[0]?.id).toBe('persisted-entry')
+  })
+
   it('rolls an optimistic status back when persistence fails', async () => {
     const store = useTaskStore()
     const reviewTask = {

@@ -423,6 +423,42 @@ describe('interval task attribution', () => {
     expect(updated.note).toBe('Felt strong throughout.')
   })
 
+  it('changes active session state before persistence finishes', async () => {
+    const sessionRecord = {
+      id: 'session-optimistic',
+      source: 'template',
+      status: 'running',
+      snapshot_name: 'Immediate interval',
+      definition_snapshot: { version: 1, children: [] },
+      cue_snapshot: { soundEnabled: true, vibrationEnabled: true },
+      started_at: '2026-08-01T14:00:00.000Z',
+      planned_seconds: 600,
+      elapsed_seconds: 10,
+      runtime_state: {
+        stepIndex: 0,
+        remainingMs: 590000,
+        accumulatedMs: 10000,
+        updatedAt: '2026-08-01T14:00:10.000Z',
+      },
+    }
+    let resolveUpdate!: (value: Record<string, unknown>) => void
+    apiMocks.getIntervalSessions.mockResolvedValue({ items: [sessionRecord] })
+    apiMocks.updateIntervalSession.mockReturnValue(new Promise((resolve) => {
+      resolveUpdate = resolve
+    }))
+    const store = useIntervalStore()
+    await store.load({ reconcileActiveSession: false })
+
+    const update = store.updateSession('session-optimistic', { status: 'paused' })
+
+    expect(store.activeSession?.status).toBe('paused')
+
+    resolveUpdate({ ...sessionRecord, status: 'paused' })
+    await update
+
+    expect(store.sessions[0]?.status).toBe('paused')
+  })
+
   it('persists changes to the active interval flashcard snapshot', async () => {
     const flashcardReview = {
       reviewSet: 'set-1',

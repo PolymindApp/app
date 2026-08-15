@@ -1,6 +1,7 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import { api, apiAssetUrl } from '@/lib/api'
+import { createLocalRecordId } from '@/lib/localDatabase'
 import { useSnackbarStore } from '@/stores/snackbar'
 import { useTaskStore } from '@/stores/tasks'
 import type { JournalEntry, JournalEntryDraft, SquareImageSourceValue } from '@/types/domain'
@@ -100,26 +101,63 @@ export const useJournalStore = defineStore('journal', () => {
       task: draft.task || '',
       tracker: draft.trackers,
     }
-    let record = draft.id
-      ? await api.collection('journal_entries').update(draft.id, payload)
-      : await api.collection('journal_entries').create(payload)
-    if (image?.upload) {
-      record = await api.updateJournalImage(record.id, image.upload)
-    } else if (draft.id && image?.source === 'none' && image.existingSource !== 'none') {
-      record = await api.removeJournalImage(record.id)
+    const index = draft.id ? entries.value.findIndex(item => item.id === draft.id) : -1
+    const previous = index >= 0 ? entries.value[index] : undefined
+    const entry: JournalEntry = {
+      id: draft.id || createLocalRecordId(),
+      title: payload.title,
+      body: payload.body,
+      color: payload.color,
+      image: image?.source === 'none'
+        ? ''
+        : image?.source === 'url'
+          ? image.url.trim()
+          : previous?.image || '',
+      occurredAt: payload.occurred_at,
+      localDate: payload.local_date,
+      timezoneOffset: payload.timezone_offset,
+      task: draft.task,
+      trackers: [...draft.trackers],
+      taskSnapshot: previous?.taskSnapshot || '',
+      trackerSnapshots: { ...(previous?.trackerSnapshots || {}) },
+      createdAt: previous?.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     }
-    const entry = mapJournalEntry(record)
-    const index = entries.value.findIndex((item) => item.id === entry.id)
     if (index >= 0) entries.value.splice(index, 1, entry)
     else entries.value.unshift(entry)
-    await useTaskStore().syncTaskReminders()
-    return entry
+    void useTaskStore().syncTaskReminders()
+    try {
+      let record = draft.id
+        ? await api.collection('journal_entries').update(draft.id, payload)
+        : await api.collection('journal_entries').create(payload)
+      if (image?.upload) {
+        record = await api.updateJournalImage(record.id, image.upload)
+      } else if (draft.id && image?.source === 'none' && image.existingSource !== 'none') {
+        record = await api.removeJournalImage(record.id)
+      }
+      Object.assign(entry, mapJournalEntry(record))
+      return entry
+    } catch (cause) {
+      const optimisticIndex = entries.value.indexOf(entry)
+      if (previous && optimisticIndex >= 0) entries.value.splice(optimisticIndex, 1, previous)
+      else if (optimisticIndex >= 0) entries.value.splice(optimisticIndex, 1)
+      void useTaskStore().syncTaskReminders()
+      throw cause
+    }
   }
 
   async function deleteEntry(id: string) {
-    await api.collection('journal_entries').delete(id)
-    entries.value = entries.value.filter((entry) => entry.id !== id)
-    await useTaskStore().syncTaskReminders()
+    const index = entries.value.findIndex(entry => entry.id === id)
+    const entry = index >= 0 ? entries.value[index] : undefined
+    if (index >= 0) entries.value.splice(index, 1)
+    void useTaskStore().syncTaskReminders()
+    try {
+      await api.collection('journal_entries').delete(id)
+    } catch (cause) {
+      if (entry && !entries.value.includes(entry)) entries.value.splice(index, 0, entry)
+      void useTaskStore().syncTaskReminders()
+      throw cause
+    }
     useSnackbarStore().showDeletion('Reflection')
   }
 

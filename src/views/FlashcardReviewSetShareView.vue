@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import AppForm from '@/components/AppForm.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import { createLocalRecordId } from '@/lib/localDatabase'
 import { useFlashcardStore } from '@/stores/flashcards'
 import type { FlashcardReviewSetShare } from '@/types/domain'
 
@@ -52,17 +53,27 @@ async function addShare() {
   if (!result?.valid || !canShare.value) return
   saving.value = true
   error.value = ''
+  const share: FlashcardReviewSetShare = {
+    id: createLocalRecordId(),
+    reviewSet: reviewSetId.value,
+    email: email.value.trim(),
+    role: role.value,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  }
+  shares.value.push(share)
+  shares.value.sort((left, right) => left.email.localeCompare(right.email))
   try {
-    shares.value.push(await store.createReviewSetShare(
+    Object.assign(share, await store.createReviewSetShare(
       reviewSetId.value,
-      email.value.trim(),
-      role.value,
+      share.email,
+      share.role,
     ))
-    shares.value.sort((left, right) => left.email.localeCompare(right.email))
     email.value = ''
     role.value = 'readonly'
     form.value?.resetValidation()
   } catch (cause) {
+    shares.value = shares.value.filter(item => item !== share)
     error.value = cause instanceof Error ? cause.message : 'Could not share this Review set.'
   } finally {
     saving.value = false
@@ -79,6 +90,9 @@ async function setRole(nextRole: FlashcardReviewSetShare['role']) {
   if (!share || share.role === nextRole) return
   saving.value = true
   error.value = ''
+  const previousRole = share.role
+  share.role = nextRole
+  actionSheet.value = false
   try {
     const updated = await store.updateReviewSetShare(share.id, nextRole)
     const index = shares.value.findIndex(item => item.id === updated.id)
@@ -86,6 +100,7 @@ async function setRole(nextRole: FlashcardReviewSetShare['role']) {
     selectedShare.value = updated
     actionSheet.value = false
   } catch (cause) {
+    share.role = previousRole
     error.value = cause instanceof Error ? cause.message : 'Could not change this role.'
   } finally {
     saving.value = false
@@ -116,14 +131,15 @@ async function revoke() {
   if (!share) return
   saving.value = true
   error.value = ''
+  const index = shares.value.indexOf(share)
+  if (index >= 0) shares.value.splice(index, 1)
+  revokeDialog.value = false
+  selectedShare.value = undefined
   try {
     await store.removeReviewSetShare(share.id)
-    shares.value = shares.value.filter(item => item.id !== share.id)
-    revokeDialog.value = false
-    selectedShare.value = undefined
   } catch (cause) {
+    if (!shares.value.includes(share)) shares.value.splice(index, 0, share)
     error.value = cause instanceof Error ? cause.message : 'Could not revoke access.'
-    revokeDialog.value = false
   } finally {
     saving.value = false
   }

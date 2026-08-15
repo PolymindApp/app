@@ -40,7 +40,10 @@ export function writeTaskFilterSelection(filters: TaskFilterId[]) {
   }
 }
 
-export function tasksWithoutProgress(tasks: Task[], progressItems: TaskProgress[]) {
+export function tasksWithoutProgress(
+  tasks: Task[],
+  progressItems: TaskProgress[],
+) {
   const taskIdsWithProgress = new Set(progressItems.map(progress => progress.task.id))
   return tasks.filter(task => !taskIdsWithProgress.has(task.id))
 }

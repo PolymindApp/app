@@ -45,6 +45,34 @@ const screenshots = [
   },
 ]
 
+const learningFlow = [
+  {
+    title: 'Tasks',
+    description: 'Schedule the practice and make it part of a larger program.',
+    icon: 'mdi-clipboard-check-outline',
+  },
+  {
+    title: 'Intervals',
+    description: 'Place a Review set inside a timed routine, with work, rest, and repetition around it.',
+    icon: 'mdi-timer-outline',
+  },
+  {
+    title: 'Flashcards',
+    description: 'Learn actively or passively with custom cards, audio, tags, pacing, and review order.',
+    icon: 'mdi-cards-outline',
+  },
+  {
+    title: 'Trackers',
+    description: 'Compare practice and interval history with the factors and outcomes you care about.',
+    icon: 'mdi-chart-timeline-variant',
+  },
+  {
+    title: 'Journal',
+    description: 'Connect a reflection to its task and tracker snapshots so the numbers keep their context.',
+    icon: 'mdi-notebook-outline',
+  },
+]
+
 function scrollToFeatures() {
   const featuresSection = document.getElementById('features')
   if (!featuresSection) return
@@ -155,6 +183,58 @@ function scrollToFeatures() {
           </v-row>
         </section>
 
+        <section class="learning-section px-6 px-lg-10">
+          <v-card class="learning-card surface-card pa-5 pa-md-8 pa-lg-12">
+            <v-row align="center" class="learning-grid">
+              <v-col cols="12" md="5" lg="4" class="learning-visual">
+                <div class="learning-phone">
+                  <img
+                    src="/images/flashcards.jpeg"
+                    alt="Passive flashcard review in BackOnTrack, showing Chinese pronunciation, translation, audio replay, progress, and difficulty tags."
+                    loading="lazy"
+                    decoding="async"
+                  />
+                </div>
+              </v-col>
+
+              <v-col cols="12" md="7" lg="8" class="learning-copy">
+                <div class="learning-heading">
+                  <h2>Learning, woven into everything else<span class="text-secondary">.</span></h2>
+                  <p class="mt-4">
+                    Flashcards are not a separate island. Build a Review set into an interval, schedule that interval as a task, then use trackers and journal posts to understand how the practice fits into your life.
+                  </p>
+                </div>
+
+                <div class="learning-flow mt-8" aria-label="How BackOnTrack learning connects across the app">
+                  <div v-for="(item, index) in learningFlow" :key="item.title" class="learning-step">
+                    <div class="learning-step__marker">
+                      <v-icon :icon="item.icon" size="22" />
+                    </div>
+                    <div class="learning-step__copy">
+                      <div class="learning-step__label">
+                        <span>{{ item.title }}</span>
+                        <v-icon
+                          v-if="index < learningFlow.length - 1"
+                          class="learning-step__arrow"
+                          icon="mdi-arrow-right"
+                          size="16"
+                          aria-hidden="true"
+                        />
+                      </div>
+                      <p>{{ item.description }}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="learning-loop mt-7">
+                  <v-icon icon="mdi-sync" color="secondary" size="22" />
+                  <p><strong>One connected feedback loop.</strong> Plan, practise, measure, reflect, and use what you learn to tune the next session.</p>
+                </div>
+              </v-col>
+            </v-row>
+          </v-card>
+        </section>
+
         <section class="closing-section px-6 px-lg-10">
           <v-card class="closing-card pa-8 pa-lg-12" color="surface">
             <div>
@@ -190,6 +270,7 @@ function scrollToFeatures() {
 .landing-header,
 .hero-section,
 .feature-section,
+.learning-section,
 .closing-section,
 .landing-footer {
   width: 100%;
@@ -434,6 +515,134 @@ function scrollToFeatures() {
   color: rgb(var(--v-theme-on-secondary) / .72);
 }
 
+.learning-section {
+  padding-block: 2rem 8rem;
+}
+
+.learning-card {
+  overflow: hidden;
+  border-color: rgba(var(--v-theme-secondary), .18);
+  background:
+    radial-gradient(circle at 15% 35%, rgba(var(--v-theme-secondary), .1), transparent 32rem),
+    rgb(var(--v-theme-surface));
+}
+
+.learning-grid {
+  position: relative;
+  z-index: 1;
+}
+
+.learning-visual {
+  display: flex;
+  justify-content: center;
+}
+
+.learning-phone {
+  width: min(100%, 16.25rem);
+  padding: .4rem;
+  overflow: hidden;
+  border: .0625rem solid rgba(var(--v-theme-secondary), .42);
+  border-radius: 2rem;
+  background: rgb(var(--v-theme-background));
+  box-shadow: 0 2rem 4rem rgba(0, 0, 0, .4), 0 0 0 .1rem rgba(var(--v-theme-secondary), .08);
+  transform: rotate(-2deg);
+}
+
+.learning-phone img {
+  width: 100%;
+  aspect-ratio: 57 / 113;
+  display: block;
+  border-radius: 1.6rem;
+  object-fit: cover;
+  object-position: center 53.333%;
+}
+
+.learning-copy {
+  padding-left: clamp(1.5rem, 4vw, 4.5rem);
+}
+
+.learning-heading h2 {
+  max-width: 14ch;
+  font-size: clamp(2.6rem, 4vw, 4.5rem);
+  font-weight: 900;
+  letter-spacing: -.055em;
+  line-height: .98;
+}
+
+.learning-heading > p {
+  max-width: 43rem;
+  color: rgb(var(--v-theme-on-surface) / .66);
+  font-size: 1rem;
+  line-height: 1.65;
+}
+
+.learning-flow {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.learning-step {
+  min-width: 0;
+}
+
+.learning-step__marker {
+  width: 2.75rem;
+  height: 2.75rem;
+  display: grid;
+  place-items: center;
+  border: .0625rem solid rgba(var(--v-theme-secondary), .22);
+  border-radius: .875rem;
+  background: rgba(var(--v-theme-secondary), .1);
+  color: rgb(var(--v-theme-secondary));
+}
+
+.learning-step__label {
+  display: flex;
+  min-height: 2.5rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: .25rem;
+  margin-top: .75rem;
+  color: rgb(var(--v-theme-on-surface));
+  font-size: .78rem;
+  font-weight: 900;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.learning-step__arrow {
+  flex: 0 0 auto;
+  color: rgb(var(--v-theme-secondary) / .58);
+}
+
+.learning-step__copy p {
+  color: rgb(var(--v-theme-on-surface) / .56);
+  font-size: .78rem;
+  line-height: 1.55;
+}
+
+.learning-loop {
+  max-width: 43rem;
+  display: flex;
+  align-items: flex-start;
+  gap: .75rem;
+  padding: 1rem 1.125rem;
+  border: .0625rem solid rgba(var(--v-theme-secondary), .18);
+  border-radius: 1rem;
+  background: rgba(var(--v-theme-secondary), .07);
+}
+
+.learning-loop p {
+  color: rgb(var(--v-theme-on-surface) / .68);
+  font-size: .85rem;
+  line-height: 1.55;
+}
+
+.learning-loop strong {
+  color: rgb(var(--v-theme-on-surface));
+}
+
 .closing-section {
   padding-block: 3rem 8rem;
 }
@@ -505,6 +714,18 @@ function scrollToFeatures() {
     align-items: flex-start;
     flex-direction: column;
   }
+
+  .learning-copy {
+    padding-left: 1.5rem;
+  }
+
+  .learning-flow {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .learning-step__arrow {
+    display: none;
+  }
 }
 
 @media (max-width: 47.998rem) {
@@ -541,6 +762,7 @@ function scrollToFeatures() {
 
   .hero-section,
   .feature-section,
+  .learning-section,
   .closing-section {
     padding-block: 2rem;
   }
@@ -566,6 +788,69 @@ function scrollToFeatures() {
 
   .phone-frame > :is(img, video) {
     border-radius: 1.1rem;
+  }
+
+  .learning-card {
+    background:
+      radial-gradient(circle at 50% 10%, rgba(var(--v-theme-secondary), .1), transparent 26rem),
+      rgb(var(--v-theme-surface));
+  }
+
+  .learning-phone {
+    width: min(72%, 14rem);
+    border-radius: 1.6rem;
+    transform: none;
+  }
+
+  .learning-phone img {
+    border-radius: 1.3rem;
+  }
+
+  .learning-copy {
+    padding-left: .75rem;
+  }
+
+  .learning-heading {
+    text-align: center;
+  }
+
+  .learning-heading h2,
+  .learning-heading > p {
+    margin-inline: auto;
+  }
+
+  .learning-heading h2 {
+    font-size: clamp(2.35rem, 10vw, 3.25rem);
+  }
+
+  .learning-flow {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+
+  .learning-step {
+    position: relative;
+    display: grid;
+    grid-template-columns: 2.75rem minmax(0, 1fr);
+    gap: .875rem;
+    padding-bottom: 1rem;
+  }
+
+  .learning-step:not(:last-child)::after {
+    position: absolute;
+    top: 2.75rem;
+    bottom: 0;
+    left: 1.34375rem;
+    width: .0625rem;
+    background: rgba(var(--v-theme-secondary), .25);
+    content: '';
+  }
+
+  .learning-step__label {
+    min-height: auto;
+    justify-content: flex-start;
+    margin-top: .1rem;
+    margin-bottom: .25rem;
   }
 
   .landing-footer {

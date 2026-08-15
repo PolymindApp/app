@@ -109,6 +109,38 @@ describe('journal store', () => {
     expect(store.entries[0]?.id).toBe('journal-2')
   })
 
+  it('shows a new reflection before local persistence finishes', async () => {
+    let resolveCreate!: (value: Record<string, unknown>) => void
+    apiMocks.create.mockReturnValue(new Promise((resolve) => {
+      resolveCreate = resolve
+    }))
+    const store = useJournalStore()
+
+    const save = store.saveEntry({
+      title: 'Immediate reflection',
+      body: 'Visible right away.',
+      color: '#C7F464',
+      occurredAt: '2026-08-02T16:00:00.000Z',
+      localDate: '2026-08-02',
+      timezoneOffset: 240,
+      trackers: [],
+    })
+
+    expect(store.entries[0]).toMatchObject({
+      title: 'Immediate reflection',
+      body: 'Visible right away.',
+    })
+
+    resolveCreate({
+      ...record('journal-persisted'),
+      title: 'Immediate reflection',
+      body: 'Visible right away.',
+    })
+    await save
+
+    expect(store.entries[0]?.id).toBe('journal-persisted')
+  })
+
   it('attaches a compressed upload to the local reflection record', async () => {
     apiMocks.create.mockResolvedValue(record('journal-2'))
     apiMocks.updateJournalImage.mockResolvedValue({

@@ -182,9 +182,12 @@ export const useAuthStore = defineStore('auth', () => {
   async function updateName(name: string) {
     accountLoading.value = true
     error.value = ''
+    const previous = user.value
+    if (previous) user.value = { ...previous, name: name.trim() }
     try {
       await api.updateAccount(name)
     } catch (cause) {
+      user.value = previous
       error.value = cause instanceof Error ? cause.message : 'Unable to update your name.'
       throw cause
     } finally {
@@ -195,12 +198,17 @@ export const useAuthStore = defineStore('auth', () => {
   async function updateAvatar(image: Blob) {
     avatarLoading.value = true
     error.value = ''
+    const previous = user.value
+    const preview = URL.createObjectURL(image)
+    if (previous) user.value = { ...previous, avatar: preview }
     try {
       await api.updateAvatar(image)
     } catch (cause) {
+      user.value = previous
       error.value = cause instanceof Error ? cause.message : 'Unable to update your avatar.'
       throw cause
     } finally {
+      URL.revokeObjectURL(preview)
       avatarLoading.value = false
     }
   }
@@ -208,9 +216,12 @@ export const useAuthStore = defineStore('auth', () => {
   async function removeAvatar() {
     avatarLoading.value = true
     error.value = ''
+    const previous = user.value
+    if (previous) user.value = { ...previous, avatar: '' }
     try {
       await api.removeAvatar()
     } catch (cause) {
+      user.value = previous
       error.value = cause instanceof Error ? cause.message : 'Unable to remove your avatar.'
       throw cause
     } finally {

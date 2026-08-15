@@ -1,7 +1,7 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { ApiError, api, apiAssetUrl } from '@/lib/api'
-import { hasLocalBootstrap } from '@/lib/localDatabase'
+import { createLocalRecordId, hasLocalBootstrap } from '@/lib/localDatabase'
 import {
   cardMatchesTags,
   createFlashcardReviewPreviewSession,
@@ -242,42 +242,67 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     if (!normalized) throw new Error('Tag name is required.')
     const existing = tags.value.find(tag => tag.name.localeCompare(normalized, undefined, { sensitivity: 'accent' }) === 0)
     if (existing) return existing
-    const record = await api.collection('flashcard_tags').create({
-      owner: api.authStore.record!.id,
-      name: normalized,
-    })
-    const tag = mapTag(record)
+    const tag: FlashcardTag = { id: createLocalRecordId(), name: normalized }
     tags.value.push(tag)
     tags.value.sort((left, right) => left.name.localeCompare(right.name))
-    return tag
+    try {
+      const record = await api.collection('flashcard_tags').create({
+        owner: api.authStore.record!.id,
+        name: normalized,
+      })
+      Object.assign(tag, mapTag(record))
+      return tag
+    } catch (cause) {
+      tags.value = tags.value.filter(item => item !== tag)
+      throw cause
+    }
   }
 
   async function renameTag(id: string, name: string) {
-    const record = await api.collection('flashcard_tags').update(id, { name: name.trim() })
-    const tag = mapTag(record)
     const index = tags.value.findIndex(item => item.id === id)
-    if (index >= 0) tags.value.splice(index, 1, tag)
+    if (index < 0) throw new Error('Tag not found.')
+    const tag = tags.value[index]!
+    const previousName = tag.name
+    tag.name = name.trim()
     tags.value.sort((left, right) => left.name.localeCompare(right.name))
-    return tag
+    try {
+      const record = await api.collection('flashcard_tags').update(id, { name: tag.name })
+      Object.assign(tag, mapTag(record))
+      tags.value.sort((left, right) => left.name.localeCompare(right.name))
+      return tag
+    } catch (cause) {
+      tag.name = previousName
+      tags.value.sort((left, right) => left.name.localeCompare(right.name))
+      throw cause
+    }
   }
 
   async function deleteTag(id: string) {
-    await api.collection('flashcard_tags').delete(id)
-    await Promise.all([
-      ...cards.value
-        .filter(card => card.tags.includes(id))
-        .map(card => api.collection('flashcards').update(card.id, {
-          tags: card.tags.filter(tag => tag !== id),
-        })),
-      ...reviewSets.value
-        .filter(set => set.owner === api.authStore.record?.id && set.tags.includes(id))
-        .map(set => api.collection('flashcard_review_sets').update(set.id, {
-          tags: set.tags.filter(tag => tag !== id),
-        })),
-    ])
+    const previousTags = tags.value
+    const cardTags = new Map(cards.value.map(card => [card.id, [...card.tags]]))
+    const reviewSetTags = new Map(reviewSets.value.map(set => [set.id, [...set.tags]]))
     tags.value = tags.value.filter(tag => tag.id !== id)
     cards.value.forEach(card => { card.tags = card.tags.filter(tag => tag !== id) })
     reviewSets.value.forEach(set => { set.tags = set.tags.filter(tag => tag !== id) })
+    try {
+      await api.collection('flashcard_tags').delete(id)
+      await Promise.all([
+        ...cards.value
+          .filter(card => cardTags.get(card.id)?.includes(id))
+          .map(card => api.collection('flashcards').update(card.id, { tags: card.tags })),
+        ...reviewSets.value
+          .filter(set => (
+            set.owner === api.authStore.record?.id
+            && reviewSetTags.get(set.id)?.includes(id)
+          ))
+          .map(set => api.collection('flashcard_review_sets').update(set.id, { tags: set.tags })),
+      ])
+    } catch (cause) {
+      tags.value = previousTags
+      cards.value.forEach((card) => { card.tags = cardTags.get(card.id) || card.tags })
+      reviewSets.value.forEach((set) => { set.tags = reviewSetTags.get(set.id) || set.tags })
+      throw cause
+    }
     useSnackbarStore().showDeletion('Tag')
   }
 
@@ -335,29 +360,80 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     }
     if (imageChanged && image?.source === 'url') payload.image_url = image.url.trim()
 
-    let record = draft.id
-      ? await api.collection('flashcards').update(draft.id, payload)
-      : await api.collection('flashcards').create(payload)
-    if (imageChanged && image) {
-      if (image.source === 'upload' && image.upload) {
-        record = await api.updateFlashcardImage(record.id, image.upload)
-      } else if (image.source === 'none' && draft.id) {
-        record = await api.removeFlashcardImage(record.id)
+    const existing = draft.id ? cards.value.find(card => card.id === draft.id) : undefined
+    const sessionSnapshots = sessions.value.map(session => ({
+      session,
+      queue: session.queue.map(card => ({ ...card, tags: [...card.tags] })),
+      totalCards: session.totalCards,
+    }))
+    const now = new Date().toISOString()
+    const optimisticCard: Flashcard = {
+      id: draft.id || createLocalRecordId(),
+      front: draft.front,
+      back: draft.back,
+      note: draft.note,
+      frontAudio: audio?.front.recording
+        ? existing?.frontAudio
+        : audio?.front.url ?? existing?.frontAudio,
+      backAudio: audio?.back.recording
+        ? existing?.backAudio
+        : audio?.back.url ?? existing?.backAudio,
+      image: imageChanged
+        ? image?.source === 'url'
+          ? image.url.trim()
+          : image?.source === 'none' ? '' : existing?.image
+        : existing?.image,
+      imageSource: imageChanged ? image?.source : existing?.imageSource,
+      tags: [...draft.tags],
+      createdAt: existing?.createdAt || now,
+      updatedAt: now,
+      lastReviewedAt: existing?.lastReviewedAt,
+      passiveViews: existing?.passiveViews || 0,
+      successCount: existing?.successCount || 0,
+      errorCount: existing?.errorCount || 0,
+    }
+    cacheCard(optimisticCard, !draft.id)
+
+    try {
+      let record = draft.id
+        ? await api.collection('flashcards').update(draft.id, payload)
+        : await api.collection('flashcards').create(payload)
+      if (imageChanged && image) {
+        if (image.source === 'upload' && image.upload) {
+          record = await api.updateFlashcardImage(record.id, image.upload)
+        } else if (image.source === 'none' && draft.id) {
+          record = await api.removeFlashcardImage(record.id)
+        }
       }
+      for (const side of ['front', 'back'] as const) {
+        const value = audio?.[side]
+        if (!value || (!value.recording && value.url === value.existingUrl)) continue
+        record = value.recording
+          ? await api.updateFlashcardAudio(record.id, side, value.recording)
+          : await api.removeFlashcardAudio(record.id, side)
+      }
+      return cacheCard(mapCard(record), !draft.id)
+    } catch (cause) {
+      cards.value = cards.value.filter(card => card !== optimisticCard)
+      if (existing) cacheCard(existing)
+      sessionSnapshots.forEach(({ session, queue, totalCards }) => {
+        session.queue = queue
+        session.totalCards = totalCards
+      })
+      throw cause
     }
-    for (const side of ['front', 'back'] as const) {
-      const value = audio?.[side]
-      if (!value || (!value.recording && value.url === value.existingUrl)) continue
-      record = value.recording
-        ? await api.updateFlashcardAudio(record.id, side, value.recording)
-        : await api.removeFlashcardAudio(record.id, side)
-    }
-    return cacheCard(mapCard(record), !draft.id)
   }
 
   async function deleteCard(id: string) {
-    await api.collection('flashcards').delete(id)
-    cards.value = cards.value.filter(card => card.id !== id)
+    const index = cards.value.findIndex(card => card.id === id)
+    const card = index >= 0 ? cards.value[index] : undefined
+    if (index >= 0) cards.value.splice(index, 1)
+    try {
+      await api.collection('flashcards').delete(id)
+    } catch (cause) {
+      if (card && !cards.value.includes(card)) cards.value.splice(index, 0, card)
+      throw cause
+    }
     useSnackbarStore().showDeletion('Card')
   }
 
@@ -382,17 +458,47 @@ export const useFlashcardStore = defineStore('flashcards', () => {
   ) {
     const uniqueCardIds = [...new Set(cardIds)]
     if (!uniqueCardIds.length) return []
-    const response = await api.bulkUpdateFlashcards(action, uniqueCardIds, [...new Set(tagIds)])
+    const uniqueTagIds = [...new Set(tagIds)]
+    const selectedIds = new Set(uniqueCardIds)
+    const previousCards = cards.value.map(card => ({ ...card, tags: [...card.tags] }))
+    const sessionSnapshots = sessions.value.map(session => ({
+      session,
+      queue: session.queue.map(card => ({ ...card, tags: [...card.tags] })),
+      totalCards: session.totalCards,
+    }))
     if (action === 'delete') {
-      const deleted = new Set(response.deleted_ids)
-      cards.value = cards.value.filter(card => !deleted.has(card.id))
-      useSnackbarStore().showDeletion(deleted.size === 1 ? 'Card' : `${deleted.size} cards`)
-      return []
+      cards.value = cards.value.filter(card => !selectedIds.has(card.id))
+    } else {
+      cards.value.filter(card => selectedIds.has(card.id)).forEach((card) => {
+        if (action === 'set_tags') card.tags = [...uniqueTagIds]
+        if (action === 'add_tags') card.tags = [...new Set([...card.tags, ...uniqueTagIds])]
+        if (action === 'remove_tags') card.tags = card.tags.filter(tag => !uniqueTagIds.includes(tag))
+        if (action === 'clear_tags') card.tags = []
+        if (action === 'swap_front_back') [card.front, card.back] = [card.back, card.front]
+        if (action === 'swap_note_back') [card.note, card.back] = [card.back, card.note]
+        cacheCard(card)
+      })
     }
+    try {
+      const response = await api.bulkUpdateFlashcards(action, uniqueCardIds, uniqueTagIds)
+      if (action === 'delete') {
+        const deleted = new Set(response.deleted_ids)
+        cards.value = previousCards.filter(card => !deleted.has(card.id))
+        useSnackbarStore().showDeletion(deleted.size === 1 ? 'Card' : `${deleted.size} cards`)
+        return []
+      }
 
-    const updatedCards = response.cards.map(mapCard)
-    updatedCards.forEach(card => cacheCard(card))
-    return updatedCards
+      const updatedCards = response.cards.map(mapCard)
+      updatedCards.forEach(card => cacheCard(card))
+      return updatedCards
+    } catch (cause) {
+      cards.value = previousCards
+      sessionSnapshots.forEach(({ session, queue, totalCards }) => {
+        session.queue = queue
+        session.totalCards = totalCards
+      })
+      throw cause
+    }
   }
 
   async function saveReviewSet(draft: FlashcardReviewSetDraft) {
@@ -415,25 +521,55 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       sort_order: draft.sortOrder,
       excluded_cards: draft.excludedCards || [],
     }
-    const record = draft.id
-      ? await api.collection('flashcard_review_sets').update(draft.id, payload)
-      : await api.collection('flashcard_review_sets').create(payload)
-    const accessibleRecords = await api.getAccessibleFlashcardReviewSets()
-    reviewSets.value = accessibleRecords.map(mapReviewSet)
-    const reviewSet = reviewSets.value.find(item => item.id === record.id) || mapReviewSet(record)
-    return reviewSet
+    const index = draft.id ? reviewSets.value.findIndex(item => item.id === draft.id) : -1
+    const previous = index >= 0 ? reviewSets.value[index] : undefined
+    const reviewSet = mapReviewSet({
+      id: draft.id || createLocalRecordId(),
+      access_role: 'owner',
+      owner: api.authStore.record!.id,
+      matching_card_count: previous?.matchingCardCount || 0,
+      created_at: previous?.createdAt || new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      ...payload,
+    })
+    if (index >= 0) reviewSets.value.splice(index, 1, reviewSet)
+    else reviewSets.value.push(reviewSet)
+    try {
+      const record = draft.id
+        ? await api.collection('flashcard_review_sets').update(draft.id, payload)
+        : await api.collection('flashcard_review_sets').create(payload)
+      const accessibleRecords = await api.getAccessibleFlashcardReviewSets()
+      reviewSets.value = accessibleRecords.map(mapReviewSet)
+      return reviewSets.value.find(item => item.id === record.id) || mapReviewSet(record)
+    } catch (cause) {
+      const optimisticIndex = reviewSets.value.indexOf(reviewSet)
+      if (previous && optimisticIndex >= 0) reviewSets.value.splice(optimisticIndex, 1, previous)
+      else if (optimisticIndex >= 0) reviewSets.value.splice(optimisticIndex, 1)
+      throw cause
+    }
   }
 
   async function saveReviewSetPreferences(
     id: string,
     settings: FlashcardReviewSettings & { excludedCards?: string[] },
   ) {
-    const record = await api.updateFlashcardReviewSetPreferences(id, settings)
-    const reviewSet = mapReviewSet(record)
     const index = reviewSets.value.findIndex(item => item.id === id)
-    if (index >= 0) reviewSets.value.splice(index, 1, reviewSet)
-    else reviewSets.value.push(reviewSet)
-    return reviewSet
+    if (index < 0) throw new Error('Review set not found.')
+    const reviewSet = reviewSets.value[index]!
+    const previous = { ...reviewSet, excludedCards: [...(reviewSet.excludedCards || [])] }
+    Object.assign(reviewSet, {
+      ...settings,
+      indefinite: settings.mode === 'passive' && settings.indefinite,
+      excludedCards: [...(settings.excludedCards || [])],
+    })
+    try {
+      const record = await api.updateFlashcardReviewSetPreferences(id, settings)
+      Object.assign(reviewSet, mapReviewSet(record))
+      return reviewSet
+    } catch (cause) {
+      Object.assign(reviewSet, previous)
+      throw cause
+    }
   }
 
   async function reorderReviewSets(ordered: FlashcardReviewSet[]) {
@@ -507,15 +643,32 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     if (action !== 'delete') throw new Error('This bulk action is not available for Review set cards.')
     const uniqueCardIds = [...new Set(cardIds)]
     if (!uniqueCardIds.length) return []
-    const response = await api.bulkUpdateFlashcardReviewSetCards(reviewSetId, uniqueCardIds)
-    const deleted = new Set(response.deleted_ids)
-    const next = (reviewSetCards.value[reviewSetId] || []).filter(card => !deleted.has(card.id))
+    const deleted = new Set(uniqueCardIds)
+    const previousReviewSetCards = reviewSetCards.value[reviewSetId] || []
+    const previousCards = cards.value
+    const reviewSet = reviewSets.value.find(item => item.id === reviewSetId)
+    const previousCount = reviewSet?.matchingCardCount
+    const next = previousReviewSetCards.filter(card => !deleted.has(card.id))
     reviewSetCards.value = { ...reviewSetCards.value, [reviewSetId]: next }
     cards.value = cards.value.filter(card => !deleted.has(card.id))
-    const reviewSet = reviewSets.value.find(item => item.id === reviewSetId)
     if (reviewSet) reviewSet.matchingCardCount = next.length
-    useSnackbarStore().showDeletion(deleted.size === 1 ? 'Card' : `${deleted.size} cards`)
-    return []
+    try {
+      const response = await api.bulkUpdateFlashcardReviewSetCards(reviewSetId, uniqueCardIds)
+      const persistedDeleted = new Set(response.deleted_ids)
+      const persistedNext = previousReviewSetCards.filter(card => !persistedDeleted.has(card.id))
+      reviewSetCards.value = { ...reviewSetCards.value, [reviewSetId]: persistedNext }
+      cards.value = previousCards.filter(card => !persistedDeleted.has(card.id))
+      if (reviewSet) reviewSet.matchingCardCount = persistedNext.length
+      useSnackbarStore().showDeletion(
+        persistedDeleted.size === 1 ? 'Card' : `${persistedDeleted.size} cards`,
+      )
+      return []
+    } catch (cause) {
+      reviewSetCards.value = { ...reviewSetCards.value, [reviewSetId]: previousReviewSetCards }
+      cards.value = previousCards
+      if (reviewSet && previousCount !== undefined) reviewSet.matchingCardCount = previousCount
+      throw cause
+    }
   }
 
   async function saveReviewSetCard(
@@ -535,52 +688,127 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       note: draft.note,
     }
     if (imageChanged && image?.source === 'url') payload.image_url = image.url.trim()
-    let record = draft.id
-      ? await api.updateFlashcardReviewSetCard(reviewSetId, draft.id, payload)
-      : await api.createFlashcardReviewSetCard(reviewSetId, payload)
-    if (imageChanged && image) {
-      if (image.source === 'upload' && image.upload) {
-        record = await api.updateFlashcardReviewSetCardImage(reviewSetId, record.id, image.upload)
-      } else if (image.source === 'none' && draft.id) {
-        record = await api.removeFlashcardReviewSetCardImage(reviewSetId, record.id)
+    const previousReviewSetCards = reviewSetCards.value[reviewSetId] || []
+    const previousCards = cards.value
+    const sessionSnapshots = sessions.value.map(session => ({
+      session,
+      queue: session.queue.map(card => ({ ...card, tags: [...card.tags] })),
+      totalCards: session.totalCards,
+    }))
+    const existing = draft.id
+      ? previousReviewSetCards.find(card => card.id === draft.id)
+        || cards.value.find(card => card.id === draft.id)
+      : undefined
+    if (existing) {
+      const optimisticCard: Flashcard = {
+        ...existing,
+        front: draft.front,
+        back: draft.back,
+        note: draft.note,
+        frontAudio: audio?.front.recording
+          ? existing.frontAudio
+          : audio?.front.url ?? existing.frontAudio,
+        backAudio: audio?.back.recording
+          ? existing.backAudio
+          : audio?.back.url ?? existing.backAudio,
+        image: imageChanged
+          ? image?.source === 'url'
+            ? image.url.trim()
+            : image?.source === 'none' ? '' : existing.image
+          : existing.image,
+        imageSource: imageChanged ? image?.source : existing.imageSource,
+        updatedAt: new Date().toISOString(),
       }
+      reviewSetCards.value = {
+        ...reviewSetCards.value,
+        [reviewSetId]: previousReviewSetCards.map(card => (
+          card.id === optimisticCard.id ? optimisticCard : card
+        )),
+      }
+      const ownedIndex = cards.value.findIndex(card => card.id === optimisticCard.id)
+      if (ownedIndex >= 0) cards.value.splice(ownedIndex, 1, optimisticCard)
+      sessions.value.forEach((session) => {
+        const queueIndex = session.queue.findIndex(card => card.id === optimisticCard.id)
+        if (queueIndex >= 0) {
+          session.queue.splice(queueIndex, 1, {
+            id: optimisticCard.id,
+            front: optimisticCard.front,
+            back: optimisticCard.back,
+            note: optimisticCard.note,
+            frontAudio: optimisticCard.frontAudio,
+            backAudio: optimisticCard.backAudio,
+            image: optimisticCard.image,
+            tags: [...optimisticCard.tags],
+          })
+        }
+      })
     }
-    for (const side of ['front', 'back'] as const) {
-      const value = audio?.[side]
-      if (!value || (!value.recording && value.url === value.existingUrl)) continue
-      record = value.recording
-        ? await api.updateFlashcardReviewSetCardAudio(
-            reviewSetId,
-            record.id,
-            side,
-            value.recording,
-          )
-        : await api.removeFlashcardReviewSetCardAudio(reviewSetId, record.id, side)
+    try {
+      let record = draft.id
+        ? await api.updateFlashcardReviewSetCard(reviewSetId, draft.id, payload)
+        : await api.createFlashcardReviewSetCard(reviewSetId, payload)
+      if (imageChanged && image) {
+        if (image.source === 'upload' && image.upload) {
+          record = await api.updateFlashcardReviewSetCardImage(reviewSetId, record.id, image.upload)
+        } else if (image.source === 'none' && draft.id) {
+          record = await api.removeFlashcardReviewSetCardImage(reviewSetId, record.id)
+        }
+      }
+      for (const side of ['front', 'back'] as const) {
+        const value = audio?.[side]
+        if (!value || (!value.recording && value.url === value.existingUrl)) continue
+        record = value.recording
+          ? await api.updateFlashcardReviewSetCardAudio(
+              reviewSetId,
+              record.id,
+              side,
+              value.recording,
+            )
+          : await api.removeFlashcardReviewSetCardAudio(reviewSetId, record.id, side)
+      }
+      const card = mapCard(record)
+      const current = reviewSetCards.value[reviewSetId] || []
+      const index = current.findIndex(item => item.id === card.id)
+      const next = [...current]
+      if (index >= 0) next.splice(index, 1, card)
+      else next.unshift(card)
+      reviewSetCards.value = { ...reviewSetCards.value, [reviewSetId]: next }
+      const reviewSet = reviewSets.value.find(item => item.id === reviewSetId)
+      if (reviewSet) reviewSet.matchingCardCount = next.length
+      if (reviewSet?.owner === api.authStore.record?.id) {
+        const cardIndex = cards.value.findIndex(item => item.id === card.id)
+        if (cardIndex >= 0) cards.value.splice(cardIndex, 1, card)
+        else cards.value.unshift(card)
+      }
+      return card
+    } catch (cause) {
+      reviewSetCards.value = { ...reviewSetCards.value, [reviewSetId]: previousReviewSetCards }
+      cards.value = previousCards
+      sessionSnapshots.forEach(({ session, queue, totalCards }) => {
+        session.queue = queue
+        session.totalCards = totalCards
+      })
+      throw cause
     }
-    const card = mapCard(record)
-    const current = reviewSetCards.value[reviewSetId] || []
-    const index = current.findIndex(item => item.id === card.id)
-    const next = [...current]
-    if (index >= 0) next.splice(index, 1, card)
-    else next.unshift(card)
-    reviewSetCards.value = { ...reviewSetCards.value, [reviewSetId]: next }
-    const reviewSet = reviewSets.value.find(item => item.id === reviewSetId)
-    if (reviewSet) reviewSet.matchingCardCount = next.length
-    if (reviewSet?.owner === api.authStore.record?.id) {
-      const cardIndex = cards.value.findIndex(item => item.id === card.id)
-      if (cardIndex >= 0) cards.value.splice(cardIndex, 1, card)
-      else cards.value.unshift(card)
-    }
-    return card
   }
 
   async function deleteReviewSetCard(reviewSetId: string, cardId: string) {
-    await api.deleteFlashcardReviewSetCard(reviewSetId, cardId)
+    const previousReviewSetCards = reviewSetCards.value[reviewSetId] || []
+    const previousCards = cards.value
+    const reviewSet = reviewSets.value.find(item => item.id === reviewSetId)
+    const previousCount = reviewSet?.matchingCardCount
     const next = (reviewSetCards.value[reviewSetId] || []).filter(card => card.id !== cardId)
     reviewSetCards.value = { ...reviewSetCards.value, [reviewSetId]: next }
     cards.value = cards.value.filter(card => card.id !== cardId)
-    const reviewSet = reviewSets.value.find(item => item.id === reviewSetId)
     if (reviewSet) reviewSet.matchingCardCount = next.length
+    try {
+      await api.deleteFlashcardReviewSetCard(reviewSetId, cardId)
+    } catch (cause) {
+      reviewSetCards.value = { ...reviewSetCards.value, [reviewSetId]: previousReviewSetCards }
+      cards.value = previousCards
+      if (reviewSet && previousCount !== undefined) reviewSet.matchingCardCount = previousCount
+      throw cause
+    }
     useSnackbarStore().showDeletion('Card')
   }
 
@@ -601,10 +829,20 @@ export const useFlashcardStore = defineStore('flashcards', () => {
   }
 
   async function removeReviewSetShare(shareId: string, reviewSetId?: string) {
-    await api.removeFlashcardReviewSetShare(shareId)
+    const previousReviewSets = reviewSets.value
+    const previousCards = reviewSetId ? reviewSetCards.value[reviewSetId] : undefined
     if (reviewSetId) {
       reviewSets.value = reviewSets.value.filter(set => set.id !== reviewSetId)
       delete reviewSetCards.value[reviewSetId]
+    }
+    try {
+      await api.removeFlashcardReviewSetShare(shareId)
+    } catch (cause) {
+      reviewSets.value = previousReviewSets
+      if (reviewSetId && previousCards) {
+        reviewSetCards.value = { ...reviewSetCards.value, [reviewSetId]: previousCards }
+      }
+      throw cause
     }
   }
 
@@ -636,14 +874,20 @@ export const useFlashcardStore = defineStore('flashcards', () => {
 
   async function deleteReviewSet(id: string) {
     error.value = ''
+    const previousReviewSets = reviewSets.value
+    const previousSessionSets = new Map(sessions.value.map(session => [session.id, session.reviewSet]))
+    reviewSets.value = reviewSets.value.filter(set => set.id !== id)
+    sessions.value.forEach((session) => {
+      if (session.reviewSet === id) session.reviewSet = undefined
+    })
     try {
       await api.collection('flashcard_review_sets').delete(id)
-      reviewSets.value = reviewSets.value.filter(set => set.id !== id)
-      sessions.value.forEach(session => {
-        if (session.reviewSet === id) session.reviewSet = undefined
-      })
       useSnackbarStore().showDeletion('Review set')
     } catch (cause) {
+      reviewSets.value = previousReviewSets
+      sessions.value.forEach((session) => {
+        session.reviewSet = previousSessionSets.get(session.id)
+      })
       const tasks = cause instanceof ApiError && Array.isArray(cause.details.tasks)
         ? cause.details.tasks.map(item => typeof item === 'object' && item && 'name' in item ? String(item.name) : '').filter(Boolean)
         : []
@@ -791,9 +1035,18 @@ export const useFlashcardStore = defineStore('flashcards', () => {
   }
 
   async function updateSessionSettings(sessionId: string, settings: FlashcardReviewSettings) {
-    const accountId = api.authStore.record?.id || ''
-    const record = accountId && await hasLocalBootstrap(accountId)
-      ? await api.collection('flashcard_review_sessions').update(sessionId, {
+    const current = sessions.value.find(item => item.id === sessionId)
+    const previous = current ? { ...current } : undefined
+    if (current) {
+      Object.assign(current, {
+        ...settings,
+        indefinite: settings.mode === 'passive' && settings.indefinite,
+      })
+    }
+    try {
+      const accountId = api.authStore.record?.id || ''
+      const record = accountId && await hasLocalBootstrap(accountId)
+        ? await api.collection('flashcard_review_sessions').update(sessionId, {
           mode_snapshot: settings.mode,
           card_sides_snapshot: settings.cardSides,
           indefinite_snapshot: settings.mode === 'passive' && settings.indefinite,
@@ -807,13 +1060,17 @@ export const useFlashcardStore = defineStore('flashcards', () => {
           back_language_snapshot: settings.backLanguage,
           sort_snapshot: settings.sortMode,
           updated_at: new Date().toISOString(),
-        })
-      : await api.updateFlashcardReviewSessionSettings(sessionId, settings)
-    const session = mapSession(record)
-    const index = sessions.value.findIndex(item => item.id === session.id)
-    if (index >= 0) sessions.value.splice(index, 1, session)
-    else sessions.value.unshift(session)
-    return session
+          })
+        : await api.updateFlashcardReviewSessionSettings(sessionId, settings)
+      const session = mapSession(record)
+      const index = sessions.value.findIndex(item => item.id === session.id)
+      if (index >= 0) sessions.value.splice(index, 1, session)
+      else sessions.value.unshift(session)
+      return session
+    } catch (cause) {
+      if (current && previous) Object.assign(current, previous)
+      throw cause
+    }
   }
 
   async function actOnLocalSession(
@@ -936,25 +1193,47 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     }
     if (current.indefinite) totalCards = queue.length
 
-    await Promise.all(events.map(event => api.collection('flashcard_review_events').create(event)))
-    if (undoneEjectEventId) {
-      await api.collection('flashcard_review_events').delete(undoneEjectEventId)
+    const previous = {
+      ...current,
+      queue: current.queue.map(card => ({ ...card, tags: [...card.tags] })),
     }
-    const session = await api.collection('flashcard_review_sessions').update(sessionId, {
-      status,
-      queue_state: queue,
-      updated_at: now,
-      ended_at: endedAt,
-      elapsed_seconds: action === 'restart'
+    const nextElapsedSeconds = action === 'restart'
         ? 0
-        : Math.max(current.elapsedSeconds, Math.round(elapsedSeconds)),
-      viewed_count: viewedCount,
-      success_count: successCount,
-      error_count: errorCount,
-      ejected_count: ejectedCount,
-      total_cards: totalCards,
+        : Math.max(current.elapsedSeconds, Math.round(elapsedSeconds))
+    Object.assign(current, {
+      status,
+      queue,
+      updatedAt: now,
+      endedAt: endedAt || undefined,
+      elapsedSeconds: nextElapsedSeconds,
+      viewedCount,
+      successCount,
+      errorCount,
+      ejectedCount,
+      totalCards,
     })
-    return { session, occurrence: null, occurrences: [], entries: [] }
+    try {
+      await Promise.all(events.map(event => api.collection('flashcard_review_events').create(event)))
+      if (undoneEjectEventId) {
+        await api.collection('flashcard_review_events').delete(undoneEjectEventId)
+      }
+      const session = await api.collection('flashcard_review_sessions').update(sessionId, {
+        status,
+        queue_state: queue,
+        updated_at: now,
+        ended_at: endedAt,
+        elapsed_seconds: nextElapsedSeconds,
+        viewed_count: viewedCount,
+        success_count: successCount,
+        error_count: errorCount,
+        ejected_count: ejectedCount,
+        total_cards: totalCards,
+      })
+      return { session, occurrence: null, occurrences: [], entries: [] }
+    } catch (cause) {
+      Object.assign(current, previous)
+      throw cause
+    }
   }
 
   return {
