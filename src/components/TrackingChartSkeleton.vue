@@ -1,14 +1,16 @@
 <script setup lang="ts">
 withDefaults(defineProps<{
+  chartOnly?: boolean
   compact?: boolean
 }>(), {
+  chartOnly: false,
   compact: false,
 })
 </script>
 
 <template>
   <v-skeleton-loader
-    type="image, text@2"
+    :type="chartOnly ? 'image' : 'image, text@2'"
     color="transparent"
     loading-text="Loading chart"
     :class="['tracking-chart-skeleton', { 'tracking-chart-skeleton--compact': compact }]"

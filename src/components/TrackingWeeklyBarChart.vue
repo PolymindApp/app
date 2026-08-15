@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { addDays, format } from 'date-fns'
+import TrackingChartSkeleton from '@/components/TrackingChartSkeleton.vue'
 import { useResponsiveChartWidth } from '@/services/responsiveChart'
 import { formatNumber, formatTrackingValue, trackingDailyValuesForRange } from '@/services/tracking'
 import { readInactiveTrackingChartTrackerIds, storeInactiveTrackingChartTrackerIds } from '@/services/trackingChartPreferences'
@@ -11,6 +12,7 @@ const props = defineProps<{
   entries: TrackingEntry[]
   weekStart: Date
   selectedDate: Date
+  loading?: boolean
 }>()
 
 const selectedDayIndex = ref<number>()
@@ -149,9 +151,11 @@ function onKeydown(event: KeyboardEvent) {
 </script>
 
 <template>
-  <div ref="chartRoot" class="weekly-chart">
+  <div ref="chartRoot" class="weekly-chart" :aria-busy="loading">
     <template v-if="series.length">
+      <TrackingChartSkeleton v-if="loading" chart-only compact />
       <div
+        v-else
         class="chart-plot"
         tabindex="0"
         role="img"
@@ -229,6 +233,7 @@ function onKeydown(event: KeyboardEvent) {
       </div>
     </template>
 
+    <TrackingChartSkeleton v-else-if="loading" chart-only compact />
     <div v-else class="weekly-chart-empty py-7 text-center" role="status">
       <v-icon icon="mdi-chart-bar-stacked" size="36" color="secondary" />
       <p class="mt-3">No entries logged in this week.</p>

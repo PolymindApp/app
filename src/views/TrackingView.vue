@@ -3,7 +3,6 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { addDays, format, isValid, parseISO, startOfWeek } from 'date-fns'
 import { useRoute, useRouter } from 'vue-router'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
-import TrackingChartSkeleton from '@/components/TrackingChartSkeleton.vue'
 import TrackingLogBottomSheet from '@/components/TrackingLogBottomSheet.vue'
 import TrackingTrackerCard from '@/components/TrackingTrackerCard.vue'
 import TrackingWeeklyBarChart from '@/components/TrackingWeeklyBarChart.vue'
@@ -225,13 +224,12 @@ async function loadVisibleWeekEntries() {
       <v-alert v-if="weeklyChartError" type="error" variant="tonal" class="mb-4">
         {{ weeklyChartError }}
       </v-alert>
-      <TrackingChartSkeleton v-if="weeklyChartLoading" compact />
       <TrackingWeeklyBarChart
-        v-else
         :trackers="store.trackers"
         :entries="store.entries"
         :week-start="visibleWeekStart"
         :selected-date="selectedDate"
+        :loading="weeklyChartLoading"
       />
       <v-btn
         v-if="store.trackers.length"
