@@ -131,6 +131,7 @@ async function remove() {
           v-else-if="tracker.kind === 'number'"
           v-model="value"
           :label="tracker.unit ? `Value (${tracker.unit})` : 'Value'"
+          :precision="null"
           autocomplete="off"
           variant="outlined"
           hide-details
@@ -140,6 +141,7 @@ async function remove() {
           v-model="value"
           label="Minutes"
           :min="0"
+          :precision="null"
           autocomplete="off"
           variant="outlined"
           hide-details
