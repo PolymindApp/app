@@ -36,20 +36,60 @@ function openCard(card: Flashcard) {
       <span class="ml-3 muted">Loading cards…</span>
     </div>
 
-    <section v-else>
-      <div class="section-heading mt-0">
-        <h2>Your cards</h2>
-        <span class="text-caption muted">{{ filteredCardCount }} of {{ store.cards.length }}</span>
-      </div>
-      <FlashcardCardsManager
-        :cards="store.cards"
-        :tags="store.tags"
-        library-actions
-        selectable
-        @update:filtered-count="filteredCardCount = $event"
-        @add-card="openNewCard"
-        @open-card="openCard"
-      />
-    </section>
+    <template v-else>
+      <section>
+        <div class="section-heading mt-0">
+          <h2>Tags</h2>
+        </div>
+        <v-btn
+          size="large"
+          variant="tonal"
+          prepend-icon="mdi-tag-multiple-outline"
+          :to="{ name: 'flashcard-tags' }"
+        >
+          Manage tags
+        </v-btn>
+      </section>
+
+      <section>
+        <div class="section-heading">
+          <h2>Your cards</h2>
+          <span class="text-caption muted">{{ filteredCardCount }} of {{ store.cards.length }}</span>
+        </div>
+        <FlashcardCardsManager
+          :cards="store.cards"
+          :tags="store.tags"
+          library-actions
+          selectable
+          :interactive="false"
+          @update:filtered-count="filteredCardCount = $event"
+          @add-card="openNewCard"
+          @open-card="openCard"
+        >
+          <template #image-column-heading><span class="d-sr-only">Edit</span></template>
+          <template #image-column="{ card }">
+            <div
+              class="flashcard-card-edit"
+              @pointerdown.stop
+              @touchstart.stop
+              @click.stop
+              @keydown.stop
+            >
+              <v-btn
+                icon="mdi-pencil-outline"
+                variant="text"
+                size="small"
+                :aria-label="`Edit card: ${card.front}`"
+                @click.stop="openCard(card)"
+              />
+            </div>
+          </template>
+        </FlashcardCardsManager>
+      </section>
+    </template>
   </main>
 </template>
+
+<style scoped>
+.flashcard-card-edit { position: relative; z-index: 2; display: flex; align-items: center; justify-content: center; }
+</style>

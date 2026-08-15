@@ -176,11 +176,10 @@ describe('FlashcardCardsManager', () => {
     expect(readOnly.get('.table-stub').attributes('data-interactive')).toBe('false')
   })
 
-  it('keeps the complete library action layout and selectable table', () => {
+  it('keeps the card library actions and selectable table', () => {
     const wrapper = mountManager({ libraryActions: true, selectable: true })
 
-    expect(wrapper.get('.card-filter-actions').classes()).toContain('card-filter-actions--4')
-    expect(wrapper.get('[aria-label="Manage flashcard tags"]').exists()).toBe(true)
+    expect(wrapper.get('.card-filter-actions').classes()).toContain('card-filter-actions--3')
     expect(wrapper.get('[aria-label="Import flashcards"]').exists()).toBe(true)
     expect(wrapper.get('[aria-label="Add a new flashcard"]').exists()).toBe(true)
     expect(wrapper.get('.table-stub').attributes('data-selectable')).toBe('true')

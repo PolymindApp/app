@@ -110,8 +110,7 @@ const availableBulkMenuItems = computed(() => {
 const hasBulkActions = computed(() => availableBulkMenuItems.value.length > 0)
 const hasActions = computed(() => props.libraryActions || props.showImport || hasBulkActions.value || props.canAdd)
 const actionCount = computed(() => (
-  Number(props.libraryActions)
-  + Number(props.libraryActions || props.showImport)
+  Number(props.libraryActions || props.showImport)
   + Number(hasBulkActions.value)
   + Number(props.canAdd)
 ))
@@ -288,19 +287,6 @@ async function deleteSelectedCards() {
           { 'card-filter-actions--only': !showSearchFilter },
         ]"
       >
-        <template v-if="libraryActions">
-          <v-btn
-            class="card-filter-action"
-            variant="tonal"
-            aria-label="Manage flashcard tags"
-            :to="{ name: 'flashcard-tags' }"
-          >
-            <span class="card-filter-action__content">
-              <v-icon icon="mdi-tag-multiple-outline" />
-              <span class="card-filter-action__label">Tags</span>
-            </span>
-          </v-btn>
-        </template>
         <v-btn
           v-if="libraryActions || showImport"
           class="card-filter-action"
