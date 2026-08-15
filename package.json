@@ -8,6 +8,7 @@
     "dev:all": "concurrently -k -n WEB,API -c green,magenta \"pnpm dev\" \"pnpm api:serve\"",
     "api:serve": "bash scripts/run-php-api.sh",
     "api:migrate": "php server/migrate.php",
+    "db:cleanup": "bash scripts/cleanup-database.sh",
     "audio:normalize": "node scripts/normalize-mp3.mjs",
     "build": "vue-tsc --noEmit && vite build",
     "build:prod": "vue-tsc --noEmit && vite build --mode prod",
@@ -30,6 +31,7 @@
     "preview": "vite preview",
     "typecheck": "vue-tsc --noEmit",
     "test": "vitest run",
+    "test:db-cleanup": "bash server/tests/database-cleanup.sh",
     "test:api": "bash server/tests/migrations.sh && bash server/tests/integration.sh"
   },
   "dependencies": {
