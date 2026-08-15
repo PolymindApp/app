@@ -10,7 +10,6 @@ const mocks = vi.hoisted(() => ({
     loaded: true,
     load: vi.fn(),
     deleteTemplate: vi.fn(),
-    duplicateTemplate: vi.fn(),
     reorderTemplates: vi.fn(),
   },
 }))
@@ -130,5 +129,17 @@ describe('IntervalPlanList actions', () => {
 
     await wrapper.findAll('section button')[0]!.trigger('click')
     expect(mocks.router.push).toHaveBeenCalledWith('/intervals/morning-hiit/edit')
+  })
+
+  it('opens a prefilled new interval form when duplicating', async () => {
+    const wrapper = mountList()
+
+    await wrapper.get('button[aria-label="Morning HIIT more actions"]').trigger('click')
+    await wrapper.findAll('section button')[1]!.trigger('click')
+
+    expect(mocks.router.push).toHaveBeenCalledWith({
+      name: 'interval-new',
+      query: { duplicate: 'morning-hiit' },
+    })
   })
 })

@@ -70,9 +70,12 @@ function openOverflowActions(template: IntervalTemplate) {
   overflowActionsDrawer.value = true
 }
 
-async function duplicateTemplate(template: IntervalTemplate) {
+function duplicateTemplate(template: IntervalTemplate) {
   overflowActionsDrawer.value = false
-  await store.duplicateTemplate(template)
+  return router.push({
+    name: 'interval-new',
+    query: { duplicate: template.id },
+  })
 }
 
 function requestDelete(template: IntervalTemplate) {

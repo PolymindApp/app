@@ -14,6 +14,7 @@ import {
   createIntervalGroup,
   createIntervalStep,
   duplicateIntervalNode,
+  duplicateIntervalTemplateDraft,
   formatIntervalDuration,
   intervalDuration,
   intervalGlobalRepetitionSettings,
@@ -278,16 +279,27 @@ onMounted(async () => {
     store.loaded ? Promise.resolve() : store.load(),
     flashcardStore.loaded ? Promise.resolve() : flashcardStore.load(),
   ])
-  if (!route.params.id) {
+  const duplicateTemplateId = typeof route.query.duplicate === 'string'
+    ? route.query.duplicate
+    : ''
+  if (!route.params.id && !duplicateTemplateId) {
     draft.sortOrder = store.templates.length
     return
   }
-  const template = store.templates.find((item) => item.id === route.params.id)
+  const templateId = typeof route.params.id === 'string'
+    ? route.params.id
+    : duplicateTemplateId
+  const template = store.templates.find((item) => item.id === templateId)
   if (!template) {
     error.value = 'That interval template could not be found.'
     return
   }
-  Object.assign(draft, cloneIntervalTemplateDraft(template))
+  Object.assign(
+    draft,
+    duplicateTemplateId
+      ? duplicateIntervalTemplateDraft(template, store.templates.length)
+      : cloneIntervalTemplateDraft(template),
+  )
   expandedNodeId.value = firstIntervalId(draft.definition.children)
 })
 

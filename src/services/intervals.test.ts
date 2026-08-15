@@ -7,6 +7,7 @@ import {
   createIntervalStep,
   createRuntimeState,
   duplicateIntervalNode,
+  duplicateIntervalTemplateDraft,
   intervalDefinitionWithRepetitions,
   intervalDuration,
   intervalFlashcardReviewElapsedMs,
@@ -71,6 +72,35 @@ describe('interval definitions', () => {
       color: '#C7F464',
       cues: { soundEnabled: true, vibrationEnabled: false },
       sortOrder: 2,
+    })
+    expect(draft.definition).toEqual(template.definition)
+    expect(draft.definition).not.toBe(template.definition)
+    expect(draft.definition.children[1]).not.toBe(template.definition.children[1])
+  })
+
+  it('builds an unsaved, editable draft when duplicating a template', () => {
+    const template = reactive<IntervalTemplate>({
+      id: 'template-1',
+      name: 'Morning rounds',
+      description: 'Start the day',
+      color: '#C7F464',
+      definition: {
+        ...nestedDefinition(),
+        globalRepetition: { enabled: false, defaultCount: 1 },
+      },
+      cues: { soundEnabled: true, vibrationEnabled: false },
+      sortOrder: 2,
+    })
+
+    const draft = duplicateIntervalTemplateDraft(template, 5)
+
+    expect(draft).toMatchObject({
+      id: undefined,
+      name: 'Morning rounds copy',
+      description: 'Start the day',
+      color: '#C7F464',
+      cues: { soundEnabled: true, vibrationEnabled: false },
+      sortOrder: 5,
     })
     expect(draft.definition).toEqual(template.definition)
     expect(draft.definition).not.toBe(template.definition)

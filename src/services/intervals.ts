@@ -264,6 +264,19 @@ export function cloneIntervalTemplateDraft(template: IntervalTemplate): Interval
   }
 }
 
+export function duplicateIntervalTemplateDraft(
+  template: IntervalTemplate,
+  sortOrder: number,
+): IntervalTemplateDraft {
+  const draft = cloneIntervalTemplateDraft(template)
+  return {
+    ...draft,
+    id: undefined,
+    name: `${draft.name} copy`,
+    sortOrder,
+  }
+}
+
 function skippedLastRoundStep(node: IntervalGroupNode): IntervalStepNode | undefined {
   if (Math.floor(node.repeatCount) <= 1) return undefined
   const lastChild = node.children.at(-1)

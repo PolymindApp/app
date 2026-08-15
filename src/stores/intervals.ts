@@ -5,7 +5,6 @@ import { createLocalRecordId } from '@/lib/localDatabase'
 import { useSnackbarStore } from '@/stores/snackbar'
 import { useTaskStore } from '@/stores/tasks'
 import {
-  cloneIntervalTemplateDraft,
   completedIntervalFlashcardReviewSeconds,
   createRuntimeState,
   intervalDuration,
@@ -222,16 +221,6 @@ export const useIntervalStore = defineStore('intervals', () => {
         : 'Could not delete the interval.'
       throw cause
     }
-  }
-
-  async function duplicateTemplate(template: IntervalTemplate) {
-    const draft = cloneIntervalTemplateDraft(template)
-    return saveTemplate({
-      ...draft,
-      id: undefined,
-      name: `${draft.name} copy`,
-      sortOrder: templates.value.length,
-    })
   }
 
   async function reorderTemplates(ordered: IntervalTemplate[]) {
@@ -583,7 +572,6 @@ export const useIntervalStore = defineStore('intervals', () => {
     load,
     saveTemplate,
     deleteTemplate,
-    duplicateTemplate,
     reorderTemplates,
     startSession,
     updateSession,
