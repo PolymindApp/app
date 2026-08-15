@@ -219,6 +219,10 @@ function scrollToFeatures() {
   display: block;
 }
 
+.landing-brand img {
+  width: 13.125rem;
+}
+
 .landing-header__actions {
   display: flex;
   align-items: center;
