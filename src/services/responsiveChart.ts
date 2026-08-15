@@ -1,8 +1,7 @@
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 export const TRACKING_CHART_COLORS = ['#8FB8FF', '#C7F464'] as const
-export const MOBILE_TRACKING_CHART_DAYS = 7
-const MOBILE_TRACKING_CHART_QUERY = '(max-width: 59.99875rem)'
+const MAX_TRACKING_CHART_ZOOM = 8
 
 export function formatTrackingAxisTick(value: number) {
   const rounded = Math.ceil(value)
@@ -43,16 +42,13 @@ export function useResponsiveChartWidth(maxWidth = 720) {
 }
 
 export function useScrollableTrackingChartWidth(
-  dayCount: () => number,
   dataKey: () => unknown,
-  maxWidth = 720,
 ) {
   const chartRoot = ref<HTMLElement>()
   const chartScroll = ref<HTMLElement>()
-  const chartViewportWidth = ref(maxWidth)
-  const mobileViewport = ref(false)
+  const chartViewportWidth = ref(720)
+  const zoomLevel = ref(1)
   let resizeObserver: ResizeObserver | undefined
-  let mobileQuery: MediaQueryList | undefined
 
   function updateChartViewportWidth() {
     const width = chartRoot.value?.clientWidth
@@ -60,17 +56,8 @@ export function useScrollableTrackingChartWidth(
     chartViewportWidth.value = Math.round(width)
   }
 
-  function updateMobileViewport() {
-    mobileViewport.value = mobileQuery?.matches || false
-  }
-
   onMounted(() => {
     updateChartViewportWidth()
-    if (typeof window.matchMedia === 'function') {
-      mobileQuery = window.matchMedia(MOBILE_TRACKING_CHART_QUERY)
-      updateMobileViewport()
-      mobileQuery.addEventListener('change', updateMobileViewport)
-    }
     if (!chartRoot.value || typeof ResizeObserver === 'undefined') return
     resizeObserver = new ResizeObserver(updateChartViewportWidth)
     resizeObserver.observe(chartRoot.value)
@@ -78,24 +65,47 @@ export function useScrollableTrackingChartWidth(
 
   onBeforeUnmount(() => {
     resizeObserver?.disconnect()
-    mobileQuery?.removeEventListener('change', updateMobileViewport)
   })
 
-  const horizontallyScrollable = computed(() =>
-    mobileViewport.value && dayCount() > MOBILE_TRACKING_CHART_DAYS,
-  )
-  const chartWidth = computed(() => horizontallyScrollable.value
-    ? Math.round(chartViewportWidth.value * dayCount() / MOBILE_TRACKING_CHART_DAYS)
-    : Math.min(maxWidth, chartViewportWidth.value),
-  )
+  const chartWidth = computed(() => Math.max(
+    chartViewportWidth.value,
+    Math.round(chartViewportWidth.value * zoomLevel.value),
+  ))
+  const horizontallyScrollable = computed(() => chartWidth.value > chartViewportWidth.value)
 
-  watch([horizontallyScrollable, dataKey], ([canScroll]) => {
-    if (!canScroll || !chartScroll.value) return
-    chartScroll.value.scrollLeft = Math.max(
-      0,
-      chartScroll.value.scrollWidth - chartScroll.value.clientWidth,
-    )
-  }, { flush: 'post', immediate: true })
+  function zoomTo(nextZoom: number, anchorClientX?: number) {
+    const boundedZoom = Math.min(MAX_TRACKING_CHART_ZOOM, Math.max(1, nextZoom))
+    const clampedZoom = boundedZoom < 1.001 ? 1 : boundedZoom
+    if (clampedZoom !== 1 && Math.abs(clampedZoom - zoomLevel.value) < .001) return false
+    if (clampedZoom === zoomLevel.value) return false
 
-  return { chartRoot, chartScroll, chartViewportWidth, chartWidth, horizontallyScrollable }
+    const scroll = chartScroll.value
+    const oldWidth = chartWidth.value
+    const anchor = scroll
+      ? Math.min(scroll.clientWidth, Math.max(0, anchorClientX === undefined
+        ? scroll.clientWidth / 2
+        : anchorClientX - scroll.getBoundingClientRect().left))
+      : 0
+    const anchorRatio = scroll && oldWidth ? (scroll.scrollLeft + anchor) / oldWidth : .5
+
+    zoomLevel.value = clampedZoom
+    void nextTick(() => {
+      if (!scroll) return
+      scroll.scrollLeft = Math.max(0, anchorRatio * chartWidth.value - anchor)
+    })
+    return true
+  }
+
+  function zoomBy(factor: number, anchorClientX?: number) {
+    return zoomTo(zoomLevel.value * factor, anchorClientX)
+  }
+
+  watch(dataKey, () => {
+    zoomLevel.value = 1
+    void nextTick(() => {
+      if (chartScroll.value) chartScroll.value.scrollLeft = 0
+    })
+  }, { flush: 'post' })
+
+  return { chartRoot, chartScroll, chartViewportWidth, chartWidth, horizontallyScrollable, zoomLevel, zoomBy, zoomTo }
 }

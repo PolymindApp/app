@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { format, parseISO, subDays } from 'date-fns'
+import { format, parseISO, subDays, subMonths } from 'date-fns'
 import { api } from '@/lib/api'
 import DatePickerField from '@/components/DatePickerField.vue'
 import TrackingChartSkeleton from '@/components/TrackingChartSkeleton.vue'
@@ -8,7 +8,7 @@ import TrackingRelationshipChart from '@/components/TrackingRelationshipChart.vu
 import TrackingTimelineChart from '@/components/TrackingTimelineChart.vue'
 import {
   buildTrackingInsight,
-  defaultTrackingInsightRangeDays,
+  defaultTrackingInsightRangePreset,
   trackingDailyValuesForRange,
   type TrackingInsightResult,
 } from '@/services/tracking'
@@ -32,7 +32,7 @@ import type {
   TrackingDailyValue,
 } from '@/types/domain'
 
-type DatePreset = '7' | '14' | '30' | '60' | '90' | 'custom'
+type DatePreset = '7' | '14' | '1-month' | '3-months' | '6-months' | 'custom'
 type TrackingFactorSource = Omit<TrackingAnalysisSource, 'source'> & {
   source: TrackingAnalysisSource['source'] | 'review_set'
 }
@@ -56,9 +56,9 @@ let analysisRequest = 0
 const datePresets: Array<{ title: string; value: DatePreset }> = [
   { title: '1 week', value: '7' },
   { title: '2 weeks', value: '14' },
-  { title: '30 days', value: '30' },
-  { title: '60 days', value: '60' },
-  { title: '90 days', value: '90' },
+  { title: '1 month', value: '1-month' },
+  { title: '3 months', value: '3-months' },
+  { title: '6 months', value: '6-months' },
   { title: 'Custom', value: 'custom' },
 ]
 
@@ -198,19 +198,22 @@ function scheduleAnalysis() {
 function setDefaultDateRange() {
   const today = new Date()
   const end = format(today, 'yyyy-MM-dd')
-  const start = format(subDays(today, 89), 'yyyy-MM-dd')
+  const start = format(subMonths(today, 6), 'yyyy-MM-dd')
   const dataPointCount = outcomeId.value
     ? trackerDailyValues(outcomeId.value, start, end).length
     : 0
-  const preset = String(defaultTrackingInsightRangeDays(dataPointCount)) as DatePreset
+  const preset = defaultTrackingInsightRangePreset(dataPointCount)
   datePreset.value = preset
   setPresetDateRange(preset, today)
 }
 
 function setPresetDateRange(preset: Exclude<DatePreset, 'custom'>, today = new Date()) {
-  const days = Number(preset)
   rangeEnd.value = format(today, 'yyyy-MM-dd')
-  rangeStart.value = format(subDays(today, days - 1), 'yyyy-MM-dd')
+  if (preset === '7' || preset === '14') {
+    rangeStart.value = format(subDays(today, Number(preset) - 1), 'yyyy-MM-dd')
+    return
+  }
+  rangeStart.value = format(subMonths(today, Number.parseInt(preset, 10)), 'yyyy-MM-dd')
 }
 
 async function analyze() {

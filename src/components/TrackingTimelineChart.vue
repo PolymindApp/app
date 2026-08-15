@@ -18,9 +18,10 @@ const props = defineProps<{
 }>()
 
 const selectedIndex = ref<number>()
+const pinchStartDistance = ref<number>()
+const pinchStartZoom = ref(1)
 const [factorColor, outcomeColor] = TRACKING_CHART_COLORS
-const { chartRoot, chartScroll, chartViewportWidth, chartWidth, horizontallyScrollable } = useScrollableTrackingChartWidth(
-  () => props.points.length,
+const { chartRoot, chartScroll, chartViewportWidth, chartWidth, horizontallyScrollable, zoomLevel, zoomBy, zoomTo } = useScrollableTrackingChartWidth(
   () => props.points,
 )
 const compactLayout = computed(() => chartViewportWidth.value < 420)
@@ -45,6 +46,7 @@ const plotWidth = computed(() => Math.max(1, chartWidth.value - plotLeft.value -
 const selectedPoint = computed(() => selectedIndex.value === undefined
   ? undefined
   : props.points[selectedIndex.value])
+const readoutPoint = computed(() => selectedPoint.value ?? props.points.at(-1))
 const xLabels = computed(() => {
   if (!props.points.length) return []
   if (horizontallyScrollable.value) {
@@ -57,7 +59,7 @@ const ariaLabel = computed(() => {
   const first = props.points[0]
   const last = props.points.at(-1)
   return first && last
-    ? `${props.factorName} and ${props.outcomeName} over time from ${format(parseISO(first.date), 'MMMM d')} to ${format(parseISO(last.date), 'MMMM d, yyyy')}. ${horizontallyScrollable.value ? 'Scroll horizontally on the chart to move through the date range. ' : ''}Use left and right arrow keys to inspect dates.`
+    ? `${props.factorName} and ${props.outcomeName} over time from ${format(parseISO(first.date), 'MMMM d')} to ${format(parseISO(last.date), 'MMMM d, yyyy')}. Use the mouse wheel or a two-finger pinch to zoom. ${horizontallyScrollable.value ? 'Scroll horizontally to move through the zoomed date range. ' : ''}Use left and right arrow keys to inspect dates.`
     : `${props.factorName} and ${props.outcomeName} over time.`
 })
 
@@ -101,6 +103,47 @@ function selectFromPointer(event: PointerEvent) {
 
 function clearPointerSelection(event: PointerEvent) {
   if (event.pointerType === 'mouse') selectedIndex.value = undefined
+}
+
+function zoomFromWheel(event: WheelEvent) {
+  const delta = event.deltaY * (event.deltaMode === WheelEvent.DOM_DELTA_LINE
+    ? 16
+    : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
+      ? chartViewportWidth.value
+      : 1)
+  if (zoomBy(Math.exp(-delta * .0025), event.clientX)) event.preventDefault()
+}
+
+function touchDistance(touches: TouchList) {
+  const first = touches[0]
+  const second = touches[1]
+  if (!first || !second) return 0
+  return Math.hypot(second.clientX - first.clientX, second.clientY - first.clientY)
+}
+
+function pinchCenter(touches: TouchList) {
+  const first = touches[0]
+  const second = touches[1]
+  return first && second ? (first.clientX + second.clientX) / 2 : undefined
+}
+
+function startPinch(event: TouchEvent) {
+  if (event.touches.length !== 2) return
+  pinchStartDistance.value = touchDistance(event.touches)
+  pinchStartZoom.value = zoomLevel.value
+}
+
+function movePinch(event: TouchEvent) {
+  if (event.touches.length !== 2 || !pinchStartDistance.value) return
+  event.preventDefault()
+  zoomTo(
+    pinchStartZoom.value * touchDistance(event.touches) / pinchStartDistance.value,
+    pinchCenter(event.touches),
+  )
+}
+
+function endPinch(event: TouchEvent) {
+  if (event.touches.length < 2) pinchStartDistance.value = undefined
 }
 
 function onKeydown(event: KeyboardEvent) {
@@ -149,15 +192,22 @@ function displayValue(value: number | null, unit: string) {
     </div>
 
     <div class="chart-readout" aria-live="polite">
-      <template v-if="selectedPoint">
-        <strong>{{ format(parseISO(selectedPoint.date), 'EEE, MMM d') }}</strong>
-        <span>{{ factorName }}: {{ displayValue(selectedPoint.factorValue, factorUnit) }}</span>
-        <span>{{ outcomeName }}: {{ displayValue(selectedPoint.outcomeValue, outcomeUnit) }}</span>
+      <template v-if="readoutPoint">
+        <strong>{{ format(parseISO(readoutPoint.date), 'EEE, MMM d') }}</strong>
+        <span>{{ factorName }}: {{ displayValue(readoutPoint.factorValue, factorUnit) }}</span>
+        <span>{{ outcomeName }}: {{ displayValue(readoutPoint.outcomeValue, outcomeUnit) }}</span>
       </template>
-      <span v-else>Tap, hover, or use arrow keys to inspect a date.</span>
     </div>
 
-    <div ref="chartScroll" :class="['chart-scroll', { 'chart-scroll--active': horizontallyScrollable }]">
+    <div
+      ref="chartScroll"
+      :class="['chart-scroll', { 'chart-scroll--active': horizontallyScrollable }]"
+      @wheel="zoomFromWheel"
+      @touchstart="startPinch"
+      @touchmove="movePinch"
+      @touchend="endPinch"
+      @touchcancel="endPinch"
+    >
       <svg
         :viewBox="`0 0 ${chartWidth} 294`"
         :style="horizontallyScrollable ? { width: `${chartWidth}px` } : undefined"
@@ -270,9 +320,9 @@ function displayValue(value: number | null, unit: string) {
 .chart-readout { min-height: 2.75rem; margin-top: .65rem; color: rgba(var(--v-theme-on-surface), .76); font-size: .7rem; }
 .chart-readout strong { color: rgb(var(--v-theme-on-surface)); }
 
-.chart-scroll { width: 100%; max-width: 100%; }
+.chart-scroll { width: 100%; max-width: 100%; touch-action: pan-x pan-y; }
 .chart-scroll--active { overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; }
-.chart-scroll--active svg { max-width: none; }
+.chart-scroll--active svg { min-width: 100%; max-width: none; }
 svg { display: block; width: 100%; height: auto; touch-action: pan-x pan-y; }
 .grid-line { stroke: rgba(var(--v-theme-on-surface), .2); stroke-width: 1; }
 .axis-value,

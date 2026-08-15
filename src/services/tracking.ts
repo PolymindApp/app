@@ -72,13 +72,18 @@ export interface TrackingInsightOptions {
   missingMeansAbsent?: boolean
 }
 
-export type TrackingInsightRangeDays = 7 | 14 | 30 | 60 | 90
+export type TrackingInsightRangePreset = '7' | '14' | '1-month' | '3-months' | '6-months'
 
-const TRACKING_INSIGHT_RANGE_DAYS: TrackingInsightRangeDays[] = [7, 14, 30, 60, 90]
+const TRACKING_INSIGHT_RANGE_PRESETS: Array<{ maximumDataPoints: number; preset: TrackingInsightRangePreset }> = [
+  { maximumDataPoints: 7, preset: '7' },
+  { maximumDataPoints: 14, preset: '14' },
+  { maximumDataPoints: 30, preset: '1-month' },
+  { maximumDataPoints: 90, preset: '3-months' },
+]
 
-export function defaultTrackingInsightRangeDays(dataPointCount: number): TrackingInsightRangeDays {
+export function defaultTrackingInsightRangePreset(dataPointCount: number): TrackingInsightRangePreset {
   const count = Math.max(0, Number.isFinite(dataPointCount) ? dataPointCount : 0)
-  return TRACKING_INSIGHT_RANGE_DAYS.find((days) => count < days) ?? 90
+  return TRACKING_INSIGHT_RANGE_PRESETS.find(({ maximumDataPoints }) => count < maximumDataPoints)?.preset ?? '6-months'
 }
 
 export const TRACKING_PRESETS: TrackingPreset[] = [

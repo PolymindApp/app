@@ -64,13 +64,8 @@ describe('TrackingTimelineChart', () => {
     vi.unstubAllGlobals()
   })
 
-  it('shows seven days per mobile viewport and scrolls longer ranges horizontally', async () => {
+  it('fits the full mobile range until the user zooms within the chart', async () => {
     let resize = () => undefined
-    vi.stubGlobal('matchMedia', vi.fn(() => ({
-      matches: true,
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-    })))
     vi.stubGlobal('ResizeObserver', class {
       constructor(callback: () => void) { resize = callback }
       observe() {}
@@ -83,22 +78,41 @@ describe('TrackingTimelineChart', () => {
     resize()
     await wrapper.vm.$nextTick()
 
+    expect(wrapper.find('.chart-scroll--active').exists()).toBe(false)
+    expect(wrapper.find('svg').attributes('viewBox')).toBe('0 0 320 294')
+    expect(wrapper.find('svg').attributes('style')).toBeUndefined()
+    expect(wrapper.findAll('.axis-date')).toHaveLength(3)
+
+    wrapper.find('.chart-scroll').element.dispatchEvent(new WheelEvent('wheel', {
+      bubbles: true,
+      cancelable: true,
+      clientX: 160,
+      deltaY: -100,
+    }))
+    await wrapper.vm.$nextTick()
+
     expect(wrapper.find('.chart-scroll--active').exists()).toBe(true)
-    expect(wrapper.find('svg').attributes('viewBox')).toBe('0 0 640 294')
-    expect(wrapper.find('svg').attributes('style')).toContain('width: 640px')
-    expect(wrapper.findAll('.axis-date')).toHaveLength(14)
+    expect(Number(wrapper.find('svg').attributes('viewBox').split(' ')[2])).toBeGreaterThan(320)
+    expect(wrapper.find('svg').attributes('style')).toContain('width:')
+
+    wrapper.find('.chart-scroll').element.dispatchEvent(new WheelEvent('wheel', {
+      bubbles: true,
+      cancelable: true,
+      clientX: 160,
+      deltaY: 1000,
+    }))
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('.chart-scroll--active').exists()).toBe(false)
+    expect(wrapper.find('svg').attributes('viewBox')).toBe('0 0 320 294')
+    expect(wrapper.find('svg').attributes('style')).toBeUndefined()
 
     wrapper.unmount()
     vi.unstubAllGlobals()
   })
 
-  it('scrolls to the newest dates after a mobile range update is rendered', async () => {
+  it('returns to the fitted full range when the data range changes', async () => {
     let resize = () => undefined
-    vi.stubGlobal('matchMedia', vi.fn(() => ({
-      matches: true,
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-    })))
     vi.stubGlobal('ResizeObserver', class {
       constructor(callback: () => void) { resize = callback }
       observe() {}
@@ -113,13 +127,23 @@ describe('TrackingTimelineChart', () => {
 
     const chartScroll = wrapper.find('.chart-scroll').element as HTMLElement
     Object.defineProperty(chartScroll, 'clientWidth', { configurable: true, value: 320 })
-    Object.defineProperty(chartScroll, 'scrollWidth', { configurable: true, value: 640 })
-    chartScroll.scrollLeft = 0
+    chartScroll.dispatchEvent(new WheelEvent('wheel', {
+      bubbles: true,
+      cancelable: true,
+      clientX: 160,
+      deltaY: -200,
+    }))
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('.chart-scroll--active').exists()).toBe(true)
+
     await wrapper.setProps({
       points: timelinePoints(14).map((point) => ({ ...point, date: point.date.replace('07', '08') })),
     })
+    await wrapper.vm.$nextTick()
 
-    expect(chartScroll.scrollLeft).toBe(320)
+    expect(wrapper.find('.chart-scroll--active').exists()).toBe(false)
+    expect(wrapper.find('svg').attributes('viewBox')).toBe('0 0 320 294')
+    expect(chartScroll.scrollLeft).toBe(0)
 
     wrapper.unmount()
     vi.unstubAllGlobals()
@@ -127,11 +151,6 @@ describe('TrackingTimelineChart', () => {
 
   it('keeps longer ranges fitted to the chart on desktop', async () => {
     let resize = () => undefined
-    vi.stubGlobal('matchMedia', vi.fn(() => ({
-      matches: false,
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-    })))
     vi.stubGlobal('ResizeObserver', class {
       constructor(callback: () => void) { resize = callback }
       observe() {}
@@ -140,12 +159,12 @@ describe('TrackingTimelineChart', () => {
     const wrapper = mount(TrackingTimelineChart, {
       props: { ...timelineProps, points: timelinePoints(14) },
     })
-    Object.defineProperty(wrapper.element, 'clientWidth', { configurable: true, value: 640 })
+    Object.defineProperty(wrapper.element, 'clientWidth', { configurable: true, value: 760 })
     resize()
     await wrapper.vm.$nextTick()
 
     expect(wrapper.find('.chart-scroll--active').exists()).toBe(false)
-    expect(wrapper.find('svg').attributes('viewBox')).toBe('0 0 640 294')
+    expect(wrapper.find('svg').attributes('viewBox')).toBe('0 0 760 294')
     expect(wrapper.find('svg').attributes('style')).toBeUndefined()
 
     wrapper.unmount()
@@ -241,7 +260,13 @@ describe('TrackingRelationshipChart', () => {
     expect(style.getPropertyValue('--outcome-color')).toBe(TRACKING_CHART_COLORS[1])
   })
 
-  it('fits the whole graph without horizontal scrolling or calculated width styles', () => {
+  it('uses the rendered width so its labels match the timeline without horizontal scrolling', async () => {
+    let resize = () => undefined
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(callback: () => void) { resize = callback }
+      observe() {}
+      disconnect() {}
+    })
     const insight: TrackingInsightResult = {
       points: timelinePoints(14),
       matched: [
@@ -259,12 +284,18 @@ describe('TrackingRelationshipChart', () => {
     const wrapper = mount(TrackingRelationshipChart, {
       props: { ...timelineProps, insight },
     })
+    Object.defineProperty(wrapper.element, 'clientWidth', { configurable: true, value: 320 })
+    resize()
+    await wrapper.vm.$nextTick()
 
     expect(wrapper.find('.chart-canvas').exists()).toBe(true)
     expect(wrapper.find('.chart-scroll').exists()).toBe(false)
-    expect(wrapper.find('svg').attributes('viewBox')).toBe('0 0 720 300')
+    expect(wrapper.find('svg').attributes('viewBox')).toBe('0 0 320 300')
     expect(wrapper.find('svg').attributes('style')).toBeUndefined()
     expect(wrapper.attributes('aria-label')).not.toContain('Scroll horizontally')
+
+    wrapper.unmount()
+    vi.unstubAllGlobals()
   })
 
   it('rounds large y-axis values up and leaves room for the complete labels', () => {

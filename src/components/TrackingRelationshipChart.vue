@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { format, parseISO } from 'date-fns'
-import { formatTrackingAxisTick, TRACKING_CHART_COLORS, trackingAxisGutter } from '@/services/responsiveChart'
+import { formatTrackingAxisTick, TRACKING_CHART_COLORS, trackingAxisGutter, useResponsiveChartWidth } from '@/services/responsiveChart'
 import { formatNumber } from '@/services/tracking'
 import type { TrackingInsightResult } from '@/services/tracking'
 import type { TrackingRelationshipPoint } from '@/types/domain'
@@ -20,7 +20,7 @@ const props = defineProps<{
 
 const selectedIndex = ref<number>()
 const [factorColor, outcomeColor] = TRACKING_CHART_COLORS
-const chartWidth = 720
+const { chartRoot, chartWidth } = useResponsiveChartWidth()
 const chartHeight = 300
 const plotRight = 24
 const plotTop = 18
@@ -39,7 +39,7 @@ const factorRange = computed(() => valueRange(
 ))
 const outcomeTicks = computed(() => yTicks())
 const plotLeft = computed(() => trackingAxisGutter(outcomeTicks.value, 64, 32))
-const plotWidth = computed(() => Math.max(1, chartWidth - plotLeft.value - plotRight))
+const plotWidth = computed(() => Math.max(1, chartWidth.value - plotLeft.value - plotRight))
 const plottedPoints = computed(() => props.insight.matched.map((point, index) => ({
   point,
   x: props.insight.mode === 'presence'
@@ -50,6 +50,7 @@ const plottedPoints = computed(() => props.insight.matched.map((point, index) =>
 const selectedPoint = computed(() => selectedIndex.value === undefined
   ? undefined
   : props.insight.matched[selectedIndex.value])
+const readoutPoint = computed(() => selectedPoint.value ?? props.insight.matched.at(-1))
 const ariaLabel = computed(() => props.insight.mode === 'presence'
   ? `${props.outcomeName} values grouped by whether ${props.factorName} was present or absent. Use left and right arrow keys to inspect paired days.`
   : `${props.outcomeName} plotted against ${props.factorName} for ${props.insight.matched.length} paired days. Use left and right arrow keys to inspect points.`)
@@ -99,7 +100,7 @@ function selectFromPointer(event: PointerEvent) {
   if (!plottedPoints.value.length) return
   const rect = (event.currentTarget as SVGElement).getBoundingClientRect()
   if (!rect.width || !rect.height) return
-  const pointerX = (event.clientX - rect.left) / rect.width * chartWidth
+  const pointerX = (event.clientX - rect.left) / rect.width * chartWidth.value
   const pointerY = (event.clientY - rect.top) / rect.height * chartHeight
   const closest = plottedPoints.value.reduce(
     (best, candidate, index) => {
@@ -147,6 +148,7 @@ function displayValue(value: number, unit: string) {
 
 <template>
   <div
+    ref="chartRoot"
     class="relationship-chart"
     :style="{ '--factor-color': factorColor, '--outcome-color': outcomeColor }"
     tabindex="0"
@@ -155,12 +157,11 @@ function displayValue(value: number, unit: string) {
     @keydown="onKeydown"
   >
     <div class="chart-readout" aria-live="polite">
-      <template v-if="selectedPoint">
-        <strong>{{ format(parseISO(selectedPoint.date), 'EEE, MMM d') }}</strong>
-        <span>{{ factorName }}: {{ displayValue(selectedPoint.factorValue, factorUnit) }}</span>
-        <span>{{ outcomeName }}: {{ displayValue(selectedPoint.outcomeValue, outcomeUnit) }}</span>
+      <template v-if="readoutPoint">
+        <strong>{{ format(parseISO(readoutPoint.date), 'EEE, MMM d') }}</strong>
+        <span>{{ factorName }}: {{ displayValue(readoutPoint.factorValue, factorUnit) }}</span>
+        <span>{{ outcomeName }}: {{ displayValue(readoutPoint.outcomeValue, outcomeUnit) }}</span>
       </template>
-      <span v-else>Tap, hover, or use arrow keys to inspect a paired day.</span>
     </div>
 
     <div class="chart-canvas">

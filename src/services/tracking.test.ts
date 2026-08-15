@@ -4,7 +4,7 @@ import {
   buildTrackingInsight,
   compareDateRanges,
   comparePresentAbsent,
-  defaultTrackingInsightRangeDays,
+  defaultTrackingInsightRangePreset,
   linearTrend,
   formatTrackingValue,
   trackerDraftFromPreset,
@@ -27,16 +27,16 @@ const entry = (date: string, value: number, suffix = value): TrackingEntry => ({
 
 describe('tracking analysis', () => {
   it('chooses a compact default insight range from the amount of data', () => {
-    expect(defaultTrackingInsightRangeDays(0)).toBe(7)
-    expect(defaultTrackingInsightRangeDays(6)).toBe(7)
-    expect(defaultTrackingInsightRangeDays(7)).toBe(14)
-    expect(defaultTrackingInsightRangeDays(13)).toBe(14)
-    expect(defaultTrackingInsightRangeDays(14)).toBe(30)
-    expect(defaultTrackingInsightRangeDays(29)).toBe(30)
-    expect(defaultTrackingInsightRangeDays(30)).toBe(60)
-    expect(defaultTrackingInsightRangeDays(59)).toBe(60)
-    expect(defaultTrackingInsightRangeDays(60)).toBe(90)
-    expect(defaultTrackingInsightRangeDays(180)).toBe(90)
+    expect(defaultTrackingInsightRangePreset(0)).toBe('7')
+    expect(defaultTrackingInsightRangePreset(6)).toBe('7')
+    expect(defaultTrackingInsightRangePreset(7)).toBe('14')
+    expect(defaultTrackingInsightRangePreset(13)).toBe('14')
+    expect(defaultTrackingInsightRangePreset(14)).toBe('1-month')
+    expect(defaultTrackingInsightRangePreset(29)).toBe('1-month')
+    expect(defaultTrackingInsightRangePreset(30)).toBe('3-months')
+    expect(defaultTrackingInsightRangePreset(89)).toBe('3-months')
+    expect(defaultTrackingInsightRangePreset(90)).toBe('6-months')
+    expect(defaultTrackingInsightRangePreset(180)).toBe('6-months')
   })
 
   it('aggregates repeated daily ratings using the tracker rule', () => {
