@@ -337,12 +337,6 @@ function releaseLeavingPage(element: Element) {
           </template>
         </v-list-item>
       </v-list>
-
-      <template #append>
-        <div class="pa-4">
-          <v-btn block variant="text" prepend-icon="mdi-logout" @click="logoutDialog = true">Sign out</v-btn>
-        </div>
-      </template>
     </v-navigation-drawer>
 
     <transition name="app-chrome">
