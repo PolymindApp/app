@@ -95,10 +95,16 @@ function mapSession(record: Record<string, any>): IntervalSession {
 function mapSessionWithSpeechPause(
   record: Record<string, any>,
   speechPaused: boolean | undefined,
+  speechPausedElapsedMs?: number,
 ) {
   const session = mapSession(record)
   if (speechPaused !== undefined && session.flashcardReview) {
     session.flashcardReview.speechPaused = speechPaused
+    if (speechPaused && Number.isFinite(speechPausedElapsedMs)) {
+      session.flashcardReview.speechPausedElapsedMs = speechPausedElapsedMs
+    } else if (!speechPaused) {
+      delete session.flashcardReview.speechPausedElapsedMs
+    }
   }
   return session
 }
@@ -366,7 +372,11 @@ export const useIntervalStore = defineStore('intervals', () => {
     try {
       const record = await api.collection('interval_sessions').update(sessionId, payload)
       const speechPaused = session.flashcardReview?.speechPaused
-      const updated = mapSessionWithSpeechPause(record, speechPaused)
+      const updated = mapSessionWithSpeechPause(
+        record,
+        speechPaused,
+        session.flashcardReview?.speechPausedElapsedMs,
+      )
       Object.assign(session, updated)
       return session
     } catch (cause) {
@@ -383,14 +393,22 @@ export const useIntervalStore = defineStore('intervals', () => {
     const index = sessions.value.findIndex((session) => session.id === sessionId)
     if (index < 0) {
       const record = await api.updateIntervalSessionFlashcards(sessionId, flashcardReview)
-      return mapSessionWithSpeechPause(record, flashcardReview.speechPaused)
+      return mapSessionWithSpeechPause(
+        record,
+        flashcardReview.speechPaused,
+        flashcardReview.speechPausedElapsedMs,
+      )
     }
     const session = sessions.value[index]!
     const previous = session.flashcardReview
     session.flashcardReview = flashcardReview
     try {
       const record = await api.updateIntervalSessionFlashcards(sessionId, flashcardReview)
-      const updated = mapSessionWithSpeechPause(record, flashcardReview.speechPaused)
+      const updated = mapSessionWithSpeechPause(
+        record,
+        flashcardReview.speechPaused,
+        flashcardReview.speechPausedElapsedMs,
+      )
       Object.assign(session, updated)
       if (session.status === 'running' || session.status === 'paused') saveRecovery(session.id, session.runtime)
       return session

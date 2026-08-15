@@ -54,14 +54,14 @@ import {
   formatIntervalDuration,
   intervalDefinitionWithRepetitions,
   intervalDuration,
-  intervalFlashcardReviewElapsedMs,
+  intervalFlashcardReviewPlaybackElapsedMs,
+  intervalFlashcardReviewPlaybackIsActive,
   intervalGlobalRepetitionSettings,
   intervalRunProgress,
   reconcileIntervalRuntime,
   rebaseIntervalRuntimeForDefinition,
   resolveIntervalStep,
   intervalStepDurationSeconds,
-  intervalStepFlashcardReviewPlaybackIsActive,
   MAX_GLOBAL_REPETITIONS,
   MIN_GLOBAL_REPETITIONS,
   validateIntervalDefinition,
@@ -205,36 +205,24 @@ const flashcardReviewPlaybackEnabled = computed(() => {
   return Boolean(
     review
     && step
-    && (!review.speechEnabled || intervalStepFlashcardReviewPlaybackIsActive(
+    && intervalFlashcardReviewPlaybackIsActive(
+      review,
       step,
       displayRemainingMs.value,
-    )),
+    ),
   )
 })
 const flashcardReviewElapsedMs = computed(() => {
   const item = session.value
   const review = item?.flashcardReview
   if (!item || !review) return 0
-  if (!review.speechEnabled) return sessionElapsedMs.value
-  const measured = item.runtime.flashcardReviewAccumulatedMs
-  if (!Number.isFinite(measured)) {
-    return intervalFlashcardReviewElapsedMs(
-      item.definition,
-      item.runtime.stepIndex,
-      displayRemainingMs.value,
-    )
-  }
-  const persistedPosition = intervalFlashcardReviewElapsedMs(
+  return intervalFlashcardReviewPlaybackElapsedMs(
+    review,
     item.definition,
-    item.runtime.stepIndex,
-    item.runtime.remainingMs,
-  )
-  const displayedPosition = intervalFlashcardReviewElapsedMs(
-    item.definition,
-    item.runtime.stepIndex,
+    item.runtime,
     displayRemainingMs.value,
+    sessionElapsedMs.value,
   )
-  return Math.max(0, measured! + Math.max(0, displayedPosition - persistedPosition))
 })
 const flashcardPhase = computed(() => session.value?.flashcardReview
   ? intervalFlashcardPhase(session.value.flashcardReview, flashcardReviewElapsedMs.value)
@@ -1176,14 +1164,34 @@ async function toggleSessionTts() {
   if (!item || !review?.speechEnabled || syncing.value) return
 
   const shouldResume = resumeAfterFlashcardContext || item.status === 'running'
+  const wasPaused = Boolean(review.speechPaused)
+  const pausedElapsedMs = wasPaused && Number.isFinite(review.speechPausedElapsedMs)
+    ? Math.max(0, review.speechPausedElapsedMs!)
+    : flashcardReviewElapsedMs.value
   resumeAfterFlashcardContext = false
   try {
-    await updateFlashcardSnapshot({
-      ...review,
-      speechPaused: !review.speechPaused,
-    })
+    if (wasPaused) {
+      const runtime = {
+        ...item.runtime,
+        flashcardReviewAccumulatedMs: pausedElapsedMs,
+        updatedAt: new Date().toISOString(),
+      }
+      await store.updateSession(item.id, { runtime })
+      await updateFlashcardSnapshot({
+        ...review,
+        speechPaused: false,
+        speechPausedElapsedMs: undefined,
+      })
+    } else {
+      await stopFlashcardSpeech()
+      await updateFlashcardSnapshot({
+        ...review,
+        speechPaused: true,
+        speechPausedElapsedMs: pausedElapsedMs,
+      })
+    }
   } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : 'Could not update session TTS.'
+    error.value = cause instanceof Error ? cause.message : 'Could not update Review set playback.'
   } finally {
     if (shouldResume && session.value?.status === 'paused') {
       try {
@@ -1427,7 +1435,12 @@ async function saveFlashcardSettings(target: FlashcardSettingsApplyTarget = 'ses
     if (!snapshot) throw new Error('These settings do not match any available cards.')
     await updateFlashcardSnapshot({
       ...snapshot,
-      ...(context.review.speechPaused ? { speechPaused: true } : {}),
+      ...(context.review.speechPaused
+        ? {
+            speechPaused: true,
+            speechPausedElapsedMs: context.review.speechPausedElapsedMs,
+          }
+        : {}),
     })
     await closeFlashcardSettings()
   } catch (cause) {
@@ -1489,13 +1502,20 @@ async function runAgain(repetitions?: number) {
       ? intervalDefinitionWithRepetitions(item.definition, repetitions ?? repetitionSettings.defaultCount)
       : item.definition
     await prepareIntervalCues(item.cues)
+    const flashcardReview = item.flashcardReview
+      ? {
+          ...item.flashcardReview,
+          speechPaused: false,
+          speechPausedElapsedMs: undefined,
+        }
+      : undefined
     const nextSession = await store.startSession({
       name: item.name,
       source: item.source,
       definition,
       cues: item.cues,
       template: item.template,
-      flashcardReview: item.flashcardReview,
+      flashcardReview,
     })
     repetitionDialog.value = false
     repetitionDefinition.value = undefined

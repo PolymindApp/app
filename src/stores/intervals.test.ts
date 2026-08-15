@@ -558,7 +558,11 @@ describe('interval task attribution', () => {
         snapshot_name: 'Study',
         definition_snapshot: { version: 1, children: [] },
         cue_snapshot: { soundEnabled: true, vibrationEnabled: true },
-        flashcard_snapshot: { ...flashcardSnapshot, speechPaused },
+        flashcard_snapshot: {
+          ...flashcardSnapshot,
+          speechPaused,
+          ...(speechPaused ? { speechPausedElapsedMs: 2_500 } : {}),
+        },
         started_at: '2026-08-15T14:00:00.000Z',
         planned_seconds: 60,
         elapsed_seconds: 5,
@@ -575,6 +579,7 @@ describe('interval task attribution', () => {
         flashcard_snapshot: {
           ...flashcardSnapshot,
           speechPaused: !speechPaused,
+          speechPausedElapsedMs: 9_000,
         },
       })
       const store = useIntervalStore()
@@ -583,6 +588,8 @@ describe('interval task attribution', () => {
       await store.updateSession('session-tts', { elapsedSeconds: 6 })
 
       expect(store.sessions[0]?.flashcardReview?.speechPaused).toBe(speechPaused)
+      expect(store.sessions[0]?.flashcardReview?.speechPausedElapsedMs)
+        .toBe(speechPaused ? 2_500 : undefined)
     },
   )
 
@@ -599,6 +606,7 @@ describe('interval task attribution', () => {
       noteBeforeBack: true,
       speechEnabled: false,
       speechPaused: true,
+      speechPausedElapsedMs: 2_500,
       frontLanguage: '',
       backLanguage: '',
       cards: [{ id: 'card-1', front: 'Hola', back: 'Hello', note: '', image: '', tags: ['tag-1'] }],
@@ -610,7 +618,11 @@ describe('interval task attribution', () => {
       snapshot_name: 'Study',
       definition_snapshot: { version: 1, children: [] },
       cue_snapshot: { soundEnabled: true, vibrationEnabled: true },
-      flashcard_snapshot: { ...flashcardReview, speechPaused: false },
+      flashcard_snapshot: {
+        ...flashcardReview,
+        speechPaused: false,
+        speechPausedElapsedMs: 9_000,
+      },
       started_at: '2026-08-08T14:00:00.000Z',
       planned_seconds: 60,
       elapsed_seconds: 5,
@@ -627,5 +639,6 @@ describe('interval task attribution', () => {
     expect(apiMocks.updateIntervalSessionFlashcards).toHaveBeenCalledWith('session-1', flashcardReview)
     expect(updated.flashcardReview?.cards[0]?.front).toBe('Hola')
     expect(updated.flashcardReview?.speechPaused).toBe(true)
+    expect(updated.flashcardReview?.speechPausedElapsedMs).toBe(2_500)
   })
 })

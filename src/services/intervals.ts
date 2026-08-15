@@ -1,5 +1,6 @@
 import type {
   IntervalDefinition,
+  IntervalFlashcardReviewSnapshot,
   IntervalGroupNode,
   IntervalNode,
   IntervalRuntimeState,
@@ -98,6 +99,55 @@ export function intervalStepFlashcardReviewPlaybackIsActive(
   const elapsedMs = durationMs - normalizedRemainingMs
   return elapsedMs >= INTERVAL_FLASHCARD_REVIEW_EDGE_PAUSE_MS
     && normalizedRemainingMs > INTERVAL_FLASHCARD_REVIEW_EDGE_PAUSE_MS
+}
+
+export function intervalFlashcardReviewPlaybackIsActive(
+  review: Pick<IntervalFlashcardReviewSnapshot, 'speechEnabled' | 'speechPaused'>,
+  step: IntervalStepNode,
+  remainingMs: number,
+) {
+  if (review.speechPaused) return false
+  return !review.speechEnabled
+    || intervalStepFlashcardReviewPlaybackIsActive(step, remainingMs)
+}
+
+export function intervalFlashcardReviewPlaybackElapsedMs(
+  review: Pick<
+    IntervalFlashcardReviewSnapshot,
+    'speechEnabled' | 'speechPaused' | 'speechPausedElapsedMs'
+  >,
+  definition: IntervalDefinition,
+  runtime: Pick<
+    IntervalRuntimeState,
+    'stepIndex' | 'remainingMs' | 'flashcardReviewAccumulatedMs'
+  >,
+  displayedRemainingMs: number,
+  sessionElapsedMs: number,
+) {
+  if (review.speechPaused && Number.isFinite(review.speechPausedElapsedMs)) {
+    return Math.max(0, review.speechPausedElapsedMs!)
+  }
+  if (!review.speechEnabled) return Math.max(0, sessionElapsedMs)
+
+  const measured = runtime.flashcardReviewAccumulatedMs
+  if (!Number.isFinite(measured)) {
+    return intervalFlashcardReviewElapsedMs(
+      definition,
+      runtime.stepIndex,
+      displayedRemainingMs,
+    )
+  }
+  const persistedPosition = intervalFlashcardReviewElapsedMs(
+    definition,
+    runtime.stepIndex,
+    runtime.remainingMs,
+  )
+  const displayedPosition = intervalFlashcardReviewElapsedMs(
+    definition,
+    runtime.stepIndex,
+    displayedRemainingMs,
+  )
+  return Math.max(0, measured! + Math.max(0, displayedPosition - persistedPosition))
 }
 
 export function normalizeQuickIntervalSettings(value: unknown): QuickIntervalSettings | undefined {

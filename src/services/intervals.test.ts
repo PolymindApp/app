@@ -10,6 +10,8 @@ import {
   duplicateIntervalTemplateDraft,
   intervalDefinitionWithRepetitions,
   intervalDuration,
+  intervalFlashcardReviewPlaybackElapsedMs,
+  intervalFlashcardReviewPlaybackIsActive,
   intervalFlashcardReviewElapsedMs,
   intervalGlobalRepetitionSettings,
   intervalRunProgress,
@@ -479,6 +481,48 @@ describe('interval definitions', () => {
 
     step.durationSeconds = 8
     expect(intervalStepFlashcardReviewPlaybackIsActive(step, 4_000)).toBe(false)
+  })
+
+  it('keeps a session-paused Review set paused when a step allows playback', () => {
+    const step = createIntervalStep('Read', 'work', 10)
+    const review = { speechEnabled: true, speechPaused: true }
+
+    expect(intervalFlashcardReviewPlaybackIsActive(review, step, 5_000)).toBe(false)
+
+    review.speechPaused = false
+    expect(intervalFlashcardReviewPlaybackIsActive(review, step, 5_000)).toBe(true)
+  })
+
+  it('holds Review set progress at the captured position while playback is paused', () => {
+    const step = createIntervalStep('Read', 'work', 20)
+    const definition: IntervalDefinition = { version: 1, children: [step] }
+    const runtime = {
+      stepIndex: 0,
+      remainingMs: 10_000,
+      flashcardReviewAccumulatedMs: 6_000,
+    }
+    const review = {
+      speechEnabled: true,
+      speechPaused: true,
+      speechPausedElapsedMs: 2_500,
+    }
+
+    expect(intervalFlashcardReviewPlaybackElapsedMs(
+      review,
+      definition,
+      runtime,
+      8_000,
+      12_000,
+    )).toBe(2_500)
+
+    review.speechPaused = false
+    expect(intervalFlashcardReviewPlaybackElapsedMs(
+      review,
+      definition,
+      runtime,
+      8_000,
+      12_000,
+    )).toBe(8_000)
   })
 
   it('preserves Review set timing across repeated groups', () => {
