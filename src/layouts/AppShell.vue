@@ -9,6 +9,7 @@ import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import MainNavigationIcon from '@/components/MainNavigationIcon.vue'
 import { localDataChangedEvent } from '@/lib/localDatabase'
 import { preloadMainNavigationView } from '@/services/mainNavigationViews'
+import { setForegroundSyncDeferred } from '@/services/offlineSync'
 import {
   bottomNavigationFontSize,
   mainMenuTransitionDirection,
@@ -67,6 +68,7 @@ const documentTitle = typeof document === 'undefined'
 let documentTitleFrame = 0
 let documentTitleTimer: number | undefined
 let localRefreshTimer: number | undefined
+let localRefreshPending = false
 let mainNavigationPreloadTimer: number | undefined
 let pendingMainNavigationPointerId: number | undefined
 let earlyLeavingPage: HTMLElement | undefined
@@ -307,9 +309,14 @@ function refreshStoredMenuSettings() {
 }
 
 function scheduleLocalRefresh() {
+  localRefreshPending = true
   if (localRefreshTimer !== undefined) window.clearTimeout(localRefreshTimer)
+  localRefreshTimer = undefined
+  if (immersive.value) return
   localRefreshTimer = window.setTimeout(() => {
     localRefreshTimer = undefined
+    if (immersive.value) return
+    localRefreshPending = false
     void Promise.allSettled([
       intervalStore.load({ reconcileActiveSession: false }),
       flashcardStore.load(),
@@ -319,6 +326,11 @@ function scheduleLocalRefresh() {
     ])
   }, 250)
 }
+
+watch(immersive, (active) => {
+  setForegroundSyncDeferred(active)
+  if (!active && localRefreshPending) scheduleLocalRefresh()
+}, { immediate: true })
 
 onMounted(() => {
   window.addEventListener(MAIN_MENU_ORDER_CHANGED_EVENT, refreshStoredMenuSettings)
@@ -339,6 +351,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  setForegroundSyncDeferred(false)
   stopDocumentTitleAnimation()
   removeTransitionGuard()
   removeNavigationFeedbackGuard()

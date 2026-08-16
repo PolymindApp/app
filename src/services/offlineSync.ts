@@ -53,6 +53,8 @@ let currentAccountId = ''
 let syncPromise: Promise<boolean> | undefined
 let syncRequested = false
 let mutationTimer: number | undefined
+let foregroundSyncDeferred = false
+let deferredMutationSync = false
 let retryTimer: number | undefined
 let pullTimer: number | undefined
 let retryAttempt = 0
@@ -129,6 +131,27 @@ export async function stopOfflineSync() {
   retryTimer = undefined
   pullTimer = undefined
   syncRequested = false
+  foregroundSyncDeferred = false
+  deferredMutationSync = false
+}
+
+function foregroundMutationSyncIsDeferred() {
+  return foregroundSyncDeferred && document.visibilityState === 'visible'
+}
+
+export function setForegroundSyncDeferred(deferred: boolean) {
+  foregroundSyncDeferred = deferred
+  if (deferred) {
+    if (mutationTimer !== undefined) {
+      window.clearTimeout(mutationTimer)
+      mutationTimer = undefined
+      deferredMutationSync = true
+    }
+    return
+  }
+  if (!deferredMutationSync) return
+  deferredMutationSync = false
+  scheduleMutationSync()
 }
 
 async function switchAccount(accountId: string) {
@@ -151,6 +174,10 @@ function handleOutboxChanged(event: Event) {
   }>).detail
   const accountId = detail?.accountId
   if (accountId && accountId !== currentAccountId) return
+  if (foregroundMutationSyncIsDeferred()) {
+    if (detail?.source !== 'reconciliation') deferredMutationSync = true
+    return
+  }
   void refreshCounts()
   if (detail?.source === 'reconciliation') return
   void registerWebBackgroundSync()
@@ -158,6 +185,10 @@ function handleOutboxChanged(event: Event) {
 }
 
 function scheduleMutationSync() {
+  if (foregroundMutationSyncIsDeferred()) {
+    deferredMutationSync = true
+    return
+  }
   if (mutationTimer !== undefined) window.clearTimeout(mutationTimer)
   mutationTimer = window.setTimeout(() => {
     mutationTimer = undefined
@@ -170,7 +201,12 @@ function handleReconnect() {
 }
 
 function handleVisibilityChange() {
-  if (document.visibilityState === 'visible') void syncNow('visibility')
+  if (document.visibilityState === 'visible') {
+    void syncNow('visibility')
+  } else if (deferredMutationSync) {
+    deferredMutationSync = false
+    void syncNow('background')
+  }
 }
 
 function scheduleActivePull() {

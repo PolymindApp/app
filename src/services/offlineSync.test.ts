@@ -132,6 +132,29 @@ describe('offline synchronization coordination', () => {
     expect(fetch).toHaveBeenCalledOnce()
   })
 
+  it('defers mutation synchronization during an immersive foreground timer', async () => {
+    vi.useFakeTimers()
+    const {
+      setForegroundSyncDeferred,
+      startOfflineSync,
+    } = await import('./offlineSync')
+    await startOfflineSync()
+    setForegroundSyncDeferred(true)
+
+    window.dispatchEvent(new CustomEvent('test-sync-outbox-changed', {
+      detail: { source: 'local' },
+    }))
+    await vi.advanceTimersByTimeAsync(500)
+
+    expect(fetch).not.toHaveBeenCalled()
+
+    setForegroundSyncDeferred(false)
+    await vi.advanceTimersByTimeAsync(49)
+    expect(fetch).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1)
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledOnce())
+  })
+
   it('runs one follow-up exchange when a mutation arrives during an active request', async () => {
     let resolveFirstRequest!: (response: Response) => void
     vi.mocked(fetch)

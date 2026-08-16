@@ -116,6 +116,7 @@ let lastTickAt = 0
 let mounted = true
 let skipLeavePause = false
 let passiveAdvancing = false
+let continuePassiveTickWhileBusy = false
 let visibilityWork: Promise<void> = Promise.resolve()
 let lastSpokenKey = ''
 let speechRequest = 0
@@ -435,7 +436,11 @@ function tick() {
   const now = Date.now()
   const delta = lastTickAt ? Math.max(0, now - lastTickAt) : 0
   lastTickAt = now
-  if (!isRunning.value || document.visibilityState !== 'visible' || busy.value) return
+  if (
+    !isRunning.value
+    || document.visibilityState !== 'visible'
+    || (busy.value && !continuePassiveTickWhileBusy)
+  ) return
   localElapsedMs.value += delta
   if (session.value?.mode === 'passive' && currentCard.value) {
     passiveRemainingMs.value = Math.max(0, passiveRemainingMs.value - delta)
@@ -506,6 +511,9 @@ async function performAction(
     localElapsedMs.value = updated.elapsedSeconds * 1000
     lastTickAt = Date.now()
     if (['success', 'error', 'view', 'previous', 'next', 'push', 'eject', 'undo_eject', 'restart'].includes(action)) resetCurrentCardPhase()
+    continuePassiveTickWhileBusy = action === 'view'
+      && updated.mode === 'passive'
+      && updated.status === 'running'
     if (action === 'eject') playFlashcardEjectCue()
     if (
       action !== 'eject'
@@ -533,6 +541,7 @@ async function performAction(
       passiveRemainingMs.value = 500
     }
   } finally {
+    continuePassiveTickWhileBusy = false
     busy.value = false
   }
   return succeeded

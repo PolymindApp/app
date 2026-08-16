@@ -718,7 +718,12 @@ async function handleVisibility() {
 
 async function tick() {
   const item = session.value
-  if (!item || syncing.value || finished.value || pendingCompletion.value) return
+  if (!item || finished.value || pendingCompletion.value) return
+  if (syncing.value) {
+    if (item.status === 'running') displayRemainingMs.value = reconciled(item).runtime.remainingMs
+    else displayRemainingMs.value = item.runtime.remainingMs
+    return
+  }
   const suppressCues = cueHandoff.consumeForegroundSuppression(document.visibilityState)
   if (item.status === 'paused') {
     displayRemainingMs.value = item.runtime.remainingMs

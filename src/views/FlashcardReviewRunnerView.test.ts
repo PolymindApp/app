@@ -594,6 +594,81 @@ describe('FlashcardReviewRunnerView Review set preview', () => {
     }
   })
 
+  it('keeps the next passive front progressing while its background speech state syncs', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-13T12:00:00Z'))
+    let progressFrame: FrameRequestCallback | undefined
+    let finishFrontSync: ((started: boolean) => void) | undefined
+    const requestFrame = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      progressFrame = callback
+      return 1
+    })
+    const cancelFrame = vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => undefined)
+    const active = {
+      ...runningSession(),
+      mode: 'passive' as const,
+      indefinite: true,
+      frontSeconds: 1,
+      backSeconds: 1,
+      speechEnabled: true,
+      frontLanguage: 'en-CA',
+      backLanguage: 'fr-CA',
+      queue: [
+        { id: 'card-1', front: 'House', back: 'Maison', note: '', image: '', tags: [] },
+        { id: 'card-2', front: 'Tree', back: 'Arbre', note: '', image: '', tags: [] },
+      ],
+      totalCards: 2,
+    }
+    mocks.route.params = { sessionId: active.id }
+    mocks.store.sessions = reactive([active])
+    mocks.store.loadSession.mockResolvedValue(active)
+    mocks.nativeFlashcardBackgroundIsAvailable.mockReturnValue(true)
+    mocks.syncBackgroundFlashcardReview
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(true)
+      .mockImplementationOnce(() => new Promise<boolean>((resolve) => {
+        finishFrontSync = resolve
+      }))
+    mocks.store.act.mockImplementation(async (_id, action) => {
+      if (action === 'view') {
+        const stored = mocks.store.sessions[0]!
+        stored.queue.push(stored.queue.shift()!)
+        stored.viewedCount += 1
+      }
+      return mocks.store.sessions[0]!
+    })
+
+    const wrapper = mountRunner()
+    try {
+      await flushPromises()
+
+      await vi.advanceTimersByTimeAsync(1_000)
+      progressFrame?.(performance.now())
+      await flushPromises()
+
+      await vi.advanceTimersByTimeAsync(1_000)
+      progressFrame?.(performance.now())
+      await flushPromises()
+
+      const passiveProgress = wrapper.get('.passive-card').getComponent({ name: 'VProgressLinear' })
+      expect(passiveProgress.props('modelValue')).toBe(0)
+
+      await vi.advanceTimersByTimeAsync(250)
+      progressFrame?.(performance.now())
+      await wrapper.vm.$nextTick()
+
+      expect(passiveProgress.props('modelValue')).toBe(25)
+      expect(mocks.speakFlashcardText).toHaveBeenCalledWith('Tree', 'en-CA')
+    } finally {
+      finishFrontSync?.(true)
+      await flushPromises()
+      wrapper.unmount()
+      requestFrame.mockRestore()
+      cancelFrame.mockRestore()
+      vi.useRealTimers()
+    }
+  })
+
   it('shows a card speech failure as a warning snackbar only once per session', async () => {
     const active = {
       ...runningSession(),

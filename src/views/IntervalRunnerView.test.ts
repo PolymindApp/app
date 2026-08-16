@@ -376,6 +376,7 @@ describe('IntervalRunnerView flashcard area', () => {
       Object.assign(session, updates)
       return session
     })
+    mocks.intervalStore.mirrorRuntime.mockReset()
     mocks.intervalStore.saveTemplate.mockReset().mockResolvedValue('template-1')
     mocks.intervalStore.load.mockReset().mockResolvedValue(undefined)
     mocks.intervalStore.endSession.mockReset().mockResolvedValue(undefined)
@@ -441,6 +442,78 @@ describe('IntervalRunnerView flashcard area', () => {
     expect(mocks.intervalStore.sessions[0]?.status).toBe('running')
 
     wrapper.unmount()
+  })
+
+  it('keeps progress moving while a new interval step is being persisted', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-13T12:00:00Z'))
+    let progressFrame: FrameRequestCallback | undefined
+    let finishStepUpdate: ((session: IntervalSession) => void) | undefined
+    const requestFrame = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      progressFrame = callback
+      return 1
+    })
+    const cancelFrame = vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => undefined)
+    const active = intervalSession('running')
+    active.definition.children = [
+      {
+        id: 'first',
+        type: 'step',
+        name: 'First',
+        kind: 'work',
+        durationSeconds: 10,
+      },
+      {
+        id: 'second',
+        type: 'step',
+        name: 'Second',
+        kind: 'rest',
+        durationSeconds: 10,
+      },
+    ]
+    active.plannedSeconds = 20
+    active.runtime.remainingMs = 10_000
+    active.runtime.stepStartedAt = new Date().toISOString()
+    mocks.intervalStore.sessions = reactive([active])
+    mocks.intervalStore.mirrorRuntime.mockImplementation((id, runtime) => {
+      const stored = mocks.intervalStore.sessions.find(item => item.id === id)
+      if (stored) stored.runtime = runtime
+    })
+
+    const wrapper = mountRunner()
+    try {
+      await flushPromises()
+      mocks.intervalStore.updateSession.mockImplementationOnce((id, updates) => {
+        const stored = mocks.intervalStore.sessions.find(item => item.id === id)
+        if (!stored) return Promise.reject(new Error('Missing session'))
+        Object.assign(stored, updates)
+        return new Promise<IntervalSession>((resolve) => {
+          finishStepUpdate = resolve
+        })
+      })
+
+      await vi.advanceTimersByTimeAsync(10_000)
+      progressFrame?.(performance.now())
+      await flushPromises()
+
+      const itemProgress = wrapper.findAllComponents({ name: 'VProgressCircular' })
+        .find(component => component.classes().includes('progress-ring--item'))
+      expect(itemProgress?.props('modelValue')).toBe(0)
+
+      await vi.advanceTimersByTimeAsync(250)
+      progressFrame?.(performance.now())
+      await wrapper.vm.$nextTick()
+
+      expect(itemProgress?.props('modelValue')).toBeCloseTo(2.5)
+    } finally {
+      const stored = mocks.intervalStore.sessions[0]
+      if (stored) finishStepUpdate?.(stored)
+      await flushPromises()
+      wrapper.unmount()
+      requestFrame.mockRestore()
+      cancelFrame.mockRestore()
+      vi.useRealTimers()
+    }
   })
 
   it('orders session actions and toggles TTS amplification without replaying', async () => {
