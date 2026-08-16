@@ -165,6 +165,7 @@ async function importCards() {
           v-model="csv"
           rows="12"
           auto-grow
+          clearable
           autocomplete="off"
           spellcheck="false"
           placeholder="front,back,note,tags"
