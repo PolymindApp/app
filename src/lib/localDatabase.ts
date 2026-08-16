@@ -128,6 +128,7 @@ export async function initializeLocalMetadata(accountId: string, cursor = 0) {
     bootstrapped: existing?.bootstrapped || false,
     lastSyncedAt: existing?.lastSyncedAt || '',
     serverTime: existing?.serverTime || '',
+    confirmedReceiptSequence: existing?.confirmedReceiptSequence || 0,
     authToken: existing?.authToken,
     syncUrl: existing?.syncUrl,
   }
@@ -175,6 +176,10 @@ export async function completeLocalBootstrap(
         bootstrapped: true,
         lastSyncedAt: new Date().toISOString(),
         serverTime: previous?.serverTime || '',
+        confirmedReceiptSequence: Math.max(
+          previous?.confirmedReceiptSequence || 0,
+          0,
+        ),
         authToken: previous?.authToken,
         syncUrl: previous?.syncUrl,
       })
@@ -330,7 +335,30 @@ export async function putLocalPatch(
       locallyModified: true,
     })
     const operation = makeOperation(accountId, resource, resolvedId, 'patch', plainPatch, clocks, options)
-    await localDatabase.outbox.add(operation)
+    const canCoalesce = !options.transactionId && !(options.dependsOn?.length)
+    const existing = canCoalesce
+      ? (await localDatabase.outbox
+          .where('[accountId+resource+recordId]')
+          .equals([accountId, resource, resolvedId])
+          .filter(candidate => (
+            candidate.kind === 'patch'
+            && candidate.status === 'pending'
+            && candidate.attempts === 0
+            && !candidate.dispatchedAt
+            && !candidate.transactionId
+            && candidate.dependsOn.length === 0
+          ))
+          .sortBy('sequence'))[0]
+      : undefined
+    if (existing) {
+      existing.payload = { ...existing.payload, ...plainPatch }
+      existing.fieldClocks = { ...existing.fieldClocks, ...clocks }
+      existing.nextAttemptAt = 0
+      delete existing.error
+      await localDatabase.outbox.put(existing)
+    } else {
+      await localDatabase.outbox.add(operation)
+    }
   })
   notifyDataChanged(accountId, resource)
   notifyOutboxChanged(accountId)
@@ -593,7 +621,18 @@ export async function listSyncIssues(accountId: string) {
 }
 
 export async function markOperationsSending(operationIds: string[]) {
-  await localDatabase.outbox.where('operationId').anyOf(operationIds).modify({ status: 'sending' })
+  const dispatchedAt = new Date().toISOString()
+  await localDatabase.outbox.where('operationId').anyOf(operationIds).modify(operation => {
+    operation.status = 'sending'
+    operation.dispatchedAt ||= dispatchedAt
+  })
+}
+
+export async function markOperationsDispatched(operationIds: string[]) {
+  const dispatchedAt = new Date().toISOString()
+  await localDatabase.outbox.where('operationId').anyOf(operationIds).modify(operation => {
+    operation.dispatchedAt ||= dispatchedAt
+  })
 }
 
 export async function recoverInterruptedOperations(accountId: string) {
@@ -638,6 +677,7 @@ export async function applyExchangeResults(
     error?: { message: string; details?: Record<string, unknown> }
   }>,
   changes: SyncResource[],
+  receiptWatermark = 0,
 ) {
   const changedResources = new Set<string>()
   await localDatabase.transaction(
@@ -714,6 +754,10 @@ export async function applyExchangeResults(
         bootstrapped: true,
         lastSyncedAt: new Date().toISOString(),
         serverTime,
+        confirmedReceiptSequence: Math.max(
+          previous?.confirmedReceiptSequence || 0,
+          receiptWatermark,
+        ),
         authToken: previous?.authToken,
         syncUrl: previous?.syncUrl,
       })

@@ -514,13 +514,18 @@ CREATE INDEX idx_sync_change_log_account_sequence
     ON sync_change_log (account_id, sequence);
 
 CREATE TABLE sync_operation_receipts (
+    receipt_sequence INTEGER PRIMARY KEY AUTOINCREMENT,
     account_id TEXT NOT NULL,
     client_id TEXT NOT NULL,
     operation_id TEXT NOT NULL,
     response JSON NOT NULL,
     applied_at TEXT NOT NULL,
-    PRIMARY KEY (account_id, client_id, operation_id)
+    UNIQUE (account_id, client_id, operation_id)
 );
+CREATE INDEX idx_sync_operation_receipts_client_sequence
+    ON sync_operation_receipts (account_id, client_id, receipt_sequence);
+CREATE INDEX idx_sync_operation_receipts_applied
+    ON sync_operation_receipts (applied_at);
 
 CREATE TABLE sync_clients (
     account_id TEXT NOT NULL,
@@ -528,7 +533,14 @@ CREATE TABLE sync_clients (
     acknowledged_cursor INTEGER NOT NULL DEFAULT 0,
     protocol_version INTEGER NOT NULL DEFAULT 1,
     last_seen_at TEXT NOT NULL,
+    confirmed_receipt_sequence INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (account_id, client_id)
+);
+
+CREATE TABLE sync_retention_watermarks (
+    account_id TEXT PRIMARY KEY NOT NULL,
+    minimum_cursor INTEGER NOT NULL DEFAULT 0,
+    compacted_at TEXT NOT NULL
 );
 
 CREATE TABLE backontrack_schema_migrations (

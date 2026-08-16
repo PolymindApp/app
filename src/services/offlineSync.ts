@@ -14,6 +14,7 @@ import {
   initializeLocalMetadata,
   issueCount,
   localOutboxChangedEvent,
+  markOperationsDispatched,
   markOperationsForRetry,
   markOperationsSending,
   pendingOperationCount,
@@ -342,8 +343,10 @@ async function performSync() {
 }
 
 async function bootstrap(accountId: string) {
+  const metadata = await initializeLocalMetadata(accountId)
   const response = await syncRequest<SyncBootstrapResponse>('/sync/bootstrap', {
-    clientId: syncClientId(),
+    clientId: metadata.clientId || syncClientId(),
+    confirmedReceiptSequence: metadata.confirmedReceiptSequence,
   })
   await completeLocalBootstrap(accountId, response.watermark, response.resources)
   void warmMediaCache(response.resources)
@@ -397,13 +400,19 @@ async function warmMediaCache(resources: SyncBootstrapResponse['resources']) {
 async function exchange(accountId: string) {
   const metadata = await initializeLocalMetadata(accountId)
   const pending = await pendingOperations(accountId)
-  const operations = syncRequestOperations(pending, metadata.clientId, metadata.cursor)
+  const operations = syncRequestOperations(
+    pending,
+    metadata.clientId,
+    metadata.cursor,
+    metadata.confirmedReceiptSequence,
+  )
   const operationIds = operations.map(operation => operation.operationId)
   if (operationIds.length) await markOperationsSending(operationIds)
   try {
     const response = await syncRequest<SyncExchangeResponse>('/sync/exchange', {
       clientId: metadata.clientId,
       cursor: metadata.cursor,
+      confirmedReceiptSequence: metadata.confirmedReceiptSequence,
       operations: operations.map(operation => ({
         operationId: operation.operationId,
         transactionId: operation.transactionId,
@@ -425,6 +434,7 @@ async function exchange(accountId: string) {
       response.serverTime,
       response.acknowledgements,
       response.changes,
+      response.receiptWatermark,
     )
     await stageNativeBackgroundBatch(accountId)
     return {
@@ -453,13 +463,20 @@ async function stageNativeBackgroundBatch(accountId: string) {
     initializeLocalMetadata(accountId),
     pendingOperations(accountId),
   ])
-  const operations = syncRequestOperations(pending, metadata.clientId, metadata.cursor)
+  const operations = syncRequestOperations(
+    pending,
+    metadata.clientId,
+    metadata.cursor,
+    metadata.confirmedReceiptSequence,
+  )
   try {
+    await markOperationsDispatched(operations.map(operation => operation.operationId))
     await writeBackgroundSyncStage({
       url: `${baseUrl}/sync/exchange`,
       token: api.authStore.token,
       clientId: metadata.clientId,
       cursor: metadata.cursor,
+      confirmedReceiptSequence: metadata.confirmedReceiptSequence,
       operations: operations.map(operation => ({
         operationId: operation.operationId,
         transactionId: operation.transactionId,
@@ -480,12 +497,18 @@ function syncRequestOperations(
   operations: Awaited<ReturnType<typeof pendingOperations>>,
   clientId: string,
   cursor: number,
+  confirmedReceiptSequence: number,
 ) {
   const selected: typeof operations = []
   for (const operation of operations) {
     const candidate = [...selected, operation]
     const outbound = candidate.map(syncRequestOperation)
-    const bytes = new TextEncoder().encode(JSON.stringify({ clientId, cursor, operations: outbound })).byteLength
+    const bytes = new TextEncoder().encode(JSON.stringify({
+      clientId,
+      cursor,
+      confirmedReceiptSequence,
+      operations: outbound,
+    })).byteLength
     if (selected.length && bytes > MAX_SYNC_REQUEST_BYTES) break
     selected.push(operation)
   }

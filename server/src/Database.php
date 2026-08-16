@@ -111,6 +111,14 @@ final class Database
                 'signature_counter', 'transports', 'backup_eligible', 'backed_up',
                 'created', 'last_used',
             ],
+            'sync_operation_receipts' => [
+                'receipt_sequence', 'account_id', 'client_id', 'operation_id', 'response', 'applied_at',
+            ],
+            'sync_clients' => [
+                'account_id', 'client_id', 'acknowledged_cursor', 'protocol_version',
+                'last_seen_at', 'confirmed_receipt_sequence',
+            ],
+            'sync_retention_watermarks' => ['account_id', 'minimum_cursor', 'compacted_at'],
             'backontrack_schema_migrations' => ['version', 'name', 'checksum', 'applied_at'],
         ];
         $tableNames = array_keys($required);

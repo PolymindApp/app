@@ -26,6 +26,8 @@ Configuration may be supplied through the root `.env`, process environment varia
 | Setting | Purpose | Default |
 | --- | --- | --- |
 | `BACKONTRACK_DB_PATH` | Absolute path to `data.db` | Local `private/data.db` |
+| `BACKONTRACK_BACKUP_DIR` | Cleanup backup directory, preferably outside live database storage | `backups/` beside `private/` |
+| `BACKONTRACK_BACKUP_KEEP` | Number of generated cleanup backups to retain | `3` |
 | `BACKONTRACK_API_SECRET` | HMAC signing secret, at least 32 characters | Required in production |
 | `BACKONTRACK_MIGRATION_KEY` | Dedicated key for authenticated HTTP migrations, at least 32 characters | HTTP migration disabled |
 | `BACKONTRACK_ALLOWED_ORIGINS` | Comma-separated exact browser/Capacitor origins | Same-origin only |
@@ -112,6 +114,7 @@ The reconstructed PHP-era history is:
 | `202608100001` | Hashed email-confirmation and password-reset tokens; existing accounts are grandfathered as verified |
 | `202608140001` | Optional front- and back-face flashcard audio recordings |
 | `202608140002` | Removal of the retired stock-image library and attribution fields |
+| `202608160003` | Bounded sync receipts, client-confirmed receipt watermarks, and change-log retention cursors |
 
 Existing PHP databases are advanced without recreating application data. The schema is validated after migration, including required columns.
 
@@ -120,6 +123,8 @@ Migration files in `server/migrations` are immutable after deployment. Any later
 ## Offline synchronization
 
 Authenticated clients initialize their local database with `POST /sync/bootstrap`, then use `POST /sync/exchange` for both queued operations and cursor-based pulls. An exchange accepts at most 100 ordered operations and returns at most 500 coalesced changes. Operation receipts make retries safe across browser service workers, native background execution, request timeouts, and foreground recovery.
+
+Sync protocol v2 bounds that bookkeeping. The client persists `receiptWatermark` in the same IndexedDB transaction that reconciles acknowledgements, then sends it back as `confirmedReceiptSequence`; the server removes those confirmed receipts. Stored duplicate responses contain only the operation outcome rather than full resource snapshots. Pending, undispatched patches to the same record are coalesced locally. Change-log rows acknowledged by every client active in the last 30 days are removed, and a client behind the retained cursor receives `resetRequired` so it can bootstrap without losing its local outbox. Unconfirmed receipts also expire after 30 days as an abandoned-client fallback.
 
 Owned collection records carry server revisions and per-field hybrid logical clocks. The exchange applies last-writer-wins only to fields changed by both clients; deletes are terminal for the same record ID. Flashcard review events remain additive and update reviewer statistics exactly once. Unique tag names and task occurrences return replacement IDs so clients can rewrite queued relationships rather than dropping work. Review-set access, shared-card projections, preferences, shares, account settings, avatars, and compressed card images use the same exchange contract.
 
@@ -232,3 +237,5 @@ sqlite3 /private/path/data.db ".backup /private/backups/backontrack-$(date +%F).
 ```
 
 Store backups outside the hosting account and periodically test a restore.
+
+`pnpm db:cleanup -- --apply` now writes generated backups outside `private/`, to `BACKONTRACK_BACKUP_DIR` (or `backups/` by default), moves legacy `data.db.backup-*` files out of the database directory, and retains the newest three. Configure `BACKONTRACK_BACKUP_KEEP` or pass `--keep-backups`. Passing an explicit `--backup` path disables automatic movement and rotation for that run.

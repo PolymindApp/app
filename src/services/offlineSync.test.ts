@@ -18,9 +18,11 @@ const mocks = vi.hoisted(() => ({
     bootstrapped: true,
     lastSyncedAt: '',
     serverTime: '',
+    confirmedReceiptSequence: 17,
   })),
   issueCount: vi.fn(async () => 0),
   markOperationsForRetry: vi.fn(async () => undefined),
+  markOperationsDispatched: vi.fn(async () => undefined),
   markOperationsSending: vi.fn(async () => undefined),
   pendingOperationCount: vi.fn(async () => 0),
   pendingOperations: vi.fn(async () => []),
@@ -42,6 +44,7 @@ vi.mock('@/lib/localDatabase', () => ({
   issueCount: mocks.issueCount,
   localOutboxChangedEvent: 'test-sync-outbox-changed',
   markOperationsForRetry: mocks.markOperationsForRetry,
+  markOperationsDispatched: mocks.markOperationsDispatched,
   markOperationsSending: mocks.markOperationsSending,
   pendingOperationCount: mocks.pendingOperationCount,
   pendingOperations: mocks.pendingOperations,
@@ -72,6 +75,7 @@ vi.mock('@capacitor/network', () => ({
 function exchangeResponse(overrides: Record<string, unknown> = {}) {
   return new Response(JSON.stringify({
     cursor: 0,
+    receiptWatermark: 17,
     hasMore: false,
     serverTime: '2026-08-12T12:00:00.000Z',
     acknowledgements: [],

@@ -11,3 +11,4 @@ server/config.local.php
 private/*
 !private/.gitkeep
 !private/.htaccess
+backups/

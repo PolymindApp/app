@@ -12,6 +12,7 @@ import {
   listSyncIssues,
   localDatabase,
   localOutboxChangedEvent,
+  markOperationsDispatched,
   markOperationsSending,
   pendingOperationCount,
   pendingOperations,
@@ -80,6 +81,29 @@ describe('offline local database', () => {
       tracker: ['tracker-1'],
       tracker_snapshot: { 'tracker-1': 'Mood' },
     })
+  })
+
+  it('coalesces undispatched patches but never rewrites an operation that may have reached the server', async () => {
+    await completeLocalBootstrap(accountId, 0, [{
+      resource: 'interval_sessions',
+      id: 'session-1',
+      revision: 1,
+      fieldClocks: { '*': '100-server' },
+      deleted: false,
+      data: { id: 'session-1', owner: accountId, status: 'running', elapsed_seconds: 0 },
+    }])
+
+    await putLocalPatch(accountId, 'interval_sessions', 'session-1', { elapsed_seconds: 10 })
+    await putLocalPatch(accountId, 'interval_sessions', 'session-1', { status: 'paused' })
+    const coalesced = await pendingOperations(accountId)
+
+    expect(coalesced).toHaveLength(1)
+    expect(coalesced[0]?.payload).toEqual({ elapsed_seconds: 10, status: 'paused' })
+
+    await markOperationsDispatched([coalesced[0]!.operationId])
+    await putLocalPatch(accountId, 'interval_sessions', 'session-1', { elapsed_seconds: 20 })
+
+    expect(await pendingOperations(accountId)).toHaveLength(2)
   })
 
   it('recovers operations interrupted while sending so they can retry', async () => {
@@ -259,11 +283,12 @@ describe('offline local database', () => {
         deleted: false,
         data: { id: 'server-tag', owner: accountId, name: 'Focus' },
       },
-    }], [])
+    }], [], 42)
 
     expect(await resolveLocalAlias(accountId, 'flashcard_tags', 'local-tag')).toBe('server-tag')
     expect((await getLocalRecord(accountId, 'flashcard_tags', 'local-tag'))?.id).toBe('server-tag')
     expect(await pendingOperationCount(accountId)).toBe(0)
+    expect((await localDatabase.metadata.get(accountId))?.confirmedReceiptSequence).toBe(42)
 
     await putLocalPatch(accountId, 'flashcard_tags', 'server-tag', { name: 'Pending rename' })
     await applyExchangeResults(accountId, 9, '2026-08-09T12:01:00.000Z', [], [{

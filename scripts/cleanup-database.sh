@@ -5,6 +5,9 @@ set -euo pipefail
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 database_path="${BACKONTRACK_DB_PATH:-private/data.db}"
 backup_path=""
+backup_directory="${BACKONTRACK_BACKUP_DIR:-}"
+keep_backups="${BACKONTRACK_BACKUP_KEEP:-3}"
+rotate_default_backups=false
 apply_cleanup=false
 assume_yes=false
 
@@ -19,7 +22,10 @@ Usage:
 
 Options:
   --database PATH  SQLite database to inspect (default: BACKONTRACK_DB_PATH or private/data.db).
-  --backup PATH    Backup destination used with --apply (default: DATABASE.backup-UTC_TIMESTAMP).
+  --backup PATH    Exact backup destination used with --apply (disables automatic rotation).
+  --backup-directory PATH
+                   Directory for generated backups (default: a backups directory beside private).
+  --keep-backups N Keep the newest N generated backups (default: 3).
   --apply          Delete operation receipts, compact the change log, and vacuum the database.
   --yes            Skip the interactive confirmation. Intended for controlled automation.
   --help           Show this help.
@@ -46,6 +52,16 @@ while (( $# )); do
       backup_path="$2"
       shift 2
       ;;
+    --backup-directory)
+      [[ $# -ge 2 ]] || fail "--backup-directory requires a path."
+      backup_directory="$2"
+      shift 2
+      ;;
+    --keep-backups)
+      [[ $# -ge 2 ]] || fail "--keep-backups requires a number."
+      keep_backups="$2"
+      shift 2
+      ;;
     --apply)
       apply_cleanup=true
       shift
@@ -65,6 +81,7 @@ while (( $# )); do
 done
 
 command -v sqlite3 >/dev/null 2>&1 || fail "sqlite3 is required."
+[[ "$keep_backups" =~ ^[1-9][0-9]*$ ]] || fail "--keep-backups must be a positive integer."
 
 cd "$repository_root"
 if [[ "$database_path" != /* ]]; then
@@ -121,7 +138,15 @@ if [[ "$assume_yes" == false ]]; then
 fi
 
 if [[ -z "$backup_path" ]]; then
-  backup_path="$database_path.backup-$(date -u +%Y%m%dT%H%M%SZ)"
+  if [[ -z "$backup_directory" ]]; then
+    backup_directory="$(dirname "$database_path")/../backups"
+  elif [[ "$backup_directory" != /* ]]; then
+    backup_directory="$repository_root/${backup_directory#./}"
+  fi
+  mkdir -p -- "$backup_directory"
+  backup_directory="$(cd "$backup_directory" && pwd)"
+  backup_path="$backup_directory/$(basename "$database_path").backup-$(date -u +%Y%m%dT%H%M%SZ)"
+  rotate_default_backups=true
 elif [[ "$backup_path" != /* ]]; then
   backup_path="$repository_root/${backup_path#./}"
 fi
@@ -160,6 +185,45 @@ SQL
 integrity="$(sqlite3 -readonly "$database_path" 'PRAGMA quick_check;')"
 [[ "$integrity" == "ok" ]] || fail "database integrity check failed after cleanup: $integrity"
 
+rotated_backups=0
+moved_legacy_backups=0
+if [[ "$rotate_default_backups" == true ]]; then
+  database_directory="$(cd "$(dirname "$database_path")" && pwd)"
+  if [[ "$database_directory" != "$backup_directory" ]]; then
+    mapfile -d '' legacy_backups < <(
+      find "$database_directory" -maxdepth 1 -type f \
+        -name "$(basename "$database_path").backup-*" \
+        ! -name '*-wal' ! -name '*-shm' -print0 | sort -z
+    )
+    for candidate in "${legacy_backups[@]}"; do
+      [[ "$(sqlite3 -readonly "$candidate" 'PRAGMA quick_check;')" == "ok" ]] \
+        || fail "legacy backup failed its integrity check: $candidate"
+      destination="$backup_directory/$(basename "$candidate")"
+      [[ ! -e "$destination" ]] || fail "legacy backup destination already exists: $destination"
+      mv -- "$candidate" "$destination"
+      for sidecar in -wal -shm; do
+        [[ ! -e "$candidate$sidecar" ]] || mv -- "$candidate$sidecar" "$destination$sidecar"
+      done
+      moved_legacy_backups=$((moved_legacy_backups + 1))
+    done
+  fi
+  mapfile -d '' generated_backups < <(
+    find "$backup_directory" -maxdepth 1 -type f \
+      -name "$(basename "$database_path").backup-*" \
+      ! -name '*-wal' ! -name '*-shm' -print0 | sort -z -r
+  )
+  for ((index = keep_backups; index < ${#generated_backups[@]}; index += 1)); do
+    candidate="${generated_backups[$index]}"
+    case "$candidate" in
+      "$backup_directory"/"$(basename "$database_path")".backup-*)
+        rm -f -- "$candidate" "$candidate-wal" "$candidate-shm"
+        rotated_backups=$((rotated_backups + 1))
+        ;;
+      *) fail "refusing to rotate an unexpected backup path: $candidate" ;;
+    esac
+  done
+fi
+
 remaining_receipts="$(sqlite3 -readonly "$database_path" 'SELECT COUNT(*) FROM sync_operation_receipts;')"
 remaining_changes="$(sqlite3 -readonly "$database_path" 'SELECT COUNT(*) FROM sync_change_log;')"
 final_bytes="$(wc -c < "$database_path" | tr -d '[:space:]')"
@@ -167,6 +231,11 @@ reclaimed_bytes=$((database_bytes - final_bytes))
 
 echo "Database cleanup completed."
 printf 'Backup: %s\n' "$backup_path"
+if [[ "$rotate_default_backups" == true ]]; then
+  printf 'Backup retention: newest %s kept (%s older backup%s removed)\n' \
+    "$keep_backups" "$rotated_backups" "$([[ "$rotated_backups" == 1 ]] && echo '' || echo 's')"
+  printf 'Legacy backups moved outside the database directory: %s\n' "$moved_legacy_backups"
+fi
 if (( reclaimed_bytes >= 0 )); then
   printf 'Final file size: %s bytes (%s bytes reclaimed)\n' "$final_bytes" "$reclaimed_bytes"
 else

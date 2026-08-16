@@ -93,7 +93,7 @@ suffix="$(php -r 'echo bin2hex(random_bytes(5));')"
 password="correct-horse-battery"
 
 migration_count="$(sqlite3 "$test_db" 'SELECT COUNT(*) FROM backontrack_schema_migrations;')"
-[[ "$migration_count" == 43 ]] || {
+[[ "$migration_count" == 44 ]] || {
   echo "The API did not apply the complete database migration sequence." >&2
   exit 1
 }
@@ -265,7 +265,7 @@ php -r '
           $hasUser = true;
       }
   }
-  if (!is_int($response["watermark"] ?? null) || !$hasUser || ($response["protocolVersion"] ?? null) !== 1) {
+  if (!is_int($response["watermark"] ?? null) || !$hasUser || ($response["protocolVersion"] ?? null) !== 2) {
       fwrite(STDERR, "The offline bootstrap response was invalid.\n");
       exit(1);
   }
@@ -300,6 +300,14 @@ php -r '
       exit(1);
   }
 ' <<<"$sync_create_response"
+sync_create_receipt_watermark="$(php -r '
+  $response = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+  echo $response["receiptWatermark"] ?? "";
+' <<<"$sync_create_response")"
+[[ "$sync_create_receipt_watermark" =~ ^[1-9][0-9]*$ ]] || {
+  echo "The offline exchange did not return a receipt watermark." >&2
+  exit 1
+}
 sync_duplicate_response="$(curl --silent --show-error --fail \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $alice_token" \
@@ -307,11 +315,40 @@ sync_duplicate_response="$(curl --silent --show-error --fail \
   "$api_url/sync/exchange")"
 php -r '
   $response = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
-  if (($response["acknowledgements"][0]["status"] ?? null) !== "duplicate") {
+  if (
+      ($response["acknowledgements"][0]["status"] ?? null) !== "duplicate"
+      || ($response["acknowledgements"][0]["resource"]["data"]["name"] ?? null) !== "Offline tag"
+  ) {
       fwrite(STDERR, "The offline exchange was not idempotent.\n");
       exit(1);
   }
 ' <<<"$sync_duplicate_response"
+compact_receipt_state="$(sqlite3 "$test_db" "
+  SELECT (json_type(response, '$.resource') IS NULL) || ':' || length(response)
+  FROM sync_operation_receipts
+  WHERE operation_id = 'sync-create-tag';
+")"
+[[ "$compact_receipt_state" =~ ^1:([0-9]{1,2}|1[0-9]{2})$ ]] || {
+  echo "The stored operation receipt was not compact: $compact_receipt_state" >&2
+  exit 1
+}
+sync_confirm_body="$(php -r '
+  echo json_encode([
+      "clientId" => "integration-client",
+      "cursor" => 0,
+      "confirmedReceiptSequence" => (int) $argv[1],
+      "operations" => [],
+  ], JSON_THROW_ON_ERROR);
+' "$sync_create_receipt_watermark")"
+curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "$sync_confirm_body" \
+  "$api_url/sync/exchange" >/dev/null
+[[ "$(sqlite3 "$test_db" "SELECT COUNT(*) FROM sync_operation_receipts WHERE operation_id = 'sync-create-tag';")" == 0 ]] || {
+  echo "The confirmed operation receipt was not removed." >&2
+  exit 1
+}
 sync_delete_body="$(php -r '
   echo json_encode([
       "clientId" => "integration-client",
@@ -2983,6 +3020,53 @@ deleted_journal_image_status="$(curl --silent --output /dev/null --write-out '%{
   "$api_url/journal-images/$journal_image_file")"
 [[ "$deleted_journal_image_status" == 404 ]] || {
   echo "Deleting a reflection did not remove its image file." >&2
+  exit 1
+}
+
+sync_compaction_cursor="$(sqlite3 "$test_db" \
+  "SELECT COALESCE(MAX(sequence), 0) FROM sync_change_log WHERE account_id = '$alice_id';")"
+sqlite3 "$test_db" "
+  UPDATE sync_clients
+  SET acknowledged_cursor = $sync_compaction_cursor,
+      last_seen_at = '2026-08-16T18:00:00.000Z'
+  WHERE account_id = '$alice_id';
+"
+sync_compaction_body="$(php -r '
+  echo json_encode([
+      "clientId" => "integration-client",
+      "cursor" => (int) $argv[1],
+      "confirmedReceiptSequence" => 0,
+      "operations" => [],
+  ], JSON_THROW_ON_ERROR);
+' "$sync_compaction_cursor")"
+curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "$sync_compaction_body" \
+  "$api_url/sync/exchange" >/dev/null
+sync_compaction_state="$(sqlite3 "$test_db" "
+  SELECT (SELECT COUNT(*) FROM sync_change_log WHERE account_id = '$alice_id') || ':' ||
+         (SELECT minimum_cursor FROM sync_retention_watermarks WHERE account_id = '$alice_id');
+")"
+[[ "$sync_compaction_state" == "0:$sync_compaction_cursor" ]] || {
+  echo "Acknowledged sync changes were not compacted: $sync_compaction_state" >&2
+  exit 1
+}
+stale_sync_body="$(php -r '
+  echo json_encode([
+      "clientId" => "integration-client",
+      "cursor" => max(0, (int) $argv[1] - 1),
+      "confirmedReceiptSequence" => 0,
+      "operations" => [],
+  ], JSON_THROW_ON_ERROR);
+' "$sync_compaction_cursor")"
+stale_sync_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "$stale_sync_body" \
+  "$api_url/sync/exchange")"
+[[ "$(json_field resetRequired <<<"$stale_sync_response")" == 1 ]] || {
+  echo "A client behind compacted sync history was not reset." >&2
   exit 1
 }
 

@@ -18,6 +18,7 @@ export interface SyncOperation {
   attempts: number
   nextAttemptAt: number
   createdAt: string
+  dispatchedAt?: string
   error?: string
 }
 
@@ -50,6 +51,7 @@ export interface SyncAcknowledgement {
 
 export interface SyncBootstrapResponse {
   watermark: number
+  receiptWatermark?: number
   nextPageToken: string | null
   resources: SyncResource[]
   protocolVersion: number
@@ -57,6 +59,7 @@ export interface SyncBootstrapResponse {
 
 export interface SyncExchangeResponse {
   cursor: number
+  receiptWatermark: number
   hasMore: boolean
   serverTime: string
   authToken?: string
@@ -74,6 +77,7 @@ export interface SyncMetadata {
   bootstrapped: boolean
   lastSyncedAt: string
   serverTime: string
+  confirmedReceiptSequence: number
   authToken?: string
   syncUrl?: string
 }

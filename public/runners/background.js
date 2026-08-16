@@ -45,6 +45,7 @@ addEventListener('backgroundSync', async (resolve) => {
       body: JSON.stringify({
         clientId: staged.clientId,
         cursor: Number(staged.cursor || 0),
+        confirmedReceiptSequence: Number(staged.confirmedReceiptSequence || 0),
         operations,
       }),
     })

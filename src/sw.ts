@@ -92,6 +92,11 @@ async function runBackgroundSync() {
       .slice(0, 100)
     if (!operations.length) continue
     if (!metadata.syncUrl) continue
+    const dispatchedAt = new Date().toISOString()
+    await outboxTable.where('operationId').anyOf(operations.map(operation => operation.operationId))
+      .modify(operation => {
+        operation.dispatchedAt ||= dispatchedAt
+      })
     await fetch(metadata.syncUrl, {
       method: 'POST',
       headers: {
@@ -102,6 +107,7 @@ async function runBackgroundSync() {
       body: JSON.stringify({
         clientId: metadata.clientId,
         cursor: metadata.cursor,
+        confirmedReceiptSequence: metadata.confirmedReceiptSequence,
         operations: operations.map(operation => ({
           operationId: operation.operationId,
           transactionId: operation.transactionId,

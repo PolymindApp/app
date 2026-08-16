@@ -6,6 +6,7 @@ test_root="${TMPDIR:-/tmp}"
 test_dir="$(mktemp -d "$test_root/backontrack-database-cleanup-test.XXXXXX")"
 test_db="$test_dir/data.db"
 backup_db="$test_dir/data.backup.db"
+rotation_dir="$test_dir/backups"
 
 cleanup() {
   case "$test_dir" in
@@ -104,6 +105,32 @@ bash scripts/cleanup-database.sh \
 }
 [[ "$(sqlite3 -readonly "$backup_db" 'PRAGMA quick_check;')" == "ok" ]] || {
   echo "Cleanup backup failed its integrity check." >&2
+  exit 1
+}
+
+mkdir -p -- "$rotation_dir"
+for timestamp in 20260101T000001Z 20260101T000002Z 20260101T000003Z; do
+  sqlite3 "$test_db" ".backup '$rotation_dir/data.db.backup-$timestamp'"
+done
+legacy_backup="$test_dir/data.db.backup-20250101T000000Z"
+sqlite3 "$test_db" ".backup '$legacy_backup'"
+bash scripts/cleanup-database.sh \
+  --database "$test_db" \
+  --backup-directory "$rotation_dir" \
+  --keep-backups 2 \
+  --apply \
+  --yes >/dev/null
+
+[[ "$(find "$rotation_dir" -maxdepth 1 -type f -name 'data.db.backup-*' | wc -l | tr -d '[:space:]')" == "2" ]] || {
+  echo "Cleanup did not enforce generated backup retention." >&2
+  exit 1
+}
+[[ ! -e "$rotation_dir/data.db.backup-20260101T000001Z" ]] || {
+  echo "Cleanup retained the oldest generated backup." >&2
+  exit 1
+}
+[[ ! -e "$legacy_backup" ]] || {
+  echo "Cleanup did not move a legacy backup out of the database directory." >&2
   exit 1
 }
 

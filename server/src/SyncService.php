@@ -11,9 +11,10 @@ use Throwable;
 
 final class SyncService
 {
-    private const PROTOCOL_VERSION = 1;
+    private const PROTOCOL_VERSION = 2;
     private const MAX_OPERATIONS = 100;
     private const MAX_CHANGES = 500;
+    private const SYNC_RETENTION_DAYS = 30;
     private const FLASHCARD_REVIEW_PREFERENCE_FIELDS = [
         'mode', 'card_sides', 'indefinite', 'max_cards', 'front_seconds',
         'back_seconds', 'back_speech_repeat_count', 'note_before_back',
@@ -32,11 +33,15 @@ final class SyncService
     {
         $account = (string) $user['id'];
         $clientId = $this->clientId($body['clientId'] ?? null);
+        $confirmedReceiptSequence = $this->confirmReceipts(
+            $account,
+            $clientId,
+            max(0, (int) ($body['confirmedReceiptSequence'] ?? 0)),
+        );
+        $currentCursor = $this->currentChangeCursor($account);
         $watermark = isset($body['watermark'])
-            ? max(0, (int) $body['watermark'])
-            : (int) $this->database->pdo->query(
-                'SELECT COALESCE(MAX(sequence), 0) FROM sync_change_log',
-            )->fetchColumn();
+            ? min(max(0, (int) $body['watermark']), $currentCursor)
+            : $currentCursor;
 
         $resources = [];
         foreach (Schema::collections() as $name => $config) {
@@ -72,9 +77,12 @@ final class SyncService
             );
         }
 
-        $this->touchClient($account, $clientId, $watermark);
+        // The bootstrap watermark is not acknowledged until the client durably stores
+        // the response and sends that cursor in its next exchange.
+        $this->touchClient($account, $clientId, 0, $confirmedReceiptSequence);
         return [
             'watermark' => $watermark,
+            'receiptWatermark' => $confirmedReceiptSequence,
             'nextPageToken' => null,
             'resources' => $resources,
             'protocolVersion' => self::PROTOCOL_VERSION,
@@ -85,7 +93,11 @@ final class SyncService
     {
         $account = (string) $user['id'];
         $clientId = $this->clientId($body['clientId'] ?? null);
-        $cursor = max(0, (int) ($body['cursor'] ?? 0));
+        $cursor = min(
+            max(0, (int) ($body['cursor'] ?? 0)),
+            $this->currentChangeCursor($account),
+        );
+        $confirmedReceiptSequence = max(0, (int) ($body['confirmedReceiptSequence'] ?? 0));
         $operations = $body['operations'] ?? [];
         if (!is_array($operations) || !array_is_list($operations)) {
             throw new ApiException(422, 'Sync operations must be an array.');
@@ -94,19 +106,47 @@ final class SyncService
             throw new ApiException(422, 'Too many sync operations were included.');
         }
 
+        $confirmedReceiptSequence = $this->confirmReceipts(
+            $account,
+            $clientId,
+            $confirmedReceiptSequence,
+        );
+        if ($cursor < $this->retentionWatermark($account)) {
+            $this->touchClient($account, $clientId, $cursor, $confirmedReceiptSequence);
+            return [
+                'cursor' => $this->currentChangeCursor($account),
+                'receiptWatermark' => $confirmedReceiptSequence,
+                'hasMore' => false,
+                'serverTime' => $this->now(),
+                'acknowledgements' => [],
+                'changes' => [],
+                'resetRequired' => true,
+                'protocolVersion' => self::PROTOCOL_VERSION,
+            ];
+        }
+
         $acknowledgements = [];
+        $receiptWatermark = $confirmedReceiptSequence;
         foreach ($operations as $operation) {
             if (!is_array($operation) || array_is_list($operation)) {
                 throw new ApiException(422, 'A sync operation is invalid.');
             }
-            $acknowledgements[] = $this->applyOperation($operation, $account, $clientId);
+            $acknowledgement = $this->applyOperation($operation, $account, $clientId);
+            $receiptWatermark = max(
+                $receiptWatermark,
+                (int) ($acknowledgement['receiptSequence'] ?? 0),
+            );
+            unset($acknowledgement['receiptSequence']);
+            $acknowledgements[] = $acknowledgement;
         }
 
         $changeResult = $this->changesAfter($account, $cursor);
-        $this->touchClient($account, $clientId, $changeResult['cursor']);
+        $this->touchClient($account, $clientId, $cursor, $confirmedReceiptSequence);
+        $this->compactSyncHistory($account);
 
         return [
             'cursor' => $changeResult['cursor'],
+            'receiptWatermark' => $receiptWatermark,
             'hasMore' => $changeResult['hasMore'],
             'serverTime' => $this->now(),
             'acknowledgements' => $acknowledgements,
@@ -121,7 +161,7 @@ final class SyncService
         $operationId = $this->identifier($operation['operationId'] ?? null, 'operationId', 120);
         $isHealthConnectDailyEntry = $this->isHealthConnectDailyEntryOperation($operation);
         $receipt = $this->database->pdo->prepare(
-            'SELECT response FROM sync_operation_receipts
+            'SELECT response, receipt_sequence FROM sync_operation_receipts
              WHERE account_id = :account AND client_id = :client AND operation_id = :operation',
         );
         $receipt->execute([
@@ -129,11 +169,25 @@ final class SyncService
             'client' => $clientId,
             'operation' => $operationId,
         ]);
-        $saved = $receipt->fetchColumn();
-        if (is_string($saved)) {
-            $response = json_decode($saved, true);
+        $saved = $receipt->fetch();
+        if (is_array($saved) && is_string($saved['response'] ?? null)) {
+            $response = json_decode((string) $saved['response'], true);
             if (is_array($response)) {
-                $response['status'] = 'duplicate';
+                if (($response['status'] ?? null) !== 'rejected') {
+                    $response['status'] = 'duplicate';
+                    $resourceType = $response['resourceType'] ?? null;
+                    $resourceId = $response['resourceId'] ?? null;
+                    if (is_string($resourceType) && is_string($resourceId)) {
+                        $response['resource'] = $this->receiptResourceEnvelope(
+                            $resourceType,
+                            $resourceId,
+                            (bool) ($response['resourceDeleted'] ?? false),
+                            $account,
+                        );
+                    }
+                }
+                unset($response['resourceType'], $response['resourceId'], $response['resourceDeleted']);
+                $response['receiptSequence'] = (int) $saved['receipt_sequence'];
                 return $response;
             }
         }
@@ -179,11 +233,56 @@ final class SyncService
                 'account' => $account,
                 'client' => $clientId,
                 'operation' => $operationId,
-                'response' => json_encode($response, JSON_THROW_ON_ERROR),
+                'response' => json_encode($this->compactReceiptResponse($response), JSON_THROW_ON_ERROR),
                 'applied' => $this->now(),
             ]);
+            $response['receiptSequence'] = (int) $pdo->lastInsertId();
         }
         return $response;
+    }
+
+    private function compactReceiptResponse(array $response): array
+    {
+        $compact = [
+            'operationId' => (string) ($response['operationId'] ?? ''),
+            'status' => (string) ($response['status'] ?? 'applied'),
+        ];
+        if (is_string($response['replacementId'] ?? null)) {
+            $compact['replacementId'] = $response['replacementId'];
+        }
+        $resource = $response['resource'] ?? null;
+        if (is_array($resource)
+            && is_string($resource['resource'] ?? null)
+            && is_string($resource['id'] ?? null)
+        ) {
+            $compact['resourceType'] = $resource['resource'];
+            $compact['resourceId'] = $resource['id'];
+            $compact['resourceDeleted'] = (bool) ($resource['deleted'] ?? false);
+        }
+        if (is_array($response['error'] ?? null)) {
+            $compact['error'] = $response['error'];
+        }
+        return $compact;
+    }
+
+    private function receiptResourceEnvelope(
+        string $resource,
+        string $recordId,
+        bool $wasDeleted,
+        string $account,
+    ): array {
+        if ($wasDeleted) {
+            return $this->projectionEnvelope($resource, $recordId, null, true);
+        }
+        try {
+            return $this->changeEnvelope([
+                'resource' => $resource,
+                'record_id' => $recordId,
+                'action' => 'upsert',
+            ], $account);
+        } catch (ApiException) {
+            return $this->projectionEnvelope($resource, $recordId, null, true);
+        }
     }
 
     private function isHealthConnectDailyEntryOperation(array $operation): bool
@@ -1961,16 +2060,118 @@ final class SyncService
         return $value;
     }
 
-    private function touchClient(string $account, string $clientId, int $cursor): void
+    private function confirmReceipts(string $account, string $clientId, int $requestedSequence): int
+    {
+        $latestSequence = (int) $this->database->pdo->query(
+            "SELECT COALESCE((
+                SELECT seq FROM sqlite_sequence WHERE name = 'sync_operation_receipts'
+             ), 0)",
+        )->fetchColumn();
+        $confirmedSequence = min($requestedSequence, $latestSequence);
+        if ($confirmedSequence <= 0) {
+            return 0;
+        }
+        $statement = $this->database->pdo->prepare(
+            'DELETE FROM sync_operation_receipts
+             WHERE account_id = :account AND client_id = :client
+               AND receipt_sequence <= :sequence',
+        );
+        $statement->execute([
+            'account' => $account,
+            'client' => $clientId,
+            'sequence' => $confirmedSequence,
+        ]);
+        return $confirmedSequence;
+    }
+
+    private function retentionWatermark(string $account): int
+    {
+        $statement = $this->database->pdo->prepare(
+            'SELECT minimum_cursor FROM sync_retention_watermarks WHERE account_id = :account',
+        );
+        $statement->execute(['account' => $account]);
+        return (int) ($statement->fetchColumn() ?: 0);
+    }
+
+    private function currentChangeCursor(string $account): int
+    {
+        $statement = $this->database->pdo->prepare(
+            'SELECT MAX(
+                COALESCE((SELECT MAX(sequence) FROM sync_change_log WHERE account_id = :account), 0),
+                COALESCE((SELECT minimum_cursor FROM sync_retention_watermarks
+                          WHERE account_id = :account), 0)
+             )',
+        );
+        $statement->execute(['account' => $account]);
+        return (int) $statement->fetchColumn();
+    }
+
+    private function compactSyncHistory(string $account): void
+    {
+        $receiptCutoff = gmdate(
+            'Y-m-d\TH:i:s.v\Z',
+            time() - (self::SYNC_RETENTION_DAYS * 86400),
+        );
+        $expiredReceipts = $this->database->pdo->prepare(
+            'DELETE FROM sync_operation_receipts
+             WHERE account_id = :account AND applied_at < :cutoff',
+        );
+        $expiredReceipts->execute(['account' => $account, 'cutoff' => $receiptCutoff]);
+
+        $activeCutoff = $receiptCutoff;
+        $minimumCursor = $this->database->pdo->prepare(
+            'SELECT MIN(acknowledged_cursor)
+             FROM sync_clients
+             WHERE account_id = :account AND last_seen_at >= :cutoff',
+        );
+        $minimumCursor->execute(['account' => $account, 'cutoff' => $activeCutoff]);
+        $candidate = $minimumCursor->fetchColumn();
+        if ($candidate === false || $candidate === null) {
+            return;
+        }
+        $cursor = (int) $candidate;
+        if ($cursor <= $this->retentionWatermark($account)) {
+            return;
+        }
+
+        $watermark = $this->database->pdo->prepare(
+            'INSERT INTO sync_retention_watermarks (account_id, minimum_cursor, compacted_at)
+             VALUES (:account, :cursor, :compacted)
+             ON CONFLICT(account_id) DO UPDATE SET
+                minimum_cursor = MAX(sync_retention_watermarks.minimum_cursor, excluded.minimum_cursor),
+                compacted_at = excluded.compacted_at',
+        );
+        $watermark->execute([
+            'account' => $account,
+            'cursor' => $cursor,
+            'compacted' => $this->now(),
+        ]);
+        $changes = $this->database->pdo->prepare(
+            'DELETE FROM sync_change_log WHERE account_id = :account AND sequence <= :cursor',
+        );
+        $changes->execute(['account' => $account, 'cursor' => $cursor]);
+    }
+
+    private function touchClient(
+        string $account,
+        string $clientId,
+        int $cursor,
+        int $confirmedReceiptSequence,
+    ): void
     {
         $statement = $this->database->pdo->prepare(
             'INSERT INTO sync_clients (
-                account_id, client_id, acknowledged_cursor, protocol_version, last_seen_at
-             ) VALUES (:account, :client, :cursor, :protocol, :seen)
+                account_id, client_id, acknowledged_cursor, protocol_version, last_seen_at,
+                confirmed_receipt_sequence
+             ) VALUES (:account, :client, :cursor, :protocol, :seen, :receipt)
              ON CONFLICT(account_id, client_id) DO UPDATE SET
                 acknowledged_cursor = MAX(sync_clients.acknowledged_cursor, excluded.acknowledged_cursor),
                 protocol_version = excluded.protocol_version,
-                last_seen_at = excluded.last_seen_at',
+                last_seen_at = excluded.last_seen_at,
+                confirmed_receipt_sequence = MAX(
+                    sync_clients.confirmed_receipt_sequence,
+                    excluded.confirmed_receipt_sequence
+                )',
         );
         $statement->execute([
             'account' => $account,
@@ -1978,6 +2179,7 @@ final class SyncService
             'cursor' => $cursor,
             'protocol' => self::PROTOCOL_VERSION,
             'seen' => $this->now(),
+            'receipt' => $confirmedReceiptSequence,
         ]);
     }
 
