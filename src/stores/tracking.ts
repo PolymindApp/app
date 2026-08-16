@@ -51,6 +51,8 @@ export const useTrackingStore = defineStore('tracking', () => {
   const loading = ref(false)
   const loaded = ref(false)
   const error = ref('')
+  const insightFactorId = ref('')
+  const insightOutcomeId = ref('')
 
   const activeTrackers = computed(() => trackers.value
     .filter((tracker) => tracker.active)
@@ -249,6 +251,8 @@ export const useTrackingStore = defineStore('tracking', () => {
     loading,
     loaded,
     error,
+    insightFactorId,
+    insightOutcomeId,
     load,
     loadRange,
     entriesFor,

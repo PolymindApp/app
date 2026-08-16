@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { storeToRefs } from 'pinia'
 import { format, parseISO, subDays, subMonths } from 'date-fns'
 import { api } from '@/lib/api'
 import DatePickerField from '@/components/DatePickerField.vue'
@@ -40,9 +41,8 @@ type TrackingFactorSource = Omit<TrackingAnalysisSource, 'source'> & {
 const tracking = useTrackingStore()
 const tasks = useTaskStore()
 const intervals = useIntervalStore()
+const { insightFactorId: factorId, insightOutcomeId: outcomeId } = storeToRefs(tracking)
 const reviewSets = ref<Array<Pick<FlashcardReviewSet, 'id' | 'name'>>>([])
-const factorId = ref('')
-const outcomeId = ref('')
 const datePreset = ref<DatePreset>('7')
 const rangeStart = ref(format(subDays(new Date(), 6), 'yyyy-MM-dd'))
 const rangeEnd = ref(format(new Date(), 'yyyy-MM-dd'))
@@ -163,8 +163,12 @@ onMounted(async () => {
   ]).catch((cause) => {
     error.value = cause instanceof Error ? cause.message : 'Could not load insight sources.'
   })
-  factorId.value ||= factorSources.value[0]?.id || ''
-  outcomeId.value ||= outcomeSources.value[0]?.id || ''
+  if (!factorSources.value.some((source) => source.id === factorId.value)) {
+    factorId.value = factorSources.value[0]?.id || ''
+  }
+  if (!outcomeSources.value.some((source) => source.id === outcomeId.value)) {
+    outcomeId.value = outcomeSources.value[0]?.id || ''
+  }
   setDefaultDateRange()
   initialized.value = true
   if (factorId.value && outcomeId.value) await analyze()
