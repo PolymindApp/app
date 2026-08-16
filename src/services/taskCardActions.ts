@@ -6,6 +6,12 @@ export const TASK_CARD_ACTION_ITEMS = [
     id: 'complete-task',
     title: 'Mark completed',
     icon: 'mdi-check-circle-outline',
+    dividerAfter: true,
+  },
+  {
+    id: 'edit-task',
+    title: 'Edit',
+    icon: 'mdi-pencil-outline',
   },
   {
     id: 'skip-task',
@@ -16,11 +22,7 @@ export const TASK_CARD_ACTION_ITEMS = [
     id: 'log-additional-value',
     title: 'Log additional value',
     icon: 'mdi-plus-minus-variant',
-  },
-  {
-    id: 'edit-task',
-    title: 'Edit',
-    icon: 'mdi-pencil-outline',
+    dividerAfter: true,
   },
   {
     id: 'toggle-task-status',

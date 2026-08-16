@@ -1325,7 +1325,7 @@ async function saveTaskLogEntry() {
             rounded="lg"
             @click="runTaskCardAction(action.id)"
           />
-          <v-divider v-if="action.id === 'log-additional-value'" class="my-2" />
+          <v-divider v-if="'dividerAfter' in action && action.dividerAfter" class="my-2" />
         </template>
       </template>
       <template v-else-if="taskSheetMode === 'history'">

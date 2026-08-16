@@ -13,11 +13,20 @@ describe('task card actions', () => {
   it('defines the shared task menu order', () => {
     expect(TASK_CARD_ACTION_ITEMS.map(item => item.id)).toEqual([
       'complete-task',
+      'edit-task',
       'skip-task',
       'log-additional-value',
-      'edit-task',
       'toggle-task-status',
       'view-log-history',
+    ])
+  })
+
+  it('defines the shared task menu dividers', () => {
+    expect(TASK_CARD_ACTION_ITEMS
+      .filter(item => 'dividerAfter' in item && item.dividerAfter)
+      .map(item => item.id)).toEqual([
+      'complete-task',
+      'log-additional-value',
     ])
   })
 
