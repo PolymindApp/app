@@ -1017,11 +1017,11 @@ async function saveTaskLogEntry() {
 
     <section
       v-if="allDayProgress.length"
-      class="task-schedule-section"
+      class="task-schedule-section task-all-day-group"
       :class="{ 'mt-6': timedProgressGroups.length }"
     >
-      <h3 class="task-schedule-label mb-3">All day</h3>
-      <TransitionGroup name="task-list" tag="div" class="task-stack">
+      <h3 class="task-schedule-label task-all-day-label">All day</h3>
+      <TransitionGroup name="task-list" tag="div" class="task-stack task-all-day-stack">
         <div
           v-for="item in allDayProgress"
           :key="visibilityKey(item)"
@@ -1513,6 +1513,18 @@ async function saveTaskLogEntry() {
   text-align: right;
   white-space: nowrap;
 }
+.task-all-day-group { display: grid; grid-template-columns: 2.5rem minmax(0, 1fr); gap: .75rem; }
+.task-hour-label,
+.task-all-day-label {
+  position: sticky;
+  top: calc(3.75rem + max(env(safe-area-inset-top, 0rem), var(--safe-area-inset-top, 0rem)));
+  align-self: start;
+}
+.task-all-day-label {
+  padding-top: .9rem;
+  text-align: right;
+}
+.task-all-day-stack { min-width: 0; }
 .task-hour-stack { min-width: 0; }
 .empty-card { margin-top: 0; }
 .empty-icon { display: grid; width: 4rem; height: 4rem; place-items: center; border-radius: 1.25rem; background: #c7f464; color: #17200f; }
@@ -1568,7 +1580,8 @@ async function saveTaskLogEntry() {
 
 @media (min-width: 43.75rem) {
   .task-stack { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .task-hour-stack { grid-template-columns: 1fr; }
+  .task-hour-stack,
+  .task-all-day-stack { grid-template-columns: 1fr; }
   .review-actions { grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
 }
 
