@@ -16,6 +16,8 @@ describe('main menu ordering', () => {
   afterEach(() => localStorage.clear())
 
   it('uses the default order when no setting exists', () => {
+    expect(DEFAULT_MAIN_MENU_ORDER)
+      .toEqual(['tasks', 'intervals', 'flashcards', 'tracking', 'journal'])
     expect(normalizeMainMenuOrder(undefined)).toEqual(DEFAULT_MAIN_MENU_ORDER)
     expect(orderedMainNavItems(undefined).find(item => item.id === 'tasks')?.icon)
       .toBe('mdi-clipboard-check-outline')
