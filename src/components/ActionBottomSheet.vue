@@ -17,7 +17,7 @@ const props = withDefaults(defineProps<{
 const model = defineModel<boolean>({ default: false })
 const { smAndDown } = useDisplay()
 const sheetId = useId()
-const zIndex = useOverlayStack(model)
+const zIndex = useOverlayStack(model, () => { model.value = false })
 const desktopTarget = shallowRef<string | Element | [number, number]>()
 let lastInteractionElement: Element | undefined
 let lastPointerPosition: [number, number] | undefined

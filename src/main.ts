@@ -11,6 +11,7 @@ import { preloadIntervalCueAudio } from './services/intervalCues'
 import { installFlashcardNotificationRouting } from './services/flashcardNotificationRouting'
 import { installIntervalNotificationRouting } from './services/intervalNotificationRouting'
 import { installMobileKeyboardViewport } from './services/mobileKeyboardViewport'
+import { closeTopOverlay } from './services/overlayStack'
 import { installTaskNotificationRouting } from './services/taskReminders'
 import { startOfflineSync } from './services/offlineSync'
 import {
@@ -64,6 +65,8 @@ if (nativePlatform === 'android') {
     router.afterEach((to) => rememberAndroidRoute(to))
 
     return NativeApp.addListener('backButton', () => {
+      if (closeTopOverlay()) return
+
       const historyState = window.history.state as { back?: unknown } | null
       if (typeof historyState?.back === 'string') {
         router.back()

@@ -4,7 +4,7 @@ import { useOverlayStack } from '@/services/overlayStack'
 defineOptions({ inheritAttrs: false })
 
 const model = defineModel<boolean>({ default: false })
-const zIndex = useOverlayStack(model)
+const zIndex = useOverlayStack(model, () => { model.value = false })
 </script>
 
 <template>

@@ -1,7 +1,7 @@
-import { defineComponent, nextTick } from 'vue'
+import { defineComponent, nextTick, ref } from 'vue'
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
-import { useOverlayStack } from '@/services/overlayStack'
+import { closeTopOverlay, useOverlayStack } from '@/services/overlayStack'
 
 const OverlayHarness = defineComponent({
   props: {
@@ -9,6 +9,25 @@ const OverlayHarness = defineComponent({
   },
   setup(props) {
     return { zIndex: useOverlayStack(() => props.active) }
+  },
+  template: '<div :data-z-index="zIndex" />',
+})
+
+const DismissibleOverlayHarness = defineComponent({
+  props: {
+    active: Boolean,
+    close: {
+      type: Function,
+      required: true,
+    },
+  },
+  setup(props) {
+    const active = ref(props.active)
+    const close = () => {
+      props.close()
+      active.value = false
+    }
+    return { zIndex: useOverlayStack(active, close) }
   },
   template: '<div :data-z-index="zIndex" />',
 })
@@ -31,6 +50,9 @@ describe('overlayStack', () => {
     await nextTick()
 
     expect(Number(first.attributes('data-z-index'))).toBeGreaterThan(secondLayer)
+
+    first.unmount()
+    second.unmount()
   })
 
   it('keeps an active overlay on its assigned layer', async () => {
@@ -40,5 +62,28 @@ describe('overlayStack', () => {
     await wrapper.setProps({ active: true })
 
     expect(wrapper.attributes('data-z-index')).toBe(initialLayer)
+
+    wrapper.unmount()
+  })
+
+  it('closes one overlay per call in reverse opening order', () => {
+    const closed: string[] = []
+    const first = mount(DismissibleOverlayHarness, {
+      props: { active: true, close: () => closed.push('first') },
+    })
+    const second = mount(DismissibleOverlayHarness, {
+      props: { active: true, close: () => closed.push('second') },
+    })
+
+    expect(closeTopOverlay()).toBe(true)
+    expect(closed).toEqual(['second'])
+
+    expect(closeTopOverlay()).toBe(true)
+    expect(closed).toEqual(['second', 'first'])
+
+    expect(closeTopOverlay()).toBe(false)
+
+    first.unmount()
+    second.unmount()
   })
 })

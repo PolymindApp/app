@@ -284,7 +284,12 @@ defineExpose({ choose })
     />
   </ActionBottomSheet>
 
-  <AppDialog :model-value="cropDialog" max-width="520" persistent>
+  <AppDialog
+    :model-value="cropDialog"
+    max-width="520"
+    persistent
+    @update:model-value="!$event && closeCrop()"
+  >
     <v-card class="crop-card">
       <div class="crop-header">
         <div>
