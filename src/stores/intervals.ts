@@ -52,6 +52,7 @@ function mapSession(record: Record<string, any>): IntervalSession {
       ? {
           ...flashcardSnapshot,
           cardSides: flashcardSnapshot.cardSides || 'both',
+          sortDirection: flashcardSnapshot.sortDirection || 'asc',
           backSpeechRepeatCount: Number(flashcardSnapshot.backSpeechRepeatCount || 1),
           noteBeforeBack: Boolean(flashcardSnapshot.noteBeforeBack),
           cards: flashcardSnapshot.cards.map((card: Record<string, any>) => ({

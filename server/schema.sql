@@ -82,6 +82,7 @@ CREATE TABLE flashcard_review_sets (
     front_language VARCHAR(35) NOT NULL DEFAULT '',
     back_language VARCHAR(35) NOT NULL DEFAULT '',
     sort_mode TEXT NOT NULL DEFAULT 'difficult',
+    sort_direction TEXT NOT NULL DEFAULT 'asc',
     sort_order INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT '',
     updated_at TEXT NOT NULL DEFAULT ''
@@ -125,6 +126,7 @@ CREATE TABLE flashcard_review_set_preferences (
     front_language VARCHAR(35) NOT NULL DEFAULT '',
     back_language VARCHAR(35) NOT NULL DEFAULT '',
     sort_mode TEXT NOT NULL DEFAULT 'difficult',
+    sort_direction TEXT NOT NULL DEFAULT 'asc',
     updated_at TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (review_set, account)
 );
@@ -321,6 +323,7 @@ CREATE TABLE flashcard_review_sessions (
     indefinite_snapshot BOOLEAN NOT NULL DEFAULT FALSE,
     max_cards_snapshot INTEGER NOT NULL DEFAULT 20,
     sort_snapshot TEXT NOT NULL DEFAULT 'difficult',
+    sort_direction_snapshot TEXT NOT NULL DEFAULT 'asc',
     tags_snapshot JSON NOT NULL DEFAULT '[]',
     front_seconds_snapshot INTEGER NOT NULL DEFAULT 5,
     back_seconds_snapshot INTEGER NOT NULL DEFAULT 5,

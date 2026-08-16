@@ -115,6 +115,7 @@ function flashcardReviewSettingsBody(
     front_language: settings.frontLanguage,
     back_language: settings.backLanguage,
     sort_mode: settings.sortMode,
+    sort_direction: settings.sortDirection,
     ...(includeExclusions ? { excluded_cards: settings.excludedCards || [] } : {}),
   }
 }
@@ -959,6 +960,7 @@ class ApiClient {
         front_language: String(source.front_language || ''),
         back_language: String(source.back_language || ''),
         sort_mode: source.sort_mode,
+        sort_direction: source.sort_direction || 'asc',
         sort_order: Number(source.sort_order || 0),
         created_at: now,
         updated_at: now,

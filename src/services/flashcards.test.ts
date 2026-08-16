@@ -60,6 +60,7 @@ const reviewSet: FlashcardReviewSet = {
   frontLanguage: 'en-US',
   backLanguage: 'fr-CA',
   sortMode: 'recently_added',
+  sortDirection: 'asc',
   sortOrder: 0,
   createdAt: '2026-08-05T12:00:00Z',
   updatedAt: '2026-08-05T12:00:00Z',
@@ -131,6 +132,8 @@ describe('flashcard review helpers', () => {
     expect(sortFlashcardsForReview(cards, 'recently_added').map(card => card.id))
       .toEqual(['new', 'difficult'])
     expect(sortFlashcardsForReview(cards, 'difficult').map(card => card.id))
+      .toEqual(['difficult', 'new'])
+    expect(sortFlashcardsForReview(cards, 'recently_added', 'desc').map(card => card.id))
       .toEqual(['difficult', 'new'])
   })
 

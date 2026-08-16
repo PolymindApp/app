@@ -149,6 +149,7 @@ const flashcardSettingsDraft = reactive<FlashcardReviewSettings>({
   frontLanguage: '',
   backLanguage: '',
   sortMode: 'difficult',
+  sortDirection: 'asc',
 })
 const error = ref('')
 const completionError = ref('')
@@ -1377,6 +1378,7 @@ async function openFlashcardSettings() {
     frontLanguage: review.frontLanguage,
     backLanguage: review.backLanguage,
     sortMode: review.sortMode,
+    sortDirection: review.sortDirection,
   })
   flashcardSettingsOriginal.value = flashcardReviewSettingsSignature(flashcardSettingsDraft)
   flashcardSettingsError.value = ''
@@ -1424,6 +1426,7 @@ async function saveFlashcardSettings(target: FlashcardSettingsApplyTarget = 'ses
         frontLanguage: flashcardSettingsDraft.frontLanguage,
         backLanguage: flashcardSettingsDraft.backLanguage,
         sortMode: flashcardSettingsDraft.sortMode,
+        sortDirection: flashcardSettingsDraft.sortDirection,
       }
       if (context.reviewSet.accessRole === 'owner') {
         await flashcardStore.saveReviewSet(settings)

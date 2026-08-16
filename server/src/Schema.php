@@ -81,6 +81,7 @@ final class Schema
                     'sort_mode' => self::choice([
                         'difficult', 'never_reviewed', 'least_recent', 'recently_added', 'random',
                     ], true),
+                    'sort_direction' => self::choice(['asc', 'desc'], true),
                     'sort_order' => self::integer(0),
                     'created_at' => self::timestamp(false, true),
                     'updated_at' => self::timestamp(false, true),
@@ -260,6 +261,7 @@ final class Schema
                     'sort_snapshot' => self::choice([
                         'difficult', 'never_reviewed', 'least_recent', 'recently_added', 'random',
                     ], true),
+                    'sort_direction_snapshot' => self::choice(['asc', 'desc'], true),
                     'tags_snapshot' => self::jsonArray(5000),
                     'excluded_cards_snapshot' => self::jsonArray(200000),
                     'front_seconds_snapshot' => self::integer(1, 60),

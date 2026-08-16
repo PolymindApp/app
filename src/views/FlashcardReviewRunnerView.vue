@@ -99,6 +99,7 @@ const sessionSettingsDraft = reactive<FlashcardReviewSettings>({
   frontLanguage: '',
   backLanguage: '',
   sortMode: 'difficult',
+  sortDirection: 'asc',
 })
 const tickVersion = ref(0)
 const passiveSide = ref<'front' | 'back'>('front')
@@ -857,6 +858,7 @@ function copySessionSettings(value: FlashcardReviewSession) {
     frontLanguage: value.frontLanguage,
     backLanguage: value.backLanguage,
     sortMode: value.sortMode,
+    sortDirection: value.sortDirection,
   })
 }
 

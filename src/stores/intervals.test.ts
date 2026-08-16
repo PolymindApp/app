@@ -171,6 +171,7 @@ describe('interval task attribution', () => {
       name: 'Spanish',
       tags: ['tag-1'],
       sortMode: 'difficult',
+      sortDirection: 'asc',
       cardSides: 'both',
       frontSeconds: 5,
       backSeconds: 5,

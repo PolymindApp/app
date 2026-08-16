@@ -71,6 +71,7 @@ const draft = reactive<FlashcardReviewSetDraft>({
   frontLanguage: '',
   backLanguage: '',
   sortMode: 'difficult',
+  sortDirection: 'asc',
   sortOrder: 0,
 })
 
@@ -110,6 +111,7 @@ const cardTableTags = computed(() => {
 const orderedMatchingCards = computed(() => sortFlashcardsForReview(
   sourceCards.value.filter(card => cardMatchesTags(card, draft.tags)),
   draft.sortMode,
+  draft.sortDirection,
 ))
 const excludedCardIds = computed(() => new Set(draft.excludedCards || []))
 const includedCardCount = computed(() => orderedMatchingCards.value
@@ -155,6 +157,7 @@ onMounted(async () => {
         frontLanguage: reviewSet.frontLanguage,
         backLanguage: reviewSet.backLanguage,
         sortMode: reviewSet.sortMode,
+        sortDirection: reviewSet.sortDirection,
         sortOrder: reviewSet.sortOrder,
       })
       if (reviewSet.accessRole !== 'owner') await store.loadReviewSetCards(reviewSet.id)

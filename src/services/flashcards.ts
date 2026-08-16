@@ -156,6 +156,7 @@ export function flashcardReviewSettingsSignature(settings: FlashcardReviewSettin
     frontLanguage: settings.frontLanguage,
     backLanguage: settings.backLanguage,
     sortMode: settings.sortMode,
+    sortDirection: settings.sortDirection,
   })
 }
 
@@ -299,6 +300,7 @@ function compareText(left: string, right: string) {
 export function sortFlashcardsForReview(
   cards: Flashcard[],
   sortMode: FlashcardReviewSort,
+  sortDirection: FlashcardReviewSettings['sortDirection'] = 'asc',
   random = Math.random,
 ) {
   const sorted = [...cards]
@@ -309,10 +311,10 @@ export function sortFlashcardsForReview(
       const replacement = sorted[target]
       if (current && replacement) [sorted[index], sorted[target]] = [replacement, current]
     }
-    return sorted
+    return sortDirection === 'desc' ? sorted.reverse() : sorted
   }
 
-  return sorted.sort((left, right) => {
+  sorted.sort((left, right) => {
     if (sortMode === 'recently_added') {
       return compareText(right.createdAt, left.createdAt) || compareText(left.id, right.id)
     }
@@ -339,6 +341,7 @@ export function sortFlashcardsForReview(
       || compareText(left.lastReviewedAt || '', right.lastReviewedAt || '')
       || compareText(left.id, right.id)
   })
+  return sortDirection === 'desc' ? sorted.reverse() : sorted
 }
 
 export function flashcardReviewQueue(
@@ -352,6 +355,7 @@ export function flashcardReviewQueue(
       && !(reviewSet.excludedCards || []).includes(card.id)
     )),
     reviewSet.sortMode,
+    reviewSet.sortDirection,
     random,
   )
     .slice(0, reviewSet.maxCards)
@@ -387,6 +391,7 @@ export function createFlashcardReviewPreviewSession(
     indefinite: reviewSet.mode === 'passive' && reviewSet.indefinite,
     maxCards: reviewSet.maxCards,
     sortMode: reviewSet.sortMode,
+    sortDirection: reviewSet.sortDirection,
     tags: [...reviewSet.tags],
     excludedCards: [...(reviewSet.excludedCards || [])],
     frontSeconds: reviewSet.frontSeconds,
@@ -426,6 +431,7 @@ export function createIntervalFlashcardReviewSnapshot(
     name: reviewSet.name,
     tags: [...reviewSet.tags],
     sortMode: reviewSet.sortMode,
+    sortDirection: reviewSet.sortDirection,
     cardSides: reviewSet.cardSides,
     frontSeconds: effectiveSeconds.front,
     backSeconds: effectiveSeconds.back,

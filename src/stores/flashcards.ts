@@ -92,6 +92,7 @@ function mapReviewSet(record: Record<string, any>): FlashcardReviewSet {
     frontLanguage: record.front_language || '',
     backLanguage: record.back_language || '',
     sortMode: record.sort_mode,
+    sortDirection: record.sort_direction || 'asc',
     sortOrder: Number(record.sort_order || 0),
     createdAt: record.created_at,
     updatedAt: record.updated_at,
@@ -120,6 +121,7 @@ function mapSession(record: Record<string, any>): FlashcardReviewSession {
     indefinite: Boolean(record.indefinite_snapshot),
     maxCards: Number(record.max_cards_snapshot || DEFAULT_FLASHCARD_SESSION_CARDS),
     sortMode: record.sort_snapshot,
+    sortDirection: record.sort_direction_snapshot || 'asc',
     tags: Array.isArray(record.tags_snapshot) ? record.tags_snapshot : [],
     excludedCards: Array.isArray(record.excluded_cards_snapshot)
       ? record.excluded_cards_snapshot
@@ -518,6 +520,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       front_language: draft.frontLanguage,
       back_language: draft.backLanguage,
       sort_mode: draft.sortMode,
+      sort_direction: draft.sortDirection,
       sort_order: draft.sortOrder,
       excluded_cards: draft.excludedCards || [],
     }
@@ -940,6 +943,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
         indefinite_snapshot: preview.indefinite,
         max_cards_snapshot: preview.maxCards,
         sort_snapshot: preview.sortMode,
+        sort_direction_snapshot: preview.sortDirection,
         tags_snapshot: preview.tags,
         excluded_cards_snapshot: preview.excludedCards || [],
         front_seconds_snapshot: preview.frontSeconds,
@@ -1059,6 +1063,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
           front_language_snapshot: settings.frontLanguage,
           back_language_snapshot: settings.backLanguage,
           sort_snapshot: settings.sortMode,
+          sort_direction_snapshot: settings.sortDirection,
           updated_at: new Date().toISOString(),
           })
         : await api.updateFlashcardReviewSessionSettings(sessionId, settings)
@@ -1109,6 +1114,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
         tags: [...current.tags],
         excludedCards: [...(current.excludedCards || [])],
         sortMode: current.sortMode,
+        sortDirection: current.sortDirection,
         maxCards: current.maxCards,
       }, availableCards)
       if (!queue.length) throw new Error('No flashcards match this Review set.')

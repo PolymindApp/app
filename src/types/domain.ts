@@ -184,6 +184,7 @@ export interface IntervalFlashcardReviewSnapshot {
   name: string
   tags: string[]
   sortMode: FlashcardReviewSort
+  sortDirection: FlashcardReviewSortDirection
   cardSides: FlashcardReviewCardSides
   frontSeconds: number
   backSeconds: number
@@ -267,6 +268,7 @@ export type FlashcardReviewMode = 'manual' | 'passive'
 export type FlashcardReviewSide = 'front' | 'back'
 export type FlashcardReviewCardSides = 'both' | FlashcardReviewSide
 export type FlashcardReviewSort = 'difficult' | 'never_reviewed' | 'least_recent' | 'recently_added' | 'random'
+export type FlashcardReviewSortDirection = 'asc' | 'desc'
 export type FlashcardReviewStatus = 'running' | 'paused' | 'completed' | 'ended'
 export type FlashcardReviewOutcome = 'success' | 'error' | 'passive' | 'ejected'
 export type FlashcardReviewAction = 'success' | 'error' | 'view' | 'previous' | 'next' | 'push' | 'eject' | 'undo_eject' | 'pause' | 'resume' | 'restart' | 'end'
@@ -383,6 +385,7 @@ export interface FlashcardReviewSettings {
   frontLanguage: string
   backLanguage: string
   sortMode: FlashcardReviewSort
+  sortDirection: FlashcardReviewSortDirection
 }
 
 export interface FlashcardReviewSet extends FlashcardReviewSettings {

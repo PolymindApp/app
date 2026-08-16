@@ -293,6 +293,18 @@ function updateSpeechEnabled(enabled: boolean | null) {
           <v-list-item v-bind="itemProps" :title="item.raw.title" :subtitle="item.raw.subtitle" />
         </template>
       </v-select>
+      <label class="field-label">Sort direction</label>
+      <v-btn-toggle
+        v-model="settings.sortDirection"
+        mandatory
+        color="secondary"
+        variant="tonal"
+        size="small"
+        class="sort-direction-toggle mt-2"
+      >
+        <v-btn value="asc" prepend-icon="mdi-sort-ascending">ASC</v-btn>
+        <v-btn value="desc" prepend-icon="mdi-sort-descending">DESC</v-btn>
+      </v-btn-toggle>
       <v-divider class="my-5" />
       <LabeledSlider
         v-model="sliderMaxCards"
@@ -343,6 +355,8 @@ function updateSpeechEnabled(enabled: boolean | null) {
 .mode-toggle :deep(.v-btn) { width: 100%; min-height: 3rem; }
 .faces-toggle { display: grid; width: 100%; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .5rem; }
 .faces-toggle :deep(.v-btn) { width: 100%; min-height: 3rem; }
+.sort-direction-toggle { display: grid; width: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
+.sort-direction-toggle :deep(.v-btn) { width: 100%; }
 .mode-hint { display: flex; align-items: flex-start; gap: .5rem; color: rgba(var(--v-theme-on-surface), .58); font-size: .72rem; line-height: 1.5; }
 .mode-hint .v-icon { flex: 0 0 auto; }
 .passive-settings { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }

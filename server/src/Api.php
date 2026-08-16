@@ -44,13 +44,13 @@ final class Api
         'mode', 'card_sides', 'indefinite', 'max_cards', 'front_seconds', 'back_seconds',
         'back_speech_repeat_count', 'note_before_back',
         'speech_enabled', 'front_language', 'back_language',
-        'sort_mode',
+        'sort_mode', 'sort_direction',
     ];
     private const FLASHCARD_REVIEW_PREFERENCE_FIELDS = [
         'mode', 'card_sides', 'indefinite', 'max_cards', 'front_seconds', 'back_seconds',
         'back_speech_repeat_count', 'note_before_back',
         'speech_enabled', 'front_language', 'back_language',
-        'sort_mode', 'excluded_cards',
+        'sort_mode', 'sort_direction', 'excluded_cards',
     ];
     private readonly Mailer $mailer;
     private readonly SyncService $syncService;
@@ -2622,7 +2622,7 @@ final class Api
                 'back_speech_repeat_count',
                 'note_before_back',
                 'speech_enabled', 'front_language', 'back_language',
-                'sort_mode', 'sort_order', 'excluded_cards',
+                'sort_mode', 'sort_direction', 'sort_order', 'excluded_cards',
             ]);
         }
         if ($collection['name'] === 'interval_sessions') {
@@ -3423,13 +3423,13 @@ final class Api
                     id, owner, name, tags, mode, card_sides, indefinite, max_cards,
                     front_seconds, back_seconds, back_speech_repeat_count,
                     note_before_back,
-                    speech_enabled, front_language, back_language, sort_mode, excluded_cards,
+                    speech_enabled, front_language, back_language, sort_mode, sort_direction, excluded_cards,
                     sort_order, created_at, updated_at
                  ) VALUES (
                     :id, :owner, :name, :tags, :mode, :card_sides, :indefinite, :max_cards,
                     :front_seconds, :back_seconds, :back_speech_repeat_count,
                     :note_before_back,
-                    :speech_enabled, :front_language, :back_language, :sort_mode, :excluded_cards,
+                    :speech_enabled, :front_language, :back_language, :sort_mode, :sort_direction, :excluded_cards,
                     :sort_order, :created_at, :updated_at
                  )',
             );
@@ -3897,6 +3897,7 @@ final class Api
         $selection = $this->flashcardReviewSelection($reviewSet, $sourceOwner, $owner);
         $selectedTags = $selection['tags'];
         $sortMode = $selection['sortMode'];
+        $sortDirection = $selection['sortDirection'];
         $queue = $selection['queue'];
 
         $now = (new DateTimeImmutable('now'))->format('Y-m-d\TH:i:s.v\Z');
@@ -3905,7 +3906,7 @@ final class Api
             $statement = $this->database->pdo->prepare(
                 'INSERT INTO flashcard_review_sessions (
                     id, owner, source_owner, review_set, status, snapshot_name, mode_snapshot, card_sides_snapshot,
-                    sort_snapshot, indefinite_snapshot, max_cards_snapshot, tags_snapshot,
+                    sort_snapshot, sort_direction_snapshot, indefinite_snapshot, max_cards_snapshot, tags_snapshot,
                     excluded_cards_snapshot,
                     front_seconds_snapshot, back_seconds_snapshot,
                     back_speech_repeat_count_snapshot,
@@ -3915,7 +3916,7 @@ final class Api
                     success_count, error_count, ejected_count, task, program_step, task_date
                  ) VALUES (
                     :id, :owner, :source_owner, :review_set, :status, :snapshot_name, :mode_snapshot,
-                    :card_sides_snapshot, :sort_snapshot, :indefinite_snapshot, :max_cards_snapshot,
+                    :card_sides_snapshot, :sort_snapshot, :sort_direction_snapshot, :indefinite_snapshot, :max_cards_snapshot,
                     :tags_snapshot, :excluded_cards_snapshot, :front_seconds_snapshot, :back_seconds_snapshot,
                     :back_speech_repeat_count_snapshot,
                     :note_before_back_snapshot,
@@ -3934,6 +3935,7 @@ final class Api
                 'mode_snapshot' => (string) $reviewSet['mode'],
                 'card_sides_snapshot' => (string) $reviewSet['card_sides'],
                 'sort_snapshot' => $sortMode,
+                'sort_direction_snapshot' => $sortDirection,
                 'indefinite_snapshot' => (bool) $reviewSet['indefinite'],
                 'max_cards_snapshot' => (int) $reviewSet['max_cards'],
                 'tags_snapshot' => json_encode(array_values($selectedTags), JSON_THROW_ON_ERROR),
@@ -4043,6 +4045,7 @@ final class Api
                     'tags' => $session['tags_snapshot'],
                     'excluded_cards' => $session['excluded_cards_snapshot'],
                     'sort_mode' => $session['sort_snapshot'],
+                    'sort_direction' => $session['sort_direction_snapshot'] ?? 'asc',
                     'max_cards' => $session['max_cards_snapshot'],
                 ], (string) ($session['source_owner'] ?: $owner), $owner);
                 $queue = $selection['queue'];
@@ -4241,11 +4244,15 @@ final class Api
             'mode', 'card_sides', 'indefinite', 'max_cards', 'front_seconds', 'back_seconds',
             'back_speech_repeat_count', 'note_before_back',
             'speech_enabled', 'front_language', 'back_language',
-            'sort_mode',
+            'sort_mode', 'sort_direction',
         ];
         $this->allowOnlyFields($body, $fields);
         foreach ($fields as $field) {
             if (!array_key_exists($field, $body)) {
+                if ($field === 'sort_direction') {
+                    $body[$field] = 'asc';
+                    continue;
+                }
                 throw new ApiException(422, 'Every session setting is required.', [
                     $field => 'required',
                 ]);
@@ -4285,6 +4292,7 @@ final class Api
                 'tags' => $session['tags_snapshot'],
                 'excluded_cards' => $session['excluded_cards_snapshot'],
                 'sort_mode' => $settings['sort_mode'],
+                'sort_direction' => $settings['sort_direction'],
                 'max_cards' => 100,
             ], (string) ($session['source_owner'] ?: $owner), $owner);
             $eventStatement = $pdo->prepare(
@@ -4319,6 +4327,7 @@ final class Api
                     indefinite_snapshot = :indefinite_snapshot,
                     max_cards_snapshot = :max_cards_snapshot,
                     sort_snapshot = :sort_snapshot,
+                    sort_direction_snapshot = :sort_direction_snapshot,
                     front_seconds_snapshot = :front_seconds_snapshot,
                     back_seconds_snapshot = :back_seconds_snapshot,
                     back_speech_repeat_count_snapshot = :back_speech_repeat_count_snapshot,
@@ -4337,6 +4346,7 @@ final class Api
                 'indefinite_snapshot' => $indefinite,
                 'max_cards_snapshot' => $settings['max_cards'],
                 'sort_snapshot' => $settings['sort_mode'],
+                'sort_direction_snapshot' => $settings['sort_direction'],
                 'front_seconds_snapshot' => $settings['front_seconds'],
                 'back_seconds_snapshot' => $settings['back_seconds'],
                 'back_speech_repeat_count_snapshot' => $settings['back_speech_repeat_count'],
@@ -4447,10 +4457,17 @@ final class Api
         }
     }
 
-    private function sortFlashcardsForReview(array &$cards, string $sortMode): void
+    private function sortFlashcardsForReview(
+        array &$cards,
+        string $sortMode,
+        string $sortDirection = 'asc',
+    ): void
     {
         if ($sortMode === 'random') {
             shuffle($cards);
+            if ($sortDirection === 'desc') {
+                $cards = array_reverse($cards);
+            }
             return;
         }
 
@@ -4488,6 +4505,9 @@ final class Api
                 ?: strcmp($leftReviewed, $rightReviewed)
                 ?: strcmp((string) $left['id'], (string) $right['id']);
         });
+        if ($sortDirection === 'desc') {
+            $cards = array_reverse($cards);
+        }
     }
 
     private function flashcardReviewSelection(
@@ -4542,7 +4562,8 @@ final class Api
         }
 
         $sortMode = (string) $reviewSet['sort_mode'];
-        $this->sortFlashcardsForReview($cards, $sortMode);
+        $sortDirection = (string) ($reviewSet['sort_direction'] ?? 'asc');
+        $this->sortFlashcardsForReview($cards, $sortMode, $sortDirection);
         $cards = array_slice($cards, 0, (int) $reviewSet['max_cards']);
         $queue = array_map(function (array $card): array {
             $tags = $this->decodeJsonColumn($card['tags'] ?? '[]');
@@ -4561,6 +4582,7 @@ final class Api
         return [
             'tags' => array_values($selectedTags),
             'sortMode' => $sortMode,
+            'sortDirection' => $sortDirection,
             'queue' => $queue,
         ];
     }
@@ -4592,6 +4614,7 @@ final class Api
             'name' => (string) $reviewSet['name'],
             'tags' => $selection['tags'],
             'sortMode' => $selection['sortMode'],
+            'sortDirection' => $selection['sortDirection'],
             'cardSides' => (string) $reviewSet['card_sides'],
             'frontSeconds' => $isPassive ? (int) $reviewSet['front_seconds'] : 5,
             'backSeconds' => $isPassive ? (int) $reviewSet['back_seconds'] : 5,
@@ -6664,9 +6687,13 @@ final class Api
         $settings = [];
         foreach (self::FLASHCARD_REVIEW_SETTING_FIELDS as $field) {
             if (!array_key_exists($field, $body)) {
-                throw new ApiException(422, 'Every Review set preference is required.', [
-                    $field => 'required',
-                ]);
+                if ($field === 'sort_direction') {
+                    $body[$field] = 'asc';
+                } else {
+                    throw new ApiException(422, 'Every Review set preference is required.', [
+                        $field => 'required',
+                    ]);
+                }
             }
             $settings[$field] = $this->validateField($field, $body[$field], $fields[$field]);
         }
@@ -6698,6 +6725,7 @@ final class Api
                     => (bool) ($source[$field] ?? false),
                 'max_cards', 'front_seconds', 'back_seconds', 'back_speech_repeat_count'
                     => (int) ($source[$field] ?? 0),
+                'sort_direction' => (string) ($source[$field] ?? 'asc'),
                 default => (string) ($source[$field] ?? ''),
             };
         }
@@ -6718,12 +6746,13 @@ final class Api
                 review_set, account, mode, card_sides, indefinite, max_cards,
                 front_seconds, back_seconds, back_speech_repeat_count,
                 note_before_back,
-                speech_enabled, front_language, back_language, sort_mode, excluded_cards, updated_at
+                speech_enabled, front_language, back_language, sort_mode, sort_direction,
+                excluded_cards, updated_at
              ) VALUES (
                 :review_set, :account, :mode, :card_sides, :indefinite, :max_cards,
                 :front_seconds, :back_seconds, :back_speech_repeat_count,
                 :note_before_back,
-                :speech_enabled, :front_language, :back_language, :sort_mode, :excluded_cards, :updated_at
+                :speech_enabled, :front_language, :back_language, :sort_mode, :sort_direction, :excluded_cards, :updated_at
              )
              ON CONFLICT(review_set, account) DO UPDATE SET
                 mode = excluded.mode,
@@ -6738,6 +6767,7 @@ final class Api
                 front_language = excluded.front_language,
                 back_language = excluded.back_language,
                 sort_mode = excluded.sort_mode,
+                sort_direction = excluded.sort_direction,
                 excluded_cards = excluded.excluded_cards,
                 updated_at = excluded.updated_at',
         );
