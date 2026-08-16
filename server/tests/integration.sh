@@ -93,7 +93,7 @@ suffix="$(php -r 'echo bin2hex(random_bytes(5));')"
 password="correct-horse-battery"
 
 migration_count="$(sqlite3 "$test_db" 'SELECT COUNT(*) FROM backontrack_schema_migrations;')"
-[[ "$migration_count" == 42 ]] || {
+[[ "$migration_count" == 43 ]] || {
   echo "The API did not apply the complete database migration sequence." >&2
   exit 1
 }
@@ -683,12 +683,40 @@ task_id="$(json_field id <<<"$task_response")"
 task_owner="$(json_field owner <<<"$task_response")"
 task_notes_enabled="$(json_field entry_notes_enabled <<<"$task_response")"
 task_note_suggestions_enabled="$(json_field entry_note_suggestions_enabled <<<"$task_response")"
+task_schedule_mode="$(json_field schedule_mode <<<"$task_response")"
+task_scheduled_time="$(json_field scheduled_time <<<"$task_response")"
 [[ "$task_owner" == "$alice_id" ]] || {
   echo "The API accepted a forged owner." >&2
   exit 1
 }
 [[ -z "$task_notes_enabled" && -z "$task_note_suggestions_enabled" ]] || {
   echo "New tasks did not default to disabled entry note options." >&2
+  exit 1
+}
+[[ "$task_schedule_mode" == "all_day" && -z "$task_scheduled_time" ]] || {
+  echo "New tasks did not default to all-day scheduling." >&2
+  exit 1
+}
+
+timed_task_response="$(curl --silent --show-error --fail \
+  -X PATCH -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"schedule_mode":"time_based","scheduled_time":"08:35"}' \
+  "$api_url/collections/tasks/records/$task_id")"
+timed_task_mode="$(json_field schedule_mode <<<"$timed_task_response")"
+timed_task_time="$(json_field scheduled_time <<<"$timed_task_response")"
+[[ "$timed_task_mode" == "time_based" && "$timed_task_time" == "08:35" ]] || {
+  echo "A valid time-based task schedule was not persisted." >&2
+  exit 1
+}
+
+invalid_schedule_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  -X PATCH -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"schedule_mode":"time_based","scheduled_time":""}' \
+  "$api_url/collections/tasks/records/$task_id")"
+[[ "$invalid_schedule_status" == 422 ]] || {
+  echo "A time-based task without a time was accepted." >&2
   exit 1
 }
 

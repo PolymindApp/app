@@ -18,7 +18,7 @@ import { isNativeHealthConnectSupported } from '@/services/healthConnect'
 import { isHealthConnectEntry } from '@/services/healthConnectEntries'
 import { formatIntervalDuration, intervalDuration } from '@/services/intervals'
 import { taskCompletionMarkerColor, toDateKey } from '@/services/schedule'
-import { TASK_CARD_ACTION_ITEMS, taskCanBeMarkedCompleted, taskCanLogAdditionalValue, taskCanLogAmounts, taskIntervalCanStart, taskIsResolved } from '@/services/taskCardActions'
+import { TASK_CARD_ACTION_ITEMS, taskCanLogAdditionalValue, taskCanLogAmounts, taskIntervalCanStart } from '@/services/taskCardActions'
 import type { TaskCardActionId } from '@/services/taskCardActions'
 import { formatTrackingValue } from '@/services/tracking'
 import {
@@ -27,13 +27,13 @@ import {
   taskEntryNoteOptions,
 } from '@/services/taskEntryNotes'
 import {
-  TASK_FILTER_ITEMS,
-  readTaskFilterSelection,
+  formatTaskScheduleTime,
+  groupTaskProgressBySchedule,
+  taskScheduledTime,
   tasksWithoutProgress,
-  writeTaskFilterSelection,
-} from '@/services/taskFilters'
-import type { TaskFilterId } from '@/services/taskFilters'
+} from '@/services/taskScheduleLayout'
 import { taskIdsFromProgressDrag, taskProgressDragKey } from '@/services/taskReordering'
+import { TASK_TYPE_PRESENTATION } from '@/services/taskTypes'
 import { useIntervalStore } from '@/stores/intervals'
 import { useFlashcardStore } from '@/stores/flashcards'
 import { useJournalStore } from '@/stores/journal'
@@ -95,20 +95,9 @@ const trackingSheetOpen = ref(false)
 const trackingSheetTracker = ref<TrackingTracker>()
 const trackingSheetDate = ref(toDateKey(new Date()))
 const trackingSheetContext = ref('')
-const taskPage = ref<HTMLElement>()
 const valuePulseVersions = ref<Record<string, number>>({})
-const initialTaskFilters = readTaskFilterSelection()
-const showCompleted = ref(initialTaskFilters.includes('completed'))
-const showNotScheduled = ref(initialTaskFilters.includes('not_scheduled'))
-const taskFiltersOpen = ref(false)
+const notScheduledExpanded = ref(false)
 const reorderingTasks = ref(false)
-const recentlyCompletedKeys = ref(new Set<string>())
-const completedVisibilityTimers = new Map<string, ReturnType<typeof setTimeout>>()
-const taskCardPositions = new Map<HTMLElement, {
-  top: number
-  left: number
-  width: number
-}>()
 const exactAmount = computed(() => {
   if (!exactAmountInput.value || exactAmountInput.value === '.') return null
   const value = Number(exactAmountInput.value)
@@ -144,22 +133,120 @@ const taskActionTitle = computed(() =>
 const taskSheetDescription = computed(() => taskSheetMode.value === 'history'
   ? `${taskActionTitle.value} · ${format(selectedDate.value, 'EEEE, MMMM d')}`
   : undefined)
+type TaskMainActionId =
+  | 'toggle-complete'
+  | 'start-interval'
+  | 'start-review'
+  | 'log-amount'
+  | 'log-time'
+  | 'toggle-total-lock'
+  | 'sync-steps'
+  | 'write-journal'
+
+interface TaskMainActionItem {
+  id: TaskMainActionId
+  title: string
+  icon: string
+  disabled?: boolean
+}
+
+const taskActionIsScheduled = computed(() => {
+  const progress = taskActionProgress.value
+  return Boolean(progress && selectedProgress.value.some(item => progressKey(item) === progressKey(progress)))
+})
+const taskMainActionItems = computed<TaskMainActionItem[]>(() => {
+  const progress = taskActionProgress.value
+  if (!progress || !taskActionIsScheduled.value || progress.status === 'skipped') return []
+  const items: TaskMainActionItem[] = []
+  const completionType = progress.programStep?.completionType || progress.task.type
+  const completionDriven = ['check', 'interval', 'flashcards'].includes(completionType)
+  const locked = Boolean(progress.locked)
+
+  if (completionDriven && progress.complete) {
+    items.push({ id: 'toggle-complete', title: 'Undone', icon: 'mdi-undo-variant', disabled: locked })
+    return items
+  }
+
+  if (completionType === 'interval' && intervalCanStart(progress)) {
+    items.push({
+      id: 'start-interval',
+      title: sessionMatchesProgress(progress) ? 'Resume interval' : 'Start interval',
+      icon: 'mdi-play',
+      disabled: locked,
+    })
+  }
+  if (completionType === 'flashcards' && progressIsToday(progress) && progress.status === 'pending') {
+    items.push({
+      id: 'start-review',
+      title: reviewSessionMatchesProgress(progress) ? 'Resume review' : 'Start review',
+      icon: 'mdi-cards-playing-outline',
+      disabled: locked || !reviewSetMeta(progress)?.cardCount,
+    })
+  }
+  if (completionDriven) {
+    items.push({ id: 'toggle-complete', title: 'Done', icon: 'mdi-check-bold', disabled: locked })
+  }
+
+  if (taskCanLogAmounts(progress)) {
+    items.push({
+      id: 'log-amount',
+      title: 'Log amount',
+      icon: 'mdi-plus-minus-variant',
+      disabled: locked || Boolean(progress.sealed),
+    })
+    if (!progress.programStep && progress.task.type === 'duration') {
+      items.push({
+        id: 'log-time',
+        title: 'Log time',
+        icon: 'mdi-timer-outline',
+        disabled: locked || Boolean(progress.sealed),
+      })
+    }
+  }
+  if (!progress.programStep && progress.task.type === 'daily_total') {
+    items.push({
+      id: 'toggle-total-lock',
+      title: progress.sealed ? 'Unlock total' : 'Lock in total',
+      icon: progress.sealed ? 'mdi-lock-open-variant-outline' : 'mdi-lock-check-outline',
+      disabled: locked,
+    })
+  }
+  if (!progress.programStep && progress.task.type === 'step_counter') {
+    items.push({
+      id: 'sync-steps',
+      title: stepCountLoading.value ? 'Syncing steps…' : 'Sync Health Connect',
+      icon: 'mdi-heart-pulse',
+      disabled: stepCountLoading.value,
+    })
+    items.push({
+      id: 'log-amount',
+      title: 'Log additional value',
+      icon: 'mdi-plus-minus-variant',
+      disabled: locked,
+    })
+  }
+  if (!progress.programStep && progress.task.type === 'journal' && journalCanWrite(progress)) {
+    items.push({
+      id: 'write-journal',
+      title: progress.complete ? 'Write another reflection' : 'Write reflection',
+      icon: 'mdi-notebook-edit-outline',
+      disabled: locked,
+    })
+  }
+  return items
+})
 const taskCardActionItems = computed(() => TASK_CARD_ACTION_ITEMS.filter((action) =>
-  action.id === 'complete-task'
-    ? taskCanBeMarkedCompleted(taskActionProgress.value)
-    : action.id === 'skip-task'
-      ? Boolean(taskActionProgress.value)
-      : action.id === 'log-additional-value'
-        ? taskCanLogAdditionalValue(taskActionProgress.value)
-        : action.id !== 'view-log-history'
-          || taskCanLogAmounts(taskActionProgress.value)
-          || (taskCanLogAdditionalValue(taskActionProgress.value) && taskActionProgress.value
-            ? store.entriesFor(
-                taskActionProgress.value.task,
-                parseISO(taskActionProgress.value.scheduledDate),
-                taskActionProgress.value.programStep,
-              ).length > 0
-            : false),
+  action.id === 'skip-task'
+    ? taskActionIsScheduled.value
+    : action.id !== 'view-log-history'
+      || taskCanLogAmounts(taskActionProgress.value)
+      || (taskCanLogAdditionalValue(taskActionProgress.value) && taskActionProgress.value
+        ? store.entriesFor(
+            taskActionProgress.value.task,
+            parseISO(taskActionProgress.value.scheduledDate),
+            taskActionProgress.value.programStep,
+          ).length > 0
+        : false),
 ).map(action => action.id === 'toggle-task-status'
   ? {
       ...action,
@@ -192,39 +279,14 @@ const notScheduledProgress = computed(() => tasksWithoutProgress(
   store.tasks,
   selectedProgress.value,
 ).map(task => store.makeProgress(task, selectedDate.value)))
-const selectedProgressForDisplay = computed(() => selectedProgress.value.filter(progress =>
-  progress.status !== 'skipped'
-  || store.progressIsScheduled(progress)
-  || showNotScheduled.value
-  || showCompleted.value,
-))
-const displayedProgress = computed(() => {
-  const progressItems = showNotScheduled.value
-    ? [...selectedProgressForDisplay.value, ...notScheduledProgress.value]
-    : selectedProgressForDisplay.value
-  return [...progressItems].sort((left, right) => (
-    Number(right.task.mandatory) - Number(left.task.mandatory)
-    || left.task.sortOrder - right.task.sortOrder
-    || (left.programStep?.sortOrder ?? 0) - (right.programStep?.sortOrder ?? 0)
-  ))
-})
-const required = computed(() => displayedProgress.value.filter((item) => item.task.mandatory))
-const optional = computed(() => displayedProgress.value.filter((item) => !item.task.mandatory))
-const visibleRequired = computed(() => required.value.filter(taskIsVisible))
-const visibleOptional = computed(() => optional.value.filter(taskIsVisible))
+const scheduleLayout = computed(() => groupTaskProgressBySchedule(selectedProgress.value))
+const allDayProgress = computed(() => scheduleLayout.value.allDay)
+const timedProgressGroups = computed(() => scheduleLayout.value.timed)
 const reviewItems = computed(() => store.reviewProgressForDate(selectedDate.value))
 const scoredProgress = computed(() => selectedProgress.value.filter(item => item.status !== 'skipped'))
 const doneCount = computed(() => scoredProgress.value.filter((item) => item.complete).length)
-const taskFiltersActive = computed(() => showCompleted.value || showNotScheduled.value)
 let appStateListener: Awaited<ReturnType<typeof App.addListener>> | undefined
 let stepCountResumeTimer: ReturnType<typeof setTimeout> | undefined
-
-watch([showCompleted, showNotScheduled], ([completed, notScheduled]) => {
-  const filters: TaskFilterId[] = []
-  if (completed) filters.push('completed')
-  if (notScheduled) filters.push('not_scheduled')
-  writeTaskFilterSelection(filters)
-})
 
 onMounted(async () => {
   try {
@@ -250,24 +312,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   void appStateListener?.remove()
   clearTimeout(stepCountResumeTimer)
-  completedVisibilityTimers.forEach(timer => clearTimeout(timer))
-  completedVisibilityTimers.clear()
 })
-
-function captureTaskCardLayout() {
-  taskCardPositions.clear()
-  taskPage.value?.querySelectorAll<HTMLElement>('.task-masonry-item').forEach((element) => {
-    const parent = element.parentElement
-    if (!parent) return
-    const bounds = element.getBoundingClientRect()
-    const parentBounds = parent.getBoundingClientRect()
-    taskCardPositions.set(element, {
-      top: bounds.top - parentBounds.top,
-      left: bounds.left - parentBounds.left,
-      width: bounds.width,
-    })
-  })
-}
 
 watch(selectedDate, date => {
   if (isNativeHealthConnectSupported()) void store.refreshStepCount(date)
@@ -327,100 +372,25 @@ function visibilityKey(progress: TaskProgress) {
   return `${progress.scheduledDate}:${progressKey(progress)}`
 }
 
-function taskIsVisible(progress: TaskProgress) {
-  return showCompleted.value
-    || !taskIsResolved(progress)
-    || recentlyCompletedKeys.value.has(visibilityKey(progress))
-}
-
-function taskFilterEnabled(filter: TaskFilterId) {
-  if (filter === 'completed') return showCompleted.value
-  return showNotScheduled.value
-}
-
-function toggleTaskFilter(filter: TaskFilterId) {
-  if (filter === 'completed') {
-    if (showCompleted.value) captureTaskCardLayout()
-    showCompleted.value = !showCompleted.value
-    return
-  }
-  if (showNotScheduled.value) captureTaskCardLayout()
-  showNotScheduled.value = !showNotScheduled.value
-}
-
 function taskScheduleStatus(progress: TaskProgress) {
   if (progress.status === 'skipped') return 'skipped' as const
-  if (!showNotScheduled.value || selectedProgress.value.some(item => item.task.id === progress.task.id)) {
-    return undefined
-  }
-  return progress.task.active ? 'not-scheduled' as const : 'paused' as const
+  return undefined
 }
 
-function pinLeavingTaskCard(element: Element) {
-  if (!(element instanceof HTMLElement)) return
-  const position = taskCardPositions.get(element)
-  if (!position) return
-  element.style.position = 'absolute'
-  element.style.top = `${position.top}px`
-  element.style.left = `${position.left}px`
-  element.style.width = `${position.width}px`
-  element.style.zIndex = '1'
-  element.style.pointerEvents = 'none'
+function taskTimeLabel(progress: TaskProgress) {
+  const time = taskScheduledTime(progress.task)
+  return time ? formatTaskScheduleTime(time) : undefined
 }
 
-function releaseLeavingTaskCard(element: Element) {
-  if (!(element instanceof HTMLElement)) return
-  element.style.removeProperty('position')
-  element.style.removeProperty('top')
-  element.style.removeProperty('left')
-  element.style.removeProperty('width')
-  element.style.removeProperty('z-index')
-  element.style.removeProperty('pointer-events')
+function notScheduledSubtitle(progress: TaskProgress) {
+  if (!progress.task.active) return 'Paused'
+  const time = taskTimeLabel(progress)
+  return time ? `Not scheduled · ${time}` : 'Not scheduled for this day'
 }
 
-function clearCompletedTaskVisibility(key: string) {
-  const timer = completedVisibilityTimers.get(key)
-  if (timer) clearTimeout(timer)
-  completedVisibilityTimers.delete(key)
-  if (!recentlyCompletedKeys.value.has(key)) return
-  if (!showCompleted.value) captureTaskCardLayout()
-  const nextKeys = new Set(recentlyCompletedKeys.value)
-  nextKeys.delete(key)
-  recentlyCompletedKeys.value = nextKeys
+function taskPresentation(progress: TaskProgress) {
+  return TASK_TYPE_PRESENTATION[progress.task.type]
 }
-
-function keepCompletedTaskVisible(key: string) {
-  const existingTimer = completedVisibilityTimers.get(key)
-  if (existingTimer) clearTimeout(existingTimer)
-
-  recentlyCompletedKeys.value = new Set(recentlyCompletedKeys.value).add(key)
-  completedVisibilityTimers.set(key, setTimeout(() => {
-    clearCompletedTaskVisibility(key)
-  }, 2000))
-}
-
-watch(
-  () => selectedProgress.value.map(progress => ({
-    key: visibilityKey(progress),
-    resolved: taskIsResolved(progress),
-  })),
-  (current, previous = []) => {
-    const previousByKey = new Map(previous.map(item => [item.key, item.resolved]))
-    const currentByKey = new Map(current.map(item => [item.key, item.resolved]))
-
-    current.forEach((item) => {
-      if (item.resolved && previousByKey.get(item.key) === false) {
-        keepCompletedTaskVisible(item.key)
-      }
-      if (!item.resolved) clearCompletedTaskVisibility(item.key)
-    })
-
-    previous.forEach((item) => {
-      if (currentByKey.has(item.key)) return
-      clearCompletedTaskVisibility(item.key)
-    })
-  },
-)
 
 function progressIsToday(progress: TaskProgress) {
   return progress.scheduledDate === toDateKey(new Date())
@@ -534,6 +504,41 @@ function openTaskActions(progress: TaskProgress) {
   taskSheet.value = true
 }
 
+function runTaskMainAction(action: TaskMainActionItem) {
+  const progress = taskActionProgress.value
+  if (!progress || action.disabled) return
+  taskSheet.value = false
+  if (action.id === 'toggle-complete') {
+    void runForProgress(progress, () => store.setStatus(progress, progress.complete ? 'pending' : 'completed'))
+    return
+  }
+  if (action.id === 'start-interval') {
+    void startIntervalTask(progress)
+    return
+  }
+  if (action.id === 'start-review') {
+    void startFlashcardTask(progress)
+    return
+  }
+  if (action.id === 'log-amount') {
+    void openExact(progress, progress.task.type === 'step_counter')
+    return
+  }
+  if (action.id === 'log-time') {
+    openTimeLogger(progress)
+    return
+  }
+  if (action.id === 'toggle-total-lock') {
+    void runForProgress(progress, () => store.setDailyTotalSealed(progress))
+    return
+  }
+  if (action.id === 'sync-steps') {
+    syncStepCount()
+    return
+  }
+  if (action.id === 'write-journal') openJournalTask(progress)
+}
+
 function taskEntryKindLabel(entry: Entry) {
   if (isHealthConnectEntry(entry)) return 'Health Connect'
   if (entry.kind === 'duration') return 'Duration'
@@ -589,13 +594,6 @@ async function openTaskLogHistory() {
 }
 
 function runTaskCardAction(action: TaskCardActionId) {
-  if (action === 'complete-task') {
-    const progress = taskActionProgress.value
-    if (!progress) return
-    taskSheet.value = false
-    void runForProgress(progress, () => store.setStatus(progress, 'completed'))
-    return
-  }
   if (action === 'skip-task') {
     if (!taskActionProgress.value) return
     taskSheet.value = false
@@ -615,13 +613,6 @@ function runTaskCardAction(action: TaskCardActionId) {
     taskStatusDialog.value = true
     return
   }
-  if (action === 'log-additional-value') {
-    const progress = taskActionProgress.value
-    if (!progress) return
-    taskSheet.value = false
-    void openExact(progress, true)
-    return
-  }
   if (action === 'view-log-history') void openTaskLogHistory()
 }
 
@@ -629,7 +620,6 @@ async function confirmTaskSkipChange() {
   const progress = taskActionProgress.value
   if (!progress || taskSkipUpdating.value) return
   const skipping = progress.status !== 'skipped'
-  if (skipping) keepCompletedTaskVisible(visibilityKey(progress))
   taskSkipUpdating.value = true
   try {
     await store.toggleSkipped(progress, skipping)
@@ -934,7 +924,7 @@ async function saveTaskLogEntry() {
 </script>
 
 <template>
-  <main ref="taskPage" class="app-page today-page">
+  <main class="app-page today-page">
     <WeekDateNavigator
       v-model="selectedDate"
       v-model:week-start="visibleWeekStart"
@@ -986,175 +976,150 @@ async function saveTaskLogEntry() {
     <v-alert v-if="flashcardStartError" type="error" variant="tonal" class="mt-4">
       {{ flashcardStartError }}
     </v-alert>
-    <template v-if="displayedProgress.length">
-      <section v-if="required.length">
-        <div class="section-heading task-section-heading">
-          <h2>Tasks</h2>
-          <div class="task-section-heading__controls">
-            <v-btn
-              size="small"
-              :variant="taskFiltersActive ? 'tonal' : 'text'"
-              :color="taskFiltersActive ? 'secondary' : undefined"
-              prepend-icon="mdi-filter-variant"
-              :aria-pressed="taskFiltersActive"
-              @click="taskFiltersOpen = true"
-            >
-              Filter
-            </v-btn>
-            <v-btn size="small" variant="text" prepend-icon="mdi-plus" to="/tasks/new">
-              New
-            </v-btn>
-          </div>
-        </div>
-        <TransitionGroup
-          name="task-list"
-          tag="div"
-          class="task-stack"
-          @before-leave="pinLeavingTaskCard"
-          @after-leave="releaseLeavingTaskCard"
-          @leave-cancelled="releaseLeavingTaskCard"
-        >
-          <div
-            v-for="item in visibleRequired"
-            :key="visibilityKey(item)"
-            v-long-press-drag="{
-              id: progressKey(item),
-              group: 'required-task-cards',
-              handle: '[data-task-drag-handle]',
-              disabled: draggableTaskCount(visibleRequired) < 2 || busy || reorderingTasks,
-              onDrop: result => reorderTaskCards(result, visibleRequired),
-            }"
-            class="task-masonry-item"
-            :class="{ 'task-masonry-item--draggable': draggableTaskCount(visibleRequired) > 1 }"
-          >
-            <TaskCard
-              :progress="item"
-              :schedule-status="taskScheduleStatus(item)"
-              :busy="progressIsBusy(item)"
-              :value-pulse="valuePulseFor(item)"
-              :syncing="item.task.type === 'step_counter' && stepCountLoading"
-              :step-count-error="item.task.type === 'step_counter' ? stepCountError : ''"
-              :interval="intervalMeta(item)"
-              :can-start-interval="intervalCanStart(item)"
-              :interval-active="sessionMatchesProgress(item)"
-              :review-set="reviewSetMeta(item)"
-              :can-start-review="progressIsToday(item) && item.status === 'pending'"
-              :review-active="reviewSessionMatchesProgress(item)"
-              :trackers="trackingMeta(item)"
-              :can-log-tracking="trackingCanLog(item)"
-              :can-write-journal="journalCanWrite(item)"
-              @toggle="(progress, complete) => runForProgress(progress, () => store.toggleComplete(progress, complete))"
-              @seal="progress => runForProgress(progress, () => store.setDailyTotalSealed(progress))"
-              @log-amount="openExact"
-              @log-time="openTimeLogger"
-              @start-interval="startIntervalTask"
-              @start-review="startFlashcardTask"
-              @log-tracking="openTrackingLogger"
-              @log-tracking-time="openTrackingTimeLogger"
-              @write-journal="openJournalTask"
-              @sync-steps="syncStepCount"
-              @actions="openTaskActions"
-            />
-          </div>
-        </TransitionGroup>
-      </section>
+    <div class="section-heading task-section-heading">
+      <h2>Tasks</h2>
+      <v-btn size="small" variant="text" prepend-icon="mdi-plus" to="/tasks/new">
+        New
+      </v-btn>
+    </div>
 
-      <section v-if="optional.length">
-        <div class="section-heading task-section-heading">
-          <h2>Extra credit</h2>
-          <span v-if="required.length" class="text-caption muted">Optional</span>
-          <div v-else class="task-section-heading__controls">
-            <v-btn
-              size="small"
-              :variant="taskFiltersActive ? 'tonal' : 'text'"
-              :color="taskFiltersActive ? 'secondary' : undefined"
-              prepend-icon="mdi-filter-variant"
-              :aria-pressed="taskFiltersActive"
-              @click="taskFiltersOpen = true"
+    <section v-if="timedProgressGroups.length" class="task-schedule-section">
+      <div class="task-timeline">
+        <section v-for="group in timedProgressGroups" :key="group.hour" class="task-hour-group">
+          <time class="task-hour-label" :datetime="`${group.hour}:00`">{{ group.label }}</time>
+          <TransitionGroup name="task-list" tag="div" class="task-stack task-hour-stack">
+            <div
+              v-for="item in group.tasks"
+              :key="visibilityKey(item)"
+              class="task-masonry-item"
             >
-              Filter
-            </v-btn>
-            <v-btn size="small" variant="text" prepend-icon="mdi-plus" to="/tasks/new">
-              New
-            </v-btn>
-          </div>
-        </div>
-        <TransitionGroup
-          name="task-list"
-          tag="div"
-          class="task-stack"
-          @before-leave="pinLeavingTaskCard"
-          @after-leave="releaseLeavingTaskCard"
-          @leave-cancelled="releaseLeavingTaskCard"
-        >
-          <div
-            v-for="item in visibleOptional"
-            :key="visibilityKey(item)"
-            v-long-press-drag="{
-              id: progressKey(item),
-              group: 'optional-task-cards',
-              handle: '[data-task-drag-handle]',
-              disabled: draggableTaskCount(visibleOptional) < 2 || busy || reorderingTasks,
-              onDrop: result => reorderTaskCards(result, visibleOptional),
-            }"
-            class="task-masonry-item"
-            :class="{ 'task-masonry-item--draggable': draggableTaskCount(visibleOptional) > 1 }"
-          >
-            <TaskCard
-              :progress="item"
-              :schedule-status="taskScheduleStatus(item)"
-              :busy="progressIsBusy(item)"
-              :value-pulse="valuePulseFor(item)"
-              :syncing="item.task.type === 'step_counter' && stepCountLoading"
-              :step-count-error="item.task.type === 'step_counter' ? stepCountError : ''"
-              :interval="intervalMeta(item)"
-              :can-start-interval="intervalCanStart(item)"
-              :interval-active="sessionMatchesProgress(item)"
-              :review-set="reviewSetMeta(item)"
-              :can-start-review="progressIsToday(item) && item.status === 'pending'"
-              :review-active="reviewSessionMatchesProgress(item)"
-              :trackers="trackingMeta(item)"
-              :can-log-tracking="trackingCanLog(item)"
-              :can-write-journal="journalCanWrite(item)"
-              @toggle="(progress, complete) => runForProgress(progress, () => store.toggleComplete(progress, complete))"
-              @seal="progress => runForProgress(progress, () => store.setDailyTotalSealed(progress))"
-              @log-amount="openExact"
-              @log-time="openTimeLogger"
-              @start-interval="startIntervalTask"
-              @start-review="startFlashcardTask"
-              @log-tracking="openTrackingLogger"
-              @log-tracking-time="openTrackingTimeLogger"
-              @write-journal="openJournalTask"
-              @sync-steps="syncStepCount"
-              @actions="openTaskActions"
-            />
-          </div>
-        </TransitionGroup>
-      </section>
-    </template>
+              <TaskCard
+                :progress="item"
+                :time-label="taskTimeLabel(item)"
+                :schedule-status="taskScheduleStatus(item)"
+                :busy="progressIsBusy(item)"
+                :value-pulse="valuePulseFor(item)"
+                :syncing="item.task.type === 'step_counter' && stepCountLoading"
+                :step-count-error="item.task.type === 'step_counter' ? stepCountError : ''"
+                :interval="intervalMeta(item)"
+                :review-set="reviewSetMeta(item)"
+                :trackers="trackingMeta(item)"
+                :can-log-tracking="trackingCanLog(item)"
+                @log-tracking="openTrackingLogger"
+                @log-tracking-time="openTrackingTimeLogger"
+                @actions="openTaskActions"
+              />
+            </div>
+          </TransitionGroup>
+        </section>
+      </div>
+    </section>
 
-    <v-card v-else-if="!loading" class="surface-card empty-card pa-8 mt-6 text-center">
+    <section
+      v-if="allDayProgress.length"
+      class="task-schedule-section"
+      :class="{ 'mt-6': timedProgressGroups.length }"
+    >
+      <h3 class="task-schedule-label mb-3">All day</h3>
+      <TransitionGroup name="task-list" tag="div" class="task-stack">
+        <div
+          v-for="item in allDayProgress"
+          :key="visibilityKey(item)"
+          v-long-press-drag="{
+            id: progressKey(item),
+            group: 'all-day-task-cards',
+            handle: '[data-task-drag-handle]',
+            disabled: draggableTaskCount(allDayProgress) < 2 || busy || reorderingTasks,
+            onDrop: result => reorderTaskCards(result, allDayProgress),
+          }"
+          class="task-masonry-item"
+          :class="{ 'task-masonry-item--draggable': draggableTaskCount(allDayProgress) > 1 }"
+        >
+          <TaskCard
+            :progress="item"
+            :schedule-status="taskScheduleStatus(item)"
+            :busy="progressIsBusy(item)"
+            :value-pulse="valuePulseFor(item)"
+            :syncing="item.task.type === 'step_counter' && stepCountLoading"
+            :step-count-error="item.task.type === 'step_counter' ? stepCountError : ''"
+            :interval="intervalMeta(item)"
+            :review-set="reviewSetMeta(item)"
+            :trackers="trackingMeta(item)"
+            :can-log-tracking="trackingCanLog(item)"
+            @log-tracking="openTrackingLogger"
+            @log-tracking-time="openTrackingTimeLogger"
+            @actions="openTaskActions"
+          />
+        </div>
+      </TransitionGroup>
+    </section>
+
+    <v-card v-if="!selectedProgress.length && !loading" class="surface-card empty-card pa-8 text-center">
       <div class="empty-icon mx-auto mb-4"><v-icon icon="mdi-arm-flex-outline" size="32" /></div>
       <h2 class="text-h6 font-weight-black">No tasks scheduled</h2>
       <p class="text-body-2 muted mt-2 mb-5">
         {{ store.tasks.length
-          ? 'Use the filter to see routines that are not scheduled for this day.'
+          ? 'Nothing is planned for this day. Your other tasks are available below.'
           : 'Build your first routine and it will show up here.' }}
       </p>
-      <div class="d-flex flex-wrap justify-center ga-2">
-        <v-btn
-          v-if="store.tasks.length"
-          variant="tonal"
-          prepend-icon="mdi-filter-variant"
-          @click="taskFiltersOpen = true"
-        >
-          Filter
-        </v-btn>
-        <v-btn color="secondary" prepend-icon="mdi-plus" to="/tasks/new">
-          {{ store.tasks.length ? 'New' : 'Create a task' }}
-        </v-btn>
-      </div>
+      <v-btn color="secondary" prepend-icon="mdi-plus" to="/tasks/new">
+        {{ store.tasks.length ? 'New' : 'Create a task' }}
+      </v-btn>
     </v-card>
+
+    <section v-if="notScheduledProgress.length" class="not-scheduled-section mt-6">
+      <v-btn
+        block
+        variant="text"
+        class="not-scheduled-section__heading px-4"
+        :aria-expanded="notScheduledExpanded"
+        aria-controls="not-scheduled-tasks"
+        @click="notScheduledExpanded = !notScheduledExpanded"
+      >
+        <h3>Not scheduled</h3>
+        <span class="not-scheduled-section__count">{{ notScheduledProgress.length }}</span>
+        <v-icon :icon="notScheduledExpanded ? 'mdi-chevron-up' : 'mdi-chevron-down'" size="small" />
+      </v-btn>
+      <v-expand-transition>
+        <v-list
+          v-show="notScheduledExpanded"
+          id="not-scheduled-tasks"
+          bg-color="transparent"
+          class="pa-0"
+        >
+          <v-list-item
+            v-for="item in notScheduledProgress"
+            :key="visibilityKey(item)"
+            :title="item.task.name"
+            :subtitle="notScheduledSubtitle(item)"
+            rounded="lg"
+            class="not-scheduled-task"
+            @click="openTaskActions(item)"
+          >
+            <template #prepend>
+              <div class="not-scheduled-task__icon-wrap mr-3">
+                <span
+                  class="not-scheduled-task__icon"
+                  :style="{ background: item.task.color || taskPresentation(item).color }"
+                >
+                  <v-icon :icon="item.task.active ? taskPresentation(item).icon : 'mdi-pause'" size="1rem" />
+                </span>
+                <span
+                  v-if="item.task.mandatory && !item.complete"
+                  class="not-scheduled-task__required"
+                  role="img"
+                  aria-label="Required task"
+                  title="Required"
+                />
+              </div>
+            </template>
+            <template #append>
+              <v-icon icon="mdi-chevron-right" size="small" color="medium-emphasis" />
+            </template>
+          </v-list-item>
+        </v-list>
+      </v-expand-transition>
+    </section>
 
     <AppDialog
       v-model="exactDialog"
@@ -1286,31 +1251,6 @@ async function saveTaskLogEntry() {
     />
 
     <ActionBottomSheet
-      v-model="taskFiltersOpen"
-      title="Task filters"
-      hide-title
-      aria-label="Task filters"
-    >
-      <v-list-item
-        v-for="filter in TASK_FILTER_ITEMS"
-        :key="filter.id"
-        :title="filter.title"
-        rounded="lg"
-        @click="toggleTaskFilter(filter.id)"
-      >
-        <template #append>
-          <v-checkbox-btn
-            :model-value="taskFilterEnabled(filter.id)"
-            color="secondary"
-            hide-details="auto"
-            :aria-label="filter.ariaLabel"
-            @click.stop="toggleTaskFilter(filter.id)"
-          />
-        </template>
-      </v-list-item>
-    </ActionBottomSheet>
-
-    <ActionBottomSheet
       v-model="taskSheet"
       :title="taskSheetMode === 'history' ? 'Log history' : taskActionTitle"
       :description="taskSheetDescription"
@@ -1318,6 +1258,17 @@ async function saveTaskLogEntry() {
       :aria-label="taskSheetMode === 'history' ? `${taskActionTitle} log history` : `${taskActionTitle} actions`"
     >
       <template v-if="taskActionProgress && taskSheetMode === 'actions'">
+        <v-list-item
+          v-for="action in taskMainActionItems"
+          :key="action.id"
+          class="task-main-action"
+          :prepend-icon="action.icon"
+          :title="action.title"
+          :disabled="action.disabled || progressIsBusy(taskActionProgress)"
+          rounded="lg"
+          @click="runTaskMainAction(action)"
+        />
+        <v-divider v-if="taskMainActionItems.length && taskCardActionItems.length" class="my-2" />
         <template v-for="action in taskCardActionItems" :key="action.id">
           <v-list-item
             :prepend-icon="action.icon"
@@ -1501,11 +1452,18 @@ async function saveTaskLogEntry() {
 
 <style scoped>
 .score-card { position: relative; overflow: hidden; }
-.score-pattern { position: absolute; top: -70px; right: -40px; width: 220px; height: 220px; border: 35px solid rgba(199,244,100,.07); border-radius: 50%; }
+.score-pattern { position: absolute; top: -4.375rem; right: -2.5rem; width: 13.75rem; height: 13.75rem; border: 2.1875rem solid rgba(199,244,100,.07); border-radius: 50%; }
 .score-number { font-family: Impact, "Arial Narrow", sans-serif; font-size: 3.2rem; line-height: .9; letter-spacing: -.03em; }
 .score-percent { color: #c7f464; font-size: 1.2rem; font-weight: 900; }
 .task-section-heading { flex-wrap: wrap; gap: .75rem; }
-.task-section-heading__controls { display: flex; min-width: 0; margin-left: auto; align-items: center; justify-content: flex-end; }
+.task-schedule-section { min-width: 0; }
+.task-schedule-label {
+  color: rgb(var(--v-theme-on-surface) / .62);
+  font-size: .72rem;
+  font-weight: 900;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
 .task-stack {
   --task-card-gap: .7rem;
 
@@ -1543,17 +1501,49 @@ async function saveTaskLogEntry() {
     transform .22s cubic-bezier(.22, 1, .36, 1),
     margin-bottom .22s cubic-bezier(.22, 1, .36, 1);
 }
-.empty-icon { display: grid; width: 64px; height: 64px; place-items: center; border-radius: 20px; background: #c7f464; color: #17200f; }
+.task-timeline { display: grid; gap: 1rem; }
+.task-hour-group { display: grid; min-width: 0; grid-template-columns: 2.5rem minmax(0, 1fr); gap: .75rem; }
+.task-hour-label {
+  padding-top: .9rem;
+  color: rgb(var(--v-theme-on-surface) / .62);
+  font-size: .72rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 900;
+  letter-spacing: .02em;
+  text-align: right;
+  white-space: nowrap;
+}
+.task-hour-stack { min-width: 0; }
+.empty-card { margin-top: 0; }
+.empty-icon { display: grid; width: 4rem; height: 4rem; place-items: center; border-radius: 1.25rem; background: #c7f464; color: #17200f; }
+.not-scheduled-section__heading { min-height: 2.75rem; }
+.not-scheduled-section__heading :deep(.v-btn__content) { width: 100%; justify-content: flex-start; gap: .5rem; }
+.not-scheduled-section__heading h3 { font-size: .75rem; font-weight: 900; letter-spacing: .04em; }
+.not-scheduled-section__count { margin-left: auto; color: rgb(var(--v-theme-on-surface) / .54); font-size: .68rem; font-weight: 800; }
+.not-scheduled-task { min-height: 3.5rem; }
+.not-scheduled-task__icon-wrap { position: relative; flex: 0 0 auto; }
+.not-scheduled-task__icon { display: grid; width: 2rem; height: 2rem; place-items: center; border-radius: .65rem; color: #17200f; }
+.not-scheduled-task__required {
+  position: absolute;
+  top: -.18rem;
+  right: -.18rem;
+  width: .65rem;
+  height: .65rem;
+  border: .12rem solid rgb(var(--v-theme-surface));
+  border-radius: 50%;
+  background: rgb(var(--v-theme-error));
+}
+.task-main-action :deep(.v-list-item__prepend > .v-icon) { color: rgb(var(--v-theme-secondary)); }
 .amount-keypad { display: grid; gap: 1rem; }
-.amount-keypad__display { display: flex; min-height: 72px; align-items: center; justify-content: space-between; padding: .75rem 1rem; border: 1px solid rgb(var(--v-theme-on-surface) / .16); border-radius: 16px; background: rgb(var(--v-theme-surface-variant)); font-size: 2rem; font-weight: 900; line-height: 1; }
+.amount-keypad__display { display: flex; min-height: 4.5rem; align-items: center; justify-content: space-between; padding: .75rem 1rem; border: .0625rem solid rgb(var(--v-theme-on-surface) / .16); border-radius: 1rem; background: rgb(var(--v-theme-surface-variant)); font-size: 2rem; font-weight: 900; line-height: 1; }
 .amount-keypad__display output { margin-left: auto; }
 .amount-keypad__keys { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .65rem; }
-.amount-keypad__keys .v-btn { min-width: 0; height: 54px; font-size: 1.05rem; font-weight: 850; }
+.amount-keypad__keys .v-btn { min-width: 0; height: 3.375rem; font-size: 1.05rem; font-weight: 850; }
 .exact-actions {
   display: grid;
   grid-template:
-    "set add" 44px
-    "subtract add" 44px
+    "set add" 2.75rem
+    "subtract add" 2.75rem
     / minmax(0, 1fr) minmax(0, 1fr);
   gap: .5rem;
 }
@@ -1565,7 +1555,7 @@ async function saveTaskLogEntry() {
 .task-log-action { width: 2.75rem !important; min-width: 2.75rem !important; height: 2.75rem !important; }
 .task-log-value { display: block; margin-top: .125rem; color: rgb(var(--v-theme-on-surface)); font-size: .8rem; white-space: nowrap; }
 .task-log-empty { min-height: 10rem; }
-.review-row { display: flex; flex-direction: column; align-items: stretch; gap: 1rem; border-top: 1px solid rgba(255,255,255,.08); }
+.review-row { display: flex; flex-direction: column; align-items: stretch; gap: 1rem; border-top: .0625rem solid rgb(var(--v-theme-on-surface) / .08); }
 .review-actions { display: grid; gap: .5rem; }
 .review-actions .v-btn { width: 100%; }
 
@@ -1576,22 +1566,10 @@ async function saveTaskLogEntry() {
   .task-list-move { transition-duration: 0s; }
 }
 
-@media (min-width: 700px) {
+@media (min-width: 43.75rem) {
   .task-stack { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .task-hour-stack { grid-template-columns: 1fr; }
   .review-actions { grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
-}
-
-@media (min-width: 960px) {
-  .task-stack {
-    display: block;
-    column-count: 2;
-    column-gap: .7rem;
-  }
-
-  .task-masonry-item {
-    width: 100%;
-    break-inside: avoid;
-  }
 }
 
 </style>

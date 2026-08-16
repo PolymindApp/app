@@ -105,6 +105,8 @@ final class Schema
                     'mandatory' => self::boolean(),
                     'review_when_missed' => self::boolean(),
                     'active' => self::boolean(),
+                    'schedule_mode' => self::choice(['all_day', 'time_based']),
+                    'scheduled_time' => self::timeKey(false, true),
                     'start_date' => self::dateKey(true),
                     'end_date' => self::dateKey(false, true),
                     'recurrence_type' => self::choice(['daily', 'weekdays', 'interval_weeks'], true),
@@ -412,9 +414,9 @@ final class Schema
         return ['type' => 'timestamp', 'required' => $required, 'allowEmpty' => $allowEmpty];
     }
 
-    private static function timeKey(): array
+    private static function timeKey(bool $required = true, bool $allowEmpty = false): array
     {
-        return ['type' => 'time_key', 'required' => true];
+        return ['type' => 'time_key', 'required' => $required, 'allowEmpty' => $allowEmpty];
     }
 
     private static function relation(bool $required = false, bool $allowEmpty = false): array

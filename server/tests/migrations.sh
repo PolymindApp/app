@@ -44,7 +44,7 @@ run_migrations() {
 
 sqlite3 "$empty_db" 'VACUUM'
 first_run="$(run_migrations "$empty_db")"
-[[ "$first_run" == "202607290001,202607290002,202607290003,202607300001,202607310001,202607310002,202607310003,202608010001,202608020001,202608020002,202608020003,202608020004,202608050001,202608050002,202608050003,202608060001,202608060002,202608060003,202608060004,202608070001,202608070002,202608070003,202608070004,202608070005,202608070006,202608080001,202608080003,202608090001,202608090002,202608100001,202608100002,202608110001,202608120001,202608120002,202608120003,202608130001,202608140001,202608140002,202608140003,202608160001" ]] || {
+[[ "$first_run" == "202607290001,202607290002,202607290003,202607300001,202607310001,202607310002,202607310003,202608010001,202608020001,202608020002,202608020003,202608020004,202608050001,202608050002,202608050003,202608060001,202608060002,202608060003,202608060004,202608070001,202608070002,202608070003,202608070004,202608070005,202608070006,202608080001,202608080003,202608090001,202608090002,202608100001,202608100002,202608110001,202608120001,202608120002,202608120003,202608130001,202608140001,202608140002,202608140003,202608160001,202608160002" ]] || {
   echo "An empty database did not apply the complete migration sequence." >&2
   exit 1
 }
@@ -89,7 +89,7 @@ for table in "${expected_tables[@]}"; do
 done
 
 migration_count="$(sqlite3 "$empty_db" 'SELECT COUNT(*) FROM backontrack_schema_migrations;')"
-[[ "$migration_count" == 40 ]] || {
+[[ "$migration_count" == 41 ]] || {
   echo "Migration history does not contain all migrations." >&2
   exit 1
 }
@@ -102,6 +102,18 @@ tracker_reminder_columns="$(sqlite3 "$empty_db" \
    WHERE name IN ('reminder_enabled', 'reminder_time', 'reminder_show_name');")"
 [[ "$task_reminder_columns" == 2 && "$tracker_reminder_columns" == 0 ]] || {
   echo "Task reminder fields were not moved away from trackers." >&2
+  exit 1
+}
+
+task_schedule_columns="$(sqlite3 "$empty_db" \
+  "SELECT COUNT(*) FROM pragma_table_info('tasks')
+   WHERE name IN ('schedule_mode', 'scheduled_time');")"
+task_schedule_defaults="$(sqlite3 "$empty_db" \
+  "SELECT group_concat(name || ':' || dflt_value, ',')
+   FROM pragma_table_info('tasks')
+   WHERE name IN ('schedule_mode', 'scheduled_time') ORDER BY cid;")"
+[[ "$task_schedule_columns" == 2 && "$task_schedule_defaults" == "schedule_mode:'all_day',scheduled_time:''" ]] || {
+  echo "Task scheduling fields were not created with all-day defaults." >&2
   exit 1
 }
 
@@ -207,7 +219,7 @@ cli_output="$(
   BACKONTRACK_API_SECRET="backontrack-migration-test-secret-at-least-32-characters" \
     php server/migrate.php
 )"
-[[ "$cli_output" == *"Applied 40 migrations"* && "$cli_output" == *"202608160001"* ]] || {
+[[ "$cli_output" == *"Applied 41 migrations"* && "$cli_output" == *"202608160002"* ]] || {
   echo "The migration CLI did not initialize and report a new database." >&2
   exit 1
 }
@@ -266,9 +278,9 @@ php -r '
   $response = json_decode(file_get_contents($argv[1]), true, 512, JSON_THROW_ON_ERROR);
   if (
       ($response["status"] ?? null) !== "ok"
-      || count($response["appliedMigrations"] ?? []) !== 40
-      || ($response["currentVersion"] ?? null) !== "202608160001"
-      || ($response["migrationCount"] ?? null) !== 40
+      || count($response["appliedMigrations"] ?? []) !== 41
+      || ($response["currentVersion"] ?? null) !== "202608160002"
+      || ($response["migrationCount"] ?? null) !== 41
   ) {
       fwrite(STDERR, "The HTTP migration response was invalid.\n");
       exit(1);
@@ -315,7 +327,7 @@ php -r '
   $pdo->exec("DROP TABLE IF EXISTS image_concepts_fts");
 ' "$existing_db"
 sqlite3 "$existing_db" \
-  "DELETE FROM backontrack_schema_migrations WHERE version IN ('202608050001', '202608050002', '202608050003', '202608060001', '202608060002', '202608060003', '202608060004', '202608070001', '202608070002', '202608070003', '202608070004', '202608070005', '202608070006', '202608080001', '202608080003', '202608090001', '202608090002', '202608100001', '202608100002', '202608110001', '202608120001', '202608120002', '202608120003', '202608130001', '202608140001', '202608140002', '202608140003', '202608160001');
+  "DELETE FROM backontrack_schema_migrations WHERE version IN ('202608050001', '202608050002', '202608050003', '202608060001', '202608060002', '202608060003', '202608060004', '202608070001', '202608070002', '202608070003', '202608070004', '202608070005', '202608070006', '202608080001', '202608080003', '202608090001', '202608090002', '202608100001', '202608100002', '202608110001', '202608120001', '202608120002', '202608120003', '202608130001', '202608140001', '202608140002', '202608140003', '202608160001', '202608160002');
    DROP INDEX IF EXISTS idx_entries_task_source_session;
    DROP INDEX IF EXISTS idx_interval_templates_owner_flashcard_review_set;
    DROP INDEX IF EXISTS idx_tasks_owner_flashcard_review_set;
@@ -357,6 +369,13 @@ for reminder_column in reminder_enabled reminder_times; do
     "SELECT COUNT(*) FROM pragma_table_info('tasks') WHERE name = '$reminder_column';")"
   if [[ "$existing_task_reminder_column" == 1 ]]; then
     sqlite3 "$existing_db" "ALTER TABLE tasks DROP COLUMN $reminder_column;"
+  fi
+done
+for schedule_column in schedule_mode scheduled_time; do
+  existing_task_schedule_column="$(sqlite3 "$existing_db" \
+    "SELECT COUNT(*) FROM pragma_table_info('tasks') WHERE name = '$schedule_column';")"
+  if [[ "$existing_task_schedule_column" == 1 ]]; then
+    sqlite3 "$existing_db" "ALTER TABLE tasks DROP COLUMN $schedule_column;"
   fi
 done
 for session_column in session_count_mode session_goal_type session_target_seconds; do
@@ -413,7 +432,7 @@ before_counts="$(sqlite3 "$existing_db" \
 existing_run="$(run_migrations "$existing_db")"
 after_counts="$(sqlite3 "$existing_db" \
   "SELECT (SELECT COUNT(*) FROM tasks) || ':' || (SELECT COUNT(*) FROM entries);")"
-[[ "$existing_run" == "202608050001,202608050002,202608050003,202608060001,202608060002,202608060003,202608060004,202608070001,202608070002,202608070003,202608070004,202608070005,202608070006,202608080001,202608080003,202608090001,202608090002,202608100001,202608100002,202608110001,202608120001,202608120002,202608120003,202608130001,202608140001,202608140002,202608140003,202608160001" ]] || {
+[[ "$existing_run" == "202608050001,202608050002,202608050003,202608060001,202608060002,202608060003,202608060004,202608070001,202608070002,202608070003,202608070004,202608070005,202608070006,202608080001,202608080003,202608090001,202608090002,202608100001,202608100002,202608110001,202608120001,202608120002,202608120003,202608130001,202608140001,202608140002,202608140003,202608160001,202608160002" ]] || {
   echo "An existing PHP database did not apply only the pending feature migrations." >&2
   exit 1
 }
@@ -612,6 +631,16 @@ task_tracking_column="$(sqlite3 "$existing_db" \
   "SELECT type || ':' || dflt_value FROM pragma_table_info('tasks') WHERE name = 'tracking_trackers';")"
 [[ "$task_tracking_column" == "JSON:'[]'" ]] || {
   echo "The task tracking migration did not install its tracker selection column." >&2
+  exit 1
+}
+
+task_schedule_columns="$(sqlite3 "$existing_db" \
+  "SELECT COUNT(*) FROM pragma_table_info('tasks')
+   WHERE name IN ('schedule_mode', 'scheduled_time');")"
+legacy_timed_tasks="$(sqlite3 "$existing_db" \
+  "SELECT COUNT(*) FROM tasks WHERE schedule_mode <> 'all_day' OR scheduled_time <> '';")"
+[[ "$task_schedule_columns" == 2 && "$legacy_timed_tasks" == 0 ]] || {
+  echo "The task schedule migration did not preserve legacy tasks as all-day work." >&2
   exit 1
 }
 

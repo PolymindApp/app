@@ -2469,6 +2469,8 @@ final class Api
             $body += [
                 'entry_notes_enabled' => false,
                 'entry_note_suggestions_enabled' => false,
+                'schedule_mode' => 'all_day',
+                'scheduled_time' => '',
             ];
         }
         if ($collection['name'] === 'flashcards') {
@@ -6048,6 +6050,14 @@ final class Api
         }
 
         if ($collection === 'tasks') {
+            $scheduleMode = (string) ($record['schedule_mode'] ?? 'all_day');
+            $scheduledTime = (string) ($record['scheduled_time'] ?? '');
+            if ($scheduleMode === 'time_based' && $scheduledTime === '') {
+                throw new ApiException(422, 'Choose a time for a time-based task.');
+            }
+            if ($scheduleMode === 'all_day' && $scheduledTime !== '') {
+                throw new ApiException(422, 'All-day tasks cannot have a scheduled time.');
+            }
             foreach (($record['tags'] ?? []) as $tag) {
                 if (!is_string($tag) || !$this->relationExists('tags', $tag, $owner)) {
                     throw new ApiException(422, 'A selected tag is invalid.');

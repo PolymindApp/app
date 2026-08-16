@@ -48,7 +48,8 @@ final class Database
             ],
             'tasks' => [
                 'id', 'owner', 'name', 'description', 'type', 'tags', 'mandatory',
-                'review_when_missed', 'active', 'start_date', 'end_date',
+                'review_when_missed', 'active', 'schedule_mode', 'scheduled_time',
+                'start_date', 'end_date',
                 'recurrence_type', 'weekdays', 'interval_weeks', 'target_value',
                 'target_operator', 'unit', 'custom_unit', 'goal_period',
                 'quick_amounts', 'cycle_length', 'program_repeat', 'program_strict',

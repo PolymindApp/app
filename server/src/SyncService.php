@@ -896,7 +896,7 @@ final class SyncService
             'relation' => $value === '' ? '' : $this->recordId($value),
             'date_key' => $this->dateValue($field, $value),
             'timestamp' => $this->timestampValue($field, $value),
-            'time_key' => is_string($value) && preg_match('/^\d{2}:\d{2}$/', $value) === 1
+            'time_key' => is_string($value) && preg_match('/^(?:[01]\d|2[0-3]):[0-5]\d$/', $value) === 1
                 ? $value
                 : throw new ApiException(422, "The {$field} field is invalid."),
             default => throw new ApiException(422, "The {$field} field is not writable."),
@@ -1008,6 +1008,14 @@ final class SyncService
             ]);
         }
         if ($resource === 'tasks') {
+            $scheduleMode = (string) ($values['schedule_mode'] ?? 'all_day');
+            $scheduledTime = (string) ($values['scheduled_time'] ?? '');
+            if ($scheduleMode === 'time_based' && $scheduledTime === '') {
+                throw new ApiException(422, 'Choose a time for a time-based task.');
+            }
+            if ($scheduleMode === 'all_day' && $scheduledTime !== '') {
+                throw new ApiException(422, 'All-day tasks cannot have a scheduled time.');
+            }
             $reminderTimes = $values['reminder_times'] ?? [];
             foreach ($reminderTimes as $time) {
                 if (!is_string($time) || preg_match('/^(?:[01]\d|2[0-3]):[0-5]\d$/', $time) !== 1) {

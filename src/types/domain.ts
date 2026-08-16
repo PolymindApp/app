@@ -2,6 +2,7 @@ export type TaskType = 'check' | 'duration' | 'daily_total' | 'step_counter' | '
 export type StepSource = 'health_connect'
 
 export type RecurrenceType = 'daily' | 'weekdays' | 'interval_weeks'
+export type TaskScheduleMode = 'all_day' | 'time_based'
 export type GoalPeriod = 'occurrence' | 'week'
 export type TargetOperator = 'gte' | 'lte' | 'eq'
 export type OccurrenceStatus = 'pending' | 'completed' | 'missed' | 'carried' | 'rescheduled' | 'skipped'
@@ -28,6 +29,8 @@ export interface Task {
   mandatory: boolean
   reviewWhenMissed: boolean
   active: boolean
+  scheduleMode?: TaskScheduleMode
+  scheduledTime?: string
   startDate: string
   endDate?: string
   recurrenceType: RecurrenceType

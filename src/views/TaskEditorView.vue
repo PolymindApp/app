@@ -60,6 +60,8 @@ const draft = reactive<TaskDraft>({
   mandatory: true,
   reviewWhenMissed: false,
   active: true,
+  scheduleMode: 'time_based',
+  scheduledTime: '09:00',
   startDate: format(new Date(), 'yyyy-MM-dd'),
   endDate: undefined,
   recurrenceType: 'daily',
@@ -85,6 +87,10 @@ const draft = reactive<TaskDraft>({
   reminderEnabled: false,
   reminderTimes: ['20:00'],
   steps: [],
+})
+const scheduledTimeModel = computed({
+  get: () => draft.scheduledTime || '09:00',
+  set: (value: number | string) => { draft.scheduledTime = String(value) },
 })
 
 const showTarget = computed(() =>
@@ -361,6 +367,10 @@ async function save() {
     error.value = 'Choose a different time for each notification.'
     return
   }
+  if (draft.scheduleMode === 'time_based' && !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(draft.scheduledTime || '')) {
+    error.value = 'Choose a valid time for this task.'
+    return
+  }
   const incompleteIntervalStep = draft.type === 'program'
     ? draft.steps.findIndex(step => step.completionType === 'interval' && !step.intervalTemplate)
     : -1
@@ -605,6 +615,37 @@ async function removeTask() {
             <p>A linked journal entry completes this task for its scheduled date.</p>
           </div>
         </div>
+      </v-card>
+
+      <v-card class="surface-card field-stack pa-5 mb-4">
+        <div>
+          <h2 class="text-body-1 font-weight-black">Time</h2>
+          <p class="text-body-2 muted mt-1">Place this task in the all-day list or at a specific time.</p>
+        </div>
+        <v-btn-toggle
+          v-model="draft.scheduleMode"
+          class="schedule-mode-toggle"
+          color="secondary"
+          selected-class="schedule-mode-toggle--selected"
+          mandatory
+        >
+          <v-btn value="all_day" prepend-icon="mdi-calendar-blank-outline">
+            All day
+          </v-btn>
+          <v-btn value="time_based" prepend-icon="mdi-clock-outline">
+            Time based
+          </v-btn>
+        </v-btn-toggle>
+        <v-expand-transition>
+          <div v-if="draft.scheduleMode === 'time_based'" class="scheduled-time-setting">
+            <label class="field-label">Scheduled time <span class="text-error">*</span></label>
+            <TimerWheelPicker
+              v-model="scheduledTimeModel"
+              mode="time"
+              class="mt-2"
+            />
+          </div>
+        </v-expand-transition>
       </v-card>
 
       <TaskReminderSettings
@@ -910,6 +951,14 @@ async function removeTask() {
   opacity: 1;
 }
 .field-stack { display: grid; gap: 1rem; }
+.schedule-mode-toggle { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); height: auto; }
+.schedule-mode-toggle :deep(.v-btn) { min-width: 0; min-height: 2.75rem; }
+.schedule-mode-toggle :deep(.schedule-mode-toggle--selected) {
+  background: rgb(var(--v-theme-secondary));
+  color: rgb(var(--v-theme-on-secondary));
+  opacity: 1;
+}
+.scheduled-time-setting { min-width: 0; }
 .date-grid, .target-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
 .date-range-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); }
 .step-source-note { display: flex; align-items: flex-start; gap: .65rem; padding: .8rem; border-radius: 16px; background: rgb(var(--v-theme-surface-variant)); }

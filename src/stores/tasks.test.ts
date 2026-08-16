@@ -185,6 +185,35 @@ describe('quantitative task completion', () => {
     expect(store.loading).toBe(false)
   })
 
+  it('optimistically saves a task as time based with its selected hour and minute', async () => {
+    const store = useTaskStore()
+    let finishUpdate!: () => void
+    store.tasks = [{ ...task }]
+    apiMocks.updateTask.mockImplementation((id, payload) => new Promise((resolve) => {
+      finishUpdate = () => resolve({ id, ...payload })
+    }))
+    const draft: TaskDraft = {
+      ...task,
+      scheduleMode: 'time_based',
+      scheduledTime: '08:35',
+      steps: [],
+    }
+
+    const persistence = store.saveTask(draft)
+
+    expect(store.tasks[0]).toMatchObject({
+      scheduleMode: 'time_based',
+      scheduledTime: '08:35',
+    })
+    expect(apiMocks.updateTask).toHaveBeenCalledWith(task.id, expect.objectContaining({
+      schedule_mode: 'time_based',
+      scheduled_time: '08:35',
+    }))
+
+    finishUpdate()
+    await persistence
+  })
+
   it('reconciles persisted task and step ids into a new optimistic program', async () => {
     const store = useTaskStore()
     apiMocks.createTask.mockImplementation(async payload => ({ id: 'program-1', ...payload }))

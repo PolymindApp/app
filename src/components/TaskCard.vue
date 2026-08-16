@@ -1,87 +1,40 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, useId, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { formatIntervalDuration } from '@/services/intervals'
 import { goalState } from '@/services/schedule'
-import { taskCanLogAmounts } from '@/services/taskCardActions'
 import { TASK_TYPE_PRESENTATION } from '@/services/taskTypes'
 import type { TaskProgress, TrackingTaskTracker } from '@/types/domain'
 
-const TASK_CARD_EXPANSION_STORAGE_PREFIX = 'backontrack-task-card-expanded'
 const MIN_STEP_SYNC_INDICATOR_MS = 1000
-
-function expansionStorageKey(progress: TaskProgress) {
-  const taskId = encodeURIComponent(progress.task.id)
-  const stepId = encodeURIComponent(progress.programStep?.id || 'task')
-  return `${TASK_CARD_EXPANSION_STORAGE_PREFIX}:${taskId}:${stepId}`
-}
-
-function storedExpansionState(progress: TaskProgress) {
-  if (typeof sessionStorage === 'undefined') return undefined
-  try {
-    const stored = sessionStorage.getItem(expansionStorageKey(progress))
-    if (stored === 'expanded') return true
-    if (stored === 'collapsed') return false
-  } catch {
-    // The card remains usable when session storage is unavailable.
-  }
-  return undefined
-}
-
-function storeExpansionState(progress: TaskProgress, expanded: boolean) {
-  if (typeof sessionStorage === 'undefined') return
-  try {
-    sessionStorage.setItem(expansionStorageKey(progress), expanded ? 'expanded' : 'collapsed')
-  } catch {
-    // The in-memory component state remains the source of truth.
-  }
-}
 
 const props = defineProps<{
   progress: TaskProgress
   busy?: boolean
   valuePulse?: number
   interval?: { name: string; duration: string }
-  canStartInterval?: boolean
-  intervalActive?: boolean
   reviewSet?: { name: string; cardCount: number; mode: 'manual' | 'passive' }
-  canStartReview?: boolean
-  reviewActive?: boolean
   trackers?: TrackingTaskTracker[]
   canLogTracking?: boolean
-  canWriteJournal?: boolean
   syncing?: boolean
   stepCountError?: string
   scheduleStatus?: 'not-scheduled' | 'paused' | 'skipped'
+  timeLabel?: string
 }>()
 const emit = defineEmits<{
-  toggle: [progress: TaskProgress, complete: boolean]
-  seal: [progress: TaskProgress]
-  logAmount: [progress: TaskProgress]
-  logTime: [progress: TaskProgress]
-  review: [progress: TaskProgress]
-  startInterval: [progress: TaskProgress]
-  startReview: [progress: TaskProgress]
+  actions: [progress: TaskProgress]
   logTracking: [progress: TaskProgress, trackerId: string]
   logTrackingTime: [progress: TaskProgress, trackerId: string]
-  writeJournal: [progress: TaskProgress]
-  syncSteps: [progress: TaskProgress]
-  actions: [progress: TaskProgress]
 }>()
 
 const task = computed(() => props.progress.task)
 const step = computed(() => props.progress.programStep)
-const optimisticComplete = ref<boolean>()
-const togglePending = ref(false)
-const expanded = ref(storedExpansionState(props.progress) ?? !props.progress.complete)
 const valueAnimating = ref(false)
 const stepSyncIndicatorVisible = ref(Boolean(props.syncing))
-const detailsId = useId()
-const expansionKey = computed(() => expansionStorageKey(props.progress))
 let valueAnimationVersion = 0
 let stepSyncStartedAt = props.syncing ? Date.now() : 0
 let stepSyncHideTimer: ReturnType<typeof setTimeout> | undefined
-const displayedComplete = computed(() => optimisticComplete.value ?? props.progress.complete)
-const isCheck = computed(() => (step.value ? step.value.completionType === 'check' : task.value.type === 'check'))
+
+const isCheck = computed(() => step.value ? step.value.completionType === 'check' : task.value.type === 'check')
 const isInterval = computed(() =>
   (!step.value && task.value.type === 'interval') || step.value?.completionType === 'interval',
 )
@@ -97,12 +50,11 @@ const isTracking = computed(() => !step.value && task.value.type === 'tracking')
 const isJournal = computed(() => !step.value && task.value.type === 'journal')
 const isDailyTotal = computed(() => !step.value && task.value.type === 'daily_total')
 const isStepCounter = computed(() => !step.value && task.value.type === 'step_counter')
-const headerExpandable = computed(() => !props.scheduleStatus)
-const canLogAmount = computed(() => taskCanLogAmounts(props.progress))
-const canLogTime = computed(() => !step.value && task.value.type === 'duration')
-const canToggleCheck = computed(() =>
-  isCheck.value && !togglePending.value && !props.busy && !props.progress.locked,
-)
+const isNumeric = computed(() => !isCheck.value
+  && !isTracking.value
+  && !isJournal.value
+  && !isInterval.value
+  && !isFlashcards.value)
 const target = computed(() => isTracking.value
   ? task.value.trackingTrackers?.length ?? 0
   : isSessionDuration.value
@@ -118,14 +70,16 @@ const currentGoalState = computed(() => isCheck.value
   || isJournal.value
     ? 'neutral'
     : goalState(props.progress.value, target.value, targetOperator.value))
+
+function formatValue(value: number) {
+  if (isSessionDuration.value) return formatIntervalDuration(value)
+  if (task.value.type === 'duration' && !step.value) return `${value % 1 === 0 ? value : value.toFixed(2)}h`
+  if (isStepCounter.value) return `${Math.round(value).toLocaleString()} steps`
+  return `${Number(value.toFixed(2))}${unit.value ? ` ${unit.value}` : ''}`
+}
+
 const numericGoalStatus = computed(() => {
-  if (
-    isCheck.value
-    || (isInterval.value && !isSessionDuration.value)
-    || (isFlashcards.value && !isSessionDuration.value)
-    || isTracking.value
-    || isJournal.value
-  ) return undefined
+  if (!isNumeric.value && !isSessionDuration.value) return undefined
   const difference = target.value - props.progress.value
   if (targetOperator.value === 'gte' && currentGoalState.value === 'not_enough' && difference > 0) {
     return {
@@ -170,6 +124,7 @@ const numericGoalStatus = computed(() => {
   }
   return undefined
 })
+
 const taskTypePresentation = computed(() => TASK_TYPE_PRESENTATION[task.value.type])
 const taskColor = computed(() => task.value.color || taskTypePresentation.value.color)
 const isPausedTask = computed(() => props.scheduleStatus === 'paused')
@@ -186,22 +141,22 @@ const stateColor = computed(() => {
 const stateIcon = computed(() => {
   if (isPausedTask.value) return 'mdi-pause'
   if (isSkippedTask.value) return 'mdi-skip-next-outline'
-  if (displayedComplete.value) return 'mdi-check-bold'
+  if (props.progress.complete) return 'mdi-check-bold'
   if (props.progress.locked) return 'mdi-lock-outline'
   return taskTypePresentation.value.icon
 })
 const showingTaskTypeIcon = computed(() =>
-  !isPausedTask.value && !isSkippedTask.value && !displayedComplete.value && !props.progress.locked,
+  !isPausedTask.value && !isSkippedTask.value && !props.progress.complete && !props.progress.locked,
 )
 const stateIconColor = computed(() => {
   if (isPausedTask.value) return 'on-surface'
   if (isSkippedTask.value) return 'warning'
   if (showingTaskTypeIcon.value) return '#191C19'
-  if (displayedComplete.value) return 'white'
+  if (props.progress.complete) return 'white'
   return stateColor.value
 })
 const title = computed(() => step.value?.name || task.value.name)
-const subtitle = computed(() => {
+const baseSubtitle = computed(() => {
   if (isInterval.value) {
     return props.interval?.duration ? `Interval · ${props.interval.duration} total` : 'Interval'
   }
@@ -222,52 +177,13 @@ const subtitle = computed(() => {
   }
   return step.value ? `${task.value.name} · Program step` : task.value.description
 })
-
-function formatValue(value: number) {
-  if (isSessionDuration.value) return formatIntervalDuration(value)
-  if (task.value.type === 'duration' && !step.value) return `${value % 1 === 0 ? value : value.toFixed(2)}h`
-  if (isStepCounter.value) return `${Math.round(value).toLocaleString()} steps`
-  return `${Number(value.toFixed(2))}${unit.value ? ` ${unit.value}` : ''}`
-}
-
-function toggleCheckCompletion() {
-  if (!canToggleCheck.value) return
-  const complete = !displayedComplete.value
-  optimisticComplete.value = complete
-  togglePending.value = true
-  emit('toggle', props.progress, complete)
-}
-
-function toggleExpandedFromHeader() {
-  if (!headerExpandable.value) return
-  expanded.value = !expanded.value
-  storeExpansionState(props.progress, expanded.value)
-}
-
-watch(() => props.busy, (busy) => {
-  if (!busy) {
-    optimisticComplete.value = undefined
-    togglePending.value = false
-  }
-})
-
-watch(() => props.progress.complete, (complete) => {
-  if (complete === optimisticComplete.value || !props.busy) {
-    optimisticComplete.value = undefined
-    togglePending.value = false
-  }
-})
-
-watch(expansionKey, () => {
-  expanded.value = storedExpansionState(props.progress) ?? !props.progress.complete
-})
-
-watch(displayedComplete, (complete, wasComplete) => {
-  if (complete && !wasComplete) {
-    expanded.value = false
-    storeExpansionState(props.progress, false)
-  }
-})
+const subtitle = computed(() => [props.timeLabel, baseSubtitle.value || 'Personal'].filter(Boolean).join(' · '))
+const showsProgress = computed(() => isTracking.value || isNumeric.value || isSessionDuration.value)
+const hasPersistentDetails = computed(() => showsProgress.value
+  || Boolean(props.stepCountError)
+  || Boolean(numericGoalStatus.value)
+  || props.progress.locked
+  || props.progress.status === 'missed')
 
 watch(() => props.valuePulse, async (pulse, previousPulse) => {
   if (!pulse || pulse === previousPulse) return
@@ -306,375 +222,177 @@ onBeforeUnmount(() => clearTimeout(stepSyncHideTimer))
   <v-card
     class="task-card surface-card pa-4"
     :class="{
-      'task-card--done': displayedComplete,
+      'task-card--done': progress.complete,
       'task-card--sealed': progress.sealed,
       'task-card--outside-schedule': scheduleStatus,
     }"
     :style="{ '--task-color': taskColor }"
+    role="button"
+    tabindex="0"
+    :aria-label="`Open actions for ${title}`"
+    @click="emit('actions', progress)"
+    @keydown.enter.self.prevent="emit('actions', progress)"
+    @keydown.space.self.prevent="emit('actions', progress)"
   >
-    <div class="d-flex align-start ga-3">
-      <div
-        class="task-card-header-main d-flex align-start ga-3 flex-grow-1 min-width-0"
-        data-task-drag-handle
-        :class="{ 'task-card-header-main--expandable': headerExpandable }"
-        :role="headerExpandable ? 'button' : undefined"
-        :tabindex="headerExpandable ? 0 : undefined"
-        :aria-label="headerExpandable ? `${expanded ? 'Collapse' : 'Expand'} ${title}` : undefined"
-        :aria-expanded="headerExpandable ? expanded : undefined"
-        :aria-controls="headerExpandable ? detailsId : undefined"
-        @click="toggleExpandedFromHeader"
-        @keydown.enter.prevent="toggleExpandedFromHeader"
-        @keydown.space.prevent="toggleExpandedFromHeader"
-      >
+    <div class="d-flex align-start ga-3" data-task-drag-handle>
+      <div class="task-icon-area">
         <div
           class="check-control check-control--status"
           :class="{
             'check-control--type': showingTaskTypeIcon,
-            'check-control--done': displayedComplete && !isPausedTask,
+            'check-control--done': progress.complete && !isPausedTask,
             'check-control--paused': isPausedTask,
           }"
           :style="{ '--task-color': taskColor }"
           aria-hidden="true"
         >
-          <v-icon :icon="stateIcon" :color="stateIconColor" size="20" />
-        </div>
-
-        <div class="flex-grow-1 min-width-0">
-          <h3 class="task-title">{{ title }}</h3>
-          <v-expand-transition>
-            <div
-              v-if="task.mandatory || scheduleStatus"
-              class="task-card-tags d-flex align-center ga-2 mt-1"
-            >
-              <span v-if="task.mandatory" class="required-dot">Required</span>
-              <Transition name="task-tag">
-                <span v-if="scheduleStatus" :key="scheduleStatus" class="schedule-status">
-                  {{ scheduleStatus === 'paused'
-                    ? 'Paused'
-                    : scheduleStatus === 'skipped' ? 'Skipped' : 'Not scheduled' }}
-                </span>
-              </Transition>
-            </div>
-          </v-expand-transition>
-          <p class="task-subtitle text-truncate mt-1">{{ subtitle || 'Personal' }}</p>
-        </div>
-      </div>
-
-      <div class="task-card-header-actions d-flex align-center ga-1 flex-shrink-0">
-        <v-btn
-          v-if="isStepCounter"
-          class="task-health-connect-button"
-          color="secondary"
-          icon
-          variant="text"
-          size="small"
-          :disabled="stepSyncIndicatorVisible"
-          :aria-label="stepSyncIndicatorVisible ? 'Syncing Health Connect steps' : 'Sync Health Connect steps'"
-          @touchstart.stop
-          @click.stop="emit('syncSteps', progress)"
-        >
           <v-progress-circular
             v-if="stepSyncIndicatorVisible"
             class="task-sync-progress"
             indeterminate
-            size="18"
+            size="1.125rem"
             color="secondary"
             :width="2"
-            aria-hidden="true"
           />
-          <v-icon
-            v-else
-            class="task-health-connect-icon"
-            icon="mdi-heart-pulse"
-            size="1.0625rem"
-          />
-        </v-btn>
-        <v-btn
-          class="task-menu-button"
-          icon="mdi-dots-horizontal"
-          variant="text"
-          size="small"
-          :aria-label="`More actions for ${title}`"
-          @touchstart.stop
-          @click.stop="emit('actions', progress)"
+          <v-icon v-else :icon="stateIcon" :color="stateIconColor" size="1.25rem" />
+        </div>
+        <span
+          v-if="task.mandatory && !progress.complete"
+          class="task-required-badge"
+          role="img"
+          aria-label="Required task"
+          title="Required"
         />
       </div>
+
+      <div class="flex-grow-1 min-width-0 overflow-hidden">
+        <h3 class="task-title">{{ title }}</h3>
+        <Transition name="task-tag">
+          <span v-if="scheduleStatus" :key="scheduleStatus" class="schedule-status mt-1">
+            {{ scheduleStatus === 'paused'
+              ? 'Paused'
+              : scheduleStatus === 'skipped' ? 'Skipped' : 'Not scheduled' }}
+          </span>
+        </Transition>
+        <p class="task-subtitle text-truncate mt-1">{{ subtitle }}</p>
+      </div>
+
     </div>
 
-    <v-expand-transition>
-      <div
-        v-show="!scheduleStatus && expanded"
-        :id="detailsId"
-        class="task-card-body"
-      >
-        <v-btn
-          v-if="isCheck"
-          block
-          class="mt-4"
-          color="secondary"
-          :variant="displayedComplete ? 'tonal' : 'flat'"
-          :prepend-icon="displayedComplete ? 'mdi-undo-variant' : 'mdi-check-bold'"
-          :disabled="!canToggleCheck"
-          :aria-label="displayedComplete ? `Undone ${title}` : `Done ${title}`"
-          @touchstart.stop
-          @click.stop="toggleCheckCompletion"
-        >
-          {{ displayedComplete ? 'Undone' : 'Done' }}
-        </v-btn>
-
-        <div v-if="!isCheck" class="task-card-details">
-        <template v-if="isInterval">
-            <div v-if="isSessionDuration" class="metric-row mt-4">
-              <div>
-                <span
-                  class="metric-value"
-                  :class="{ 'metric-value--updated': valueAnimating }"
-                  @animationend="valueAnimating = false"
-                >{{ formatValue(progress.value) }}</span>
-                <span class="metric-target"> / {{ formatValue(target) }}</span>
-              </div>
-            </div>
-            <v-progress-linear
-              v-if="isSessionDuration"
-              :model-value="progress.percent"
-              :color="taskColor"
-              bg-color="white"
-              :bg-opacity="0.14"
-              rounded
-              height="7"
-              class="mt-2"
-            />
-            <v-btn
-              v-if="!displayedComplete && canStartInterval"
-              block
-              class="mt-4"
-              color="secondary"
-              prepend-icon="mdi-play"
-              :disabled="busy || progress.locked"
-              @touchstart.stop
-              @click.stop="emit('startInterval', progress)"
-            >
-              {{ intervalActive ? 'Resume interval' : 'Start interval' }}
-            </v-btn>
-            <div v-else-if="!displayedComplete && progress.status === 'pending'" class="status-banner mt-3 muted">
-              <v-icon icon="mdi-calendar-today-outline" size="16" /> Select today to start this interval
-          </div>
-        </template>
-
-        <template v-else-if="isFlashcards">
-          <div v-if="isSessionDuration" class="metric-row mt-4">
-            <div>
-              <span
-                class="metric-value"
-                :class="{ 'metric-value--updated': valueAnimating }"
-                @animationend="valueAnimating = false"
-              >{{ formatValue(progress.value) }}</span>
-              <span class="metric-target"> / {{ formatValue(target) }}</span>
-            </div>
-          </div>
-          <v-progress-linear
-            v-if="isSessionDuration"
-            :model-value="progress.percent"
-            :color="taskColor"
-            bg-color="white"
-            :bg-opacity="0.14"
-            rounded
-            height="7"
-            class="mt-2"
-          />
-          <v-btn
-            v-if="!displayedComplete && canStartReview"
-            block
-            class="mt-4"
-            color="secondary"
-            prepend-icon="mdi-cards-playing-outline"
-            :disabled="busy || progress.locked || !reviewSet?.cardCount"
-            @touchstart.stop
-            @click.stop="emit('startReview', progress)"
-          >
-            {{ reviewActive ? 'Resume review' : 'Start review' }}
-          </v-btn>
-          <div v-else-if="!displayedComplete && progress.status === 'pending'" class="status-banner mt-3 muted">
-            <v-icon icon="mdi-calendar-today-outline" size="16" /> Select today to start this review
-          </div>
-        </template>
-
-        <template v-else-if="isTracking">
-          <v-progress-linear
-            :model-value="progress.percent"
-            :color="taskColor"
-            bg-color="white"
-            :bg-opacity="0.14"
-            rounded
-            height="7"
-            class="mt-4"
-          />
-          <v-list v-if="trackers?.length" class="tracking-task-trackers pa-0 mt-3" bg-color="transparent">
-            <template v-for="tracker in trackers" :key="tracker.id">
-              <v-list-item
-                class="tracking-task-tracker"
-                :title="tracker.name"
-                :subtitle="tracker.loggedValue
-                  ? `${tracker.loggedValue} logged for this date`
-                  : tracker.logged ? 'Logged for this date' : 'Not logged for this date'"
-                :disabled="!canLogTracking || busy || progress.locked"
-                rounded="lg"
-                @click="tracker.kind !== 'duration' && emit('logTracking', progress, tracker.id)"
-              >
-                <template #prepend>
-                  <span class="tracking-task-tracker__icon" :style="{ background: tracker.color }">
-                    <v-icon :icon="tracker.icon" size="18" />
-                  </span>
-                </template>
-                <template #append>
-                  <v-icon
-                    v-if="tracker.logged"
-                    icon="mdi-check-circle"
-                    color="success"
-                    size="18"
-                    class="mr-2"
-                    aria-label="Logged"
-                  />
-                </template>
-              </v-list-item>
-              <div v-if="tracker.kind === 'duration'" class="task-action-stack tracking-duration-actions">
-                <v-btn
-                  block
-                  size="small"
-                  variant="tonal"
-                  prepend-icon="mdi-plus-minus-variant"
-                  :disabled="!canLogTracking || busy || progress.locked"
-                  @touchstart.stop
-                  @click.stop="emit('logTracking', progress, tracker.id)"
-                >
-                  Log amount
-                </v-btn>
-                <v-btn
-                  block
-                  size="small"
-                  variant="tonal"
-                  color="secondary"
-                  prepend-icon="mdi-timer-outline"
-                  :disabled="!canLogTracking || busy || progress.locked"
-                  @touchstart.stop
-                  @click.stop="emit('logTrackingTime', progress, tracker.id)"
-                >
-                  Log time
-                </v-btn>
-              </div>
-            </template>
-          </v-list>
-          <div v-if="!canLogTracking && !displayedComplete && progress.status === 'pending'" class="status-banner mt-3 muted">
-            <v-icon icon="mdi-calendar-today-outline" size="16" /> Select today or an earlier date to log tracking
-          </div>
-        </template>
-
-        <template v-else-if="isJournal">
-          <v-btn
-            v-if="canWriteJournal"
-            block
-            class="mt-4"
-            color="secondary"
-            prepend-icon="mdi-notebook-edit-outline"
-            :disabled="busy || progress.locked"
-            @touchstart.stop
-            @click.stop="emit('writeJournal', progress)"
-          >
-            {{ displayedComplete ? 'Write another reflection' : 'Write reflection' }}
-          </v-btn>
-          <div v-else-if="!displayedComplete && progress.status === 'pending'" class="status-banner mt-3 muted">
-            <v-icon icon="mdi-calendar-today-outline" size="16" /> Select today or an earlier date to write
-          </div>
-        </template>
-
-        <template v-else>
-            <div class="metric-row mt-4">
-              <div>
-                <span
-                  class="metric-value"
-                  :class="{ 'metric-value--updated': valueAnimating }"
-                  @animationend="valueAnimating = false"
-                >{{ formatValue(progress.value) }}</span>
-                <span class="metric-target"> / {{ operator }} {{ formatValue(target) }}</span>
-              </div>
-              <span v-if="task.goalPeriod === 'week' && !step" class="period-pill">This week</span>
-            </div>
-            <v-progress-linear
-              :model-value="progress.percent"
-              :color="taskColor"
-              bg-color="white"
-              :bg-opacity="0.14"
-              rounded
-              height="7"
-              class="mt-2"
-            />
-
-            <div v-if="isStepCounter && stepCountError" class="step-source-message mt-3 text-warning">
-              <v-icon icon="mdi-alert-circle-outline" size="16" />
-              <span>{{ stepCountError }}</span>
-            </div>
-
-            <div v-if="canLogAmount" class="task-action-stack mt-4">
-              <v-btn
-                block
-                size="small"
-                variant="tonal"
-                prepend-icon="mdi-plus-minus-variant"
-                :disabled="busy || progress.locked || progress.sealed"
-                @touchstart.stop
-                @click.stop="emit('logAmount', progress)"
-              >
-                Log amount
-              </v-btn>
-              <v-btn
-                v-if="canLogTime"
-                block
-                size="small"
-                variant="tonal"
-                color="secondary"
-                prepend-icon="mdi-timer-outline"
-                :disabled="busy || progress.locked || progress.sealed"
-                @click="emit('logTime', progress)"
-              >
-                Log time
-              </v-btn>
-              <v-btn
-                v-if="isDailyTotal"
-                block
-                size="small"
-                variant="tonal"
-                :color="progress.sealed ? undefined : 'secondary'"
-                :prepend-icon="progress.sealed ? 'mdi-lock-open-variant-outline' : 'mdi-lock-check-outline'"
-                :disabled="busy || progress.locked"
-                @touchstart.stop
-                @click.stop="emit('seal', progress)"
-              >
-                {{ progress.sealed ? 'Unlock total' : 'Lock in total' }}
-              </v-btn>
-            </div>
-          </template>
-
-          <div
-            v-if="!progress.locked && numericGoalStatus"
-            :class="['status-banner', 'mt-3', numericGoalStatus.tone]"
-          >
-            <span class="status-banner__label">
-              <v-icon :icon="numericGoalStatus.icon" size="16" />
-              {{ numericGoalStatus.title }}
-            </span>
-            <strong class="status-banner__amount">{{ numericGoalStatus.amount }}</strong>
-          </div>
+    <div v-if="hasPersistentDetails" class="task-card-body">
+      <div v-if="isNumeric || isSessionDuration" class="metric-row mt-4">
+        <div>
+          <span
+            class="metric-value"
+            :class="{ 'metric-value--updated': valueAnimating }"
+            @animationend="valueAnimating = false"
+          >{{ formatValue(progress.value) }}</span>
+          <span class="metric-target">
+            / {{ isSessionDuration ? '' : `${operator} ` }}{{ formatValue(target) }}
+          </span>
         </div>
-
-        <div v-if="progress.locked" class="status-banner mt-3 muted">
-          <v-icon icon="mdi-lock-outline" size="16" /> Complete or resolve earlier program steps first
-        </div>
-
-        <div v-if="progress.status === 'missed'" class="status-banner mt-3 text-error">
-          <v-icon icon="mdi-alert-circle-outline" size="16" /> Missed
-        </div>
+        <span v-if="task.goalPeriod === 'week' && !step" class="period-pill">This week</span>
       </div>
-    </v-expand-transition>
+      <v-progress-linear
+        v-if="showsProgress"
+        :model-value="progress.percent"
+        :color="taskColor"
+        bg-color="white"
+        :bg-opacity="0.14"
+        rounded
+        style="height: 0.5625rem; --v-progress-linear-height: 0.5625rem"
+        :class="isTracking ? 'mt-4' : 'mt-2'"
+      />
+
+      <v-list
+        v-if="isTracking && trackers?.length"
+        class="tracking-task-trackers pa-0 mt-3"
+        bg-color="transparent"
+        @touchstart.stop
+        @click.stop
+      >
+        <template v-for="tracker in trackers" :key="tracker.id">
+          <v-list-item
+            class="tracking-task-tracker"
+            :title="tracker.name"
+            :subtitle="tracker.loggedValue
+              ? `${tracker.loggedValue} logged for this date`
+              : tracker.logged ? 'Logged for this date' : 'Not logged for this date'"
+            :disabled="!canLogTracking || busy || progress.locked"
+            rounded="lg"
+            @click="tracker.kind !== 'duration' && emit('logTracking', progress, tracker.id)"
+          >
+            <template #prepend>
+              <span class="tracking-task-tracker__icon" :style="{ background: tracker.color }">
+                <v-icon :icon="tracker.icon" size="1.125rem" />
+              </span>
+            </template>
+            <template #append>
+              <v-icon
+                v-if="tracker.logged"
+                icon="mdi-check-circle"
+                color="success"
+                size="1.125rem"
+                class="mr-2"
+                aria-label="Logged"
+              />
+            </template>
+          </v-list-item>
+          <div v-if="tracker.kind === 'duration'" class="tracking-duration-actions">
+            <v-btn
+              block
+              variant="tonal"
+              prepend-icon="mdi-plus-minus-variant"
+              :disabled="!canLogTracking || busy || progress.locked"
+              @click="emit('logTracking', progress, tracker.id)"
+            >
+              Log amount
+            </v-btn>
+            <v-btn
+              block
+              variant="tonal"
+              color="secondary"
+              prepend-icon="mdi-timer-outline"
+              :disabled="!canLogTracking || busy || progress.locked"
+              @click="emit('logTrackingTime', progress, tracker.id)"
+            >
+              Log time
+            </v-btn>
+          </div>
+        </template>
+      </v-list>
+
+      <div
+        v-if="isTracking && !canLogTracking && !progress.complete && progress.status === 'pending'"
+        class="status-banner mt-3 muted"
+      >
+        <v-icon icon="mdi-calendar-today-outline" size="1rem" /> Select today or an earlier date to log tracking
+      </div>
+
+      <div v-if="isStepCounter && stepCountError" class="step-source-message mt-3 text-warning">
+        <v-icon icon="mdi-alert-circle-outline" size="1rem" />
+        <span>{{ stepCountError }}</span>
+      </div>
+
+      <div
+        v-if="!progress.locked && numericGoalStatus"
+        :class="['status-banner', 'mt-3', numericGoalStatus.tone]"
+      >
+        <span class="status-banner__label">
+          <v-icon :icon="numericGoalStatus.icon" size="1rem" />
+          {{ numericGoalStatus.title }}
+        </span>
+        <strong class="status-banner__amount">{{ numericGoalStatus.amount }}</strong>
+      </div>
+
+      <div v-if="progress.locked" class="status-banner mt-3 muted">
+        <v-icon icon="mdi-lock-outline" size="1rem" /> Complete or resolve earlier program steps first
+      </div>
+
+      <div v-if="progress.status === 'missed'" class="status-banner mt-3 text-error">
+        <v-icon icon="mdi-alert-circle-outline" size="1rem" /> Missed
+      </div>
+    </div>
   </v-card>
 </template>
 
@@ -682,45 +400,77 @@ onBeforeUnmount(() => clearTimeout(stepSyncHideTimer))
 .task-card {
   position: relative;
   overflow: hidden;
-  transition: opacity .18s ease;
+  cursor: pointer;
+  transition: opacity .18s ease, filter .18s ease;
+}
+
+.task-card:focus-visible {
+  outline: .125rem solid rgba(var(--v-theme-secondary), .82);
+  outline-offset: .2rem;
 }
 
 .task-card--done {
-  opacity: .72;
+  filter: grayscale(.8);
+  opacity: .55;
 }
 
-.task-card--sealed {
-  cursor: default;
-}
+.task-card--outside-schedule:not(.task-card--done) { opacity: .74; }
+.task-icon-area { position: relative; flex: 0 0 auto; }
 
-.task-card-header-main {
-  border-radius: .75rem;
-}
-
-.task-card-header-main--expandable {
-  cursor: pointer;
-}
-
-.task-card-header-main--expandable:focus-visible {
-  outline: .125rem solid rgba(var(--v-theme-secondary), .82);
-  outline-offset: .25rem;
-}
-
-.task-health-connect-button,
-.task-menu-button {
-  min-width: 2.75rem;
-  min-height: 2.75rem;
-}
-
-.tracking-task-trackers {
+.check-control {
   display: grid;
-  gap: .4rem;
+  width: 2.75rem;
+  height: 2.75rem;
+  place-items: center;
+  border-radius: .875rem;
+  background: rgb(var(--v-theme-surface-variant));
+  color: rgb(var(--v-theme-on-surface) / .62);
 }
 
-.tracking-task-tracker {
-  background: rgba(var(--v-theme-on-surface), .04);
+.check-control--done { background: transparent; color: var(--task-color); }
+.check-control--type { background: var(--task-color); color: #191c19; }
+.check-control--paused { background: rgb(var(--v-theme-on-surface) / .14); }
+
+.task-required-badge {
+  position: absolute;
+  top: -.2rem;
+  right: -.2rem;
+  width: .8rem;
+  height: .8rem;
+  border: .15rem solid rgb(var(--v-theme-surface));
+  border-radius: 50%;
+  background: rgb(var(--v-theme-error));
+  box-shadow: 0 .1rem .35rem rgba(0, 0, 0, .32);
 }
 
+.task-title { font-size: .98rem; font-weight: 850; line-height: 1.25; }
+.task-subtitle { max-width: 28rem; color: rgb(var(--v-theme-on-surface) / .5); font-size: .75rem; }
+.schedule-status,
+.period-pill {
+  display: inline-block;
+  padding: .1875rem .4375rem;
+  border-radius: 999rem;
+  background: rgb(var(--v-theme-surface-variant));
+  color: rgb(var(--v-theme-on-surface) / .62);
+  font-size: .57rem;
+  font-weight: 850;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+}
+
+.task-tag-enter-active,
+.task-tag-leave-active { transition: opacity .16s ease; }
+.task-tag-enter-from,
+.task-tag-leave-to { opacity: 0; }
+.period-pill { color: rgb(var(--v-theme-on-surface) / .72); }
+
+.metric-row { display: flex; align-items: baseline; justify-content: space-between; gap: .75rem; }
+.metric-value { display: inline-block; border-radius: .35rem; font-size: 1.12rem; font-weight: 900; transform-origin: left center; }
+.metric-value--updated { animation: metric-value-pulse 560ms cubic-bezier(.22, 1, .36, 1); }
+.metric-target { color: rgb(var(--v-theme-on-surface) / .52); font-size: .72rem; }
+
+.tracking-task-trackers { display: grid; gap: .4rem; }
+.tracking-task-tracker { min-height: 2.75rem; background: rgba(var(--v-theme-on-surface), .04); }
 .tracking-task-tracker__icon {
   display: grid;
   width: 2rem;
@@ -730,118 +480,8 @@ onBeforeUnmount(() => clearTimeout(stepSyncHideTimer))
   border-radius: .65rem;
   color: #17200f;
 }
-
-.tracking-duration-actions {
-  margin-top: -.2rem;
-  padding: .2rem .4rem .5rem;
-}
-
-.check-control {
-  display: grid;
-  flex: 0 0 auto;
-  width: 44px;
-  height: 44px;
-  place-items: center;
-  border: 0;
-  border-radius: 14px;
-  background: rgb(var(--v-theme-surface-variant));
-  color: rgb(var(--v-theme-on-surface) / .62);
-  cursor: pointer;
-}
-
-.check-control--done {
-  background: rgba(var(--v-theme-surface-variant), 0);
-  color: var(--task-color);
-}
-
-.check-control--type {
-  background: var(--task-color);
-  color: #191c19;
-}
-
-.check-control--paused {
-  background: rgba(var(--v-theme-on-surface), .14);
-}
-
-.check-control--status {
-  cursor: default;
-}
-
-.task-title {
-  font-size: .98rem;
-  font-weight: 850;
-  line-height: 1.25;
-}
-
-.task-card-tags {
-  min-height: 1.125rem;
-  overflow: hidden;
-}
-
-.task-subtitle {
-  max-width: 230px;
-  color: rgb(var(--v-theme-on-surface) / .5);
-  font-size: .75rem;
-}
-
-.required-dot,
-.schedule-status,
-.period-pill {
-  padding: 3px 7px;
-  border-radius: 999px;
-  background: rgb(var(--v-theme-surface-variant));
-  color: #fff;
-  font-size: .57rem;
-  font-weight: 850;
-  letter-spacing: .07em;
-  text-transform: uppercase;
-}
-
-.schedule-status {
-  display: inline-block;
-  max-width: 8rem;
-  overflow: hidden;
-  color: rgb(var(--v-theme-on-surface) / .62);
-  white-space: nowrap;
-}
-
-.task-tag-enter-active,
-.task-tag-leave-active {
-  transition:
-    max-width .2s cubic-bezier(.22, 1, .36, 1),
-    padding-inline .2s cubic-bezier(.22, 1, .36, 1),
-    opacity .16s ease;
-}
-
-.task-tag-enter-from,
-.task-tag-leave-to {
-  max-width: 0;
-  padding-inline: 0;
-  opacity: 0;
-}
-
-.period-pill {
-  background: rgb(var(--v-theme-surface-variant));
-  color: rgb(var(--v-theme-on-surface) / .72);
-}
-
-.metric-row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-}
-
-.metric-value {
-  display: inline-block;
-  border-radius: .35rem;
-  font-size: 1.12rem;
-  font-weight: 900;
-  transform-origin: left center;
-}
-
-.metric-value--updated {
-  animation: metric-value-pulse 560ms cubic-bezier(.22, 1, .36, 1);
-}
+.tracking-duration-actions { display: grid; margin-top: -.2rem; padding: .2rem .4rem .5rem; gap: .5rem; }
+.tracking-duration-actions .v-btn { min-height: 2.75rem; }
 
 .step-source-message {
   display: flex;
@@ -851,46 +491,7 @@ onBeforeUnmount(() => clearTimeout(stepSyncHideTimer))
   font-weight: 700;
   line-height: 1.4;
 }
-
-.step-source-message .v-icon {
-  margin-top: .05rem;
-  flex: 0 0 auto;
-}
-
-@keyframes metric-value-pulse {
-  0%, 100% {
-    background: transparent;
-    box-shadow: 0 0 0 0 transparent;
-    color: inherit;
-    transform: scale(1);
-  }
-
-  38% {
-    background: color-mix(in srgb, var(--task-color) 24%, transparent);
-    box-shadow: 0 0 0 .3rem color-mix(in srgb, var(--task-color) 16%, transparent);
-    color: var(--task-color);
-    transform: scale(1.28);
-  }
-}
-
-.metric-target {
-  color: rgb(var(--v-theme-on-surface) / .52);
-  font-size: .72rem;
-}
-
-.task-action-stack {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: .5rem;
-}
-
-.task-action-stack .v-btn {
-  min-height: 40px;
-}
-
-.task-action-stack .v-btn:last-child:nth-child(odd) {
-  grid-column: 1 / -1;
-}
+.step-source-message .v-icon { margin-top: .05rem; flex: 0 0 auto; }
 
 .status-banner {
   display: flex;
@@ -899,18 +500,20 @@ onBeforeUnmount(() => clearTimeout(stepSyncHideTimer))
   font-size: .72rem;
   font-weight: 800;
 }
+.status-banner__label { display: inline-flex; min-width: 0; align-items: center; gap: .35rem; }
+.status-banner__amount { margin-left: auto; text-align: right; }
 
-.status-banner__label {
-  display: inline-flex;
-  min-width: 0;
-  align-items: center;
-  gap: .35rem;
+@keyframes metric-value-pulse {
+  0%, 100% { background: transparent; box-shadow: 0 0 0 0 transparent; color: inherit; }
+  38% {
+    background: color-mix(in srgb, var(--task-color) 24%, transparent);
+    box-shadow: 0 0 0 .3rem color-mix(in srgb, var(--task-color) 16%, transparent);
+    color: var(--task-color);
+  }
 }
 
-.status-banner__amount {
-  margin-left: auto;
-  padding-left: .75rem;
-  text-align: right;
-  white-space: nowrap;
+@media (prefers-reduced-motion: reduce) {
+  .task-card { transition-duration: 0s; }
+  .metric-value--updated { animation-duration: 0s; }
 }
 </style>
