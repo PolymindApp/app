@@ -465,7 +465,7 @@ onBeforeUnmount(() => {
 .timer-wheel-picker {
   width: 100%;
   margin: 0 auto;
-  border-radius: 24px;
+  border-radius: .5rem;
   background: rgb(var(--v-theme-background));
 }
 .timer-wheel__inputs {
@@ -480,12 +480,10 @@ onBeforeUnmount(() => {
   border: .0625rem solid rgba(var(--v-theme-on-surface), .38);
   border-radius: .5rem;
   background: transparent;
-  outline: .125rem solid transparent;
-  outline-offset: .125rem;
-  transition: outline-color 180ms ease;
+  transition: border-color 180ms ease;
 }
 .timer-wheel--focused {
-  outline-color: rgba(var(--v-theme-on-surface), .9);
+  border-color: rgba(var(--v-theme-on-surface), .9);
 }
 .timer-wheel__focus-guard {
   position: absolute;
