@@ -338,9 +338,9 @@ async function loadVisibleTaskProgress() {
     await store.refreshStepCount(date)
   }
 }
-async function run(action: () => Promise<void>) {
+async function run<T>(action: () => Promise<T>) {
   busy.value = true
-  try { await action() } finally { busy.value = false }
+  try { return await action() } finally { busy.value = false }
 }
 
 function syncStepCount() {
@@ -621,10 +621,13 @@ async function confirmTaskSkipChange() {
   if (!progress || taskSkipUpdating.value) return
   const skipping = progress.status !== 'skipped'
   taskSkipUpdating.value = true
+  taskSkipDialog.value = false
   try {
     await store.toggleSkipped(progress, skipping)
-    taskSkipDialog.value = false
     taskActionProgress.value = undefined
+  } catch (cause) {
+    taskSkipDialog.value = true
+    store.error = cause instanceof Error ? cause.message : 'Could not update this task.'
   } finally {
     taskSkipUpdating.value = false
   }
@@ -634,10 +637,13 @@ async function confirmTaskStatusChange() {
   const task = taskActionProgress.value?.task
   if (!task || taskStatusUpdating.value) return
   taskStatusUpdating.value = true
+  taskStatusDialog.value = false
   try {
     await store.toggleTaskActive(task)
-    taskStatusDialog.value = false
     taskActionProgress.value = undefined
+  } catch (cause) {
+    taskStatusDialog.value = true
+    store.error = cause instanceof Error ? cause.message : 'Could not update this task.'
   } finally {
     taskStatusUpdating.value = false
   }
@@ -878,17 +884,20 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
     if (mode === 'set') exactDialog.value = false
     return
   }
+  exactError.value = ''
+  const update = run(() => store.addEntry(
+    progress,
+    amount,
+    mode === 'add' ? undefined : 'adjustment',
+    progress.task.entryNotesEnabled ? exactNote.value.trim() : '',
+  ))
+  pulseProgressValue(progress)
+  exactDialog.value = false
   try {
-    await run(() => store.addEntry(
-      progress,
-      amount,
-      mode === 'add' ? undefined : 'adjustment',
-      progress.task.entryNotesEnabled ? exactNote.value.trim() : '',
-    ))
-    pulseProgressValue(progress)
-    exactDialog.value = false
+    await update
   } catch (cause) {
     exactError.value = cause instanceof Error ? cause.message : 'Could not save this log entry.'
+    exactDialog.value = true
   } finally {
     exactAction.value = undefined
   }
@@ -900,23 +909,24 @@ async function saveTaskLogEntry() {
   if (!progress || !entry || !exactCanLogAmount.value || busy.value) return
   exactAction.value = 'save'
   exactError.value = ''
+  const update = run(() => store.updateEntry(
+    progress,
+    entry.id,
+    exactAmount.value!,
+    progress.task.entryNotesEnabled ? exactNote.value.trim() : entry.note || '',
+  ))
+  pulseProgressValue(progress)
+  exactDialog.value = false
   try {
-    await run(async () => {
-      const updated = await store.updateEntry(
-        progress,
-        entry.id,
-        exactAmount.value!,
-        progress.task.entryNotesEnabled ? exactNote.value.trim() : entry.note || '',
-      )
-      if (!updated) return
+    const updated = await update
+    if (updated) {
       const index = taskLogEntries.value.findIndex(item => item.id === updated.id)
       if (index >= 0) taskLogEntries.value.splice(index, 1, updated)
-      pulseProgressValue(progress)
-    })
-    exactDialog.value = false
+    }
     exactEditingEntry.value = undefined
   } catch (cause) {
     exactError.value = cause instanceof Error ? cause.message : 'Could not update this log entry.'
+    exactDialog.value = true
   } finally {
     exactAction.value = undefined
   }

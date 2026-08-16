@@ -401,7 +401,7 @@ onBeforeUnmount(() => clearTimeout(stepSyncHideTimer))
   position: relative;
   overflow: hidden;
   cursor: pointer;
-  transition: opacity .18s ease, filter .18s ease;
+  transition: opacity .18s ease;
 }
 
 .task-card:focus-visible {
@@ -410,7 +410,6 @@ onBeforeUnmount(() => clearTimeout(stepSyncHideTimer))
 }
 
 .task-card--done {
-  filter: grayscale(.8);
   opacity: .55;
 }
 

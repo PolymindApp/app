@@ -74,13 +74,15 @@ async function save(explicitValue?: number) {
       value: tracker.kind === 'duration' ? storedValue * 60 : storedValue,
       note: note.value.trim(),
     }
-    const savedEntry = props.entry
-      ? await store.updateEntry({ ...draft, id: props.entry.id })
-      : await store.addEntry(draft)
-    emit('saved', savedEntry)
+    const persistence = props.entry
+      ? store.updateEntry({ ...draft, id: props.entry.id })
+      : store.addEntry(draft)
     if (!props.keepOpenOnSave) open.value = false
+    const savedEntry = await persistence
+    emit('saved', savedEntry)
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Could not save this log.'
+    if (!props.keepOpenOnSave) open.value = true
   } finally {
     saving.value = false
   }
