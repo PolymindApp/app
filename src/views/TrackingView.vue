@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { addDays, format, isValid, parseISO, startOfWeek } from 'date-fns'
 import { useRoute, useRouter } from 'vue-router'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
+import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import TrackingLogBottomSheet from '@/components/TrackingLogBottomSheet.vue'
 import TrackingTrackerCard from '@/components/TrackingTrackerCard.vue'
 import TrackingWeeklyBarChart from '@/components/TrackingWeeklyBarChart.vue'
@@ -20,6 +21,9 @@ const selectedDate = ref(new Date())
 const visibleWeekStart = ref(startOfWeek(selectedDate.value, { weekStartsOn: 1 }))
 const trackerActionsOpen = ref(false)
 const actionTracker = ref<TrackingTracker>()
+const pendingStatusTracker = ref<TrackingTracker>()
+const statusDialog = ref(false)
+const updatingStatus = ref(false)
 const sheetOpen = ref(false)
 const sheetTracker = ref<TrackingTracker>()
 const editingEntry = ref<TrackingEntry>()
@@ -35,9 +39,10 @@ const dayEntries = computed(() => store.entries
   .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt)))
 const trackingDateMarkers = computed(() => [...new Set(store.entries.map((entry) => entry.localDate))]
   .map((date) => ({ date, color: 'error', label: 'Has tracking entries' })))
-const outcomes = computed(() => store.activeTrackers.filter((tracker) => tracker.role === 'outcome'))
-const factors = computed(() => store.activeTrackers.filter((tracker) => tracker.role === 'factor'))
-const archivedTrackers = computed(() => store.trackers.filter((tracker) => !tracker.active))
+const sortedTrackers = computed(() => [...store.trackers]
+  .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)))
+const outcomes = computed(() => sortedTrackers.value.filter((tracker) => tracker.role === 'outcome'))
+const factors = computed(() => sortedTrackers.value.filter((tracker) => tracker.role === 'factor'))
 const requestedTask = computed(() => {
   const id = typeof route.query.task === 'string' ? route.query.task : ''
   return taskStore.tasks.find(task => task.id === id && task.type === 'tracking')
@@ -77,6 +82,31 @@ function editActionTracker() {
   if (!tracker) return
   trackerActionsOpen.value = false
   void router.push(`/tracking/${tracker.id}/edit`)
+}
+
+async function requestTrackerStatusChange() {
+  const tracker = actionTracker.value
+  if (!tracker) return
+  trackerActionsOpen.value = false
+  await nextTick()
+  pendingStatusTracker.value = tracker
+  statusDialog.value = true
+}
+
+async function confirmTrackerStatusChange() {
+  const tracker = pendingStatusTracker.value
+  if (!tracker) return
+  updatingStatus.value = true
+  error.value = ''
+  try {
+    await store.setTrackerActive(tracker.id, !tracker.active)
+    statusDialog.value = false
+    pendingStatusTracker.value = undefined
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : `Could not ${tracker.active ? 'pause' : 'unpause'} this tracker.`
+  } finally {
+    updatingStatus.value = false
+  }
 }
 
 async function writeTrackerReflection() {
@@ -302,22 +332,6 @@ async function loadVisibleWeekEntries() {
         <p v-else class="tracker-section-empty muted py-4 text-center">No feelings tracked yet.</p>
       </section>
 
-      <section v-if="archivedTrackers.length">
-        <div class="section-heading"><h2>Archived</h2></div>
-        <v-card class="surface-card pa-2">
-          <v-list bg-color="transparent">
-            <v-list-item
-              v-for="tracker in archivedTrackers"
-              :key="tracker.id"
-              :title="tracker.name"
-              subtitle="History retained"
-              :prepend-icon="tracker.icon"
-              append-icon="mdi-chevron-right"
-              :to="`/tracking/${tracker.id}/edit`"
-            />
-          </v-list>
-        </v-card>
-      </section>
     </template>
 
     <template v-else-if="store.loaded">
@@ -352,6 +366,12 @@ async function loadVisibleWeekEntries() {
           rounded="lg"
           @click="editActionTracker"
         />
+        <v-list-item
+          :prepend-icon="actionTracker.active ? 'mdi-pause' : 'mdi-play'"
+          :title="actionTracker.active ? 'Pause' : 'Unpause'"
+          rounded="lg"
+          @click="requestTrackerStatusChange"
+        />
         <v-divider class="my-1" />
         <v-list-item
           prepend-icon="mdi-notebook-plus-outline"
@@ -367,6 +387,19 @@ async function loadVisibleWeekEntries() {
         />
       </template>
     </ActionBottomSheet>
+
+    <ConfirmDialog
+      v-model="statusDialog"
+      :title="pendingStatusTracker?.active ? 'Pause this tracker?' : 'Unpause this tracker?'"
+      :message="pendingStatusTracker?.active
+        ? `${pendingStatusTracker?.name || 'This tracker'} will stop accepting new logs until you unpause it. Its history will be preserved.`
+        : `${pendingStatusTracker?.name || 'This tracker'} will be available for logging again.`"
+      :confirm-text="pendingStatusTracker?.active ? 'Pause tracker' : 'Unpause tracker'"
+      :confirm-color="pendingStatusTracker?.active ? 'warning' : 'secondary'"
+      :icon="pendingStatusTracker?.active ? 'mdi-pause' : 'mdi-play'"
+      :loading="updatingStatus"
+      @confirm="confirmTrackerStatusChange"
+    />
 
     <TrackingLogBottomSheet
       v-model="sheetOpen"

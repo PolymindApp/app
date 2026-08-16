@@ -209,17 +209,17 @@ export const useTrackingStore = defineStore('tracking', () => {
     useSnackbarStore().showDeletion('Log')
   }
 
-  async function archiveTracker(id: string) {
+  async function setTrackerActive(id: string, active: boolean) {
     const index = trackers.value.findIndex((item) => item.id === id)
     if (index < 0) {
-      await api.collection('tracking_trackers').update(id, { active: false })
+      await api.collection('tracking_trackers').update(id, { active })
       return
     }
     const tracker = trackers.value[index]!
     const previous = { ...tracker }
-    tracker.active = false
+    tracker.active = active
     try {
-      const record = await api.collection('tracking_trackers').update(id, { active: false })
+      const record = await api.collection('tracking_trackers').update(id, { active })
       Object.assign(tracker, mapTrackingTracker(record))
     } catch (cause) {
       Object.assign(tracker, previous)
@@ -261,7 +261,7 @@ export const useTrackingStore = defineStore('tracking', () => {
     addEntry,
     updateEntry,
     deleteEntry,
-    archiveTracker,
+    setTrackerActive,
     deleteTracker,
   }
 })

@@ -217,10 +217,6 @@ async function remove() {
         <p v-else class="field-help">Days without a log stay missing.</p>
       </v-card>
 
-      <v-card v-if="isEditing" class="tracker-form-section surface-card pa-5 mb-4">
-        <v-switch v-model="draft.active" color="secondary" label="Active tracker" hide-details="auto" />
-      </v-card>
-
     </AppForm>
 
     <FormActionBar

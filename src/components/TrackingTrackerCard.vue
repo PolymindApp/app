@@ -19,21 +19,25 @@ const vRipple = Ripple
 </script>
 
 <template>
-  <v-card class="tracker-card surface-card">
+  <v-card class="tracker-card surface-card" :class="{ 'tracker-card--paused': !tracker.active }">
     <div class="tracker-card__accent" :style="{ background: tracker.color }" />
     <div class="tracker-card__header">
       <button
         v-ripple
         type="button"
         class="tracker-card__log"
-        :aria-label="`Log ${tracker.name}`"
+        :disabled="!tracker.active"
+        :aria-label="tracker.active ? `Log ${tracker.name}` : `${tracker.name} is paused`"
         @click="emit('log', tracker)"
       >
-        <span class="tracker-card__icon" :style="{ color: tracker.color }">
-          <v-icon :icon="tracker.icon" />
+        <span class="tracker-card__icon" :style="tracker.active ? { color: tracker.color } : undefined">
+          <v-icon :icon="tracker.active ? tracker.icon : 'mdi-pause'" />
         </span>
         <span class="min-width-0 flex-grow-1">
           <strong class="d-block text-truncate">{{ tracker.name }}</strong>
+          <v-expand-transition>
+            <span v-if="!tracker.active" class="tracker-card__status">Paused</span>
+          </v-expand-transition>
           <span class="tracker-card__description">
             {{ tracker.description || 'No description added.' }}
           </span>
@@ -50,7 +54,7 @@ const vRipple = Ripple
       />
     </div>
 
-    <template v-if="entries.length">
+    <template v-if="tracker.active && entries.length">
       <v-divider />
       <div class="tracker-entry-list" :aria-label="`${tracker.name} logs`">
         <button
@@ -78,7 +82,7 @@ const vRipple = Ripple
         </button>
       </div>
     </template>
-    <div v-else-if="tracker.kind === 'event'" class="tracker-event-absence">
+    <div v-else-if="tracker.active && tracker.kind === 'event'" class="tracker-event-absence">
       <v-icon icon="mdi-minus-circle-outline" size="17" />
       <span>Not occurred</span>
     </div>
@@ -155,6 +159,38 @@ const vRipple = Ripple
 
 .tracker-card__icon :deep(.v-icon) {
   color: rgb(var(--v-theme-background));
+}
+
+.tracker-card--paused .tracker-card__icon {
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: .875rem;
+  background: rgba(var(--v-theme-on-surface), .14);
+}
+
+.tracker-card--paused .tracker-card__icon :deep(.v-icon) {
+  color: rgb(var(--v-theme-on-surface));
+}
+
+.tracker-card__status {
+  display: table;
+  max-width: 8rem;
+  overflow: hidden;
+  margin-top: .2rem;
+  padding: .1875rem .4375rem;
+  border-radius: 999px;
+  background: rgb(var(--v-theme-surface-variant));
+  color: rgb(var(--v-theme-on-surface) / .62);
+  font-size: .57rem;
+  font-weight: 850;
+  letter-spacing: .07em;
+  line-height: 1.2;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.tracker-card--paused .tracker-card__log {
+  cursor: default;
 }
 
 .tracker-card__description {
