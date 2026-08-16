@@ -200,31 +200,38 @@ async function importCards() {
             <span v-else class="muted">{{ distinctTagCount }} distinct tag{{ distinctTagCount === 1 ? '' : 's' }}</span>
           </div>
 
-          <v-table density="compact" class="flashcard-import-preview mt-4">
-            <thead>
-              <tr>
-                <th scope="col">Front</th>
-                <th scope="col">Back</th>
-                <th scope="col">Note</th>
-                <th scope="col">Tags</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="(row, index) in previewRows" :key="`${row.front}-${index}`">
-                <td>{{ row.front }}</td>
-                <td>{{ row.back }}</td>
-                <td>{{ row.note || '—' }}</td>
-                <td>
-                  <div class="flashcard-import-tags">
-                    <v-chip v-for="tag in row.tags" :key="tag" size="x-small" variant="tonal">
-                      {{ tag }}
-                    </v-chip>
-                    <span v-if="!row.tags.length" class="muted">—</span>
-                  </div>
-                </td>
-              </tr>
-            </tbody>
-          </v-table>
+          <div
+            class="flashcard-import-preview mt-4"
+            role="region"
+            aria-label="Imported cards preview"
+            tabindex="0"
+          >
+            <v-table density="compact" class="flashcard-import-preview__table">
+              <thead>
+                <tr>
+                  <th scope="col">Front</th>
+                  <th scope="col">Back</th>
+                  <th scope="col">Note</th>
+                  <th scope="col">Tags</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(row, index) in previewRows" :key="`${row.front}-${index}`">
+                  <td>{{ row.front }}</td>
+                  <td>{{ row.back }}</td>
+                  <td>{{ row.note || '—' }}</td>
+                  <td>
+                    <div class="flashcard-import-tags">
+                      <v-chip v-for="tag in row.tags" :key="tag" size="x-small" variant="tonal">
+                        {{ tag }}
+                      </v-chip>
+                      <span v-if="!row.tags.length" class="muted">—</span>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </v-table>
+          </div>
           <p v-if="parsed.rows.length > previewRows.length" class="text-caption muted mt-2 text-end">
             Previewing 5 of {{ parsed.rows.length }} cards
           </p>
@@ -274,9 +281,11 @@ async function importCards() {
 .flashcard-import-example { padding: .875rem; overflow-x: auto; border: .0625rem solid rgba(var(--v-theme-on-surface), .1); border-radius: .75rem; background: rgba(var(--v-theme-on-surface), .045); color: rgba(var(--v-theme-on-surface), .72); font-size: .72rem; line-height: 1.6; white-space: pre; }
 .flashcard-import-errors { padding-left: 1.25rem; }
 .flashcard-import-summary { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem .75rem; }
-.flashcard-import-preview { overflow: hidden; border: .0625rem solid rgba(var(--v-theme-on-surface), .08); border-radius: 1rem; }
-.flashcard-import-preview :deep(.v-table__wrapper) { overflow-x: hidden; }
-.flashcard-import-preview :deep(table) { table-layout: fixed; }
+.flashcard-import-preview { max-width: 100%; overflow-x: auto; overscroll-behavior-inline: contain; border: .0625rem solid rgba(var(--v-theme-on-surface), .08); border-radius: 1rem; }
+.flashcard-import-preview:focus-visible { outline: .125rem solid rgba(var(--v-theme-secondary), .72); outline-offset: -.125rem; }
+.flashcard-import-preview__table { min-width: 40rem; background: transparent; }
+.flashcard-import-preview__table :deep(.v-table__wrapper) { overflow: visible; }
+.flashcard-import-preview__table :deep(table) { table-layout: fixed; }
 .flashcard-import-preview th:nth-child(1),
 .flashcard-import-preview th:nth-child(2) { width: 28%; }
 .flashcard-import-preview th:nth-child(3) { width: 26%; }
