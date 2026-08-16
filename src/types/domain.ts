@@ -524,6 +524,7 @@ export interface FlashcardReviewEvent {
   session: string
   card?: string
   outcome: FlashcardReviewOutcome
+  viewCount: number
   reviewedAt: string
   front: string
   back: string

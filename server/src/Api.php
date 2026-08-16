@@ -4041,6 +4041,7 @@ final class Api
             $occurrence = null;
             $progressOccurrences = [];
             $progressEntries = [];
+            $batchedReviewEvents = [];
 
             if ($action === 'restart') {
                 $selection = $this->flashcardReviewSelection([
@@ -4154,13 +4155,25 @@ final class Api
                             } elseif ($action === 'error') {
                                 $errorCount++;
                             }
-                            $this->recordFlashcardReviewEvent(
-                                $id,
-                                $current,
-                                $action === 'view' ? 'passive' : $action,
-                                $now,
-                                $owner,
-                            );
+                            if ($action === 'view') {
+                                $eventKey = (string) ($current['id'] ?? '');
+                                if (isset($batchedReviewEvents[$eventKey])) {
+                                    $batchedReviewEvents[$eventKey]['view_count']++;
+                                } else {
+                                    $batchedReviewEvents[$eventKey] = [
+                                        'card' => $current,
+                                        'view_count' => 1,
+                                    ];
+                                }
+                            } else {
+                                $this->recordFlashcardReviewEvent(
+                                    $id,
+                                    $current,
+                                    $action,
+                                    $now,
+                                    $owner,
+                                );
+                            }
                             if ($action === 'view' && $indefinite) {
                                 $queue[] = $current;
                             }
@@ -4171,6 +4184,17 @@ final class Api
                         }
                     }
                 }
+            }
+
+            foreach ($batchedReviewEvents as $event) {
+                $this->recordFlashcardReviewEvent(
+                    $id,
+                    $event['card'],
+                    'passive',
+                    $now,
+                    $owner,
+                    (int) $event['view_count'],
+                );
             }
 
             if ($indefinite) {
@@ -4383,15 +4407,17 @@ final class Api
         string $outcome,
         string $reviewedAt,
         string $owner,
+        int $viewCount = 1,
     ): void {
         $cardId = (string) ($card['id'] ?? '');
         $tags = is_array($card['tags'] ?? null) ? array_values($card['tags']) : [];
+        $eventCount = $outcome === 'passive' ? max(1, min(100000, $viewCount)) : 1;
         $statement = $this->database->pdo->prepare(
             'INSERT INTO flashcard_review_events (
-                id, owner, session, card, outcome, reviewed_at,
+                id, owner, session, card, outcome, view_count, reviewed_at,
                 front_snapshot, back_snapshot, tags_snapshot
              ) VALUES (
-                :id, :owner, :session, :card, :outcome, :reviewed_at,
+                :id, :owner, :session, :card, :outcome, :view_count, :reviewed_at,
                 :front_snapshot, :back_snapshot, :tags_snapshot
              )',
         );
@@ -4401,6 +4427,7 @@ final class Api
             'session' => $sessionId,
             'card' => $cardId,
             'outcome' => $outcome,
+            'view_count' => $eventCount,
             'reviewed_at' => $reviewedAt,
             'front_snapshot' => (string) ($card['front'] ?? ''),
             'back_snapshot' => (string) ($card['back'] ?? ''),
@@ -4433,7 +4460,7 @@ final class Api
                 :passive_views, :success_count, :error_count, :reviewed_at
              )
              ON CONFLICT(reviewer, card) DO UPDATE SET
-                {$counter} = {$counter} + 1,
+                {$counter} = {$counter} + excluded.{$counter},
                 last_reviewed_at = excluded.last_reviewed_at,
                 updated_at = excluded.updated_at",
         );
@@ -4441,17 +4468,18 @@ final class Api
             'reviewer' => $owner,
             'card' => $cardId,
             'reviewed_at' => $reviewedAt,
-            'passive_views' => $counter === 'passive_views' ? 1 : 0,
-            'success_count' => $counter === 'success_count' ? 1 : 0,
-            'error_count' => $counter === 'error_count' ? 1 : 0,
+            'passive_views' => $counter === 'passive_views' ? $eventCount : 0,
+            'success_count' => $counter === 'success_count' ? $eventCount : 0,
+            'error_count' => $counter === 'error_count' ? $eventCount : 0,
         ]);
         if (hash_equals((string) $cardOwner, $owner)) {
             $statement = $this->database->pdo->prepare(
-                "UPDATE flashcards SET {$counter} = {$counter} + 1,
+                "UPDATE flashcards SET {$counter} = {$counter} + :view_count,
                     last_reviewed_at = :reviewed_at, updated_at = :reviewed_at
                  WHERE id = :id AND owner = :owner",
             );
             $statement->execute([
+                'view_count' => $eventCount,
                 'reviewed_at' => $reviewedAt,
                 'id' => $cardId,
                 'owner' => $owner,

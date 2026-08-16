@@ -168,6 +168,7 @@ function mapEvent(record: Record<string, any>): FlashcardReviewEvent {
     session: record.session,
     card: record.card || undefined,
     outcome: record.outcome,
+    viewCount: Math.max(1, Number(record.view_count || 1)),
     reviewedAt: record.reviewed_at,
     front: record.front_snapshot,
     back: record.back_snapshot,
@@ -1099,7 +1100,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     let errorCount = current.errorCount
     let ejectedCount = current.ejectedCount
     let totalCards = current.totalCards
-    const events: Record<string, unknown>[] = []
+    const events = new Map<string, Record<string, unknown>>()
     let undoneEjectEventId = ''
 
     if (action === 'restart') {
@@ -1181,15 +1182,24 @@ export const useFlashcardStore = defineStore('flashcards', () => {
             if (action === 'error') errorCount += 1
             if (action === 'view' && current.indefinite) queue.push(card)
           }
-          events.push({
-            session: sessionId,
-            card: card.id,
-            outcome,
-            reviewed_at: now,
-            front_snapshot: card.front,
-            back_snapshot: card.back,
-            tags_snapshot: card.tags,
-          })
+          const eventKey = outcome === 'passive'
+            ? card.id
+            : `${outcome}:${card.id}:${events.size}`
+          const existingEvent = events.get(eventKey)
+          if (existingEvent && outcome === 'passive') {
+            existingEvent.view_count = Number(existingEvent.view_count || 1) + 1
+          } else {
+            events.set(eventKey, {
+              session: sessionId,
+              card: card.id,
+              outcome,
+              view_count: 1,
+              reviewed_at: now,
+              front_snapshot: card.front,
+              back_snapshot: card.back,
+              tags_snapshot: card.tags,
+            })
+          }
           if (!queue.length) {
             status = 'completed'
             endedAt = now
@@ -1219,7 +1229,8 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       totalCards,
     })
     try {
-      await Promise.all(events.map(event => api.collection('flashcard_review_events').create(event)))
+      await Promise.all(Array.from(events.values())
+        .map(event => api.collection('flashcard_review_events').create(event)))
       if (undoneEjectEventId) {
         await api.collection('flashcard_review_events').delete(undoneEjectEventId)
       }

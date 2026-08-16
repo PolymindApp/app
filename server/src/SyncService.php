@@ -649,6 +649,13 @@ final class SyncService
         if ($resource === 'flashcard_review_events' && ($payload['outcome'] ?? null) === 'eject') {
             $payload['outcome'] = 'ejected';
         }
+        if ($resource === 'flashcard_review_events') {
+            $viewCount = max(1, (int) ($payload['view_count'] ?? 1));
+            if (($payload['outcome'] ?? null) !== 'passive' && $viewCount !== 1) {
+                throw new ApiException(422, 'Only passive review events may contain multiple views.');
+            }
+            $payload['view_count'] = $viewCount;
+        }
         $existingVersion = $this->versionRow($account, $resource, $recordId);
         if (is_array($existingVersion) && (int) $existingVersion['deleted'] === 1) {
             throw new ApiException(409, 'This record was already deleted.');
@@ -1178,6 +1185,9 @@ final class SyncService
         if ($counter === null || $cardId === '') {
             return;
         }
+        $eventCount = $outcome === 'passive'
+            ? max(1, min(100000, (int) ($event['view_count'] ?? 1)))
+            : 1;
 
         $cardStatement = $this->database->pdo->prepare(
             'SELECT owner FROM flashcards WHERE id = :id LIMIT 1',
@@ -1198,7 +1208,7 @@ final class SyncService
                 :passive_views, :success_count, :error_count, :reviewed_at
              )
              ON CONFLICT(reviewer, card) DO UPDATE SET
-                {$counter} = {$counter} + 1,
+                {$counter} = {$counter} + excluded.{$counter},
                 last_reviewed_at = excluded.last_reviewed_at,
                 updated_at = excluded.updated_at",
         );
@@ -1206,17 +1216,18 @@ final class SyncService
             'reviewer' => $account,
             'card' => $cardId,
             'reviewed_at' => $reviewedAt,
-            'passive_views' => $counter === 'passive_views' ? 1 : 0,
-            'success_count' => $counter === 'success_count' ? 1 : 0,
-            'error_count' => $counter === 'error_count' ? 1 : 0,
+            'passive_views' => $counter === 'passive_views' ? $eventCount : 0,
+            'success_count' => $counter === 'success_count' ? $eventCount : 0,
+            'error_count' => $counter === 'error_count' ? $eventCount : 0,
         ]);
         if (hash_equals($cardOwner, $account)) {
             $statement = $this->database->pdo->prepare(
-                "UPDATE flashcards SET {$counter} = {$counter} + 1,
+                "UPDATE flashcards SET {$counter} = {$counter} + :event_count,
                     last_reviewed_at = :reviewed_at, updated_at = :reviewed_at
                  WHERE id = :id AND owner = :owner",
             );
             $statement->execute([
+                'event_count' => $eventCount,
                 'reviewed_at' => $reviewedAt,
                 'id' => $cardId,
                 'owner' => $account,
@@ -1859,6 +1870,13 @@ final class SyncService
                 $clean[$field] = $clock;
             }
         }
+        if ($resource === 'flashcard_review_events') {
+            if ($clean === []) {
+                return;
+            }
+            $latestClock = max(array_values($clean));
+            $clean = ['*' => $latestClock];
+        }
         $statement = $this->database->pdo->prepare(
             'UPDATE sync_record_versions SET field_clocks = :clocks
              WHERE account_id = :account AND resource = :resource AND record_id = :record',
@@ -2122,14 +2140,19 @@ final class SyncService
         $minimumCursor = $this->database->pdo->prepare(
             'SELECT MIN(acknowledged_cursor)
              FROM sync_clients
-             WHERE account_id = :account AND last_seen_at >= :cutoff',
+             WHERE account_id = :account
+               AND protocol_version >= :protocol
+               AND last_seen_at >= :cutoff',
         );
-        $minimumCursor->execute(['account' => $account, 'cutoff' => $activeCutoff]);
+        $minimumCursor->execute([
+            'account' => $account,
+            'protocol' => self::PROTOCOL_VERSION,
+            'cutoff' => $activeCutoff,
+        ]);
         $candidate = $minimumCursor->fetchColumn();
-        if ($candidate === false || $candidate === null) {
-            return;
-        }
-        $cursor = (int) $candidate;
+        $cursor = $candidate === false || $candidate === null
+            ? $this->currentChangeCursor($account)
+            : (int) $candidate;
         if ($cursor <= $this->retentionWatermark($account)) {
             return;
         }

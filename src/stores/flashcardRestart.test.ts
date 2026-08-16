@@ -242,4 +242,49 @@ describe('flashcard Review set restart', () => {
       outcome: 'ejected',
     }))
   })
+
+  it('stores a background passive catch-up as one counted event per card', async () => {
+    const store = useFlashcardStore()
+    store.sessions = [{
+      id: 'session-1', reviewSet: 'set-1', status: 'running', name: 'Vocabulary',
+      mode: 'passive', cardSides: 'both', indefinite: true, maxCards: 3,
+      sortMode: 'recently_added', tags: [], frontSeconds: 4, backSeconds: 5,
+      backSpeechRepeatCount: 2, noteBeforeBack: false, speechEnabled: true,
+      frontLanguage: 'en-CA', backLanguage: 'fr-CA', queue: [{
+        id: 'card-1', front: 'One', back: 'Un', note: '', image: '', tags: [],
+      }, {
+        id: 'card-2', front: 'Two', back: 'Deux', note: '', image: '', tags: [],
+      }, {
+        id: 'card-3', front: 'Three', back: 'Trois', note: '', image: '', tags: [],
+      }], startedAt: '2026-08-16T21:44:15Z', updatedAt: '2026-08-16T21:44:15Z',
+      elapsedSeconds: 0, totalCards: 3, viewedCount: 0, successCount: 0,
+      errorCount: 0, ejectedCount: 0,
+    } satisfies FlashcardReviewSession]
+    mocks.updateSession.mockImplementationOnce(async (_id, updates) => sessionRecord({
+      mode_snapshot: 'passive',
+      indefinite_snapshot: true,
+      ...updates,
+    }))
+
+    const updated = await store.act('session-1', 'view', 112, 8)
+
+    expect(mocks.createEvent).toHaveBeenCalledTimes(3)
+    expect(mocks.createEvent.mock.calls.map(([event]) => ({
+      card: event.card,
+      viewCount: event.view_count,
+    })).sort((left, right) => left.card.localeCompare(right.card))).toEqual([
+      { card: 'card-1', viewCount: 3 },
+      { card: 'card-2', viewCount: 3 },
+      { card: 'card-3', viewCount: 2 },
+    ])
+    expect(mocks.updateSession).toHaveBeenCalledWith('session-1', expect.objectContaining({
+      viewed_count: 8,
+      queue_state: [
+        expect.objectContaining({ id: 'card-3' }),
+        expect.objectContaining({ id: 'card-1' }),
+        expect.objectContaining({ id: 'card-2' }),
+      ],
+    }))
+    expect(updated).toMatchObject({ viewedCount: 8, elapsedSeconds: 112 })
+  })
 })

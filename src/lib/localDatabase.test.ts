@@ -83,6 +83,24 @@ describe('offline local database', () => {
     })
   })
 
+  it('uses one wildcard clock for immutable flashcard review events', async () => {
+    await completeLocalBootstrap(accountId, 0, [])
+
+    await putLocalCreate(accountId, 'flashcard_review_events', {
+      session: 'session-1',
+      card: 'card-1',
+      outcome: 'passive',
+      view_count: 8,
+      reviewed_at: '2026-08-16T22:53:09.681Z',
+      front_snapshot: 'Question',
+      back_snapshot: 'Answer',
+      tags_snapshot: [],
+    })
+
+    const operation = (await pendingOperations(accountId))[0]!
+    expect(Object.keys(operation.fieldClocks)).toEqual(['*'])
+  })
+
   it('coalesces undispatched patches but never rewrites an operation that may have reached the server', async () => {
     await completeLocalBootstrap(accountId, 0, [{
       resource: 'interval_sessions',

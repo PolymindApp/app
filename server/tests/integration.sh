@@ -93,7 +93,7 @@ suffix="$(php -r 'echo bin2hex(random_bytes(5));')"
 password="correct-horse-battery"
 
 migration_count="$(sqlite3 "$test_db" 'SELECT COUNT(*) FROM backontrack_schema_migrations;')"
-[[ "$migration_count" == 44 ]] || {
+[[ "$migration_count" == 45 ]] || {
   echo "The API did not apply the complete database migration sequence." >&2
   exit 1
 }
@@ -2150,6 +2150,14 @@ passive_loop_summary="$(php -r '
   echo "An indefinite Passive review did not reconcile multiple views atomically." >&2
   exit 1
 }
+passive_event_batch="$(sqlite3 "$test_db" \
+  "SELECT COUNT(*) || ':' || SUM(view_count)
+   FROM flashcard_review_events
+   WHERE session = '$passive_session_id' AND outcome = 'passive';")"
+[[ "$passive_event_batch" == "1:7" ]] || {
+  echo "A Passive review catch-up was not stored as one counted event: $passive_event_batch" >&2
+  exit 1
+}
 curl --silent --show-error --fail \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $alice_token" \
@@ -2461,9 +2469,12 @@ flashcard_counts="$(sqlite3 "$test_db" \
   "SELECT success_count || ':' || error_count || ':' || passive_views FROM flashcards WHERE id = '$flashcard_id';")"
 flashcard_event_count="$(sqlite3 "$test_db" \
   "SELECT COUNT(*) FROM flashcard_review_events WHERE card = '$flashcard_id';")"
+flashcard_logical_event_count="$(sqlite3 "$test_db" \
+  "SELECT SUM(view_count) FROM flashcard_review_events WHERE card = '$flashcard_id';")"
 flashcard_ejected_event_count="$(sqlite3 "$test_db" \
   "SELECT COUNT(*) FROM flashcard_review_events WHERE card = '$flashcard_id' AND outcome = 'ejected';")"
-[[ "$flashcard_counts" == "1:0:8" && "$flashcard_event_count" == 10 && "$flashcard_ejected_event_count" == 1 ]] || {
+[[ "$flashcard_counts" == "1:0:8" && "$flashcard_event_count" == 4 \
+  && "$flashcard_logical_event_count" == 10 && "$flashcard_ejected_event_count" == 1 ]] || {
   echo "Flashcard aggregate and immutable event statistics drifted apart." >&2
   exit 1
 }
@@ -2913,7 +2924,7 @@ flashcard_delete_status="$(curl --silent --output /dev/null --write-out '%{http_
   -X DELETE -H "Authorization: Bearer $alice_token" \
   "$api_url/collections/flashcards/records/$flashcard_id")"
 flashcard_history_snapshot="$(sqlite3 "$test_db" \
-  "SELECT COUNT(*) FROM flashcard_review_events WHERE card = '' AND front_snapshot = 'What is 2 + 2?' AND back_snapshot = '4';")"
+  "SELECT SUM(view_count) FROM flashcard_review_events WHERE card = '' AND front_snapshot = 'What is 2 + 2?' AND back_snapshot = '4';")"
 [[ "$flashcard_delete_status" == 204 && "$flashcard_history_snapshot" == 11 ]] || {
   echo "Deleting a flashcard did not preserve and detach its review history snapshots." >&2
   exit 1
@@ -3030,6 +3041,12 @@ sqlite3 "$test_db" "
   SET acknowledged_cursor = $sync_compaction_cursor,
       last_seen_at = '2026-08-16T18:00:00.000Z'
   WHERE account_id = '$alice_id';
+  INSERT INTO sync_clients (
+      account_id, client_id, acknowledged_cursor, protocol_version, last_seen_at,
+      confirmed_receipt_sequence
+  ) VALUES (
+      '$alice_id', 'obsolete-v1-client', 0, 1, '2026-08-16T18:00:00.000Z', 0
+  );
 "
 sync_compaction_body="$(php -r '
   echo json_encode([

@@ -98,6 +98,10 @@ final class Database
                 'timezone_offset', 'task', 'tracker', 'task_snapshot',
                 'tracker_snapshot', 'image_url', 'image_file', 'created_at', 'updated_at',
             ],
+            'flashcard_review_events' => [
+                'id', 'owner', 'session', 'card', 'outcome', 'view_count', 'reviewed_at',
+                'front_snapshot', 'back_snapshot', 'tags_snapshot',
+            ],
             'backontrack_rate_limits' => ['rate_key', 'window_start', 'hits'],
             'backontrack_auth_tokens' => [
                 'token_hash', 'user_id', 'purpose', 'expires_at', 'created_at',

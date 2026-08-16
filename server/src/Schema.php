@@ -301,6 +301,7 @@ final class Schema
                     'session' => self::relation(true),
                     'card' => self::relation(false, true),
                     'outcome' => self::choice(['success', 'error', 'passive', 'ejected'], true),
+                    'view_count' => self::integer(1, 100000),
                     'reviewed_at' => self::timestamp(true),
                     'front_snapshot' => self::text(5000, true),
                     'back_snapshot' => self::text(5000, true),

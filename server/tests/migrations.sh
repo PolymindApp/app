@@ -9,6 +9,7 @@ email_invite_db="$test_dir/email-invite.db"
 email_auth_db="$test_dir/email-auth.db"
 cli_db="$test_dir/cli.db"
 http_db="$test_dir/http.db"
+review_compaction_db="$test_dir/review-compaction.db"
 http_response="$test_dir/http-response.json"
 http_server_log="$test_dir/http-server.log"
 http_server_pid=""
@@ -44,7 +45,7 @@ run_migrations() {
 
 sqlite3 "$empty_db" 'VACUUM'
 first_run="$(run_migrations "$empty_db")"
-[[ "$first_run" == "202607290001,202607290002,202607290003,202607300001,202607310001,202607310002,202607310003,202608010001,202608020001,202608020002,202608020003,202608020004,202608050001,202608050002,202608050003,202608060001,202608060002,202608060003,202608060004,202608070001,202608070002,202608070003,202608070004,202608070005,202608070006,202608080001,202608080003,202608090001,202608090002,202608100001,202608100002,202608110001,202608120001,202608120002,202608120003,202608130001,202608140001,202608140002,202608140003,202608160001,202608160002,202608160003" ]] || {
+[[ "$first_run" == "202607290001,202607290002,202607290003,202607300001,202607310001,202607310002,202607310003,202608010001,202608020001,202608020002,202608020003,202608020004,202608050001,202608050002,202608050003,202608060001,202608060002,202608060003,202608060004,202608070001,202608070002,202608070003,202608070004,202608070005,202608070006,202608080001,202608080003,202608090001,202608090002,202608100001,202608100002,202608110001,202608120001,202608120002,202608120003,202608130001,202608140001,202608140002,202608140003,202608160001,202608160002,202608160003,202608160004" ]] || {
   echo "An empty database did not apply the complete migration sequence." >&2
   exit 1
 }
@@ -90,7 +91,7 @@ for table in "${expected_tables[@]}"; do
 done
 
 migration_count="$(sqlite3 "$empty_db" 'SELECT COUNT(*) FROM backontrack_schema_migrations;')"
-[[ "$migration_count" == 42 ]] || {
+[[ "$migration_count" == 43 ]] || {
   echo "Migration history does not contain all migrations." >&2
   exit 1
 }
@@ -103,6 +104,13 @@ client_receipt_columns="$(sqlite3 "$empty_db" \
    WHERE name = 'confirmed_receipt_sequence';")"
 [[ "$receipt_columns" == 1 && "$client_receipt_columns" == 1 ]] || {
   echo "Sync receipt retention columns were not installed." >&2
+  exit 1
+}
+review_event_view_columns="$(sqlite3 "$empty_db" \
+  "SELECT COUNT(*) FROM pragma_table_info('flashcard_review_events')
+   WHERE name = 'view_count' AND dflt_value = '1';")"
+[[ "$review_event_view_columns" == 1 ]] || {
+  echo "Flashcard review event batching was not installed." >&2
   exit 1
 }
 
@@ -189,6 +197,51 @@ preserved="$(sqlite3 "$empty_db" \
   exit 1
 }
 
+sqlite3 "$empty_db" ".backup $review_compaction_db"
+sqlite3 "$review_compaction_db" <<'SQL'
+DELETE FROM backontrack_schema_migrations WHERE version = '202608160004';
+ALTER TABLE flashcard_review_events DROP COLUMN view_count;
+INSERT INTO flashcard_review_events (
+    id, owner, session, card, outcome, reviewed_at,
+    front_snapshot, back_snapshot, tags_snapshot
+) VALUES
+    ('review-1', 'review-owner', 'review-session', 'review-card', 'passive',
+     '2026-08-16T22:53:09.681Z', 'Front', 'Back', '[]'),
+    ('review-2', 'review-owner', 'review-session', 'review-card', 'passive',
+     '2026-08-16T22:53:09.681Z', 'Front', 'Back', '[]'),
+    ('review-3', 'review-owner', 'review-session', 'review-card', 'passive',
+     '2026-08-16T22:53:09.681Z', 'Front', 'Back', '[]');
+UPDATE sync_record_versions
+SET field_clocks = json_object(
+    'session', '100-client', 'card', '100-client', 'outcome', '100-client',
+    'reviewed_at', '100-client', 'front_snapshot', '100-client',
+    'back_snapshot', '100-client', 'tags_snapshot', '100-client',
+    'id', '100-client', 'owner', '100-client'
+)
+WHERE resource = 'flashcard_review_events';
+INSERT INTO sync_clients (
+    account_id, client_id, acknowledged_cursor, protocol_version, last_seen_at,
+    confirmed_receipt_sequence
+) VALUES ('review-owner', 'obsolete-client', 0, 1, '2026-08-16T22:53:09.681Z', 0);
+SQL
+review_compaction_run="$(run_migrations "$review_compaction_db")"
+review_compaction_state="$(sqlite3 "$review_compaction_db" \
+  "SELECT
+     (SELECT COUNT(*) || ':' || SUM(view_count) FROM flashcard_review_events) || ':' ||
+     (SELECT COUNT(*) FROM sync_record_versions
+       WHERE resource = 'flashcard_review_events' AND deleted = FALSE) || ':' ||
+     (SELECT COUNT(*) FROM json_each((SELECT field_clocks FROM sync_record_versions
+       WHERE resource = 'flashcard_review_events' AND deleted = FALSE LIMIT 1))) || ':' ||
+     (SELECT COUNT(*) FROM sync_clients WHERE protocol_version < 2) || ':' ||
+     (SELECT COUNT(*) FROM sync_change_log) || ':' ||
+     (SELECT CASE WHEN minimum_cursor > 0 THEN 1 ELSE 0 END
+       FROM sync_retention_watermarks WHERE account_id = 'review-owner');")"
+[[ "$review_compaction_run" == "202608160004" \
+  && "$review_compaction_state" == "1:3:1:1:0:0:1" ]] || {
+  echo "The flashcard review storage migration did not compact existing history: $review_compaction_state" >&2
+  exit 1
+}
+
 sqlite3 "$empty_db" ".backup $email_auth_db"
 sqlite3 "$email_auth_db" \
   "DELETE FROM backontrack_schema_migrations WHERE version = '202608100001';
@@ -231,7 +284,7 @@ cli_output="$(
   BACKONTRACK_API_SECRET="backontrack-migration-test-secret-at-least-32-characters" \
     php server/migrate.php
 )"
-[[ "$cli_output" == *"Applied 42 migrations"* && "$cli_output" == *"202608160003"* ]] || {
+[[ "$cli_output" == *"Applied 43 migrations"* && "$cli_output" == *"202608160004"* ]] || {
   echo "The migration CLI did not initialize and report a new database." >&2
   exit 1
 }
@@ -290,9 +343,9 @@ php -r '
   $response = json_decode(file_get_contents($argv[1]), true, 512, JSON_THROW_ON_ERROR);
   if (
       ($response["status"] ?? null) !== "ok"
-      || count($response["appliedMigrations"] ?? []) !== 42
-      || ($response["currentVersion"] ?? null) !== "202608160003"
-      || ($response["migrationCount"] ?? null) !== 42
+      || count($response["appliedMigrations"] ?? []) !== 43
+      || ($response["currentVersion"] ?? null) !== "202608160004"
+      || ($response["migrationCount"] ?? null) !== 43
   ) {
       fwrite(STDERR, "The HTTP migration response was invalid.\n");
       exit(1);
@@ -339,7 +392,7 @@ php -r '
   $pdo->exec("DROP TABLE IF EXISTS image_concepts_fts");
 ' "$existing_db"
 sqlite3 "$existing_db" \
-  "DELETE FROM backontrack_schema_migrations WHERE version IN ('202608050001', '202608050002', '202608050003', '202608060001', '202608060002', '202608060003', '202608060004', '202608070001', '202608070002', '202608070003', '202608070004', '202608070005', '202608070006', '202608080001', '202608080003', '202608090001', '202608090002', '202608100001', '202608100002', '202608110001', '202608120001', '202608120002', '202608120003', '202608130001', '202608140001', '202608140002', '202608140003', '202608160001', '202608160002', '202608160003');
+  "DELETE FROM backontrack_schema_migrations WHERE version IN ('202608050001', '202608050002', '202608050003', '202608060001', '202608060002', '202608060003', '202608060004', '202608070001', '202608070002', '202608070003', '202608070004', '202608070005', '202608070006', '202608080001', '202608080003', '202608090001', '202608090002', '202608100001', '202608100002', '202608110001', '202608120001', '202608120002', '202608120003', '202608130001', '202608140001', '202608140002', '202608140003', '202608160001', '202608160002', '202608160003', '202608160004');
    DROP INDEX IF EXISTS idx_entries_task_source_session;
    DROP INDEX IF EXISTS idx_interval_templates_owner_flashcard_review_set;
    DROP INDEX IF EXISTS idx_tasks_owner_flashcard_review_set;
@@ -445,7 +498,7 @@ before_counts="$(sqlite3 "$existing_db" \
 existing_run="$(run_migrations "$existing_db")"
 after_counts="$(sqlite3 "$existing_db" \
   "SELECT (SELECT COUNT(*) FROM tasks) || ':' || (SELECT COUNT(*) FROM entries);")"
-[[ "$existing_run" == "202608050001,202608050002,202608050003,202608060001,202608060002,202608060003,202608060004,202608070001,202608070002,202608070003,202608070004,202608070005,202608070006,202608080001,202608080003,202608090001,202608090002,202608100001,202608100002,202608110001,202608120001,202608120002,202608120003,202608130001,202608140001,202608140002,202608140003,202608160001,202608160002,202608160003" ]] || {
+[[ "$existing_run" == "202608050001,202608050002,202608050003,202608060001,202608060002,202608060003,202608060004,202608070001,202608070002,202608070003,202608070004,202608070005,202608070006,202608080001,202608080003,202608090001,202608090002,202608100001,202608100002,202608110001,202608120001,202608120002,202608120003,202608130001,202608140001,202608140002,202608140003,202608160001,202608160002,202608160003,202608160004" ]] || {
   echo "An existing PHP database did not apply only the pending feature migrations." >&2
   exit 1
 }

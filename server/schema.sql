@@ -368,6 +368,7 @@ CREATE TABLE flashcard_review_events (
     session TEXT NOT NULL DEFAULT '',
     card TEXT NOT NULL DEFAULT '',
     outcome TEXT NOT NULL DEFAULT '',
+    view_count INTEGER NOT NULL DEFAULT 1,
     reviewed_at TEXT NOT NULL DEFAULT '',
     front_snapshot TEXT NOT NULL DEFAULT '',
     back_snapshot TEXT NOT NULL DEFAULT '',

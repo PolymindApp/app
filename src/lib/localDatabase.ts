@@ -289,7 +289,9 @@ export async function putLocalCreate(
   const id = typeof plainData.id === 'string' && plainData.id ? plainData.id : createLocalRecordId()
   const record = { ...plainData, id, owner: plainData.owner || accountId }
   const fieldClock = createFieldClock()
-  const clocks = Object.fromEntries(Object.keys(record).map(field => [field, fieldClock]))
+  const clocks = resource === 'flashcard_review_events'
+    ? { '*': fieldClock }
+    : Object.fromEntries(Object.keys(record).map(field => [field, fieldClock]))
   const operation = makeOperation(accountId, resource, id, 'create', record, clocks, options)
   const row: LocalSyncResource = {
     key: resourceKey(accountId, resource, id),
