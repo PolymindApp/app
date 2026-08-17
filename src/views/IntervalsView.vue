@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { format, isSameWeek, startOfWeek } from 'date-fns'
 import IntervalPlanList from '@/components/IntervalPlanList.vue'
+import StickyActionBanner from '@/components/StickyActionBanner.vue'
 import WeekNavigator from '@/components/WeekNavigator.vue'
 import { groupIntervalSessionsByDate, intervalRunProgressPercent } from '@/services/intervalHistory'
 import { formatIntervalDuration } from '@/services/intervals'
@@ -171,42 +172,22 @@ onBeforeUnmount(() => {
       </v-card>
     </transition>
 
-    <v-card
+    <StickyActionBanner
       v-if="store.activeSession"
-      class="active-session page-action-area pa-5"
-      color="secondary"
-    >
-      <div class="active-session__inner">
-        <div class="active-session__details">
-          <span class="active-label">
-            {{ store.activeSession.status === 'paused' ? 'Paused' : 'In progress' }}
-          </span>
-          <strong class="active-session__name text-truncate">{{ store.activeSession.name }}</strong>
-        </div>
-        <v-btn
-          color="primary"
-          size="large"
-          append-icon="mdi-arrow-right"
-          :to="{
-            name: 'interval-runner',
-            params: { sessionId: store.activeSession.id },
-            query: { autoplay: '1' },
-          }"
-        >
-          Resume
-        </v-btn>
-      </div>
-    </v-card>
+      :label="store.activeSession.status === 'paused' ? 'Paused' : 'In progress'"
+      :title="store.activeSession.name"
+      action-label="Resume"
+      :to="{
+        name: 'interval-runner',
+        params: { sessionId: store.activeSession.id },
+        query: { autoplay: '1' },
+      }"
+    />
   </main>
 </template>
 
 <style scoped>
 .intervals-page--active { padding-bottom: calc(7rem + var(--page-safe-area-bottom)); }
-.active-session { position: fixed; z-index: 20; right: 0; bottom: 0; left: 17rem; border-radius: 0 !important; color: rgb(var(--v-theme-on-secondary)); box-shadow: 0 -.75rem 1.875rem rgba(0, 0, 0, .28) !important; }
-.active-session__inner { display: flex; width: 100%; max-width: 54.25rem; margin: 0 auto; align-items: center; justify-content: space-between; gap: 1rem; }
-.active-session__details { display: flex; min-width: 0; flex-direction: column; }
-.active-label { font-size: .65rem; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
-.active-session__name { font-size: 1.5rem; }
 .interval-content-enter-active { transition: opacity 180ms ease, transform 220ms cubic-bezier(.22, 1, .36, 1); }
 .interval-content-enter-from { opacity: 0; transform: translateY(.75rem); }
 .recent-run-group__heading { min-height: 2.75rem; }
@@ -218,10 +199,4 @@ onBeforeUnmount(() => {
 .recent-run-note span { min-width: 0; overflow-wrap: anywhere; white-space: pre-line; }
 .recent-run-meta { display: block; margin-top: .25rem; overflow: hidden; color: rgba(var(--v-theme-on-surface), .62); font-size: .875rem; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
 .recent-run-time { display: block; width: 3.5rem; font-variant-numeric: tabular-nums; text-align: end; }
-@media (max-width: 59.9375rem) {
-  .active-session {
-    bottom: calc(4.5rem + env(safe-area-inset-bottom));
-    left: 0;
-  }
-}
 </style>

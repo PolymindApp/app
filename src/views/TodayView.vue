@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Capacitor } from '@capacitor/core'
 import { App } from '@capacitor/app'
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { addDays, format, isAfter, parseISO, startOfDay, startOfWeek } from 'date-fns'
 import { storeToRefs } from 'pinia'
 import { useDisplay } from 'vuetify'
@@ -9,6 +9,7 @@ import { useRouter } from 'vue-router'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import AppDialog from '@/components/AppDialog.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import StickyActionBanner from '@/components/StickyActionBanner.vue'
 import TaskCard from '@/components/TaskCard.vue'
 import TrackingLogBottomSheet from '@/components/TrackingLogBottomSheet.vue'
 import WeekDateNavigator from '@/components/WeekDateNavigator.vue'
@@ -17,6 +18,7 @@ import { reviewSetCardCount } from '@/services/flashcards'
 import { isNativeHealthConnectSupported } from '@/services/healthConnect'
 import { isHealthConnectEntry } from '@/services/healthConnectEntries'
 import { formatIntervalDuration, intervalDuration } from '@/services/intervals'
+import { bottomAlignedTaskScrollTop, nextIncompleteTaskKey } from '@/services/nextIncompleteTask'
 import { taskCompletionMarkerColor, toDateKey } from '@/services/schedule'
 import { TASK_CARD_ACTION_ITEMS, taskCanLogAdditionalValue, taskCanLogAmounts, taskIntervalCanStart } from '@/services/taskCardActions'
 import type { TaskCardActionId } from '@/services/taskCardActions'
@@ -49,6 +51,7 @@ import type {
 
 const allowAutomaticFocus = Capacitor.getPlatform() !== 'android'
 const HEALTH_CONNECT_RESUME_DELAY_MS = 500
+const NEXT_TASK_SCROLL_GAP_REM = 1
 const store = useTaskStore()
 const intervalStore = useIntervalStore()
 const flashcardStore = useFlashcardStore()
@@ -83,6 +86,8 @@ const exactLoggingAdditional = ref(false)
 const exactError = ref('')
 let exactNoteHistoryRequest = 0
 const exactAction = ref<'add' | 'subtract' | 'set' | 'save'>()
+const todayPage = ref<HTMLElement>()
+const nextIncompleteProgress = ref<TaskProgress>()
 const reviewSheet = ref(false)
 const taskSheet = ref(false)
 const taskSheetMode = ref<'actions' | 'history'>('actions')
@@ -375,17 +380,111 @@ const notScheduledProgress = computed(() => tasksWithoutProgress(
 const scheduleLayout = computed(() => groupTaskProgressBySchedule(selectedProgress.value))
 const allDayProgress = computed(() => scheduleLayout.value.allDay)
 const timedProgressGroups = computed(() => scheduleLayout.value.timed)
+const progressByVisibilityKey = computed(() => new Map(
+  selectedProgress.value.map(progress => [visibilityKey(progress), progress]),
+))
 const reviewItems = computed(() => store.reviewProgressForDate(selectedDate.value))
 const scoredProgress = computed(() => selectedProgress.value.filter(item => item.status !== 'skipped'))
 const doneCount = computed(() => scoredProgress.value.filter((item) => item.complete).length)
 let appStateListener: Awaited<ReturnType<typeof App.addListener>> | undefined
 let stepCountResumeTimer: ReturnType<typeof setTimeout> | undefined
+let nextTaskFrame = 0
+let nextTaskResizeObserver: ResizeObserver | undefined
+
+function scheduleNextIncompleteTask() {
+  window.cancelAnimationFrame(nextTaskFrame)
+  nextTaskFrame = window.requestAnimationFrame(updateNextIncompleteTask)
+}
+
+function updateNextIncompleteTask() {
+  nextTaskFrame = 0
+  const page = todayPage.value
+  if (!page) return
+
+  const taskElements = [...page.querySelectorAll<HTMLElement>('[data-task-progress-key]')]
+  taskElements.forEach(element => nextTaskResizeObserver?.observe(element))
+
+  const appBarBottom = document.querySelector<HTMLElement>('.app-bar')
+    ?.getBoundingClientRect().bottom ?? 0
+  const bottomNavigationTop = document.querySelector<HTMLElement>('.bottom-nav')
+    ?.getBoundingClientRect().top ?? window.innerHeight
+  const bannerTop = page.querySelector<HTMLElement>('.next-incomplete-task-banner')
+    ?.getBoundingClientRect().top
+  const visibleBottom = bannerTop === undefined
+    ? bottomNavigationTop
+    : Math.min(bannerTop, bottomNavigationTop)
+  const scrollingElement = document.scrollingElement ?? document.documentElement
+  const atPageBottom = scrollingElement.scrollTop + scrollingElement.clientHeight
+    >= scrollingElement.scrollHeight - 1
+  const rootFontSize = Number.parseFloat(getComputedStyle(document.documentElement).fontSize)
+  const key = nextIncompleteTaskKey(
+    taskElements.flatMap((element) => {
+      const progressKey = element.dataset.taskProgressKey
+      const progress = progressKey ? progressByVisibilityKey.value.get(progressKey) : undefined
+      if (!progressKey || !progress) return []
+      const bounds = element.getBoundingClientRect()
+      return [{
+        key: progressKey,
+        incomplete: !progress.complete && progress.status !== 'skipped',
+        top: bounds.top,
+        left: bounds.left,
+        bottom: bounds.bottom,
+      }]
+    }),
+    appBarBottom,
+    visibleBottom,
+    window.scrollY <= 1,
+    NEXT_TASK_SCROLL_GAP_REM * rootFontSize,
+    atPageBottom,
+  )
+  const nextProgress = key ? progressByVisibilityKey.value.get(key) : undefined
+
+  if (nextProgress === nextIncompleteProgress.value) return
+  nextIncompleteProgress.value = nextProgress
+  void nextTick(scheduleNextIncompleteTask)
+}
+
+function scrollToNextIncompleteTask() {
+  const progress = nextIncompleteProgress.value
+  const page = todayPage.value
+  if (!progress || !page) return
+  const key = visibilityKey(progress)
+  const target = [...page.querySelectorAll<HTMLElement>('[data-task-progress-key]')]
+    .find(element => element.dataset.taskProgressKey === key)
+  if (!target) return
+  const bannerTop = page.querySelector<HTMLElement>('.next-incomplete-task-banner')
+    ?.getBoundingClientRect().top
+  const bottomNavigationTop = document.querySelector<HTMLElement>('.bottom-nav')
+    ?.getBoundingClientRect().top ?? window.innerHeight
+  const containerBottom = bannerTop === undefined
+    ? bottomNavigationTop
+    : Math.min(bannerTop, bottomNavigationTop)
+  const rootFontSize = Number.parseFloat(getComputedStyle(document.documentElement).fontSize)
+  const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
+  window.scrollTo({
+    top: bottomAlignedTaskScrollTop(
+      window.scrollY,
+      target.getBoundingClientRect().bottom,
+      containerBottom,
+      NEXT_TASK_SCROLL_GAP_REM * rootFontSize,
+    ),
+    behavior: reducedMotion ? 'auto' : 'smooth',
+  })
+}
 
 onMounted(async () => {
+  window.addEventListener('scroll', scheduleNextIncompleteTask, { passive: true })
+  window.addEventListener('resize', scheduleNextIncompleteTask, { passive: true })
+  if (typeof ResizeObserver !== 'undefined') {
+    nextTaskResizeObserver = new ResizeObserver(scheduleNextIncompleteTask)
+    if (todayPage.value) nextTaskResizeObserver.observe(todayPage.value)
+  }
+  scheduleNextIncompleteTask()
   try {
     await Promise.all([store.load(), intervalStore.load(), flashcardStore.load(), trackingStore.load()])
   } catch { /* Store error states are displayed in the view. */ }
   await loadVisibleTaskProgress()
+  scheduleNextIncompleteTask()
   if (Capacitor.isNativePlatform()) {
     appStateListener = await App.addListener('appStateChange', ({ isActive }) => {
       clearTimeout(stepCountResumeTimer)
@@ -405,6 +504,10 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   void appStateListener?.remove()
   clearTimeout(stepCountResumeTimer)
+  window.removeEventListener('scroll', scheduleNextIncompleteTask)
+  window.removeEventListener('resize', scheduleNextIncompleteTask)
+  window.cancelAnimationFrame(nextTaskFrame)
+  nextTaskResizeObserver?.disconnect()
 })
 
 watch(selectedDate, date => {
@@ -414,6 +517,14 @@ watch(selectedDate, date => {
 watch(visibleWeekStart, () => {
   if (store.tasks.length) void loadVisibleTaskProgress()
 })
+
+watch(
+  () => selectedProgress.value.map(progress => (
+    `${visibilityKey(progress)}:${progress.complete}:${progress.status}`
+  )).join('|'),
+  () => void nextTick(scheduleNextIncompleteTask),
+  { flush: 'post' },
+)
 
 async function loadVisibleTaskProgress() {
   const dates = visibleWeekDates.value
@@ -1077,7 +1188,7 @@ async function saveTaskLogEntry() {
 </script>
 
 <template>
-  <main class="app-page today-page">
+  <main ref="todayPage" class="app-page today-page">
     <WeekDateNavigator
       v-model="selectedDate"
       v-model:week-start="visibleWeekStart"
@@ -1146,6 +1257,7 @@ async function saveTaskLogEntry() {
                 <div
                   v-for="item in group.tasks"
                   :key="visibilityKey(item)"
+                  :data-task-progress-key="visibilityKey(item)"
                   class="task-masonry-item"
                 >
                   <TaskCard
@@ -1184,6 +1296,7 @@ async function saveTaskLogEntry() {
             <div
               v-for="item in allDayProgress"
               :key="visibilityKey(item)"
+              :data-task-progress-key="visibilityKey(item)"
               v-long-press-drag="{
                 id: progressKey(item),
                 group: 'all-day-task-cards',
@@ -1283,6 +1396,23 @@ async function saveTaskLogEntry() {
         </v-list>
       </v-expand-transition>
     </section>
+
+    <Transition
+      name="next-task-banner"
+      @after-enter="scheduleNextIncompleteTask"
+      @after-leave="scheduleNextIncompleteTask"
+    >
+      <StickyActionBanner
+        v-if="nextIncompleteProgress"
+        class="next-incomplete-task-banner page-action-area--route-slide"
+        label="Next incomplete"
+        :title="nextIncompleteProgress.programStep?.name || nextIncompleteProgress.task.name"
+        action-label="View"
+        action-icon="mdi-arrow-down"
+        aria-live="polite"
+        @action="scrollToNextIncompleteTask"
+      />
+    </Transition>
 
     <AppDialog
       v-model="exactDialog"
@@ -1715,12 +1845,28 @@ async function saveTaskLogEntry() {
 .review-row { display: flex; flex-direction: column; align-items: stretch; gap: 1rem; border-top: .0625rem solid rgb(var(--v-theme-on-surface) / .08); }
 .review-actions { display: grid; gap: .5rem; }
 .review-actions .v-btn { width: 100%; }
+.next-task-banner-enter-active {
+  transition: transform 220ms cubic-bezier(.22, 1, .36, 1), opacity 180ms ease;
+}
+.next-task-banner-leave-active {
+  transition: transform 180ms cubic-bezier(.4, 0, 1, 1), opacity 160ms ease;
+}
+.next-task-banner-enter-from,
+.next-task-banner-leave-to {
+  opacity: 0;
+  transform: translateY(100%);
+}
 
 @media (min-width: 43.75rem) {
   .task-stack { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .task-hour-stack,
   .task-all-day-stack { grid-template-columns: 1fr; }
   .review-actions { grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .next-task-banner-enter-active,
+  .next-task-banner-leave-active { transition-duration: .01ms; }
 }
 
 </style>
