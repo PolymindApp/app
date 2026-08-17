@@ -149,8 +149,8 @@ function applyCustomColor() {
 }
 
 .color-picker__options {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   align-items: center;
   gap: .55rem;
 }
@@ -162,12 +162,12 @@ function applyCustomColor() {
 .color-picker__swatch,
 .color-picker__custom {
   display: grid;
-  min-width: 38px;
-  height: 38px;
-  flex: 1 1 38px;
+  width: 100%;
+  min-width: 0;
+  height: 2.75rem;
   place-items: center;
-  border: 2px solid transparent;
-  border-radius: 12px;
+  border: .125rem solid transparent;
+  border-radius: .75rem;
   color: #17200f;
   cursor: pointer;
 }
@@ -179,6 +179,7 @@ function applyCustomColor() {
 }
 
 .color-picker__custom {
+  grid-column: 1 / -1;
   border-color: rgba(var(--v-theme-on-surface), .18);
   background: rgb(var(--v-theme-surface-variant));
   color: rgb(var(--v-theme-on-surface));
