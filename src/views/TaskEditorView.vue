@@ -145,8 +145,7 @@ const draft = reactive<TaskDraft>({
   cycleLength: 7,
   programRepeat: true,
   programStrict: false,
-  entryNotesEnabled: false,
-  entryNoteSuggestionsEnabled: false,
+  logWithImagesEnabled: false,
   sortOrder: 0,
   intervalTemplate: undefined,
   flashcardReviewSet: undefined,
@@ -166,8 +165,8 @@ const scheduledTimeModel = computed({
 const showTarget = computed(() =>
   draft.type === 'duration' || draft.type === 'daily_total' || draft.type === 'step_counter',
 )
-const showEntryNoteSettings = computed(() =>
-  draft.type === 'duration' || draft.type === 'daily_total' || draft.type === 'program',
+const showImageLogSettings = computed(() =>
+  ['duration', 'daily_total', 'step_counter', 'program'].includes(draft.type),
 )
 const selectedInterval = computed(() => intervalStore.templates.find((item) => item.id === draft.intervalTemplate))
 const intervalItems = computed(() => intervalStore.templates.map((item) => ({
@@ -613,11 +612,11 @@ async function removeTask() {
           <div><strong>Review if unfinished</strong><p>Ask whether to miss, carry, or reschedule</p></div>
           <v-switch v-model="draft.reviewWhenMissed" color="secondary" hide-details inset />
         </div>
-        <template v-if="showEntryNoteSettings">
+        <template v-if="showImageLogSettings">
           <v-divider />
           <div class="setting-row">
-            <div><strong>Notes when logging</strong><p>Add an optional note to each amount entry</p></div>
-            <v-switch v-model="draft.entryNotesEnabled" color="secondary" hide-details="auto" inset />
+            <div><strong>Log with images</strong><p>Quickly log a labeled amount from a photo</p></div>
+            <v-switch v-model="draft.logWithImagesEnabled" color="secondary" hide-details="auto" inset />
           </div>
         </template>
       </v-card>

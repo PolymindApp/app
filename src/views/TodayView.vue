@@ -11,6 +11,7 @@ import AppDialog from '@/components/AppDialog.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import StickyActionBanner from '@/components/StickyActionBanner.vue'
 import TaskCard from '@/components/TaskCard.vue'
+import TaskImageLogBottomSheet from '@/components/TaskImageLogBottomSheet.vue'
 import TrackingLogBottomSheet from '@/components/TrackingLogBottomSheet.vue'
 import WeekDateNavigator from '@/components/WeekDateNavigator.vue'
 import type { LongPressDragResult } from '@/directives/longPressDrag'
@@ -23,11 +24,6 @@ import { taskCompletionMarkerColor, toDateKey } from '@/services/schedule'
 import { TASK_CARD_ACTION_ITEMS, taskCanLogAdditionalValue, taskCanLogAmounts, taskIntervalCanStart } from '@/services/taskCardActions'
 import type { TaskCardActionId } from '@/services/taskCardActions'
 import { formatTrackingValue } from '@/services/tracking'
-import {
-  TASK_ENTRY_NOTE_MAX_LENGTH,
-  sanitizeTaskEntryNote,
-  taskEntryNoteOptions,
-} from '@/services/taskEntryNotes'
 import {
   formatTaskScheduleTime,
   groupTaskProgressBySchedule,
@@ -78,14 +74,13 @@ const exactCompletion = computed(() => exactProgress.value?.completionItems?.fin
   item => item.id === exactCompletionId.value,
 ))
 const exactAmountInput = ref('')
-const exactNote = ref('')
-const exactNoteHistory = ref<Entry[]>([])
-const exactNoteLoading = ref(false)
 const exactEditingEntry = ref<Entry>()
 const exactLoggingAdditional = ref(false)
 const exactError = ref('')
-let exactNoteHistoryRequest = 0
 const exactAction = ref<'add' | 'subtract' | 'set' | 'save'>()
+const imageLogSheet = ref(false)
+const imageLogProgress = ref<TaskProgress>()
+const imageLogCompletionId = ref('')
 const todayPage = ref<HTMLElement>()
 const nextIncompleteProgress = ref<TaskProgress>()
 const reviewSheet = ref(false)
@@ -135,11 +130,6 @@ const exactAmountError = computed(() => {
   return undefined
 })
 const keypadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'backspace'] as const
-const exactNoteOptions = computed(() =>
-  exactProgress.value?.task.entryNotesEnabled
-    ? taskEntryNoteOptions(exactNoteHistory.value, exactProgress.value.task.id)
-    : [],
-)
 const taskActionTitle = computed(() =>
   taskActionProgress.value?.programStep?.name
     || taskActionProgress.value?.task.name
@@ -153,6 +143,7 @@ type TaskMainActionId =
   | 'start-interval'
   | 'start-review'
   | 'log-amount'
+  | 'log-with-image'
   | 'log-time'
   | 'toggle-total-lock'
   | 'sync-steps'
@@ -292,6 +283,14 @@ const taskMainActionItems = computed<TaskMainActionItem[]>(() => {
       icon: 'mdi-plus-minus-variant',
       disabled: locked || Boolean(progress.sealed),
     })
+    if (progress.task.logWithImagesEnabled) {
+      items.push({
+        id: 'log-with-image',
+        title: 'Log with image',
+        icon: 'mdi-image-plus-outline',
+        disabled: locked || Boolean(progress.sealed),
+      })
+    }
     if (!progress.programStep && progress.task.type === 'duration') {
       items.push({
         id: 'log-time',
@@ -322,6 +321,14 @@ const taskMainActionItems = computed<TaskMainActionItem[]>(() => {
       icon: 'mdi-plus-minus-variant',
       disabled: locked,
     })
+    if (progress.task.logWithImagesEnabled) {
+      items.push({
+        id: 'log-with-image',
+        title: 'Log with image',
+        icon: 'mdi-image-plus-outline',
+        disabled: locked,
+      })
+    }
   }
   if (!progress.programStep && progress.task.type === 'journal' && journalCanWrite(progress)) {
     items.push({
@@ -728,6 +735,10 @@ function runTaskMainAction(action: TaskMainActionItem) {
     void openExact(progress, progress.task.type === 'step_counter')
     return
   }
+  if (action.id === 'log-with-image') {
+    openImageLogger(progress)
+    return
+  }
   if (action.id === 'log-time') {
     openTimeLogger(progress)
     return
@@ -757,7 +768,8 @@ function runProgramStepRequirement(progress: TaskProgress, completionId: string)
     return
   }
   if (completion.type === 'quantity') {
-    void openExact(progress, false, completion.id)
+    if (progress.task.logWithImagesEnabled) openImageLogger(progress, completion.id)
+    else void openExact(progress, false, completion.id)
     return
   }
   if (completion.complete) {
@@ -785,6 +797,11 @@ function taskEntryIcon(entry: Entry) {
   return 'mdi-chart-donut'
 }
 
+function taskEntryImage(entry: Entry) {
+  if (!entry.taskLogImage) return undefined
+  return store.taskLogImages.find(item => item.id === entry.taskLogImage)?.image
+}
+
 function taskEntryValue(entry: Entry) {
   const value = Number(entry.value.toFixed(2))
   return `${value}${entry.unit ? ` ${entry.unit}` : ''}`
@@ -798,7 +815,7 @@ function taskEntryTime(entry: Entry) {
 function taskEntrySubtitle(entry: Entry) {
   return [
     taskEntryTime(entry),
-    ...(entry.note ? [taskEntryKindLabel(entry)] : []),
+    ...(entry.label || entry.note ? [taskEntryKindLabel(entry)] : []),
   ].join(' · ')
 }
 
@@ -810,11 +827,14 @@ async function openTaskLogHistory() {
   taskLogLoading.value = true
   taskLogError.value = ''
   try {
-    const entries = await store.loadEntriesForDay(
-      progress.task.id,
-      progress.scheduledDate,
-      progress.programStep?.id,
-    )
+    const [entries] = await Promise.all([
+      store.loadEntriesForDay(
+        progress.task.id,
+        progress.scheduledDate,
+        progress.programStep?.id,
+      ),
+      store.loadTaskLogImages(progress.task.id).catch(() => []),
+    ])
     if (request === taskLogRequest) taskLogEntries.value = entries
   } catch (cause) {
     if (request === taskLogRequest) {
@@ -887,30 +907,15 @@ async function openExact(progress: TaskProgress, additional = false, completionI
   exactEditingEntry.value = undefined
   exactLoggingAdditional.value = additional
   exactAmountInput.value = ''
-  exactNote.value = ''
-  exactNoteHistory.value = store.entries.filter((entry) => entry.task === progress.task.id)
   exactAction.value = undefined
   exactError.value = ''
   exactDialog.value = true
-
-  if (!progress.task.entryNotesEnabled) return
-
-  const request = ++exactNoteHistoryRequest
-  exactNoteLoading.value = true
-  try {
-    const history = await store.loadEntryNoteHistory(progress.task.id)
-    if (request === exactNoteHistoryRequest && exactProgress.value?.task.id === progress.task.id) {
-      exactNoteHistory.value = history
-    }
-  } catch {
-    // Recent entries already provide useful suggestions if full history cannot load.
-  } finally {
-    if (request === exactNoteHistoryRequest) exactNoteLoading.value = false
-  }
 }
 
-function updateExactNote(value: unknown) {
-  exactNote.value = sanitizeTaskEntryNote(value)
+function openImageLogger(progress: TaskProgress, completionId = '') {
+  imageLogProgress.value = progress
+  imageLogCompletionId.value = completionId
+  imageLogSheet.value = true
 }
 
 function editTaskLogEntry(entry: Entry) {
@@ -921,9 +926,6 @@ function editTaskLogEntry(entry: Entry) {
   exactEditingEntry.value = entry
   exactLoggingAdditional.value = false
   exactAmountInput.value = String(Number(entry.value.toFixed(2)))
-  exactNote.value = entry.note || ''
-  exactNoteHistory.value = taskLogEntries.value
-  exactNoteLoading.value = false
   exactAction.value = undefined
   exactError.value = ''
   exactDialog.value = true
@@ -1142,7 +1144,6 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
     progress,
     amount,
     mode === 'add' ? undefined : 'adjustment',
-    progress.task.entryNotesEnabled ? exactNote.value.trim() : '',
     exactCompletionId.value,
   ))
   pulseProgressValue(progress)
@@ -1167,7 +1168,6 @@ async function saveTaskLogEntry() {
     progress,
     entry.id,
     exactAmount.value!,
-    progress.task.entryNotesEnabled ? exactNote.value.trim() : entry.note || '',
   ))
   pulseProgressValue(progress)
   exactDialog.value = false
@@ -1470,19 +1470,6 @@ async function saveTaskLogEntry() {
             </p>
           </div>
         </div>
-        <v-combobox
-          v-if="exactProgress?.task.entryNotesEnabled"
-          :model-value="exactNote"
-          :items="exactNoteOptions"
-          :loading="exactNoteLoading"
-          label="Note (optional)"
-          clearable
-          :maxlength="TASK_ENTRY_NOTE_MAX_LENGTH"
-          hint="Choose a previous note or type a new one"
-          persistent-hint
-          class="mb-4"
-          @update:model-value="updateExactNote"
-        />
         <v-btn
           v-if="exactEditingEntry"
           block
@@ -1535,6 +1522,13 @@ async function saveTaskLogEntry() {
         </div>
       </v-card>
     </AppDialog>
+
+    <TaskImageLogBottomSheet
+      v-model="imageLogSheet"
+      :progress="imageLogProgress"
+      :completion-id="imageLogCompletionId"
+      @logged="imageLogProgress && pulseProgressValue(imageLogProgress)"
+    />
 
     <TrackingLogBottomSheet
       v-model="trackingSheetOpen"
@@ -1592,10 +1586,28 @@ async function saveTaskLogEntry() {
           <v-list-item
             v-for="entry in taskLogEntries"
             :key="entry.id"
-            :prepend-icon="taskEntryIcon(entry)"
-            :title="entry.note || taskEntryKindLabel(entry)"
+            :title="entry.label || entry.note || taskEntryKindLabel(entry)"
             rounded="lg"
           >
+            <template #prepend>
+              <v-avatar
+                v-if="taskEntryImage(entry)"
+                class="task-log-thumbnail"
+                rounded="lg"
+                size="48"
+              >
+                <v-img
+                  :src="taskEntryImage(entry)"
+                  :alt="entry.label ? `${entry.label} log image` : 'Task log image'"
+                  cover
+                >
+                  <template #error>
+                    <v-icon :icon="taskEntryIcon(entry)" color="medium-emphasis" />
+                  </template>
+                </v-img>
+              </v-avatar>
+              <v-icon v-else :icon="taskEntryIcon(entry)" />
+            </template>
             <template #subtitle>
               <span>{{ taskEntrySubtitle(entry) }} · {{ taskEntryValue(entry) }}</span>
             </template>
@@ -1840,6 +1852,7 @@ async function saveTaskLogEntry() {
 .exact-action--set { grid-area: set; }
 .task-log-actions { display: flex; align-items: center; }
 .task-log-action { width: 2.75rem !important; min-width: 2.75rem !important; height: 2.75rem !important; }
+.task-log-thumbnail { border: .0625rem solid rgb(var(--v-theme-on-surface) / .12); background: rgb(var(--v-theme-surface-variant)); }
 .task-log-value { display: block; margin-top: .125rem; color: rgb(var(--v-theme-on-surface)); font-size: .8rem; white-space: nowrap; }
 .task-log-empty { min-height: 10rem; }
 .review-row { display: flex; flex-direction: column; align-items: stretch; gap: 1rem; border-top: .0625rem solid rgb(var(--v-theme-on-surface) / .08); }

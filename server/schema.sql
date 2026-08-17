@@ -170,8 +170,7 @@ CREATE TABLE tasks (
     cycle_length NUMERIC NOT NULL DEFAULT 0,
     program_repeat BOOLEAN NOT NULL DEFAULT FALSE,
     program_strict BOOLEAN NOT NULL DEFAULT FALSE,
-    entry_notes_enabled BOOLEAN NOT NULL DEFAULT FALSE,
-    entry_note_suggestions_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    log_with_images_enabled BOOLEAN NOT NULL DEFAULT FALSE,
     sort_order NUMERIC NOT NULL DEFAULT 0,
     color TEXT NOT NULL DEFAULT '',
     interval_template TEXT NOT NULL DEFAULT '',
@@ -253,7 +252,9 @@ CREATE TABLE entries (
         CHECK (length(note) <= 255 AND instr(note, char(10)) = 0 AND instr(note, char(13)) = 0),
     source_type TEXT NOT NULL DEFAULT '',
     source_session TEXT NOT NULL DEFAULT '',
-    program_step_completion TEXT NOT NULL DEFAULT ''
+    program_step_completion TEXT NOT NULL DEFAULT '',
+    label VARCHAR(160) NOT NULL DEFAULT '',
+    task_log_image TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX idx_entries_owner_date ON entries (owner, entry_date);
@@ -265,6 +266,23 @@ CREATE INDEX idx_entries_owner_occurrence
     ON entries (owner, occurrence) WHERE occurrence <> '';
 CREATE INDEX idx_entries_owner_program_step_date
     ON entries (owner, program_step, entry_date) WHERE program_step <> '';
+
+CREATE TABLE task_log_images (
+    id TEXT PRIMARY KEY NOT NULL DEFAULT ('r' || lower(hex(randomblob(7)))),
+    owner TEXT NOT NULL,
+    task TEXT NOT NULL DEFAULT '',
+    label VARCHAR(160) NOT NULL DEFAULT '',
+    amount NUMERIC NOT NULL DEFAULT 0,
+    unit TEXT NOT NULL DEFAULT '',
+    image_url TEXT NOT NULL DEFAULT '',
+    image_file VARCHAR(52) NOT NULL DEFAULT '',
+    usage_count INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT '',
+    updated_at TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX idx_task_log_images_task_usage
+    ON task_log_images (task, usage_count DESC, updated_at DESC);
 
 CREATE TABLE interval_templates (
     id TEXT PRIMARY KEY NOT NULL DEFAULT ('r' || lower(hex(randomblob(7)))),

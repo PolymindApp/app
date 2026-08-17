@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
-import type { Entry, JournalEntry, Occurrence, ProgramStep, Task, TaskDraft, TrackingEntry } from '@/types/domain'
+import type { Entry, JournalEntry, Occurrence, ProgramStep, Task, TaskDraft, TaskLogImage, TrackingEntry } from '@/types/domain'
 
 const apiMocks = vi.hoisted(() => ({
   createOccurrence: vi.fn(),
@@ -9,6 +9,11 @@ const apiMocks = vi.hoisted(() => ({
   updateEntry: vi.fn(),
   deleteEntry: vi.fn(),
   getEntries: vi.fn(),
+  createTaskLogImage: vi.fn(),
+  updateTaskLogImageRecord: vi.fn(),
+  deleteTaskLogImage: vi.fn(),
+  getTaskLogImages: vi.fn(),
+  uploadTaskLogImage: vi.fn(),
   updateOccurrence: vi.fn(),
   createTask: vi.fn(),
   updateTask: vi.fn(),
@@ -37,11 +42,19 @@ vi.mock('@/lib/api', () => ({
         update: apiMocks.updateOccurrence,
         delete: apiMocks.deleteOccurrence,
       }
+      if (name === 'task_log_images') return {
+        create: apiMocks.createTaskLogImage,
+        update: apiMocks.updateTaskLogImageRecord,
+        delete: apiMocks.deleteTaskLogImage,
+        getFullList: apiMocks.getTaskLogImages,
+      }
       if (name === 'tasks') return { create: apiMocks.createTask, update: apiMocks.updateTask }
       if (name === 'program_steps') return { create: apiMocks.createStep, update: apiMocks.updateStep }
       throw new Error(`Unexpected collection: ${name}`)
     },
+    updateTaskLogImage: apiMocks.uploadTaskLogImage,
   },
+  apiAssetUrl: (value: string) => value,
 }))
 
 vi.mock('@/services/healthConnect', () => ({
@@ -72,8 +85,7 @@ const task: Task = {
   targetValue: 4,
   targetOperator: 'gte',
   goalPeriod: 'occurrence',
-  entryNotesEnabled: true,
-  entryNoteSuggestionsEnabled: true,
+  logWithImagesEnabled: true,
   reminderEnabled: false,
   reminderTimes: [],
   sortOrder: 0,
@@ -112,6 +124,11 @@ describe('quantitative task completion', () => {
     apiMocks.updateEntry.mockReset()
     apiMocks.deleteEntry.mockReset()
     apiMocks.getEntries.mockReset()
+    apiMocks.createTaskLogImage.mockReset()
+    apiMocks.updateTaskLogImageRecord.mockReset()
+    apiMocks.deleteTaskLogImage.mockReset()
+    apiMocks.getTaskLogImages.mockReset()
+    apiMocks.uploadTaskLogImage.mockReset()
     apiMocks.updateOccurrence.mockReset()
     apiMocks.createTask.mockReset()
     apiMocks.updateTask.mockReset()
@@ -910,33 +927,6 @@ describe('quantitative task completion', () => {
     })
   })
 
-  it('persists an optional note with an amount entry', async () => {
-    const store = useTaskStore()
-    store.selectedDate = selectedDate
-    store.occurrences = [{
-      ...completedOccurrence,
-      status: 'pending',
-      completedAt: undefined,
-    }]
-    apiMocks.createEntry.mockResolvedValue({
-      id: 'entry-note',
-      task: task.id,
-      occurrence: completedOccurrence.id,
-      program_step: '',
-      entry_date: '2026-07-29',
-      value: 1,
-      kind: 'duration',
-      unit: 'hours',
-      note: 'Steady pace',
-      created_at: '2026-07-29T13:00:00.000Z',
-    })
-
-    await store.addEntry(store.makeProgress(task, selectedDate), 1, undefined, 'Steady pace')
-
-    expect(apiMocks.createEntry).toHaveBeenCalledWith(expect.objectContaining({ note: 'Steady pace' }))
-    expect(store.entries[0]?.note).toBe('Steady pace')
-  })
-
   it('finishes saving an amount without waiting for reminder maintenance', async () => {
     const store = useTaskStore()
     store.selectedDate = selectedDate
@@ -999,28 +989,6 @@ describe('quantitative task completion', () => {
     expect(apiMocks.updateEntry).not.toHaveBeenCalled()
   })
 
-  it('stores notes as a single line limited to 255 characters', async () => {
-    const store = useTaskStore()
-    store.selectedDate = selectedDate
-    store.occurrences = [{ ...completedOccurrence, status: 'pending' }]
-    apiMocks.createEntry.mockImplementation(async (payload) => ({
-      id: 'entry-sanitized-note',
-      ...payload,
-      created_at: '2026-07-29T13:00:00.000Z',
-    }))
-
-    await store.addEntry(
-      store.makeProgress(task, selectedDate),
-      1,
-      undefined,
-      `First line\n${'x'.repeat(300)}`,
-    )
-
-    expect(apiMocks.createEntry).toHaveBeenCalledWith(expect.objectContaining({
-      note: `First line ${'x'.repeat(244)}`,
-    }))
-  })
-
   it('loads the complete log history for one task and program step on one day', async () => {
     const store = useTaskStore()
     apiMocks.getEntries.mockResolvedValue([{
@@ -1061,6 +1029,78 @@ describe('quantitative task completion', () => {
     })
   })
 
+  it('loads reusable image logs in most-used order', async () => {
+    const store = useTaskStore()
+    apiMocks.getTaskLogImages.mockResolvedValue([
+      {
+        id: 'image-log-2', task: task.id, label: 'Large bowl', amount: 2, unit: 'hours',
+        image_url: 'data:image/jpeg;base64,image-two', image_file: '', usage_count: 8,
+        created_at: '2026-07-28T10:00:00.000Z', updated_at: '2026-07-29T10:00:00.000Z',
+      },
+      {
+        id: 'image-log-1', task: task.id, label: 'Small bowl', amount: 1, unit: 'hours',
+        image_url: 'data:image/jpeg;base64,image-one', image_file: '', usage_count: 3,
+        created_at: '2026-07-27T10:00:00.000Z', updated_at: '2026-07-28T10:00:00.000Z',
+      },
+    ])
+
+    const images = await store.loadTaskLogImages(task.id)
+
+    expect(apiMocks.getTaskLogImages).toHaveBeenCalledWith({
+      filter: `task = "${task.id}"`,
+      sort: '-usage_count,-updated_at',
+    })
+    expect(images.map(image => [image.label, image.usageCount])).toEqual([
+      ['Large bowl', 8],
+      ['Small bowl', 3],
+    ])
+  })
+
+  it('logs a selected image amount with its label and updates its use count', async () => {
+    const store = useTaskStore()
+    store.occurrences = [{ ...completedOccurrence, status: 'pending', completedAt: undefined }]
+    const imageLog: TaskLogImage = {
+      id: 'image-log-1',
+      task: task.id,
+      label: 'Protein shake',
+      amount: 1.5,
+      unit: 'hours',
+      image: '/task-log-images/example.jpg',
+      usageCount: 4,
+      createdAt: '2026-07-28T10:00:00.000Z',
+      updatedAt: '2026-07-29T10:00:00.000Z',
+    }
+    apiMocks.createEntry.mockImplementation(async payload => ({
+      id: 'image-entry', ...payload, created_at: '2026-07-29T13:00:00.000Z',
+    }))
+    apiMocks.updateTaskLogImageRecord.mockImplementation(async (_id, payload) => ({
+      id: imageLog.id,
+      task: task.id,
+      label: imageLog.label,
+      amount: imageLog.amount,
+      unit: imageLog.unit,
+      image_file: 'example.jpg',
+      image_url: '',
+      usage_count: payload.usage_count,
+      created_at: imageLog.createdAt,
+      updated_at: payload.updated_at,
+    }))
+
+    await store.logTaskImage(store.makeProgress(task, selectedDate), imageLog)
+
+    expect(apiMocks.createEntry).toHaveBeenCalledWith(expect.objectContaining({
+      value: 1.5,
+      label: 'Protein shake',
+      task_log_image: 'image-log-1',
+      note: '',
+    }))
+    expect(apiMocks.updateTaskLogImageRecord).toHaveBeenCalledWith(
+      'image-log-1',
+      expect.objectContaining({ usage_count: 5 }),
+    )
+    expect(imageLog.usageCount).toBe(5)
+  })
+
   it('updates a log entry and reopens progress when its value falls below the target', async () => {
     const store = useTaskStore()
     store.selectedDate = selectedDate
@@ -1095,12 +1135,10 @@ describe('quantitative task completion', () => {
       store.makeProgress(task, selectedDate),
       'entry-to-edit',
       1,
-      'Shortened',
     )
 
     expect(apiMocks.updateEntry).toHaveBeenCalledWith('entry-to-edit', {
       value: 1,
-      note: 'Shortened',
     })
     expect(updated).toMatchObject({ value: 1, note: 'Shortened' })
     expect(apiMocks.updateOccurrence).toHaveBeenCalledWith(completedOccurrence.id, {

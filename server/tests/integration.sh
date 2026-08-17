@@ -96,7 +96,7 @@ suffix="$(php -r 'echo bin2hex(random_bytes(5));')"
 password="correct-horse-battery"
 
 migration_version="$(sqlite3 "$test_db" 'SELECT MAX(version) FROM backontrack_schema_migrations;')"
-[[ "$migration_version" == 202608170002 ]] || {
+[[ "$migration_version" == 202608170003 ]] || {
   echo "The API did not apply the complete database migration sequence." >&2
   exit 1
 }
@@ -721,16 +721,15 @@ task_response="$(curl --silent --show-error --fail \
   "$api_url/collections/tasks/records")"
 task_id="$(json_field id <<<"$task_response")"
 task_owner="$(json_field owner <<<"$task_response")"
-task_notes_enabled="$(json_field entry_notes_enabled <<<"$task_response")"
-task_note_suggestions_enabled="$(json_field entry_note_suggestions_enabled <<<"$task_response")"
+task_image_logs_enabled="$(json_field log_with_images_enabled <<<"$task_response")"
 task_schedule_mode="$(json_field schedule_mode <<<"$task_response")"
 task_scheduled_time="$(json_field scheduled_time <<<"$task_response")"
 [[ "$task_owner" == "$alice_id" ]] || {
   echo "The API accepted a forged owner." >&2
   exit 1
 }
-[[ -z "$task_notes_enabled" && -z "$task_note_suggestions_enabled" ]] || {
-  echo "New tasks did not default to disabled entry note options." >&2
+[[ -z "$task_image_logs_enabled" ]] || {
+  echo "New tasks did not default to disabled image logging." >&2
   exit 1
 }
 [[ "$task_schedule_mode" == "all_day" && -z "$task_scheduled_time" ]] || {
@@ -845,15 +844,53 @@ health_entry_state="$(sqlite3 "$test_db" "
   exit 1
 }
 
-task_note_settings_response="$(curl --silent --show-error --fail \
+task_image_log_settings_response="$(curl --silent --show-error --fail \
   -X PATCH -H "Content-Type: application/json" \
   -H "Authorization: Bearer $alice_token" \
-  --data '{"entry_notes_enabled":true,"entry_note_suggestions_enabled":true}' \
+  --data '{"log_with_images_enabled":true}' \
   "$api_url/collections/tasks/records/$task_id")"
-task_notes_enabled="$(json_field entry_notes_enabled <<<"$task_note_settings_response")"
-task_note_suggestions_enabled="$(json_field entry_note_suggestions_enabled <<<"$task_note_settings_response")"
-[[ "$task_notes_enabled" == 1 && "$task_note_suggestions_enabled" == 1 ]] || {
-  echo "Task entry note settings were not persisted." >&2
+task_image_logs_enabled="$(json_field log_with_images_enabled <<<"$task_image_log_settings_response")"
+[[ "$task_image_logs_enabled" == 1 ]] || {
+  echo "Task image logging was not enabled." >&2
+  exit 1
+}
+
+task_log_image_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "{\"task\":\"$task_id\",\"label\":\"Standard serving\",\"amount\":2,\"unit\":\"count\"}" \
+  "$api_url/collections/task_log_images/records")"
+task_log_image_id="$(json_field id <<<"$task_log_image_response")"
+task_log_image_upload_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "{\"image\":\"data:image/jpeg;base64,$avatar_base64\"}" \
+  "$api_url/task-log-images/$task_log_image_id/image")"
+task_log_image_file="$(json_field image_file <<<"$task_log_image_upload_response")"
+[[ "$task_log_image_file" =~ ^[a-f0-9]{48}\.jpg$ ]] || {
+  echo "The task log image endpoint did not store its upload." >&2
+  exit 1
+}
+
+task_image_entry_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "{\"task\":\"$task_id\",\"occurrence\":\"\",\"program_step\":\"\",\"entry_date\":\"2026-07-29\",\"value\":2,\"kind\":\"quantity\",\"unit\":\"count\",\"note\":\"\",\"label\":\"Standard serving\",\"task_log_image\":\"$task_log_image_id\"}" \
+  "$api_url/collections/entries/records")"
+task_image_entry_reference="$(json_field task_log_image <<<"$task_image_entry_response")"
+task_image_entry_label="$(json_field label <<<"$task_image_entry_response")"
+[[ "$task_image_entry_reference" == "$task_log_image_id" && "$task_image_entry_label" == "Standard serving" ]] || {
+  echo "The amount entry did not retain its task image log reference and label." >&2
+  exit 1
+}
+
+task_log_image_used_response="$(curl --silent --show-error --fail \
+  -X PATCH -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"usage_count":1}' \
+  "$api_url/collections/task_log_images/records/$task_log_image_id")"
+[[ "$(json_field usage_count <<<"$task_log_image_used_response")" == 1 ]] || {
+  echo "The task log image use count was not persisted." >&2
   exit 1
 }
 
@@ -1372,7 +1409,6 @@ tracking_task_payload="$(php -r '
     "target_value" => 1, "target_operator" => "gte", "unit" => "",
     "custom_unit" => "", "goal_period" => "occurrence", "quick_amounts" => [],
     "cycle_length" => 0, "program_repeat" => true, "program_strict" => false,
-    "entry_notes_enabled" => false, "entry_note_suggestions_enabled" => false,
     "sort_order" => 9, "color" => "#FF9EAE", "interval_template" => "",
     "flashcard_review_set" => "", "tracking_trackers" => [$argv[1], $argv[2]],
     "reminder_enabled" => true, "reminder_times" => ["09:15", "20:30"],
@@ -2298,7 +2334,6 @@ flashcard_task_payload="$(php -r '
     "target_value" => 1, "target_operator" => "gte", "unit" => "",
     "custom_unit" => "", "goal_period" => "occurrence", "quick_amounts" => [],
     "cycle_length" => 0, "program_repeat" => true, "program_strict" => false,
-    "entry_notes_enabled" => false, "entry_note_suggestions_enabled" => false,
     "sort_order" => 10, "color" => "#C7F464", "interval_template" => "",
     "flashcard_review_set" => $argv[1],
   ], JSON_THROW_ON_ERROR);
@@ -2864,7 +2899,6 @@ bob_shared_task_payload="$(php -r '
     "target_value" => 1, "target_operator" => "gte", "unit" => "",
     "custom_unit" => "", "goal_period" => "occurrence", "quick_amounts" => [],
     "cycle_length" => 0, "program_repeat" => true, "program_strict" => false,
-    "entry_notes_enabled" => false, "entry_note_suggestions_enabled" => false,
     "sort_order" => 1, "color" => "#C7F464", "interval_template" => "",
     "flashcard_review_set" => $argv[1], "tracking_trackers" => [],
   ], JSON_THROW_ON_ERROR);

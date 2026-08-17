@@ -157,6 +157,30 @@ final class Api
             ) {
                 $this->serveJournalImage($journalImageFileMatches[1]);
             }
+            if (
+                ($method === 'POST' || $method === 'DELETE')
+                && preg_match(
+                    '#^/task-log-images/([a-zA-Z0-9_-]{1,64})/image/?$#',
+                    $path,
+                    $taskLogImageMatches,
+                ) === 1
+            ) {
+                $this->taskLogImage(
+                    $method,
+                    $taskLogImageMatches[1],
+                    $this->authenticate(),
+                );
+            }
+            if (
+                $method === 'GET'
+                && preg_match(
+                    '#^/task-log-images/([a-f0-9]{48}\.jpg)$#',
+                    $path,
+                    $taskLogImageFileMatches,
+                ) === 1
+            ) {
+                $this->serveTaskLogImage($taskLogImageFileMatches[1]);
+            }
             if (($method === 'GET' || $method === 'PATCH') && $path === '/auth/settings') {
                 $this->userSettings($method);
             }
@@ -1207,6 +1231,85 @@ final class Api
         exit;
     }
 
+    private function taskLogImage(string $method, string $id, array $user): never
+    {
+        $owner = (string) $user['id'];
+        $this->rateLimit('task-log-image-update:' . $owner, 60, 900);
+        $imageLog = $this->ownedRecord('task_log_images', $id, $owner);
+        $oldFilename = $this->validAvatarFilename($imageLog['image_file'] ?? null);
+        $updated = $this->now();
+
+        if ($method === 'DELETE') {
+            $statement = $this->database->pdo->prepare(
+                "UPDATE task_log_images
+                 SET image_url = '', image_file = '', updated_at = :updated_at
+                 WHERE id = :id AND owner = :owner",
+            );
+            $statement->execute(['updated_at' => $updated, 'id' => $id, 'owner' => $owner]);
+            if ($oldFilename !== null) {
+                $this->removeTaskLogImageFile($oldFilename);
+            }
+            $this->respond($this->normalizeRecord(
+                $this->requireCollection('task_log_images'),
+                $this->ownedRecord('task_log_images', $id, $owner),
+            ));
+        }
+
+        $bytes = $this->compressedSquareJpegBytes($this->jsonBody(), 'task log image', 512);
+        $directory = $this->taskLogImageDirectory();
+        $filename = $this->storeSquareJpeg($bytes, $directory, 'task log image');
+        $destination = $directory . DIRECTORY_SEPARATOR . $filename;
+
+        try {
+            $statement = $this->database->pdo->prepare(
+                "UPDATE task_log_images
+                 SET image_url = '', image_file = :image_file, updated_at = :updated_at
+                 WHERE id = :id AND owner = :owner",
+            );
+            $statement->execute([
+                'image_file' => $filename,
+                'updated_at' => $updated,
+                'id' => $id,
+                'owner' => $owner,
+            ]);
+        } catch (Throwable $exception) {
+            @unlink($destination);
+            throw $exception;
+        }
+
+        if ($oldFilename !== null && !hash_equals($oldFilename, $filename)) {
+            $this->removeTaskLogImageFile($oldFilename);
+        }
+        $this->respond($this->normalizeRecord(
+            $this->requireCollection('task_log_images'),
+            $this->ownedRecord('task_log_images', $id, $owner),
+        ));
+    }
+
+    private function serveTaskLogImage(string $filename): never
+    {
+        $validated = $this->validAvatarFilename($filename);
+        if ($validated === null) {
+            throw new ApiException(404, 'Task log image not found.');
+        }
+        $path = $this->taskLogImageDirectory() . DIRECTORY_SEPARATOR . $validated;
+        if (!is_file($path) || !is_readable($path)) {
+            throw new ApiException(404, 'Task log image not found.');
+        }
+        $contents = file_get_contents($path);
+        if ($contents === false) {
+            throw new ApiException(404, 'Task log image not found.');
+        }
+
+        header('Content-Type: image/jpeg');
+        header('Cache-Control: public, max-age=31536000, immutable');
+        header('Content-Length: ' . strlen($contents));
+        header('Content-Disposition: inline; filename="task-log.jpg"');
+        header('ETag: "' . substr($validated, 0, 48) . '"');
+        echo $contents;
+        exit;
+    }
+
 
     private function compressedSquareJpegBytes(array $body, string $label, int $maxDimension = 256): string
     {
@@ -1296,6 +1399,23 @@ final class Api
     private function journalImageDirectory(): string
     {
         return dirname($this->config->databasePath) . DIRECTORY_SEPARATOR . 'journal-images';
+    }
+
+    private function taskLogImageDirectory(): string
+    {
+        return dirname($this->config->databasePath) . DIRECTORY_SEPARATOR . 'task-log-images';
+    }
+
+    private function removeTaskLogImageFile(string $filename): void
+    {
+        $validated = $this->validAvatarFilename($filename);
+        if ($validated === null) {
+            return;
+        }
+        $path = $this->taskLogImageDirectory() . DIRECTORY_SEPARATOR . $validated;
+        if (is_file($path)) {
+            @unlink($path);
+        }
     }
 
     private function removeJournalImageFile(string $filename): void
@@ -2296,8 +2416,7 @@ final class Api
         }
         if ($collection['name'] === 'tasks') {
             $body += [
-                'entry_notes_enabled' => false,
-                'entry_note_suggestions_enabled' => false,
+                'log_with_images_enabled' => false,
                 'schedule_mode' => 'all_day',
                 'scheduled_time' => '',
             ];
@@ -2320,6 +2439,9 @@ final class Api
             $this->rejectFields($body, ['image_url', 'image_file']);
             $body = $this->normalizeJournalTrackerInput($body);
             $body += ['tracker' => []];
+        }
+        if ($collection['name'] === 'task_log_images') {
+            $this->rejectFields($body, ['image_url', 'image_file', 'usage_count', 'created_at', 'updated_at']);
         }
         $values = $this->validateRecordInput($collection, $body, true);
         $values['id'] = $this->newId();
@@ -2392,6 +2514,16 @@ final class Api
                     'updated_at' => $now,
                 ],
             );
+        }
+        if ($collection['name'] === 'task_log_images') {
+            $now = (new DateTimeImmutable('now'))->format('Y-m-d\TH:i:s.v\Z');
+            $values += [
+                'image_url' => '',
+                'image_file' => '',
+                'usage_count' => 0,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ];
         }
 
         $columns = array_keys($values);
@@ -2466,6 +2598,9 @@ final class Api
             $this->rejectFields($body, ['image_url', 'image_file']);
             $body = $this->normalizeJournalTrackerInput($body);
         }
+        if ($collection['name'] === 'task_log_images') {
+            $this->rejectFields($body, ['image_url', 'image_file', 'created_at']);
+        }
         $values = $this->validateRecordInput($collection, $body, false);
         if ($values === []) {
             throw new ApiException(422, 'At least one writable field is required.');
@@ -2495,6 +2630,9 @@ final class Api
             $values['updated_at'] = (new DateTimeImmutable('now'))->format('Y-m-d\TH:i:s.v\Z');
         }
         if (in_array($collection['name'], ['flashcards', 'flashcard_review_sets'], true)) {
+            $values['updated_at'] = (new DateTimeImmutable('now'))->format('Y-m-d\TH:i:s.v\Z');
+        }
+        if ($collection['name'] === 'task_log_images') {
             $values['updated_at'] = (new DateTimeImmutable('now'))->format('Y-m-d\TH:i:s.v\Z');
         }
         $assignments = array_map(
@@ -5329,6 +5467,14 @@ final class Api
         if (in_array($collection['name'], ['flashcard_review_sessions', 'flashcard_review_events'], true)) {
             throw new ApiException(405, 'Flashcard review history cannot be deleted directly.');
         }
+        $taskLogImageFiles = [];
+        if ($collection['name'] === 'tasks') {
+            $statement = $this->database->pdo->prepare(
+                'SELECT image_file FROM task_log_images WHERE task = :task AND owner = :owner',
+            );
+            $statement->execute(['task' => $id, 'owner' => $owner]);
+            $taskLogImageFiles = $statement->fetchAll(PDO::FETCH_COLUMN);
+        }
         $pdo = $this->database->pdo;
         $pdo->beginTransaction();
         try {
@@ -5358,6 +5504,18 @@ final class Api
                 $this->removeJournalImageFile($filename);
             }
         }
+        if ($collection['name'] === 'task_log_images') {
+            $filename = $this->validAvatarFilename($existing['image_file'] ?? null);
+            if ($filename !== null) {
+                $this->removeTaskLogImageFile($filename);
+            }
+        }
+        foreach ($taskLogImageFiles as $filename) {
+            $validated = $this->validAvatarFilename($filename);
+            if ($validated !== null) {
+                $this->removeTaskLogImageFile($validated);
+            }
+        }
 
         $this->respond(null, 204);
     }
@@ -5378,7 +5536,7 @@ final class Api
              WHERE task = :id AND owner = :owner",
         );
         $statement->execute(['id' => $id, 'owner' => $owner]);
-        foreach (['entries', 'occurrences', 'program_steps'] as $table) {
+        foreach (['entries', 'occurrences', 'program_steps', 'task_log_images'] as $table) {
             $statement = $this->database->pdo->prepare(
                 "DELETE FROM {$table} WHERE task = :id AND owner = :owner",
             );
@@ -6183,6 +6341,22 @@ final class Api
             $occurrence = (string) ($record['occurrence'] ?? '');
             if ($occurrence !== '' && !$this->relationMatchesTask('occurrences', $occurrence, $task, $owner)) {
                 throw new ApiException(422, 'The selected occurrence is invalid.');
+            }
+            $taskLogImage = (string) ($record['task_log_image'] ?? '');
+            if (
+                $collection === 'entries'
+                && $taskLogImage !== ''
+                && !$this->relationMatchesTask('task_log_images', $taskLogImage, $task, $owner)
+            ) {
+                throw new ApiException(422, 'The selected task log image is invalid.');
+            }
+            return;
+        }
+
+        if ($collection === 'task_log_images') {
+            $task = (string) ($record['task'] ?? '');
+            if (!$this->relationExists('tasks', $task, $owner)) {
+                throw new ApiException(422, 'The selected task is invalid.');
             }
             return;
         }

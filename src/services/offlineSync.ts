@@ -387,6 +387,13 @@ async function warmMediaCache(resources: SyncBootstrapResponse['resources']) {
         add(data.image_url)
       }
     }
+    if (resource.resource === 'task_log_images') {
+      if (typeof data.image_file === 'string' && data.image_file) {
+        add(`/task-log-images/${data.image_file}`)
+      } else {
+        add(data.image_url)
+      }
+    }
     for (const side of ['front', 'back']) {
       const audioFile = data[`${side}_audio_file`]
       if (typeof audioFile === 'string' && audioFile) add(`/flashcard-audio/${audioFile}`)

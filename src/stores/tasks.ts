@@ -1,7 +1,7 @@
 import { computed, nextTick, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { addDays, parseISO, startOfWeek, subDays } from 'date-fns'
-import { api } from '@/lib/api'
+import { api, apiAssetUrl } from '@/lib/api'
 import { createLocalRecordId, hasLocalBootstrap, listLocalRecords, repairLegacyHealthConnectEntrySync } from '@/lib/localDatabase'
 import { readHealthConnectSteps } from '@/services/healthConnect'
 import { healthConnectEntrySession, isHealthConnectEntry } from '@/services/healthConnectEntries'
@@ -13,7 +13,6 @@ import {
 } from '@/services/programStepCompletions'
 import { dailyTotalCompletionPercent, isTaskScheduled, meetsTarget, programCycleDay, progressPercent, stepsForDate, toDateKey } from '@/services/schedule'
 import { taskNeedsReview } from '@/services/taskCardActions'
-import { sanitizeTaskEntryNote } from '@/services/taskEntryNotes'
 import { reconcileTaskReminders } from '@/services/taskReminders'
 import { useSnackbarStore } from '@/stores/snackbar'
 import { useJournalStore } from '@/stores/journal'
@@ -26,6 +25,7 @@ import type {
   ProgramStep,
   Task,
   TaskDraft,
+  TaskLogImage,
   TaskProgress,
 } from '@/types/domain'
 
@@ -64,8 +64,7 @@ function mapTask(record: Record<string, any>): Task {
     cycleLength: record.cycle_length || undefined,
     programRepeat: record.program_repeat,
     programStrict: record.program_strict,
-    entryNotesEnabled: record.entry_notes_enabled === true,
-    entryNoteSuggestionsEnabled: record.entry_note_suggestions_enabled === true,
+    logWithImagesEnabled: record.log_with_images_enabled === true,
     sortOrder: record.sort_order || 0,
     intervalTemplate: record.interval_template || undefined,
     flashcardReviewSet: record.flashcard_review_set || undefined,
@@ -129,8 +128,26 @@ function mapEntry(record: Record<string, any>): Entry {
     kind: record.kind,
     unit: record.unit || '',
     note: record.note || undefined,
+    label: record.label || undefined,
+    taskLogImage: record.task_log_image || undefined,
     sourceType: record.source_type || undefined,
     sourceSession: record.source_session || undefined,
+  }
+}
+
+function mapTaskLogImage(record: Record<string, any>): TaskLogImage {
+  return {
+    id: record.id,
+    task: record.task,
+    label: record.label || '',
+    amount: Number(record.amount),
+    unit: record.unit || '',
+    image: record.image_file
+      ? apiAssetUrl(`/task-log-images/${record.image_file}`)
+      : apiAssetUrl(record.image_url || ''),
+    usageCount: Number(record.usage_count || 0),
+    createdAt: record.created_at || '',
+    updatedAt: record.updated_at || '',
   }
 }
 
@@ -141,6 +158,7 @@ export const useTaskStore = defineStore('tasks', () => {
   const steps = ref<ProgramStep[]>([])
   const occurrences = ref<Occurrence[]>([])
   const entries = ref<Entry[]>([])
+  const taskLogImages = ref<TaskLogImage[]>([])
   const selectedDate = ref(new Date())
   const loading = ref(false)
   const error = ref('')
@@ -965,8 +983,8 @@ export const useTaskStore = defineStore('tasks', () => {
     progress: TaskProgress,
     amount: number,
     kind?: Entry['kind'],
-    note = '',
     programStepCompletionId = '',
+    imageLog?: Pick<TaskLogImage, 'id' | 'label'>,
   ) {
     if (progress.sealed) return
     if (amount === 0) throw new Error('Task log entries cannot have a value of zero.')
@@ -994,7 +1012,8 @@ export const useTaskStore = defineStore('tasks', () => {
       value: amount,
       kind: kind || (progress.task.type === 'duration' ? 'duration' : 'quantity'),
       unit,
-      note: sanitizeTaskEntryNote(note).trim(),
+      label: imageLog?.label,
+      taskLogImage: imageLog?.id,
     }
     entries.value.unshift(entry)
     const persistence = (async () => {
@@ -1010,7 +1029,9 @@ export const useTaskStore = defineStore('tasks', () => {
         value: entry.value,
         kind: entry.kind,
         unit: entry.unit,
-        note: entry.note || '',
+        note: '',
+        label: entry.label || '',
+        task_log_image: entry.taskLogImage || '',
       })
       Object.assign(entry, mapEntry(record))
       return entry
@@ -1024,10 +1045,9 @@ export const useTaskStore = defineStore('tasks', () => {
     }
   }
 
-  async function updateEntry(progress: TaskProgress, entryId: string, amount: number, note = '') {
+  async function updateEntry(progress: TaskProgress, entryId: string, amount: number) {
     if (progress.sealed) return undefined
     if (amount === 0) throw new Error('Task log entries cannot have a value of zero.')
-    const nextNote = sanitizeTaskEntryNote(note).trim()
     const index = entries.value.findIndex(item => item.id === entryId)
     const previous = index >= 0 ? { ...entries.value[index]! } : undefined
     const entry = index >= 0
@@ -1046,14 +1066,11 @@ export const useTaskStore = defineStore('tasks', () => {
             || progress.task.customUnit
             || progress.task.unit
             || '',
-          note: nextNote || undefined,
         } satisfies Entry
     entry.value = amount
-    entry.note = nextNote || undefined
     if (index < 0) entries.value.unshift(entry)
     const persistence = api.collection('entries').update(entryId, {
       value: amount,
-      note: nextNote,
     }).then((record) => {
       Object.assign(entry, mapEntry(record))
       return entry
@@ -1108,14 +1125,6 @@ export const useTaskStore = defineStore('tasks', () => {
     void syncTaskReminders()
   }
 
-  async function loadEntryNoteHistory(taskId: string) {
-    const records = await api.collection('entries').getFullList({
-      filter: `task = "${taskId}"`,
-      sort: '-created_at',
-    })
-    return records.map(mapEntry)
-  }
-
   async function loadEntriesForDay(taskId: string, entryDate: string, programStepId?: string) {
     const stepFilter = programStepId
       ? `program_step = "${programStepId}"`
@@ -1125,6 +1134,69 @@ export const useTaskStore = defineStore('tasks', () => {
       sort: '-created_at',
     })
     return records.map(mapEntry)
+  }
+
+  async function loadTaskLogImages(taskId: string) {
+    const records = await api.collection('task_log_images').getFullList({
+      filter: `task = "${taskId}"`,
+      sort: '-usage_count,-updated_at',
+    })
+    const images = records.map(mapTaskLogImage)
+    taskLogImages.value = [
+      ...taskLogImages.value.filter(item => item.task !== taskId),
+      ...images,
+    ]
+    return images
+  }
+
+  async function logTaskImage(
+    progress: TaskProgress,
+    imageLog: TaskLogImage,
+    programStepCompletionId = '',
+  ) {
+    if (progress.sealed) return
+    await addEntry(progress, imageLog.amount, undefined, programStepCompletionId, imageLog)
+    const previousCount = imageLog.usageCount
+    imageLog.usageCount += 1
+    try {
+      const record = await api.collection('task_log_images').update(imageLog.id, {
+        usage_count: imageLog.usageCount,
+        updated_at: new Date().toISOString(),
+      })
+      Object.assign(imageLog, mapTaskLogImage(record))
+    } catch {
+      imageLog.usageCount = previousCount
+    }
+  }
+
+  async function createTaskLogImage(
+    progress: TaskProgress,
+    input: { label: string; amount: number; image: Blob },
+    programStepCompletionId = '',
+  ) {
+    const unit = progress.programStep?.customUnit
+      || progress.programStep?.unit
+      || progress.task.customUnit
+      || progress.task.unit
+      || (progress.task.type === 'duration' ? 'hours' : '')
+    const record = await api.collection('task_log_images').create({
+      owner: api.authStore.record!.id,
+      task: progress.task.id,
+      label: input.label.trim(),
+      amount: input.amount,
+      unit,
+    })
+    const imageLog = mapTaskLogImage(record)
+    taskLogImages.value.unshift(imageLog)
+    try {
+      Object.assign(imageLog, mapTaskLogImage(await api.updateTaskLogImage(imageLog.id, input.image)))
+      await logTaskImage(progress, imageLog, programStepCompletionId)
+      return imageLog
+    } catch (cause) {
+      taskLogImages.value = taskLogImages.value.filter(item => item !== imageLog)
+      await api.collection('task_log_images').delete(imageLog.id).catch(() => undefined)
+      throw cause
+    }
   }
 
   async function setStatus(progress: TaskProgress, status: Occurrence['status']) {
@@ -1170,8 +1242,7 @@ export const useTaskStore = defineStore('tasks', () => {
       cycle_length: draft.type === 'program' ? draft.steps.length : draft.cycleLength || 0,
       program_repeat: draft.programRepeat ?? true,
       program_strict: draft.programStrict ?? false,
-      entry_notes_enabled: draft.entryNotesEnabled,
-      entry_note_suggestions_enabled: false,
+      log_with_images_enabled: draft.logWithImagesEnabled,
       sort_order: sortOrder,
       interval_template: draft.type === 'interval' ? draft.intervalTemplate || '' : '',
       flashcard_review_set: draft.type === 'flashcards' ? draft.flashcardReviewSet || '' : '',
@@ -1452,6 +1523,7 @@ export const useTaskStore = defineStore('tasks', () => {
     steps,
     occurrences,
     entries,
+    taskLogImages,
     selectedDate,
     loading,
     error,
@@ -1477,8 +1549,10 @@ export const useTaskStore = defineStore('tasks', () => {
     addEntry,
     updateEntry,
     deleteEntry,
-    loadEntryNoteHistory,
     loadEntriesForDay,
+    loadTaskLogImages,
+    logTaskImage,
+    createTaskLogImage,
     setStatus,
     progressIsScheduled,
     toggleSkipped,

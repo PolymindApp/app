@@ -45,8 +45,7 @@ export interface Task {
   cycleLength?: number
   programRepeat?: boolean
   programStrict?: boolean
-  entryNotesEnabled: boolean
-  entryNoteSuggestionsEnabled: boolean
+  logWithImagesEnabled: boolean
   sortOrder: number
   intervalTemplate?: string
   flashcardReviewSet?: string
@@ -141,8 +140,22 @@ export interface Entry {
   kind: 'duration' | 'quantity' | 'adjustment'
   unit: string
   note?: string
+  label?: string
+  taskLogImage?: string
   sourceType?: 'interval' | 'flashcards' | 'health_connect'
   sourceSession?: string
+}
+
+export interface TaskLogImage {
+  id: string
+  task: string
+  label: string
+  amount: number
+  unit: string
+  image: string
+  usageCount: number
+  createdAt: string
+  updatedAt: string
 }
 
 export interface TaskProgress {

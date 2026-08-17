@@ -818,6 +818,9 @@ final class SyncService
         if ($resource === 'journal_entries') {
             $payload = $this->prepareJournalImagePayload($payload);
         }
+        if ($resource === 'task_log_images') {
+            $payload = $this->prepareTaskLogImagePayload($payload);
+        }
         if ($resource === 'flashcard_review_events' && ($payload['outcome'] ?? null) === 'eject') {
             $payload['outcome'] = 'ejected';
         }
@@ -895,6 +898,9 @@ final class SyncService
         if ($resource === 'journal_entries') {
             $payload = $this->prepareJournalImagePayload($payload);
         }
+        if ($resource === 'task_log_images') {
+            $payload = $this->prepareTaskLogImagePayload($payload);
+        }
         if ($resource === 'flashcard_review_events' && ($payload['outcome'] ?? null) === 'eject') {
             $payload['outcome'] = 'ejected';
         }
@@ -944,7 +950,7 @@ final class SyncService
                 ];
             }
         }
-        if ($resource === 'journal_entries') {
+        if (in_array($resource, ['journal_entries', 'task_log_images'], true)) {
             $accepted['updated_at'] = $this->now();
         }
         if (in_array($resource, ['flashcards', 'flashcard_review_sets'], true)) {
@@ -969,6 +975,13 @@ final class SyncService
             $newFilename = $this->validSquareImageFilename($accepted['image_file'] ?? null);
             if ($oldFilename !== null && $oldFilename !== $newFilename) {
                 $this->removeJournalImageFile($oldFilename);
+            }
+        }
+        if ($resource === 'task_log_images' && array_key_exists('image_file', $accepted)) {
+            $oldFilename = $this->validSquareImageFilename($current['image_file'] ?? null);
+            $newFilename = $this->validSquareImageFilename($accepted['image_file'] ?? null);
+            if ($oldFilename !== null && $oldFilename !== $newFilename) {
+                $this->removeTaskLogImageFile($oldFilename);
             }
         }
         if ($resource === 'flashcards') {
@@ -1013,11 +1026,31 @@ final class SyncService
     private function deleteOwnedRecord(string $resource, array $config, string $recordId, string $account): array
     {
         $current = $this->ownedRecord($resource, $recordId, $account);
+        $taskLogImageFiles = [];
+        if ($resource === 'tasks') {
+            $statement = $this->database->pdo->prepare(
+                'SELECT image_file FROM task_log_images WHERE task = :task AND owner = :owner',
+            );
+            $statement->execute(['task' => $recordId, 'owner' => $account]);
+            $taskLogImageFiles = $statement->fetchAll(PDO::FETCH_COLUMN);
+        }
         $this->cascadeDelete($resource, $recordId, $account);
         if ($resource === 'journal_entries') {
             $filename = $this->validSquareImageFilename($current['image_file'] ?? null);
             if ($filename !== null) {
                 $this->removeJournalImageFile($filename);
+            }
+        }
+        if ($resource === 'task_log_images') {
+            $filename = $this->validSquareImageFilename($current['image_file'] ?? null);
+            if ($filename !== null) {
+                $this->removeTaskLogImageFile($filename);
+            }
+        }
+        foreach ($taskLogImageFiles as $filename) {
+            $validated = $this->validSquareImageFilename($filename);
+            if ($validated !== null) {
+                $this->removeTaskLogImageFile($validated);
             }
         }
         if ($resource === 'flashcards') {
@@ -1205,6 +1238,12 @@ final class SyncService
                 'created_at' => $now, 'updated_at' => $now,
             ];
         }
+        if ($resource === 'task_log_images') {
+            $values += [
+                'image_url' => '', 'image_file' => '', 'usage_count' => 0,
+                'created_at' => $now, 'updated_at' => $now,
+            ];
+        }
     }
 
     private function cascadeDelete(string $resource, string $recordId, string $account): void
@@ -1217,7 +1256,7 @@ final class SyncService
                 $pdo->prepare("UPDATE {$table} SET task = '', program_step = '', program_step_completion = '' WHERE task = :id AND owner = :owner")
                     ->execute(['id' => $recordId, 'owner' => $account]);
             }
-            foreach (['entries', 'occurrences', 'program_steps'] as $table) {
+            foreach (['entries', 'occurrences', 'program_steps', 'task_log_images'] as $table) {
                 $pdo->prepare("DELETE FROM {$table} WHERE task = :id AND owner = :owner")
                     ->execute(['id' => $recordId, 'owner' => $account]);
             }
@@ -1380,7 +1419,13 @@ final class SyncService
         }
         $relations = match ($resource) {
             'program_steps' => ['task' => 'tasks'],
-            'occurrences', 'entries' => ['task' => 'tasks', 'program_step' => 'program_steps'],
+            'occurrences' => ['task' => 'tasks', 'program_step' => 'program_steps'],
+            'entries' => [
+                'task' => 'tasks',
+                'program_step' => 'program_steps',
+                'task_log_image' => 'task_log_images',
+            ],
+            'task_log_images' => ['task' => 'tasks'],
             'tracking_entries' => ['tracker' => 'tracking_trackers'],
             'interval_sessions' => ['template' => 'interval_templates', 'task' => 'tasks', 'program_step' => 'program_steps'],
             'flashcard_review_sessions' => ['task' => 'tasks', 'program_step' => 'program_steps'],
@@ -1559,6 +1604,26 @@ final class SyncService
         ];
     }
 
+    private function prepareTaskLogImagePayload(array $payload): array
+    {
+        $encoded = $payload['image_url'] ?? null;
+        if (!is_string($encoded) || !str_starts_with($encoded, 'data:image/jpeg;base64,')) {
+            return $payload;
+        }
+        $filename = $this->storeSyncSquareJpeg(
+            $encoded,
+            dirname($this->config->databasePath) . DIRECTORY_SEPARATOR . 'task-log-images',
+            'task log image',
+            512,
+        );
+
+        return [
+            ...$payload,
+            'image_url' => '',
+            'image_file' => $filename,
+        ];
+    }
+
     private function storeSyncSquareJpeg(
         string $encoded,
         string $directory,
@@ -1672,6 +1737,15 @@ final class SyncService
     private function removeJournalImageFile(string $filename): void
     {
         $path = dirname($this->config->databasePath) . DIRECTORY_SEPARATOR . 'journal-images'
+            . DIRECTORY_SEPARATOR . $filename;
+        if (is_file($path)) {
+            @unlink($path);
+        }
+    }
+
+    private function removeTaskLogImageFile(string $filename): void
+    {
+        $path = dirname($this->config->databasePath) . DIRECTORY_SEPARATOR . 'task-log-images'
             . DIRECTORY_SEPARATOR . $filename;
         if (is_file($path)) {
             @unlink($path);

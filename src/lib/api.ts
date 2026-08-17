@@ -153,6 +153,12 @@ function localCreateDefaults(resource: string, body: Record<string, unknown>) {
       created_at: now, updated_at: now, ...body,
     }
   }
+  if (resource === 'task_log_images') {
+    return {
+      image_url: '', image_file: '', usage_count: 0,
+      created_at: now, updated_at: now, ...body,
+    }
+  }
   if (resource === 'entries') return { created_at: now, ...body }
   return body
 }
@@ -1223,6 +1229,25 @@ class ApiClient {
     }
     return request<RecordModel>(
       `/journal-entries/${encodeURIComponent(entryId)}/image`,
+      { method: 'POST', body: { image: await blobDataUrl(image) } },
+      this.authStore,
+    )
+  }
+
+  async updateTaskLogImage(logImageId: string, image: Blob) {
+    if (image.type !== 'image/jpeg') {
+      throw new ApiError(422, 'The task log image must be compressed as a JPEG.')
+    }
+    const accountId = this.authStore.record?.id || ''
+    if (accountId && await hasLocalBootstrap(accountId)) {
+      return putLocalPatch(accountId, 'task_log_images', logImageId, {
+        image_url: await blobDataUrl(image),
+        image_file: '',
+        updated_at: new Date().toISOString(),
+      })
+    }
+    return request<RecordModel>(
+      `/task-log-images/${encodeURIComponent(logImageId)}/image`,
       { method: 'POST', body: { image: await blobDataUrl(image) } },
       this.authStore,
     )

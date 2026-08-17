@@ -269,7 +269,7 @@ async function logTime() {
         note: 'Logged with timer',
       })
     } else {
-      await store.addEntry(progress.value, seconds / 3600, 'duration', 'Logged with timer')
+      await store.addEntry(progress.value, seconds / 3600, 'duration')
     }
     clearTaskTimer(timerStorageId.value, toDateKey(logDate.value))
     logDialog.value = false
