@@ -126,7 +126,6 @@ const flashcardEditorDialog = ref(false)
 const flashcardEditorCard = ref<Flashcard>()
 const flashcardDeleteDialog = ref(false)
 const flashcardDeleting = ref(false)
-const flashcardEjectDialog = ref(false)
 const flashcardEjecting = ref(false)
 const flashcardSettingsDialog = ref(false)
 const flashcardSettingsApplyMenu = ref(false)
@@ -1308,17 +1307,6 @@ async function requestFlashcardRemoval() {
   }
 }
 
-async function requestFlashcardEjection() {
-  if (!flashcardPhase.value) return
-  await pauseForFlashcardModal()
-  flashcardEjectDialog.value = true
-}
-
-async function closeFlashcardEjection(open: boolean) {
-  flashcardEjectDialog.value = open
-  if (!open) await finishFlashcardModal()
-}
-
 async function ejectIntervalFlashcard() {
   const review = session.value?.flashcardReview
   const cardId = flashcardPhase.value?.card.id
@@ -1331,7 +1319,6 @@ async function ejectIntervalFlashcard() {
       cards: review.cards.filter(card => card.id !== cardId),
     })
     playFlashcardEjectCue()
-    await closeFlashcardEjection(false)
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Could not eject this flashcard.'
   } finally {
@@ -1473,7 +1460,7 @@ function applyFlashcardSettingsTo(target: FlashcardSettingsApplyTarget) {
 
 function handleFlashcardContextAction(action: FlashcardContextAction) {
   if (action === 'add' || action === 'edit') void openFlashcardEditor(action)
-  else if (action === 'eject') void requestFlashcardEjection()
+  else if (action === 'eject') void ejectIntervalFlashcard()
   else if (action === 'remove') void requestFlashcardRemoval()
   else if (action === 'toggle_tts') void toggleSessionTts()
   else if (action === 'settings') void openFlashcardSettings()
@@ -1807,6 +1794,17 @@ async function runAgain(repetitions?: number) {
               </div>
             </button>
             <footer class="interval-review-card__tag-actions" aria-label="Flashcard tags" @click.stop>
+              <v-btn
+                class="interval-review-card__tag-control interval-review-card__eject-button"
+                size="x-small"
+                variant="text"
+                icon="mdi-eject-outline"
+                aria-label="Eject current flashcard"
+                title="Eject current flashcard"
+                :loading="flashcardEjecting"
+                :disabled="isTemplatePreview || syncing || flashcardEjecting"
+                @click.stop="ejectIntervalFlashcard"
+              />
               <div class="interval-review-card__quick-tags">
                 <v-chip
                   v-for="tag in intervalQuickTags"
@@ -2099,18 +2097,6 @@ async function runAgain(repetitions?: number) {
     </AppDialog>
 
     <ConfirmDialog
-      :model-value="flashcardEjectDialog"
-      title="Eject this flashcard?"
-      message="The card will leave this interval only. It will remain available in the Review set and future sessions."
-      confirm-text="Eject card"
-      confirm-color="warning"
-      icon="mdi-eject-outline"
-      :loading="flashcardEjecting"
-      @update:model-value="closeFlashcardEjection"
-      @confirm="ejectIntervalFlashcard"
-    />
-
-    <ConfirmDialog
       :model-value="flashcardDeleteDialog"
       title="Remove this flashcard?"
       message="The card will be deleted from future reviews and removed from this interval. Existing review history keeps its saved faces."
@@ -2345,6 +2331,7 @@ async function runAgain(repetitions?: number) {
 .interval-review-card__tag-actions { display: grid; padding: 0 1rem .75rem; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: .3rem; }
 .interval-review-card__quick-tags { display: flex; grid-column: 2; justify-self: center; gap: .3rem; }
 .interval-review-card__tag-control { height: 1.5rem !important; min-height: 1.5rem !important; font-size: .625rem; }
+.interval-review-card__eject-button { min-width: 1.5rem; padding: 0; grid-column: 1; justify-self: start; }
 .interval-review-card__quick-tag { --v-chip-height: 1.5rem; }
 .interval-review-card__quick-tag.v-chip--variant-outlined { border-color: rgba(var(--v-theme-on-surface), .18); }
 .interval-review-card__tag-menu-button { min-width: 0; padding-inline: .65rem; grid-column: 3; justify-self: end; }

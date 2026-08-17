@@ -656,6 +656,26 @@ describe('IntervalRunnerView flashcard area', () => {
       .not.toContain('interval-review-card__face--hidden')
     expect(wrapper.getComponent({ name: 'FlashcardResponseText' }).classes())
       .toContain('interval-review-card__face--hidden')
+    const ejectButton = wrapper.get('.interval-review-card__eject-button')
+    expect(ejectButton.attributes('icon')).toBe('mdi-eject-outline')
+    expect(ejectButton.attributes('aria-label')).toBe('Eject current flashcard')
+    expect(ejectButton.text()).toBe('')
+
+    wrapper.unmount()
+  })
+
+  it('ejects the current mini Review set card immediately', async () => {
+    const wrapper = mountRunner()
+    await flushPromises()
+
+    await wrapper.get('.interval-review-card__eject-button').trigger('click')
+    await flushPromises()
+
+    expect(mocks.intervalStore.updateSessionFlashcardReview).toHaveBeenCalledWith(
+      'session-1',
+      expect.objectContaining({ cards: [] }),
+    )
+    expect(wrapper.find('[data-title="Eject this flashcard?"]').exists()).toBe(false)
 
     wrapper.unmount()
   })
@@ -854,7 +874,7 @@ describe('IntervalRunnerView flashcard area', () => {
     wrapper.unmount()
   })
 
-  it('stays paused for a context action and resumes when its dialog closes', async () => {
+  it('ejects immediately from the context action and resumes the interval', async () => {
     const wrapper = mountRunner()
     await flushPromises()
 
@@ -863,13 +883,12 @@ describe('IntervalRunnerView flashcard area', () => {
     await wrapper.findAll('.flashcard-context-actions button')[1]!.trigger('click')
     await flushPromises()
 
-    expect(mocks.intervalStore.sessions[0]?.status).toBe('paused')
-    expect(wrapper.get('[data-title="Eject this flashcard?"]').exists()).toBe(true)
-
-    await wrapper.get('[data-title="Eject this flashcard?"] button').trigger('click')
-    await flushPromises()
-
     expect(mocks.intervalStore.sessions[0]?.status).toBe('running')
+    expect(mocks.intervalStore.updateSessionFlashcardReview).toHaveBeenCalledWith(
+      'session-1',
+      expect.objectContaining({ cards: [] }),
+    )
+    expect(wrapper.find('[data-title="Eject this flashcard?"]').exists()).toBe(false)
 
     wrapper.unmount()
   })
