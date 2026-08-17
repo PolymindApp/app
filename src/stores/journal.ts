@@ -64,6 +64,19 @@ export const useJournalStore = defineStore('journal', () => {
   let rangeRequest = 0
   let lastRange: [string, string] | undefined
 
+  function replaceOrMergeEntries(records: Record<string, any>[], merge: boolean) {
+    const mapped = records.map(mapJournalEntry)
+    if (!merge) {
+      entries.value = mapped
+      return
+    }
+
+    const combined = new Map(entries.value.map((entry) => [entry.id, entry]))
+    mapped.forEach((entry) => combined.set(entry.id, entry))
+    entries.value = [...combined.values()]
+      .sort((left, right) => right.occurredAt.localeCompare(left.occurredAt))
+  }
+
   async function loadRange(start: string, end: string) {
     lastRange = [start, end]
     const request = ++rangeRequest
@@ -75,11 +88,39 @@ export const useJournalStore = defineStore('journal', () => {
         sort: '-occurred_at',
       })
       if (request !== rangeRequest) return false
-      entries.value = records.map(mapJournalEntry)
+      replaceOrMergeEntries(records, false)
       loaded.value = true
       loadedRange.value = `${start}:${end}`
       void useTaskStore().syncTaskReminders()
       return true
+    } catch (cause) {
+      if (request === rangeRequest) {
+        error.value = cause instanceof Error ? cause.message : 'Could not load your journal.'
+      }
+      throw cause
+    } finally {
+      if (request === rangeRequest) loading.value = false
+    }
+  }
+
+  async function loadTimelinePage(page: number, end: string, perPage = 20) {
+    const request = ++rangeRequest
+    loading.value = true
+    error.value = ''
+    try {
+      const result = await api.collection('journal_entries').getList(page, perPage, {
+        filter: `local_date <= "${end}"`,
+        sort: '-occurred_at',
+      })
+      if (request !== rangeRequest) return true
+
+      replaceOrMergeEntries(result.items, page > 1)
+      const oldestLoadedDate = entries.value.at(-1)?.localDate || end
+      lastRange = [oldestLoadedDate, end]
+      loaded.value = true
+      loadedRange.value = `${oldestLoadedDate}:${end}`
+      void useTaskStore().syncTaskReminders()
+      return result.page < result.totalPages
     } catch (cause) {
       if (request === rangeRequest) {
         error.value = cause instanceof Error ? cause.message : 'Could not load your journal.'
@@ -178,6 +219,7 @@ export const useJournalStore = defineStore('journal', () => {
     loadedRange,
     error,
     loadRange,
+    loadTimelinePage,
     reloadCurrentRange,
     getEntry,
     saveEntry,

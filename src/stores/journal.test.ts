@@ -3,6 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 
 const apiMocks = vi.hoisted(() => ({
   getFullList: vi.fn(),
+  getList: vi.fn(),
   getOne: vi.fn(),
   create: vi.fn(),
   update: vi.fn(),
@@ -79,6 +80,33 @@ describe('journal store', () => {
       image: `/api/journal-images/${'a'.repeat(48)}.jpg`,
     })
     expect(store.loadedRange).toBe('2026-07-27:2026-08-02')
+  })
+
+  it('pages backward through the journal timeline without replacing newer entries', async () => {
+    apiMocks.getList
+      .mockResolvedValueOnce({
+        page: 1,
+        totalPages: 2,
+        items: [record('newer', '2026-08-02')],
+      })
+      .mockResolvedValueOnce({
+        page: 2,
+        totalPages: 2,
+        items: [record('older', '2026-07-12')],
+      })
+    const store = useJournalStore()
+    store.entries = [mapJournalEntry(record('cached-day', '2026-08-09'))]
+
+    await expect(store.loadTimelinePage(1, '2026-08-31', 1)).resolves.toBe(true)
+    expect(store.entries.map(entry => entry.id)).toEqual(['newer'])
+    expect(apiMocks.getList).toHaveBeenLastCalledWith(1, 1, {
+      filter: 'local_date <= "2026-08-31"',
+      sort: '-occurred_at',
+    })
+
+    await expect(store.loadTimelinePage(2, '2026-08-31', 1)).resolves.toBe(false)
+    expect(store.entries.map(entry => entry.id)).toEqual(['newer', 'older'])
+    expect(store.loadedRange).toBe('2026-07-12:2026-08-31')
   })
 
   it('ignores serialized empty journal connections', () => {
