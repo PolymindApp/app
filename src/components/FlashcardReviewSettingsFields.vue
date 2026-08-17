@@ -81,7 +81,7 @@ watch(cardLimit, ({ minimum, maximum }) => {
 
 function updateMode(mode: 'manual' | 'passive') {
   settings.value.mode = mode
-  if (mode !== 'passive') settings.value.indefinite = false
+  settings.value.indefinite = mode === 'passive'
 }
 
 function updateSpeechEnabled(enabled: boolean | null) {
@@ -123,6 +123,26 @@ function updateSpeechEnabled(enabled: boolean | null) {
             The selected face advances automatically using its duration below; cards count as viewed, not graded.
           </span>
         </p>
+        <v-expand-transition>
+          <div v-if="settings.mode === 'passive'">
+            <div class="mode-indefinite-setting pt-4">
+              <v-divider />
+              <div class="setting-row pt-3">
+                <div>
+                  <strong>Run indefinitely</strong>
+                  <p>Loop through these cards until you end the review; it will not finish on its own</p>
+                </div>
+                <v-switch
+                  v-model="settings.indefinite"
+                  color="secondary"
+                  hide-details="auto"
+                  inset
+                  aria-label="Run review indefinitely"
+                />
+              </div>
+            </div>
+          </div>
+        </v-expand-transition>
         <v-divider class="my-5" />
       </template>
       <label class="field-label">Faces to show <span class="required-mark">*</span></label>
@@ -188,19 +208,6 @@ function updateSpeechEnabled(enabled: boolean | null) {
             :step="1"
             :rules="[value => value >= 1 && value <= 60 || 'Use 1–60 seconds']"
           />
-          <div v-if="!interval" class="setting-row passive-settings__indefinite">
-            <div>
-              <strong>Run indefinitely</strong>
-              <p>Loop through these cards until you end the review; it will not finish on its own</p>
-            </div>
-            <v-switch
-              v-model="settings.indefinite"
-              color="secondary"
-              hide-details="auto"
-              inset
-              aria-label="Run review indefinitely"
-            />
-          </div>
         </div>
       </v-expand-transition>
     </v-card>
@@ -360,7 +367,6 @@ function updateSpeechEnabled(enabled: boolean | null) {
 .mode-hint { display: flex; align-items: flex-start; gap: .5rem; color: rgba(var(--v-theme-on-surface), .58); font-size: .72rem; line-height: 1.5; }
 .mode-hint .v-icon { flex: 0 0 auto; }
 .passive-settings { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
-.passive-settings__indefinite { grid-column: 1 / -1; }
 .setting-row { display: grid; min-height: 4rem; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 1rem; }
 .setting-row > div { min-width: 0; }
 .setting-row p { margin-top: .15rem; color: rgba(var(--v-theme-on-surface), .5); font-size: .7rem; }

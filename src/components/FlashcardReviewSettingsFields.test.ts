@@ -31,6 +31,18 @@ const SwitchStub = defineComponent({
   `,
 })
 
+const ModeToggleStub = defineComponent({
+  emits: ['update:modelValue'],
+  template: `
+    <button
+      class="select-passive-mode"
+      @click="$emit('update:modelValue', 'passive')"
+    >
+      <slot />
+    </button>
+  `,
+})
+
 function settings(): FlashcardReviewSettings {
   return reactive({
     mode: 'manual',
@@ -49,6 +61,37 @@ function settings(): FlashcardReviewSettings {
 }
 
 describe('FlashcardReviewSettingsFields max cards', () => {
+  it('enables indefinite reviews by default when passive mode is selected', async () => {
+    const draft = settings()
+    const wrapper = mount(FlashcardReviewSettingsFields, {
+      props: {
+        modelValue: draft,
+        speechSupport: { available: false, languages: [] },
+      },
+      global: {
+        stubs: {
+          LabeledSlider: true,
+          VCard: { template: '<section><slot /></section>' },
+          ExpandTransition: { template: '<div><slot /></div>' },
+          VExpandTransition: { template: '<div><slot /></div>' },
+          VNumberInput: true,
+          VBtnToggle: ModeToggleStub,
+          VBtn: true,
+          VDivider: true,
+          VIcon: true,
+          VListItem: true,
+          VSelect: true,
+          VSwitch: SwitchStub,
+        },
+      },
+    })
+
+    await wrapper.get('.select-passive-mode').trigger('click')
+
+    expect(draft.mode).toBe('passive')
+    expect(draft.indefinite).toBe(true)
+  })
+
   it('shows the custom max cards field when the slider reaches 50', async () => {
     const draft = settings()
     const wrapper = mount(FlashcardReviewSettingsFields, {
