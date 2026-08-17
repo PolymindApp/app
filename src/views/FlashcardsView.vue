@@ -187,43 +187,70 @@ async function reorderReviewSets(result: LongPressDragResult) {
       {{ notice }}
     </v-alert>
 
-    <section class="card-library-action-bar page-action-area page-action-area--route-slide">
-      <div
-        class="card-library-summary"
-        aria-labelledby="card-library-summary-title"
-      >
-        <div class="card-library-summary__details">
-          <div class="card-library-summary__icon" aria-hidden="true">
-            <v-icon icon="mdi-card-multiple-outline" size="28" />
+    <div class="flashcards-action-stack page-action-area page-action-area--route-slide">
+      <section class="card-library-action-bar">
+        <div
+          class="card-library-summary"
+          aria-labelledby="card-library-summary-title"
+        >
+          <div class="card-library-summary__details">
+            <div class="card-library-summary__icon" aria-hidden="true">
+              <v-icon icon="mdi-card-multiple-outline" size="28" />
+            </div>
+            <div>
+              <h2 id="card-library-summary-title">Card library</h2>
+              <p class="card-library-summary__stat">
+                <strong>{{ store.cards.length }}</strong>
+                <span>{{ store.cards.length === 1 ? 'card' : 'cards' }}</span>
+              </p>
+            </div>
           </div>
-          <div>
-            <h2 id="card-library-summary-title">Card library</h2>
-            <p class="card-library-summary__stat">
-              <strong>{{ store.cards.length }}</strong>
-              <span>{{ store.cards.length === 1 ? 'card' : 'cards' }}</span>
-            </p>
+          <div class="card-library-summary__actions">
+            <v-btn
+              color="secondary"
+              prepend-icon="mdi-card-plus-outline"
+              :to="{ name: 'flashcard-new' }"
+            >
+              Add new
+            </v-btn>
+            <v-btn
+              variant="tonal"
+              prepend-icon="mdi-card-multiple-outline"
+              :to="{ name: 'flashcard-cards' }"
+            >
+              Manage
+            </v-btn>
           </div>
         </div>
-        <div class="card-library-summary__actions">
-          <v-btn
-            color="secondary"
-            prepend-icon="mdi-card-plus-outline"
-            :to="{ name: 'flashcard-new' }"
-          >
-            Add new
-          </v-btn>
-          <v-btn
-            variant="tonal"
-            prepend-icon="mdi-card-multiple-outline"
-            :to="{ name: 'flashcard-cards' }"
-          >
-            Manage
-          </v-btn>
-        </div>
-      </div>
-    </section>
+      </section>
 
-    <section>
+      <v-card
+        v-if="store.activeSession"
+        class="active-review pa-5"
+        color="secondary"
+      >
+        <div class="active-review__inner">
+          <div class="min-width-0">
+            <span class="active-review__label">{{ store.activeSession.status === 'paused' ? 'Paused' : 'In progress' }}</span>
+            <strong class="active-review__name text-truncate">{{ store.activeSession.name }}</strong>
+          </div>
+          <v-btn
+            color="primary"
+            size="large"
+            append-icon="mdi-arrow-right"
+            :to="{
+              name: 'flashcard-review-runner',
+              params: { sessionId: store.activeSession.id },
+              query: { autoplay: '1' },
+            }"
+          >
+            Resume
+          </v-btn>
+        </div>
+      </v-card>
+    </div>
+
+        <section>
       <div class="section-heading mt-0">
         <h2>Your Review sets</h2>
         <v-btn
@@ -322,9 +349,9 @@ async function reorderReviewSets(result: LongPressDragResult) {
         <p class="text-body-2 muted mt-2 mb-5">Choose which tags to review and how the cards should move.</p>
         <v-btn color="secondary" :to="{ name: 'flashcard-review-set-new' }">Create Review set</v-btn>
       </v-card>
-    </section>
+        </section>
 
-    <section v-if="sharedReviewSets.length">
+        <section v-if="sharedReviewSets.length">
       <div class="section-heading">
         <h2>Shared with you</h2>
         <span class="text-caption muted">{{ sharedReviewSets.length }}</span>
@@ -393,9 +420,8 @@ async function reorderReviewSets(result: LongPressDragResult) {
           </div>
         </v-card>
       </div>
-    </section>
-
-    <section>
+        </section>
+        <section>
       <div class="section-heading">
         <h2>Recent reviews</h2>
       </div>
@@ -487,30 +513,7 @@ async function reorderReviewSets(result: LongPressDragResult) {
           </p>
         </v-card>
       </transition>
-    </section>
-
-    <v-card
-      v-if="store.activeSession"
-      class="active-review page-action-area pa-5 mt-6"
-      color="secondary"
-    >
-      <div class="min-width-0">
-        <span class="active-review__label">{{ store.activeSession.status === 'paused' ? 'Paused' : 'In progress' }}</span>
-        <strong class="active-review__name text-truncate">{{ store.activeSession.name }}</strong>
-      </div>
-      <v-btn
-        color="primary"
-        size="large"
-        append-icon="mdi-arrow-right"
-        :to="{
-          name: 'flashcard-review-runner',
-          params: { sessionId: store.activeSession.id },
-          query: { autoplay: '1' },
-        }"
-      >
-        Resume
-      </v-btn>
-    </v-card>
+        </section>
 
     <ActionBottomSheet
       v-model="reviewSetActionsOpen"
@@ -559,7 +562,9 @@ async function reorderReviewSets(result: LongPressDragResult) {
 
 <style scoped>
 .flashcards-page:not(.flashcards-page--active) { padding-bottom: calc(8.5rem + var(--page-safe-area-bottom)); }
-.card-library-action-bar { position: fixed; z-index: 20; right: 0; bottom: calc(4.5rem + env(safe-area-inset-bottom)); left: 0; padding: .75rem 1rem; border-top: .0625rem solid rgba(var(--v-theme-on-surface), .08); background: rgb(var(--v-theme-background)); }
+.flashcards-page--active { padding-bottom: calc(13rem + var(--page-safe-area-bottom)); }
+.flashcards-action-stack { position: fixed; z-index: 20; right: 0; bottom: calc(4.5rem + env(safe-area-inset-bottom)); left: 0; display: flex; flex-direction: column; }
+.card-library-action-bar { padding: .75rem 1rem; border-top: .0625rem solid rgba(var(--v-theme-on-surface), .08); background: rgb(var(--v-theme-background)); }
 .card-library-summary { display: flex; width: 100%; max-width: 868px; margin: 0 auto; align-items: center; justify-content: space-between; gap: 1.5rem; background: transparent !important; }
 .card-library-summary__details { display: flex; min-width: 0; align-items: center; gap: 1rem; }
 .card-library-summary__icon { display: grid; width: 3.25rem; height: 3.25rem; flex: 0 0 auto; place-items: center; border-radius: 1rem; background: rgba(var(--v-theme-secondary), .14); color: rgb(var(--v-theme-secondary)); }
@@ -592,17 +597,14 @@ async function reorderReviewSets(result: LongPressDragResult) {
 .recent-review-progress { margin-top: .45rem; }
 .recent-review-stats { display: flex; flex-wrap: wrap; gap: .3rem .65rem; margin-top: .45rem; color: rgba(var(--v-theme-on-surface), .58); font-size: .7rem; }
 .recent-review-time { display: block; width: 3.5rem; font-variant-numeric: tabular-nums; text-align: end; }
-.active-review { display: flex; align-items: center; justify-content: space-between; gap: 1rem; color: rgb(var(--v-theme-on-secondary)); }
-.active-review > div { display: flex; min-width: 0; flex: 1 1 auto; flex-direction: column; }
+.active-review { border-radius: 0 !important; color: rgb(var(--v-theme-on-secondary)); box-shadow: 0 -.75rem 1.875rem rgba(0, 0, 0, .28) !important; }
+.active-review__inner { display: flex; width: 100%; max-width: 54.25rem; margin: 0 auto; align-items: center; justify-content: space-between; gap: 1rem; }
+.active-review__inner > div { display: flex; min-width: 0; flex: 1 1 auto; flex-direction: column; }
 .active-review__label { font-size: .65rem; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
 .active-review__name { width: 100%; font-size: 1.35rem; }
-@media (max-width: 59.9375rem) {
-  .flashcards-page--active { padding-bottom: calc(7rem + var(--page-safe-area-bottom)); }
-  .flashcards-page--active .card-library-action-bar { display: none; }
-  .active-review { position: fixed; z-index: 20; right: 0; bottom: calc(4.5rem + env(safe-area-inset-bottom)); left: 0; border-radius: 0 !important; box-shadow: 0 -.75rem 1.875rem rgba(0, 0, 0, .28) !important; }
-}
 @media (min-width: 60rem) {
   .flashcards-page:not(.flashcards-page--active) { padding-bottom: calc(7rem + var(--page-safe-area-bottom)); }
-  .card-library-action-bar { bottom: 0; left: 14rem; }
+  .flashcards-page--active { padding-bottom: calc(13.5rem + var(--page-safe-area-bottom)); }
+  .flashcards-action-stack { bottom: 0; left: 17rem; }
 }
 </style>

@@ -438,35 +438,59 @@ function releaseLeavingPage(element: Element) {
 
 <template>
   <v-app theme="forgeDark">
-    <v-navigation-drawer v-if="mdAndUp && !immersive" permanent width="224" color="background">
-      <div class="pa-6 pt-8">
-        <div class="brand-mark mb-3">
-          <img src="/brand/backontrack-wordmark.png" alt="BackOnTrack" />
+    <v-navigation-drawer
+      v-if="mdAndUp && !immersive"
+      permanent
+      width="272"
+      color="surface"
+      class="desktop-sidebar"
+    >
+      <div class="desktop-sidebar__content">
+        <div class="desktop-sidebar__brand px-5 pt-6 pb-5">
+          <div class="brand-mark">
+            <img src="/brand/backontrack-wordmark.png" alt="BackOnTrack" />
+          </div>
+          <p class="text-caption ml-10 mt-n2 text-medium-emphasis mb-0 mt-2">Build your way forward.</p>
         </div>
-        <p class="text-caption text-medium-emphasis mt-2">Build your way forward.</p>
-      </div>
 
-      <v-list nav class="px-3 mt-6">
-        <v-list-item
-          v-for="item in items"
-          :key="item.to"
-          :to="item.to"
-          :title="item.title"
-          :aria-label="menuItemLabel(item)"
-          :active="current === item.to"
-          rounded="xl"
-          class="mb-2"
-          color="secondary"
-        >
-          <template #prepend>
-            <MainNavigationIcon
-              :icon="item.icon"
-              :running="menuItemHasActiveSession(item.id)"
-              badge-surface="background"
-            />
-          </template>
-        </v-list-item>
-      </v-list>
+        <v-divider class="mx-4" />
+
+        <v-list nav class="desktop-sidebar__navigation px-3 py-4" aria-label="Primary navigation">
+          <v-list-item
+            v-for="item in items"
+            :key="item.to"
+            :to="item.to"
+            :aria-label="menuItemLabel(item)"
+            :active="current === item.to"
+            :aria-current="current === item.to ? 'page' : undefined"
+            rounded="lg"
+            class="desktop-sidebar__nav-item mb-1"
+            color="secondary"
+          >
+            <template #prepend>
+              <span class="desktop-sidebar__nav-icon">
+                <MainNavigationIcon
+                  :icon="item.icon"
+                  :running="menuItemHasActiveSession(item.id)"
+                  badge-surface="surface"
+                />
+              </span>
+            </template>
+            <template #title>
+              <span class="desktop-sidebar__nav-label">{{ item.title }}</span>
+            </template>
+            <template #append>
+              <v-icon
+                v-if="current === item.to"
+                icon="mdi-chevron-right"
+                size="18"
+                class="desktop-sidebar__active-arrow"
+              />
+            </template>
+          </v-list-item>
+        </v-list>
+
+      </div>
     </v-navigation-drawer>
 
     <transition name="app-chrome">
@@ -823,16 +847,94 @@ function releaseLeavingPage(element: Element) {
 }
 
 .brand-mark {
-  width: 160px;
-  height: 36px;
+  width: 10.5rem;
+  height: 2.25rem;
 }
 
 .brand-mark img {
   display: block;
-  width: 160px;
-  height: 36px;
+  width: 10.5rem;
+  height: 2.25rem;
   object-fit: contain;
   object-position: left center;
+}
+
+.desktop-sidebar {
+  border-right: 1px solid rgb(var(--v-theme-on-surface) / .08) !important;
+  background:
+    linear-gradient(180deg, rgb(var(--v-theme-secondary) / .035), transparent 14rem),
+    rgb(var(--v-theme-surface)) !important;
+}
+
+.desktop-sidebar :deep(.v-navigation-drawer__content) {
+  overflow: hidden;
+}
+
+.desktop-sidebar__content {
+  display: flex;
+  min-height: 100%;
+  flex-direction: column;
+}
+
+.desktop-sidebar__brand {
+  flex: 0 0 auto;
+}
+
+.desktop-sidebar__navigation {
+  flex: 0 0 auto;
+}
+
+.desktop-sidebar__nav-item {
+  min-height: 3.25rem;
+  border: 1px solid transparent;
+  color: rgb(var(--v-theme-on-surface) / .68);
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease,
+    color 180ms ease;
+}
+
+.desktop-sidebar__nav-item:hover {
+  background: rgb(var(--v-theme-on-surface) / .045);
+  color: rgb(var(--v-theme-on-surface) / .9);
+}
+
+.desktop-sidebar__nav-item.v-list-item--active {
+  border-color: rgb(var(--v-theme-secondary) / .18);
+  background: rgb(var(--v-theme-secondary) / .1);
+  color: rgb(var(--v-theme-secondary));
+}
+
+.desktop-sidebar__nav-item :deep(.v-list-item__prepend) {
+  width: 2.75rem;
+}
+
+.desktop-sidebar__nav-item :deep(.v-list-item__append) {
+  margin-inline-start: .5rem;
+}
+
+.desktop-sidebar__nav-icon {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  border-radius: .625rem;
+  background: rgb(var(--v-theme-on-surface) / .055);
+  place-items: center;
+  transition: background-color 180ms ease;
+}
+
+.desktop-sidebar__nav-item.v-list-item--active .desktop-sidebar__nav-icon {
+  background: rgb(var(--v-theme-secondary) / .14);
+}
+
+.desktop-sidebar__nav-label {
+  font-size: .85rem;
+  font-weight: 800;
+  letter-spacing: -.01em;
+}
+
+.desktop-sidebar__active-arrow {
+  opacity: .72;
 }
 
 .bottom-nav {
@@ -924,8 +1026,9 @@ function releaseLeavingPage(element: Element) {
 
 @media (min-width: 960px) {
   .app-bar {
-    left: 224px;
+    left: 17rem;
   }
+
 }
 
 </style>

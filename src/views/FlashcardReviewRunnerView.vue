@@ -1210,7 +1210,8 @@ async function leaveRunner() {
         class="review-progress"
         :model-value="progress"
         color="primary"
-        bg-color="surface-variant"
+        bg-color="white"
+        :bg-opacity="0.14"
         height="5"
         :aria-label="session.indefinite
           ? `${progress}% through the current loop`
@@ -1383,7 +1384,8 @@ async function leaveRunner() {
                   class="review-progress"
                   :model-value="passiveProgress"
                   color="secondary"
-                  bg-color="surface-variant"
+                  bg-color="white"
+                  :bg-opacity="0.14"
                   height="6"
                   rounded
                 />
@@ -1701,7 +1703,7 @@ async function leaveRunner() {
 .review-runner { position: fixed; z-index: 1003; inset: 0; display: flex; width: 100%; max-width: 100vw; height: 100dvh; min-height: 0; flex-direction: column; overflow: hidden; background: radial-gradient(circle at 50% 26%, rgba(var(--v-theme-secondary), .08), transparent 34rem), rgb(var(--v-theme-background)); color: rgb(var(--v-theme-on-background)); }
 .review-progress,
 .review-progress :deep(.v-progress-linear__determinate) { transition: none; }
-.runner-header { display: grid; min-height: calc(4rem + max(env(safe-area-inset-top), var(--safe-area-inset-top, 0rem))); padding: max(env(safe-area-inset-top), var(--safe-area-inset-top, 0rem)) 1rem 0; grid-template-columns: 2.75rem minmax(0, 1fr) auto; align-items: center; gap: .75rem; }
+.runner-header { display: grid; width: 100%; max-width: 54.25rem; min-height: calc(4rem + max(env(safe-area-inset-top), var(--safe-area-inset-top, 0rem))); margin-inline: auto; padding: max(env(safe-area-inset-top), var(--safe-area-inset-top, 0rem)) 1rem 0; grid-template-columns: 2.75rem minmax(0, 1fr) auto; align-items: center; gap: .75rem; }
 .runner-header__title { display: flex; flex-direction: column; align-items: center; }
 .runner-header__title strong { max-width: 100%; font-size: .88rem; }
 .runner-header__title span { color: rgba(var(--v-theme-on-surface), .52); font-size: .68rem; font-weight: 800; }
@@ -1773,7 +1775,7 @@ async function leaveRunner() {
 .standalone-review-card-flip-front-leave-to { opacity: .35; transform: rotateY(72deg); }
 .standalone-review-card-flip-back-leave-to,
 .standalone-review-card-flip-front-enter-from { opacity: .35; transform: rotateY(-72deg); }
-.review-navigation { display: grid; margin-top: auto; padding-top: .25rem; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: center; justify-items: center; gap: 1rem; }
+.review-navigation { display: grid; width: 100%; max-width: 54.25rem; margin: auto auto 0; padding-top: .25rem; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: center; justify-items: center; gap: 1rem; }
 .review-navigation__control { display: flex; min-width: 0; align-items: center; }
 .grading-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
 .grading-actions > .v-btn:only-child { grid-column: 1 / -1; }

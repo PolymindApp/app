@@ -993,19 +993,64 @@ async function saveTaskLogEntry() {
       </v-btn>
     </div>
 
-    <section v-if="timedProgressGroups.length" class="task-schedule-section">
-      <div class="task-timeline">
-        <section v-for="group in timedProgressGroups" :key="group.hour" class="task-hour-group">
-          <time class="task-hour-label" :datetime="`${group.hour}:00`">{{ group.label }}</time>
-          <div class="task-stack task-hour-stack">
+    <v-row no-gutters align="start">
+      <v-col cols="12" md="6" class="pr-md-2">
+        <section v-if="timedProgressGroups.length" class="task-schedule-section">
+          <div class="task-timeline">
+            <section v-for="group in timedProgressGroups" :key="group.hour" class="task-hour-group">
+              <time class="task-hour-label" :datetime="`${group.hour}:00`">{{ group.label }}</time>
+              <div class="task-stack task-hour-stack">
+                <div
+                  v-for="item in group.tasks"
+                  :key="visibilityKey(item)"
+                  class="task-masonry-item"
+                >
+                  <TaskCard
+                    :progress="item"
+                    :time-label="taskTimeLabel(item)"
+                    :schedule-status="taskScheduleStatus(item)"
+                    :busy="progressIsBusy(item)"
+                    :value-pulse="valuePulseFor(item)"
+                    :syncing="item.task.type === 'step_counter' && stepCountLoading"
+                    :step-count-error="item.task.type === 'step_counter' ? stepCountError : ''"
+                    :interval="intervalMeta(item)"
+                    :review-set="reviewSetMeta(item)"
+                    :trackers="trackingMeta(item)"
+                    :can-log-tracking="trackingCanLog(item)"
+                    @log-tracking="openTrackingLogger"
+                    @log-tracking-time="openTrackingTimeLogger"
+                    @actions="openTaskActions"
+                  />
+                </div>
+              </div>
+            </section>
+          </div>
+        </section>
+      </v-col>
+
+      <v-col cols="12" md="6" class="pl-md-2">
+        <section
+          v-if="allDayProgress.length"
+          class="task-schedule-section task-all-day-group"
+          :class="timedProgressGroups.length ? 'mt-6 mt-md-0' : undefined"
+        >
+          <h3 class="task-schedule-label task-all-day-label">All day</h3>
+          <div class="task-stack task-all-day-stack">
             <div
-              v-for="item in group.tasks"
+              v-for="item in allDayProgress"
               :key="visibilityKey(item)"
+              v-long-press-drag="{
+                id: progressKey(item),
+                group: 'all-day-task-cards',
+                handle: '[data-task-drag-handle]',
+                disabled: draggableTaskCount(allDayProgress) < 2 || busy || reorderingTasks,
+                onDrop: result => reorderTaskCards(result, allDayProgress),
+              }"
               class="task-masonry-item"
+              :class="{ 'task-masonry-item--draggable': draggableTaskCount(allDayProgress) > 1 }"
             >
               <TaskCard
                 :progress="item"
-                :time-label="taskTimeLabel(item)"
                 :schedule-status="taskScheduleStatus(item)"
                 :busy="progressIsBusy(item)"
                 :value-pulse="valuePulseFor(item)"
@@ -1022,47 +1067,8 @@ async function saveTaskLogEntry() {
             </div>
           </div>
         </section>
-      </div>
-    </section>
-
-    <section
-      v-if="allDayProgress.length"
-      class="task-schedule-section task-all-day-group"
-      :class="{ 'mt-6': timedProgressGroups.length }"
-    >
-      <h3 class="task-schedule-label task-all-day-label">All day</h3>
-      <div class="task-stack task-all-day-stack">
-        <div
-          v-for="item in allDayProgress"
-          :key="visibilityKey(item)"
-          v-long-press-drag="{
-            id: progressKey(item),
-            group: 'all-day-task-cards',
-            handle: '[data-task-drag-handle]',
-            disabled: draggableTaskCount(allDayProgress) < 2 || busy || reorderingTasks,
-            onDrop: result => reorderTaskCards(result, allDayProgress),
-          }"
-          class="task-masonry-item"
-          :class="{ 'task-masonry-item--draggable': draggableTaskCount(allDayProgress) > 1 }"
-        >
-          <TaskCard
-            :progress="item"
-            :schedule-status="taskScheduleStatus(item)"
-            :busy="progressIsBusy(item)"
-            :value-pulse="valuePulseFor(item)"
-            :syncing="item.task.type === 'step_counter' && stepCountLoading"
-            :step-count-error="item.task.type === 'step_counter' ? stepCountError : ''"
-            :interval="intervalMeta(item)"
-            :review-set="reviewSetMeta(item)"
-            :trackers="trackingMeta(item)"
-            :can-log-tracking="trackingCanLog(item)"
-            @log-tracking="openTrackingLogger"
-            @log-tracking-time="openTrackingTimeLogger"
-            @actions="openTaskActions"
-          />
-        </div>
-      </div>
-    </section>
+      </v-col>
+    </v-row>
 
     <v-card v-if="!selectedProgress.length && !loading" class="surface-card empty-card pa-8 text-center">
       <div class="empty-icon mx-auto mb-4"><v-icon icon="mdi-arm-flex-outline" size="32" /></div>

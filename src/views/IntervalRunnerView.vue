@@ -2003,8 +2003,8 @@ async function runAgain(repetitions?: number) {
               class="interval-review-card__progress"
               :model-value="flashcardPhase.progress"
               color="info"
-              bg-color="on-surface"
-              :bg-opacity="0.2"
+              bg-color="white"
+              :bg-opacity="0.14"
               height="5"
               rounded
               :aria-label="flashcardReviewPlaybackEnabled
@@ -2440,7 +2440,7 @@ async function runAgain(repetitions?: number) {
   opacity: 0;
   transform: translateY(-1rem);
 }
-.runner-header { display: grid; grid-template-columns: 3rem minmax(0, 1fr) auto; align-items: center; }
+.runner-header { display: grid; width: 100%; max-width: 54.25rem; margin-inline: auto; grid-template-columns: 3rem minmax(0, 1fr) auto; align-items: center; }
 .runner-header__actions { display: flex; align-items: center; justify-content: flex-end; gap: .125rem; }
 .runner-actions-button { min-width: 2.75rem; min-height: 2.75rem; }
 .runner-label { color: rgb(var(--v-theme-on-surface) / .52); font-size: .68rem; font-weight: 850; letter-spacing: .1em; text-transform: uppercase; }
@@ -2589,7 +2589,7 @@ async function runAgain(repetitions?: number) {
   100% { transform: scale(1); }
 }
 .next-copy { color: rgb(var(--v-theme-on-surface) / .56); font-size: .78rem; }
-.runner-controls { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; justify-items: center; gap: 1rem; }
+.runner-controls { display: grid; width: 100%; max-width: 54.25rem; margin-inline: auto; grid-template-columns: 1fr auto 1fr; align-items: center; justify-items: center; gap: 1rem; }
 .runner-controls .runner-confirm-button { width: min(100%, 22rem); grid-column: 1 / -1; }
 .runner-controls--landscape { display: none; }
 .finish-card { width: 100%; max-width: 620px; margin: auto; text-align: center; }
