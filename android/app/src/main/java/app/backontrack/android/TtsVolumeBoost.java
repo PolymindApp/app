@@ -12,8 +12,8 @@ import java.io.File;
 import java.io.IOException;
 
 /**
- * Plays synthesized speech through an app-owned audio session so amplification never affects the
- * global output mix or another app's audio.
+ * Plays synthesized speech through an app-owned audio session so loudness enhancement remains
+ * scoped to this app while transient audio focus handles the surrounding media mix.
  */
 final class TtsVolumeBoost {
 
@@ -27,6 +27,7 @@ final class TtsVolumeBoost {
     private File synthesizedAudio;
     private MediaPlayer mediaPlayer;
     private LoudnessEnhancer loudnessEnhancer;
+    private TransientAudioFocus.Lease audioFocusLease;
 
     TtsVolumeBoost(Context context) {
         this.context = context.getApplicationContext();
@@ -107,6 +108,7 @@ final class TtsVolumeBoost {
             return;
         }
         if (amplificationEnabled) attachLoudnessEnhancer();
+        audioFocusLease = TransientAudioFocus.acquire(context, speechAudioAttributes());
         try {
             player.start();
         } catch (RuntimeException error) {
@@ -135,7 +137,7 @@ final class TtsVolumeBoost {
 
     private static AudioAttributes speechAudioAttributes() {
         return new AudioAttributes.Builder()
-            .setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
+            .setUsage(AudioAttributes.USAGE_MEDIA)
             .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
             .build();
     }
@@ -148,6 +150,10 @@ final class TtsVolumeBoost {
             MediaPlayer currentPlayer = mediaPlayer;
             mediaPlayer = null;
             releasePlayer(currentPlayer);
+        }
+        if (audioFocusLease != null) {
+            audioFocusLease.release();
+            audioFocusLease = null;
         }
         if (synthesizedAudio != null) {
             //noinspection ResultOfMethodCallIgnored

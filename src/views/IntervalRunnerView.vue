@@ -2431,7 +2431,7 @@ async function runAgain(repetitions?: number) {
 .interval-review-card__main:disabled { cursor: default; opacity: .72; }
 .interval-review-card--playback-paused { border-style: dashed; background: rgba(var(--v-theme-on-surface), .025); opacity: .72; }
 .interval-review-card :deep(.v-ripple__container) { z-index: 2; }
-.interval-review-card__content { display: flex; box-sizing: border-box; min-height: 8rem; padding: 1rem; align-items: center; justify-content: flex-start; flex-direction: column; gap: .65rem; text-align: center; }
+.interval-review-card__content { display: flex; box-sizing: border-box; min-height: 8.5rem; padding: 1rem; align-items: center; justify-content: flex-start; flex-direction: column; gap: .65rem; text-align: center; }
 .interval-review-card__heading { display: flex; width: 100%; min-width: 0; align-items: center; justify-content: space-between; gap: .75rem; }
 .interval-review-card__meta { display: flex; flex: 0 0 auto; align-items: center; justify-content: flex-end; gap: .75rem; color: rgba(var(--v-theme-on-surface), .58); font-size: .62rem; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
 .interval-review-card__meta small { display: inline-flex; align-items: center; gap: .25rem; }
@@ -2747,7 +2747,7 @@ async function runAgain(repetitions?: number) {
   }
 
   .interval-review-card__content {
-    min-height: 6.75rem;
+    min-height: 7.25rem;
     padding: .65rem;
   }
 

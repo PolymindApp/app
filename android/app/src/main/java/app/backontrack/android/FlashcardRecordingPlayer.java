@@ -17,6 +17,7 @@ final class FlashcardRecordingPlayer {
 
     private final Context context;
     private MediaPlayer player;
+    private TransientAudioFocus.Lease audioFocusLease;
     private File temporaryFile;
     private Runnable pendingCancellation;
     private long generation;
@@ -46,12 +47,8 @@ final class FlashcardRecordingPlayer {
         MediaPlayer nextPlayer = new MediaPlayer();
         player = nextPlayer;
         pendingCancellation = cancelled;
-        nextPlayer.setAudioAttributes(
-            new AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
-                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                .build()
-        );
+        AudioAttributes audioAttributes = speechAudioAttributes();
+        nextPlayer.setAudioAttributes(audioAttributes);
         nextPlayer.setOnPreparedListener(prepared -> {
             if (
                 requestGeneration != generation
@@ -64,6 +61,10 @@ final class FlashcardRecordingPlayer {
                 return;
             }
             try {
+                audioFocusLease = TransientAudioFocus.acquire(
+                    context,
+                    audioAttributes
+                );
                 prepared.start();
                 takePendingCancellation(prepared);
                 started.run();
@@ -135,6 +136,13 @@ final class FlashcardRecordingPlayer {
         return temporaryFile;
     }
 
+    private static AudioAttributes speechAudioAttributes() {
+        return new AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_MEDIA)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+            .build();
+    }
+
     private void release(MediaPlayer target) {
         boolean active = player == target;
         if (active) {
@@ -156,6 +164,10 @@ final class FlashcardRecordingPlayer {
             // Releasing an already-ended player is safe to ignore.
         }
         if (active) removeTemporaryFile();
+        if (active && audioFocusLease != null) {
+            audioFocusLease.release();
+            audioFocusLease = null;
+        }
     }
 
     private Runnable takePendingCancellation(MediaPlayer target) {

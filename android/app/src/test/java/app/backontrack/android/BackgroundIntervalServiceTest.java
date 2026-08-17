@@ -29,4 +29,38 @@ public class BackgroundIntervalServiceTest {
         assertFalse(BackgroundIntervalService.reviewWindowIsActive(8_000L, 4_000L));
         assertEquals(0L, BackgroundIntervalService.reviewWindowElapsedMs(8_000L, 0L));
     }
+
+    @Test
+    public void reviewAudioFocusCoversOnlyRunningSpeechEnabledSteps() {
+        assertTrue(BackgroundIntervalService.stepShouldHoldReviewAudioFocus(
+            true,
+            false,
+            true,
+            true
+        ));
+        assertFalse(BackgroundIntervalService.stepShouldHoldReviewAudioFocus(
+            true,
+            false,
+            false,
+            true
+        ));
+        assertFalse(BackgroundIntervalService.stepShouldHoldReviewAudioFocus(
+            true,
+            true,
+            true,
+            true
+        ));
+        assertFalse(BackgroundIntervalService.stepShouldHoldReviewAudioFocus(
+            false,
+            false,
+            true,
+            true
+        ));
+        assertFalse(BackgroundIntervalService.stepShouldHoldReviewAudioFocus(
+            true,
+            false,
+            true,
+            false
+        ));
+    }
 }

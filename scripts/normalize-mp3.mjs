@@ -20,7 +20,7 @@ const audioRoots = [
   resolve(repositoryRoot, 'public/sounds'),
   resolve(repositoryRoot, 'android/app/src/main/res/raw'),
 ]
-const targetLoudness = numericSetting('MP3_TARGET_LUFS', '-16')
+const targetLoudness = numericSetting('MP3_TARGET_LUFS', '-12')
 const targetLoudnessRange = numericSetting('MP3_TARGET_LRA', '11')
 const targetTruePeak = numericSetting('MP3_TARGET_TRUE_PEAK_DB', '-1.5')
 const targetSampleRate = integerSetting('MP3_SAMPLE_RATE', '48000')
@@ -48,7 +48,7 @@ Usage:
   pnpm audio:normalize [--dry-run]
 
 Environment overrides:
-  MP3_TARGET_LUFS          Integrated loudness target (default: -16)
+  MP3_TARGET_LUFS          Integrated loudness target (default: -12)
   MP3_TARGET_LRA           Loudness range target (default: 11)
   MP3_TARGET_TRUE_PEAK_DB  True-peak ceiling (default: -1.5)
   MP3_SAMPLE_RATE          Output sample rate (default: 48000)

@@ -59,6 +59,7 @@ public class BackgroundIntervalService extends Service {
     private TextToSpeech speech;
     private TtsVolumeBoost volumeBoost;
     private FlashcardRecordingPlayer recordingPlayer;
+    private TransientAudioFocus.Lease reviewStepAudioFocus;
     private boolean speechReady;
     private String sessionId = "";
     private String sessionName = "Interval";
@@ -161,12 +162,7 @@ public class BackgroundIntervalService extends Service {
             speechReady = status == TextToSpeech.SUCCESS;
             TextToSpeech currentSpeech = speech;
             if (speechReady && currentSpeech != null) {
-                currentSpeech.setAudioAttributes(
-                    new AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                        .build()
-                );
+                currentSpeech.setAudioAttributes(reviewSpeechAudioAttributes());
                 currentSpeech.setOnUtteranceProgressListener(new UtteranceProgressListener() {
                     @Override
                     public void onStart(String utteranceId) {}
@@ -209,6 +205,7 @@ public class BackgroundIntervalService extends Service {
                 acquireWakeLock();
             }
             running = true;
+            updateReviewStepAudioFocus();
             handler.removeCallbacks(ticker);
             handler.post(ticker);
         } catch (JSONException | IllegalArgumentException error) {
@@ -309,6 +306,55 @@ public class BackgroundIntervalService extends Service {
             && steps.get(stepIndex).flashcardReviewEnabled;
     }
 
+    static boolean stepShouldHoldReviewAudioFocus(
+        boolean running,
+        boolean requiresConfirmation,
+        boolean flashcardReviewEnabled,
+        boolean hasReviewCards
+    ) {
+        return running
+            && !requiresConfirmation
+            && flashcardReviewEnabled
+            && hasReviewCards;
+    }
+
+    private static AudioAttributes reviewSpeechAudioAttributes() {
+        return new AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_MEDIA)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+            .build();
+    }
+
+    private boolean currentStepShouldHoldReviewAudioFocus() {
+        if (steps.isEmpty() || stepIndex < 0 || stepIndex >= steps.size()) return false;
+        IntervalStep step = steps.get(stepIndex);
+        return stepShouldHoldReviewAudioFocus(
+            running,
+            step.requiresConfirmation,
+            step.flashcardReviewEnabled,
+            !reviewCards.isEmpty()
+        );
+    }
+
+    private void updateReviewStepAudioFocus() {
+        if (currentStepShouldHoldReviewAudioFocus()) {
+            if (reviewStepAudioFocus == null) {
+                reviewStepAudioFocus = TransientAudioFocus.acquireStepSpeech(
+                    this,
+                    reviewSpeechAudioAttributes()
+                );
+            }
+            return;
+        }
+        releaseReviewStepAudioFocus();
+    }
+
+    private void releaseReviewStepAudioFocus() {
+        if (reviewStepAudioFocus == null) return;
+        reviewStepAudioFocus.release();
+        reviewStepAudioFocus = null;
+    }
+
     static long reviewWindowElapsedMs(long durationMs, long remainingMs) {
         long safeDurationMs = Math.max(0L, durationMs);
         long safeRemainingMs = Math.min(safeDurationMs, Math.max(0L, remainingMs));
@@ -393,6 +439,7 @@ public class BackgroundIntervalService extends Service {
     }
 
     private void updateReviewSpeech(long now) {
+        updateReviewStepAudioFocus();
         boolean appVisible = MainActivity.isAppVisible();
         if (!currentStepPlaysFlashcardReview(now)) {
             pauseReviewSpeech();
@@ -543,6 +590,7 @@ public class BackgroundIntervalService extends Service {
     private void finishTimer() {
         if (!MainActivity.isAppVisible()) playCompleteCue();
         running = false;
+        releaseReviewStepAudioFocus();
         handler.removeCallbacks(ticker);
         stopSpeechPlayback();
         releaseWakeLock();
@@ -554,6 +602,7 @@ public class BackgroundIntervalService extends Service {
 
     private void stopTimer() {
         running = false;
+        releaseReviewStepAudioFocus();
         handler.removeCallbacks(ticker);
         stopSpeechPlayback();
         releaseWakeLock();
@@ -688,6 +737,7 @@ public class BackgroundIntervalService extends Service {
     @Override
     public void onDestroy() {
         running = false;
+        releaseReviewStepAudioFocus();
         if (activeInstance == this) activeInstance = null;
         handler.removeCallbacksAndMessages(null);
         releaseWakeLock();

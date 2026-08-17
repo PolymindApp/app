@@ -27,6 +27,7 @@ final class IntervalCuePlayer {
     private final Set<Integer> loadedSounds = new HashSet<>();
     private final Map<Integer, PendingCue> pendingSounds = new HashMap<>();
     private final Handler retryHandler = new Handler(Looper.getMainLooper());
+    private final Context context;
     private final AudioAttributes audioAttributes;
     private final SoundPool soundPool;
     private final Map<String, Integer> signalResources = new HashMap<>();
@@ -39,6 +40,8 @@ final class IntervalCuePlayer {
     private int activeCountStream;
     private int activeSignalStream;
     private MediaPlayer activeMediaSignal;
+    private TransientAudioFocus.Lease activeCountFocus;
+    private TransientAudioFocus.Lease activeSignalFocus;
     private long signalProtectedUntilElapsedMs;
 
     private static final class PendingCue {
@@ -52,6 +55,7 @@ final class IntervalCuePlayer {
     }
 
     private IntervalCuePlayer(Context context) {
+        this.context = context.getApplicationContext();
         audioAttributes = new AudioAttributes.Builder()
             .setUsage(AudioAttributes.USAGE_MEDIA)
             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
@@ -121,7 +125,7 @@ final class IntervalCuePlayer {
             return;
         }
         Integer resourceId = player.signalResources.get(name);
-        if (resourceId != null) player.playMediaSignal(context, resourceId);
+        if (resourceId != null) player.playMediaSignal(resourceId);
     }
 
     static boolean supportsSound(String name) {
@@ -154,7 +158,7 @@ final class IntervalCuePlayer {
         return 0;
     }
 
-    private void playMediaSignal(Context context, int resourceId) {
+    private void playMediaSignal(int resourceId) {
         int generation;
         synchronized (playbackLock) {
             generation = ++cueGeneration;
@@ -165,7 +169,7 @@ final class IntervalCuePlayer {
         }
 
         MediaPlayer mediaPlayer = MediaPlayer.create(
-            context.getApplicationContext(),
+            this.context,
             resourceId,
             audioAttributes,
             0
@@ -180,12 +184,18 @@ final class IntervalCuePlayer {
             return true;
         });
 
+        TransientAudioFocus.Lease focusLease = TransientAudioFocus.acquire(
+            this.context,
+            audioAttributes
+        );
         synchronized (playbackLock) {
             if (generation != latestSignalGeneration) {
+                focusLease.release();
                 mediaPlayer.release();
                 return;
             }
             activeMediaSignal = mediaPlayer;
+            activeSignalFocus = focusLease;
         }
         try {
             mediaPlayer.start();
@@ -198,7 +208,10 @@ final class IntervalCuePlayer {
         mediaPlayer.setOnCompletionListener(null);
         mediaPlayer.setOnErrorListener(null);
         synchronized (playbackLock) {
-            if (activeMediaSignal == mediaPlayer) activeMediaSignal = null;
+            if (activeMediaSignal == mediaPlayer) {
+                activeMediaSignal = null;
+                releaseSignalFocusLocked();
+            }
             if (generation == latestSignalGeneration) {
                 signalProtectedUntilElapsedMs = SystemClock.elapsedRealtime();
             }
@@ -218,10 +231,12 @@ final class IntervalCuePlayer {
         if (activeCountStream != 0) {
             soundPool.stop(activeCountStream);
             activeCountStream = 0;
+            releaseCountFocusLocked();
         }
         if (activeSignalStream != 0) {
             soundPool.stop(activeSignalStream);
             activeSignalStream = 0;
+            releaseSignalFocusLocked();
         }
     }
 
@@ -237,6 +252,7 @@ final class IntervalCuePlayer {
             // The player may have completed before it could be stopped.
         }
         mediaPlayer.release();
+        releaseSignalFocusLocked();
     }
 
     private static IntervalCuePlayer get(Context context) {
@@ -295,19 +311,39 @@ final class IntervalCuePlayer {
             if (activeCountStream != 0) {
                 soundPool.stop(activeCountStream);
                 activeCountStream = 0;
+                releaseCountFocusLocked();
             }
             if (priority >= SIGNAL_PRIORITY && activeSignalStream != 0) {
                 soundPool.stop(activeSignalStream);
                 activeSignalStream = 0;
+                releaseSignalFocusLocked();
             }
             if (priority >= SIGNAL_PRIORITY) stopMediaSignalLocked();
+            TransientAudioFocus.Lease focusLease = TransientAudioFocus.acquire(
+                context,
+                audioAttributes
+            );
             streamId = soundPool.play(soundId, 1f, 1f, priority, 0, 1f);
             if (streamId != 0) {
-                if (priority >= SIGNAL_PRIORITY) activeSignalStream = streamId;
-                else activeCountStream = streamId;
+                if (priority >= SIGNAL_PRIORITY) {
+                    activeSignalStream = streamId;
+                    activeSignalFocus = focusLease;
+                } else {
+                    activeCountStream = streamId;
+                    activeCountFocus = focusLease;
+                }
+            } else {
+                focusLease.release();
             }
         }
-        if (streamId != 0 || attempt >= MAX_PLAY_ATTEMPTS) return;
+        if (streamId != 0) {
+            retryHandler.postDelayed(
+                () -> finishSoundPoolFocus(streamId, priority),
+                focusDurationMs(soundId)
+            );
+            return;
+        }
+        if (attempt >= MAX_PLAY_ATTEMPTS) return;
         retryHandler.postDelayed(
             () -> playLoaded(soundId, priority, generation, attempt + 1),
             40L * attempt
@@ -316,5 +352,34 @@ final class IntervalCuePlayer {
 
     private long signalGuardMs(int soundId) {
         return soundId == completeSound ? COMPLETE_GUARD_MS : GO_GUARD_MS;
+    }
+
+    private long focusDurationMs(int soundId) {
+        if (soundId == completeSound) return 2300L;
+        return 700L;
+    }
+
+    private void finishSoundPoolFocus(int streamId, int priority) {
+        synchronized (playbackLock) {
+            if (priority >= SIGNAL_PRIORITY && activeSignalStream == streamId) {
+                activeSignalStream = 0;
+                releaseSignalFocusLocked();
+            } else if (priority < SIGNAL_PRIORITY && activeCountStream == streamId) {
+                activeCountStream = 0;
+                releaseCountFocusLocked();
+            }
+        }
+    }
+
+    private void releaseCountFocusLocked() {
+        if (activeCountFocus == null) return;
+        activeCountFocus.release();
+        activeCountFocus = null;
+    }
+
+    private void releaseSignalFocusLocked() {
+        if (activeSignalFocus == null) return;
+        activeSignalFocus.release();
+        activeSignalFocus = null;
     }
 }
