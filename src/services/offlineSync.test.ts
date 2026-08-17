@@ -89,6 +89,20 @@ function exchangeResponse(overrides: Record<string, unknown> = {}) {
   })
 }
 
+function bootstrapResponse(overrides: Record<string, unknown> = {}) {
+  return new Response(JSON.stringify({
+    watermark: 12,
+    receiptWatermark: 17,
+    nextPageToken: null,
+    resources: [],
+    protocolVersion: 2,
+    ...overrides,
+  }), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  })
+}
+
 beforeEach(() => {
   vi.resetModules()
   vi.useRealTimers()
@@ -110,6 +124,48 @@ afterEach(async () => {
 })
 
 describe('offline synchronization coordination', () => {
+  it('collects every bootstrap page under one stable watermark', async () => {
+    const firstResource = {
+      resource: 'tasks',
+      id: 'task-1',
+      revision: 1,
+      fieldClocks: { '*': '100-server' },
+      deleted: false,
+      data: { id: 'task-1', owner: 'account-1', name: 'First task' },
+    }
+    const secondResource = {
+      resource: 'flashcards',
+      id: 'card-1',
+      revision: 1,
+      fieldClocks: { '*': '100-server' },
+      deleted: false,
+      data: { id: 'card-1', owner: 'account-1', front: 'Front', back: 'Back' },
+    }
+    mocks.hasLocalBootstrap.mockResolvedValueOnce(false)
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(bootstrapResponse({
+        nextPageToken: '4:500',
+        resources: [firstResource],
+      }))
+      .mockResolvedValueOnce(bootstrapResponse({ resources: [secondResource] }))
+      .mockResolvedValueOnce(exchangeResponse({ cursor: 12 }))
+    const { syncNow } = await import('./offlineSync')
+
+    await expect(syncNow('manual')).resolves.toBe(true)
+
+    expect(fetch).toHaveBeenCalledTimes(3)
+    const firstBody = JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body))
+    const secondBody = JSON.parse(String(vi.mocked(fetch).mock.calls[1]?.[1]?.body))
+    expect(firstBody).toMatchObject({ pageToken: null })
+    expect(firstBody).not.toHaveProperty('watermark')
+    expect(secondBody).toMatchObject({ pageToken: '4:500', watermark: 12 })
+    expect(mocks.completeLocalBootstrap).toHaveBeenCalledWith(
+      'account-1',
+      12,
+      [firstResource, secondResource],
+    )
+  })
+
   it('debounces a burst of local mutations and ignores reconciliation notifications', async () => {
     vi.useFakeTimers()
     const { startOfflineSync } = await import('./offlineSync')

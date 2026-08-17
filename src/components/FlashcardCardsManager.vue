@@ -376,11 +376,11 @@ async function deleteSelectedCards() {
       :row-class="rowClass"
       @open-card="emit('open-card', $event)"
     >
-      <template v-if="$slots['image-column-heading']" #image-column-heading>
-        <slot name="image-column-heading" />
+      <template v-if="$slots['action-column-heading']" #action-column-heading>
+        <slot name="action-column-heading" />
       </template>
-      <template v-if="$slots['image-column']" #image-column="{ card }">
-        <slot name="image-column" :card="card" />
+      <template v-if="$slots['action-column']" #action-column="{ card }">
+        <slot name="action-column" :card="card" />
       </template>
       <template v-if="$slots['last-column-heading']" #last-column-heading>
         <slot name="last-column-heading" />

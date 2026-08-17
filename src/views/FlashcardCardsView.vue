@@ -66,8 +66,8 @@ function openCard(card: Flashcard) {
           @add-card="openNewCard"
           @open-card="openCard"
         >
-          <template #image-column-heading><span class="d-sr-only">Edit</span></template>
-          <template #image-column="{ card }">
+          <template #action-column-heading><span class="d-sr-only">Edit</span></template>
+          <template #action-column="{ card }">
             <div
               class="flashcard-card-edit"
               @pointerdown.stop

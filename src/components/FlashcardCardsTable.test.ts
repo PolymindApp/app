@@ -41,14 +41,12 @@ vi.mock('vuetify/directives', () => ({
   },
 }))
 
-function card(index: number, image = ''): Flashcard {
+function card(index: number): Flashcard {
   return {
     id: `card-${index}`,
     front: `Front ${index}`,
     back: `Back ${index}`,
     note: '',
-    image,
-    imageSource: image ? 'url' : 'none',
     tags: index % 2 ? ['tag-1'] : [],
     createdAt: '2026-08-07T12:00:00.000Z',
     updatedAt: '2026-08-07T12:00:00.000Z',
@@ -78,10 +76,6 @@ function mountTable(cards: Flashcard[], slots: Record<string, any> = {}) {
         },
         VExpandTransition: { template: '<div><slot /></div>' },
         VIcon: true,
-        VImg: {
-          props: ['src'],
-          template: '<img class="image-stub" :src="src" />',
-        },
         VPagination: { template: '<nav class="pagination-stub" />' },
         VProgressCircular: true,
         VTable: { template: '<table><slot /></table>' },
@@ -113,23 +107,18 @@ describe('FlashcardCardsTable', () => {
     expect(wrapper.emitted('open-card')).toEqual([[cards[0]]])
   })
 
-  it('shows a compact image cell with an empty placeholder by default', () => {
-    const cards = [
-      card(1, 'https://images.example.test/card.jpg'),
-      card(2),
-    ]
+  it('shows a compact card action cell by default', () => {
+    const cards = [card(1), card(2)]
     const wrapper = mountTable(cards)
 
     expect(wrapper.findAll('thead th').map(heading => heading.text())).toEqual([
       '',
-      'Image',
+      'Card',
       'Faces',
       'Tags',
       'Notes',
     ])
-    expect(wrapper.findAll('.flashcard-table__image-frame')).toHaveLength(2)
-    expect(wrapper.get('.image-stub').attributes('src')).toBe(cards[0]?.image)
-    expect(wrapper.get('[aria-label="No image"]').exists()).toBe(true)
+    expect(wrapper.findAll('.card-library-table__action-cell')).toHaveLength(2)
   })
 
   it('provides a focusable horizontal scroll region for every table column', () => {
@@ -144,7 +133,7 @@ describe('FlashcardCardsTable', () => {
       .toBe(scrollRegion.element)
     expect(scrollRegion.findAll('thead th').map(heading => heading.text())).toEqual([
       '',
-      'Image',
+      'Card',
       'Faces',
       'Tags',
       'Notes',
@@ -182,12 +171,12 @@ describe('FlashcardCardsTable', () => {
 
   it('supports visually hidden Review set column headings', () => {
     const wrapper = mountTable([card(1)], {
-      'image-column-heading': () => h('span', { class: 'd-sr-only' }, 'Image'),
+      'action-column-heading': () => h('span', { class: 'd-sr-only' }, 'Card action'),
       'last-column-heading': () => h('span', { class: 'd-sr-only' }, 'Included?'),
     })
 
     const headings = wrapper.findAll('thead th')
-    expect(headings[1]?.get('.d-sr-only').text()).toBe('Image')
+    expect(headings[1]?.get('.d-sr-only').text()).toBe('Card action')
     expect(headings.at(-2)?.get('.d-sr-only').text()).toBe('Included?')
     expect(headings.at(-1)?.text()).toBe('Notes')
   })

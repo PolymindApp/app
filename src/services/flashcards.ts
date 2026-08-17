@@ -405,7 +405,6 @@ export function flashcardReviewQueue(
       note: card.note,
       frontAudio: card.frontAudio,
       backAudio: card.backAudio,
-      image: card.image,
       tags: [...card.tags],
     }))
 }

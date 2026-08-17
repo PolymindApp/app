@@ -1,6 +1,7 @@
 import 'fake-indexeddb/auto'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { reactive } from 'vue'
+import Dexie from 'dexie'
 import {
   applyExchangeResults,
   completeLocalBootstrap,
@@ -32,6 +33,102 @@ describe('offline local database', () => {
     await localDatabase.delete()
     await localDatabase.open()
     localStorage.clear()
+  })
+
+  it('upgrades the local schema while dropping the unused media store and indexes', async () => {
+    localDatabase.close()
+    await localDatabase.delete()
+    const legacy = new Dexie('backontrack-offline')
+    legacy.version(1).stores({
+      resources: '&key,[accountId+resource],accountId,resource,id',
+      outbox: '&operationId,[accountId+status],accountId,status,sequence,nextAttemptAt,[accountId+resource+recordId]',
+      metadata: '&accountId,clientId',
+      issues: '&id,[accountId+resolved],accountId,resolved,createdAt',
+      media: '&id,accountId,createdAt',
+      aliases: '&key,[accountId+resource+localId],accountId,resource,localId',
+    })
+    await legacy.open()
+    await legacy.table('resources').put({
+      key: `${accountId}\u001ftasks\u001ftask-legacy`,
+      accountId,
+      resource: 'tasks',
+      id: 'task-legacy',
+      revision: 1,
+      fieldClocks: { '*': '100-server' },
+      deleted: false,
+      data: { id: 'task-legacy', owner: accountId, name: 'Preserved task' },
+      locallyModified: false,
+    })
+    await legacy.table('resources').put({
+      key: `${accountId}\u001fflashcards\u001fcard-legacy`,
+      accountId,
+      resource: 'flashcards',
+      id: 'card-legacy',
+      revision: 1,
+      fieldClocks: { front: '100-server', image_url: '100-server' },
+      deleted: false,
+      data: {
+        id: 'card-legacy',
+        owner: accountId,
+        front: 'Question',
+        back: 'Answer',
+        image: '/retired.jpg',
+        image_url: 'https://example.test/retired.jpg',
+        image_file: 'retired.jpg',
+      },
+      locallyModified: true,
+    })
+    await legacy.table('outbox').put({
+      operationId: 'legacy-operation',
+      accountId,
+      clientId: 'legacy-client',
+      resource: 'flashcards',
+      recordId: 'card-legacy',
+      kind: 'patch',
+      payload: { front: 'Question', image_url: 'https://example.test/retired.jpg' },
+      fieldClocks: { front: '100-client', image_url: '100-client' },
+      dependsOn: [],
+      status: 'pending',
+      sequence: 1,
+      attempts: 0,
+      nextAttemptAt: 0,
+      createdAt: '2026-08-17T00:00:00.000Z',
+    })
+    await legacy.table('media').put({
+      id: 'unused-media',
+      accountId,
+      blob: new Blob(['unused']),
+      mimeType: 'text/plain',
+      createdAt: '2026-08-17T00:00:00.000Z',
+    })
+    legacy.close()
+
+    await localDatabase.open()
+
+    expect(localDatabase.tables.map(table => table.name)).not.toContain('media')
+    expect(await getLocalRecord(accountId, 'tasks', 'task-legacy')).toMatchObject({
+      name: 'Preserved task',
+    })
+    const upgradedCard = await localDatabase.resources.get(
+      `${accountId}\u001fflashcards\u001fcard-legacy`,
+    )
+    expect(upgradedCard).toMatchObject({
+      data: { id: 'card-legacy', front: 'Question', back: 'Answer' },
+      fieldClocks: { front: '100-server' },
+    })
+    expect(upgradedCard?.data).not.toHaveProperty('image')
+    expect(upgradedCard?.data).not.toHaveProperty('image_url')
+    expect(upgradedCard?.data).not.toHaveProperty('image_file')
+    const upgradedOperation = await localDatabase.outbox.get('legacy-operation')
+    expect(upgradedOperation).toMatchObject({
+      payload: { front: 'Question' },
+      fieldClocks: { front: '100-client' },
+    })
+    expect(upgradedOperation?.payload).not.toHaveProperty('image_url')
+    expect(localDatabase.resources.schema.indexes.map(index => index.name)).toEqual([
+      '[accountId+resource]',
+      'accountId',
+    ])
   })
 
   it('hydrates a snapshot and serves optimistic writes without network access', async () => {
@@ -318,6 +415,9 @@ describe('offline local database', () => {
     }])
 
     expect(await getLocalRecord(accountId, 'flashcard_tags', 'server-tag')).toBeUndefined()
+    expect(await localDatabase.resources.get(
+      `${accountId}\u001fflashcard_tags\u001fserver-tag`,
+    )).toBeUndefined()
     expect(await pendingOperationCount(accountId)).toBe(0)
   })
 })

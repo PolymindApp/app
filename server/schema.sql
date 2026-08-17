@@ -44,8 +44,6 @@ CREATE TABLE flashcards (
     front TEXT NOT NULL DEFAULT '',
     back TEXT NOT NULL DEFAULT '',
     note VARCHAR(2000) NOT NULL DEFAULT '',
-    image_url VARCHAR(2048) NOT NULL DEFAULT '',
-    image_file VARCHAR(52) NOT NULL DEFAULT '',
     front_audio_url VARCHAR(2048) NOT NULL DEFAULT '',
     front_audio_file VARCHAR(64) NOT NULL DEFAULT '',
     back_audio_url VARCHAR(2048) NOT NULL DEFAULT '',
@@ -105,8 +103,6 @@ CREATE TABLE flashcard_review_set_shares (
 
 CREATE INDEX idx_flashcard_review_set_shares_recipient
     ON flashcard_review_set_shares (recipient, review_set);
-CREATE INDEX idx_flashcard_review_set_shares_set
-    ON flashcard_review_set_shares (review_set, recipient);
 CREATE UNIQUE INDEX idx_flashcard_review_set_shares_email
     ON flashcard_review_set_shares (review_set, recipient_email COLLATE NOCASE)
     WHERE recipient_email <> '';
@@ -193,6 +189,8 @@ CREATE INDEX idx_tasks_owner_interval_template
     ON tasks (owner, interval_template);
 CREATE INDEX idx_tasks_owner_flashcard_review_set
     ON tasks (owner, flashcard_review_set);
+CREATE INDEX idx_tasks_owner_active_type_order
+    ON tasks (owner, type, sort_order) WHERE active = TRUE;
 
 CREATE TABLE program_steps (
     id TEXT PRIMARY KEY NOT NULL DEFAULT ('r' || lower(hex(randomblob(7)))),
@@ -260,6 +258,10 @@ CREATE INDEX idx_entries_task_created ON entries (task, created_at DESC);
 CREATE UNIQUE INDEX idx_entries_task_source_session
     ON entries (owner, task, program_step, source_type, source_session)
     WHERE source_session != '';
+CREATE INDEX idx_entries_owner_occurrence
+    ON entries (owner, occurrence) WHERE occurrence <> '';
+CREATE INDEX idx_entries_owner_program_step_date
+    ON entries (owner, program_step, entry_date) WHERE program_step <> '';
 
 CREATE TABLE interval_templates (
     id TEXT PRIMARY KEY NOT NULL DEFAULT ('r' || lower(hex(randomblob(7)))),
@@ -312,6 +314,9 @@ CREATE INDEX idx_interval_sessions_owner_program_step_date
     ON interval_sessions (owner, program_step, task_date);
 CREATE INDEX idx_interval_sessions_owner_client_status
     ON interval_sessions (owner, client_id, status);
+CREATE INDEX idx_interval_sessions_owner_active_started
+    ON interval_sessions (owner, started_at DESC)
+    WHERE status IN ('running', 'paused');
 
 CREATE TABLE flashcard_review_sessions (
     id TEXT PRIMARY KEY NOT NULL DEFAULT ('r' || lower(hex(randomblob(7)))),
@@ -497,11 +502,8 @@ CREATE TABLE sync_record_versions (
     revision INTEGER NOT NULL DEFAULT 1,
     field_clocks JSON NOT NULL DEFAULT '{}',
     deleted BOOLEAN NOT NULL DEFAULT FALSE,
-    modified_at TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (account_id, resource, record_id)
-);
-CREATE INDEX idx_sync_record_versions_resource
-    ON sync_record_versions (account_id, resource, deleted, record_id);
+) WITHOUT ROWID;
 
 CREATE TABLE sync_change_log (
     sequence INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -525,8 +527,8 @@ CREATE TABLE sync_operation_receipts (
 );
 CREATE INDEX idx_sync_operation_receipts_client_sequence
     ON sync_operation_receipts (account_id, client_id, receipt_sequence);
-CREATE INDEX idx_sync_operation_receipts_applied
-    ON sync_operation_receipts (applied_at);
+CREATE INDEX idx_sync_operation_receipts_account_applied
+    ON sync_operation_receipts (account_id, applied_at);
 
 CREATE TABLE sync_clients (
     account_id TEXT NOT NULL,

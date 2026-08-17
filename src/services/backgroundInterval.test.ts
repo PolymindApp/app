@@ -65,7 +65,7 @@ function session(): IntervalSession {
       speechEnabled: true,
       frontLanguage: 'en-US',
       backLanguage: 'fr-FR',
-      cards: [{ id: 'card-1', front: 'House', back: 'Maison', note: '', image: '', tags: [] }],
+      cards: [{ id: 'card-1', front: 'House', back: 'Maison', note: '', tags: [] }],
     },
     startedAt: '2026-08-10T12:00:00.000Z',
     plannedSeconds: 30,

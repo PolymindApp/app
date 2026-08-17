@@ -13,7 +13,6 @@ const apiMocks = vi.hoisted(() => ({
   bulkUpdateReviewSetCards: vi.fn(),
   startReview: vi.fn(),
   updateReviewSet: vi.fn(),
-  updateCardImage: vi.fn(),
 }))
 
 vi.mock('@/lib/api', () => ({
@@ -31,7 +30,6 @@ vi.mock('@/lib/api', () => ({
     importFlashcardReviewSetCards: apiMocks.importReviewSetCards,
     bulkUpdateFlashcardReviewSetCards: apiMocks.bulkUpdateReviewSetCards,
     startFlashcardReviewSession: apiMocks.startReview,
-    updateFlashcardImage: apiMocks.updateCardImage,
     collection: (name: string) => {
       if (name === 'flashcard_tags') return { create: apiMocks.createTag }
       if (name === 'flashcards') return { create: apiMocks.createCard }
@@ -59,7 +57,6 @@ describe('flashcard store', () => {
     apiMocks.startReview.mockReset()
     apiMocks.updateReviewSet.mockReset()
     apiMocks.updateReviewSet.mockResolvedValue({})
-    apiMocks.updateCardImage.mockReset()
   })
 
   it('persists owned Review set drag order without moving shared sets', async () => {
@@ -279,7 +276,7 @@ describe('flashcard store', () => {
     const store = useFlashcardStore()
     const sharedRecord = {
       id: 'shared-1', front: 'Shared front', back: 'Shared back', note: '', tags: ['tag-set'],
-      tag_details: [{ id: 'tag-set', name: 'Set tag' }], image_url: '', image_file: '',
+      tag_details: [{ id: 'tag-set', name: 'Set tag' }],
       created_at: '2026-08-08T10:00:00Z', updated_at: '2026-08-08T10:00:00Z',
       last_reviewed_at: '', passive_views: 0, success_count: 0, error_count: 0,
     }
@@ -298,43 +295,6 @@ describe('flashcard store', () => {
     await store.bulkUpdateReviewSetCards('set-1', 'delete', ['shared-1', 'shared-1'])
     expect(apiMocks.bulkUpdateReviewSetCards).toHaveBeenCalledWith('set-1', ['shared-1'])
     expect(store.reviewSetCards['set-1']).toEqual([])
-  })
-
-  it('uploads a prepared square image after creating its flashcard', async () => {
-    const store = useFlashcardStore()
-    const created = {
-      id: 'card-image', front: 'Joint', back: 'Assemblage', note: '', tags: [],
-      image_url: '', image_file: '',
-      created_at: '2026-08-07T10:00:00Z', updated_at: '2026-08-07T10:00:00Z',
-      last_reviewed_at: '', passive_views: 0, success_count: 0, error_count: 0,
-    }
-    apiMocks.createCard.mockResolvedValue(created)
-    apiMocks.updateCardImage.mockResolvedValue({
-      ...created,
-      image_file: 'a'.repeat(48) + '.jpg',
-    })
-    const upload = new Blob(['jpeg'], { type: 'image/jpeg' })
-
-    const card = await store.saveCard(
-      { front: 'Joint', back: 'Assemblage', note: '', tags: [] },
-      {
-        source: 'upload',
-        url: '',
-        existingUrl: '',
-        existingSource: 'none',
-        upload,
-      },
-    )
-
-    expect(apiMocks.createCard).toHaveBeenCalledWith(expect.objectContaining({
-      front: 'Joint',
-      back: 'Assemblage',
-    }))
-    expect(apiMocks.updateCardImage).toHaveBeenCalledWith('card-image', upload)
-    expect(card).toMatchObject({
-      imageSource: 'upload',
-      image: `/api/flashcard-images/${'a'.repeat(48)}.jpg`,
-    })
   })
 
   it('applies bulk card updates and removes deleted cards from local state', async () => {
@@ -431,7 +391,6 @@ describe('flashcard store', () => {
         front: 'Question',
         back: 'Answer',
         note: '',
-        image: '',
         tags: [],
       }],
       startedAt: '2026-08-07T10:00:00Z',

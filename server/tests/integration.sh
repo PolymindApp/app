@@ -46,6 +46,9 @@ done
 }
 
 sqlite3 "$source_db" ".backup $test_db"
+BACKONTRACK_DB_PATH="$test_db" \
+BACKONTRACK_API_SECRET="$test_secret" \
+  php server/migrate.php >/dev/null
 php server/tests/fixtures/smtp-server.php "$smtp_port" "$smtp_mailbox" >"$smtp_log" 2>&1 &
 smtp_pid=$!
 
@@ -92,8 +95,8 @@ api_url="http://127.0.0.1:$test_port"
 suffix="$(php -r 'echo bin2hex(random_bytes(5));')"
 password="correct-horse-battery"
 
-migration_count="$(sqlite3 "$test_db" 'SELECT COUNT(*) FROM backontrack_schema_migrations;')"
-[[ "$migration_count" == 45 ]] || {
+migration_version="$(sqlite3 "$test_db" 'SELECT MAX(version) FROM backontrack_schema_migrations;')"
+[[ "$migration_version" == 202608170001 ]] || {
   echo "The API did not apply the complete database migration sequence." >&2
   exit 1
 }
@@ -1598,7 +1601,7 @@ duplicate_flashcard_tag_status="$(curl --silent --output /dev/null --write-out '
 flashcard_payload="$(php -r '
   echo json_encode([
     "front" => "What is 2 + 2?", "back" => "4",
-    "note" => "Basic addition", "image_url" => "https://images.example.test/math.jpg",
+    "note" => "Basic addition",
     "tags" => [$argv[1]],
   ], JSON_THROW_ON_ERROR);
 ' "$flashcard_tag_id")"
@@ -1609,8 +1612,7 @@ flashcard_response="$(curl --silent --show-error --fail \
   "$api_url/collections/flashcards/records")"
 flashcard_id="$(json_field id <<<"$flashcard_response")"
 flashcard_created_at="$(json_field created_at <<<"$flashcard_response")"
-flashcard_image_url="$(json_field image_url <<<"$flashcard_response")"
-[[ "$flashcard_created_at" =~ T && "$flashcard_image_url" == "https://images.example.test/math.jpg" ]] || {
+[[ "$flashcard_created_at" =~ T ]] || {
   echo "A new flashcard did not receive server-owned timestamps." >&2
   exit 1
 }
@@ -1646,44 +1648,25 @@ grep -qi '^Content-Type: audio/webm' "$flashcard_audio_headers" || {
   exit 1
 }
 
-invalid_flashcard_image_url_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+retired_flashcard_image_field_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
   -X PATCH -H "Content-Type: application/json" \
   -H "Authorization: Bearer $alice_token" \
   --data '{"image_url":"javascript:alert(1)"}' \
   "$api_url/collections/flashcards/records/$flashcard_id")"
-[[ "$invalid_flashcard_image_url_status" == 422 ]] || {
-  echo "The flashcard API accepted an unsafe image URL." >&2
+[[ "$retired_flashcard_image_field_status" == 422 ]] || {
+  echo "The flashcard API accepted a retired image field." >&2
   exit 1
 }
 
-flashcard_image_response="$(curl --silent --show-error --fail \
+retired_flashcard_image_endpoint_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
   -X POST -H "Content-Type: application/json" \
   -H "Authorization: Bearer $alice_token" \
   --data "{\"image\":\"data:image/jpeg;base64,$avatar_base64\"}" \
   "$api_url/flashcards/$flashcard_id/image")"
-flashcard_image_file="$(json_field image_file <<<"$flashcard_image_response")"
-flashcard_image_url="$(json_field image_url <<<"$flashcard_image_response")"
-[[ "$flashcard_image_file" =~ ^[a-f0-9]{48}\.jpg$ && -z "$flashcard_image_url" ]] || {
-  echo "Uploading a flashcard image did not replace its external URL." >&2
+[[ "$retired_flashcard_image_endpoint_status" == 404 ]] || {
+  echo "The retired flashcard image endpoint is still available." >&2
   exit 1
 }
-
-flashcard_image_headers="$test_dir/flashcard-image-headers.txt"
-curl --silent --show-error --fail \
-  --dump-header "$flashcard_image_headers" \
-  --output "$test_dir/flashcard.jpg" \
-  "$api_url/flashcard-images/$flashcard_image_file"
-grep -qi '^Content-Type: image/jpeg' "$flashcard_image_headers" || {
-  echo "The uploaded flashcard image was not served as a JPEG." >&2
-  exit 1
-}
-php -r '
-  $details = getimagesize($argv[1]);
-  if (!$details || $details[0] > 256 || $details[1] !== $details[0]) {
-      fwrite(STDERR, "The stored flashcard image dimensions are invalid.\n");
-      exit(1);
-  }
-' "$test_dir/flashcard.jpg"
 
 
 flashcard_import_payload='{"rows":[{"front":"Imported chisel","back":"formón","note":"Carving tool","tags":["algebra","Imported"]},{"front":"Imported plane","back":"cepillo","note":"","tags":[]}]}'
@@ -2041,10 +2024,9 @@ manual_session_id="$(json_field id <<<"$manual_session_response")"
 manual_session_summary="$(php -r '
   $data = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
   echo $data["total_cards"] . ":" . $data["queue_state"][0]["note"] . ":"
-    . $data["queue_state"][0]["image"] . ":"
     . $data["queue_state"][0]["frontAudio"];
 ' <<<"$manual_session_response")"
-[[ "$manual_session_summary" == "1:Basic addition:/flashcard-images/$flashcard_image_file:/flashcard-audio/$flashcard_audio_file" ]] || {
+[[ "$manual_session_summary" == "1:Basic addition:/flashcard-audio/$flashcard_audio_file" ]] || {
   echo "A Review set did not snapshot its matching card queue." >&2
   exit 1
 }
@@ -2190,10 +2172,9 @@ interval_flashcard_snapshot="$(php -r '
     . $snapshot["backSeconds"] . ":" . ((int) $snapshot["speechEnabled"])
     . ":" . $snapshot["backSpeechRepeatCount"] . ":" . $snapshot["cardSides"]
     . ":" . ((int) $snapshot["noteBeforeBack"])
-    . ":" . count($snapshot["cards"]) . ":" . $snapshot["cards"][0]["image"]
-    . ":" . $snapshot["cards"][0]["frontAudio"];
+    . ":" . count($snapshot["cards"]) . ":" . $snapshot["cards"][0]["frontAudio"];
 ' <<<"$interval_flashcard_session_response")"
-[[ "$interval_flashcard_snapshot" == "$passive_review_set_id:3:4:1:3:back:1:1:/flashcard-images/$flashcard_image_file:/flashcard-audio/$flashcard_audio_file" ]] || {
+[[ "$interval_flashcard_snapshot" == "$passive_review_set_id:3:4:1:3:back:1:1:/flashcard-audio/$flashcard_audio_file" ]] || {
   echo "An interval did not snapshot its attached Passive Review set." >&2
   exit 1
 }
@@ -2734,7 +2715,7 @@ editor_share_shape="$(php -r '
 editor_card_response="$(curl --silent --show-error --fail \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $bob_token" \
-  --data '{"front":"Shared editor card","back":"Created by Bob","note":"Owner data","image_url":""}' \
+  --data '{"front":"Shared editor card","back":"Created by Bob","note":"Owner data"}' \
   "$api_url/flashcard-review-sets/$manual_review_set_id/cards")"
 editor_card_id="$(json_field id <<<"$editor_card_response")"
 editor_card_owner_and_tags="$(sqlite3 "$test_db" \
@@ -3126,6 +3107,95 @@ deleted_journal_image_status="$(curl --silent --output /dev/null --write-out '%{
   echo "Deleting a reflection did not remove its image file." >&2
   exit 1
 }
+
+sqlite3 "$test_db" "
+  WITH RECURSIVE pagination_tags(value) AS (
+    VALUES(1)
+    UNION ALL
+    SELECT value + 1 FROM pagination_tags WHERE value < 510
+  )
+  INSERT INTO tags (id, owner, name)
+  SELECT
+    printf('pagination-tag-$suffix-%03d', value),
+    '$alice_id',
+    printf('Pagination tag %03d', value)
+  FROM pagination_tags;
+"
+bootstrap_headers="$test_dir/bootstrap-headers.txt"
+bootstrap_page_body='{"clientId":"pagination-client"}'
+bootstrap_page_response="$(curl --silent --show-error --fail --compressed \
+  --dump-header "$bootstrap_headers" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "$bootstrap_page_body" \
+  "$api_url/sync/bootstrap")"
+grep --quiet --ignore-case '^Content-Encoding: gzip' "$bootstrap_headers" || {
+  echo "A large bootstrap response was not gzip compressed." >&2
+  exit 1
+}
+bootstrap_page_token="$(json_field nextPageToken <<<"$bootstrap_page_response")"
+bootstrap_watermark="$(json_field watermark <<<"$bootstrap_page_response")"
+bootstrap_page_size="$(php -r '
+  $response = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+  echo count($response["resources"] ?? []);
+' <<<"$bootstrap_page_response")"
+[[ "$bootstrap_page_size" == 500 && -n "$bootstrap_page_token" ]] || {
+  echo "The first bootstrap page was not capped at 500 resources." >&2
+  exit 1
+}
+bootstrap_resource_count="$bootstrap_page_size"
+bootstrap_page_count=1
+while [[ -n "$bootstrap_page_token" ]]; do
+  bootstrap_page_body="$(php -r '
+    echo json_encode([
+      "clientId" => "pagination-client",
+      "pageToken" => $argv[1],
+      "watermark" => (int) $argv[2],
+    ], JSON_THROW_ON_ERROR);
+  ' "$bootstrap_page_token" "$bootstrap_watermark")"
+  bootstrap_page_response="$(curl --silent --show-error --fail --compressed \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $alice_token" \
+    --data "$bootstrap_page_body" \
+    "$api_url/sync/bootstrap")"
+  [[ "$(json_field watermark <<<"$bootstrap_page_response")" == "$bootstrap_watermark" ]] || {
+    echo "The bootstrap watermark changed between pages." >&2
+    exit 1
+  }
+  bootstrap_page_size="$(php -r '
+    $response = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+    echo count($response["resources"] ?? []);
+  ' <<<"$bootstrap_page_response")"
+  ((bootstrap_page_size <= 500)) || {
+    echo "A bootstrap page exceeded 500 resources." >&2
+    exit 1
+  }
+  bootstrap_resource_count=$((bootstrap_resource_count + bootstrap_page_size))
+  bootstrap_page_count=$((bootstrap_page_count + 1))
+  ((bootstrap_page_count <= 20)) || {
+    echo "Bootstrap pagination did not terminate." >&2
+    exit 1
+  }
+  bootstrap_page_token="$(json_field nextPageToken <<<"$bootstrap_page_response")"
+done
+((bootstrap_page_count >= 2 && bootstrap_resource_count >= 510)) || {
+  echo "Bootstrap pagination did not return all generated resources." >&2
+  exit 1
+}
+
+gzip_disabled_headers="$test_dir/gzip-disabled-headers.txt"
+curl --silent --show-error --fail --raw \
+  --dump-header "$gzip_disabled_headers" \
+  --output /dev/null \
+  -H 'Accept-Encoding: gzip;q=0' \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"clientId":"gzip-disabled-client"}' \
+  "$api_url/sync/bootstrap"
+if grep --quiet --ignore-case '^Content-Encoding: gzip' "$gzip_disabled_headers"; then
+  echo "The API ignored a client gzip quality of zero." >&2
+  exit 1
+fi
 
 sync_compaction_cursor="$(sqlite3 "$test_db" \
   "SELECT COALESCE(MAX(sequence), 0) FROM sync_change_log WHERE account_id = '$alice_id';")"

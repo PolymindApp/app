@@ -5,10 +5,12 @@ test_root="${TMPDIR:-/tmp}"
 test_dir="$(mktemp -d "$test_root/backontrack-migrations-test.XXXXXX")"
 empty_db="$test_dir/empty.db"
 existing_db="$test_dir/existing.db"
+stale_db="$test_dir/stale.db"
 email_invite_db="$test_dir/email-invite.db"
 email_auth_db="$test_dir/email-auth.db"
 cli_db="$test_dir/cli.db"
 http_db="$test_dir/http.db"
+retired_media_dir="$test_dir/flashcard-images"
 review_compaction_db="$test_dir/review-compaction.db"
 http_response="$test_dir/http-response.json"
 http_server_log="$test_dir/http-server.log"
@@ -38,14 +40,16 @@ run_migrations() {
     require "server/src/ApiException.php";
     require "server/src/MigrationRunner.php";
     require "server/src/Database.php";
-    $database = new BackOnTrack\Api\Database($argv[1]);
-    echo implode(",", $database->migrationsApplied);
+    $database = new BackOnTrack\Api\Database($argv[1], false);
+    $database->pdo->query("PRAGMA journal_mode = WAL")->fetchColumn();
+    $runner = new BackOnTrack\Api\MigrationRunner($database->pdo, "server/migrations");
+    echo implode(",", $runner->migrate());
   ' "$database_path"
 }
 
 sqlite3 "$empty_db" 'VACUUM'
 first_run="$(run_migrations "$empty_db")"
-[[ "$first_run" == "202607290001,202607290002,202607290003,202607300001,202607310001,202607310002,202607310003,202608010001,202608020001,202608020002,202608020003,202608020004,202608050001,202608050002,202608050003,202608060001,202608060002,202608060003,202608060004,202608070001,202608070002,202608070003,202608070004,202608070005,202608070006,202608080001,202608080003,202608090001,202608090002,202608100001,202608100002,202608110001,202608120001,202608120002,202608120003,202608130001,202608140001,202608140002,202608140003,202608160001,202608160002,202608160003,202608160004" ]] || {
+[[ "$first_run" == "202607290001,202607290002,202607290003,202607300001,202607310001,202607310002,202607310003,202608010001,202608020001,202608020002,202608020003,202608020004,202608050001,202608050002,202608050003,202608060001,202608060002,202608060003,202608060004,202608070001,202608070002,202608070003,202608070004,202608070005,202608070006,202608080001,202608080003,202608090001,202608090002,202608100001,202608100002,202608110001,202608120001,202608120002,202608120003,202608130001,202608140001,202608140002,202608140003,202608160001,202608160002,202608160003,202608160004,202608170001" ]] || {
   echo "An empty database did not apply the complete migration sequence." >&2
   exit 1
 }
@@ -91,7 +95,7 @@ for table in "${expected_tables[@]}"; do
 done
 
 migration_count="$(sqlite3 "$empty_db" 'SELECT COUNT(*) FROM backontrack_schema_migrations;')"
-[[ "$migration_count" == 43 ]] || {
+[[ "$migration_count" == 44 ]] || {
   echo "Migration history does not contain all migrations." >&2
   exit 1
 }
@@ -197,6 +201,25 @@ preserved="$(sqlite3 "$empty_db" \
   exit 1
 }
 
+sqlite3 "$empty_db" ".backup $stale_db"
+sqlite3 "$stale_db" \
+  "DELETE FROM backontrack_schema_migrations WHERE version = '202608170001';"
+stale_status="$(php -r '
+  require "server/src/ApiException.php";
+  require "server/src/Database.php";
+  try {
+      new BackOnTrack\Api\Database($argv[1]);
+      echo "accepted";
+  } catch (BackOnTrack\Api\ApiException $exception) {
+      echo $exception->status;
+  }
+' "$stale_db")"
+stale_count="$(sqlite3 "$stale_db" 'SELECT COUNT(*) FROM backontrack_schema_migrations;')"
+[[ "$stale_status" == 503 && "$stale_count" == 43 ]] || {
+  echo "The request database path did not reject a stale schema without mutating it." >&2
+  exit 1
+}
+
 sqlite3 "$empty_db" ".backup $review_compaction_db"
 sqlite3 "$review_compaction_db" <<'SQL'
 DELETE FROM backontrack_schema_migrations WHERE version = '202608160004';
@@ -279,13 +302,20 @@ email_invite_backfill="$(sqlite3 "$email_invite_db" \
 }
 
 sqlite3 "$cli_db" 'VACUUM'
+mkdir -p "$retired_media_dir/nested"
+printf 'retired-image-one' >"$retired_media_dir/one.jpg"
+printf 'retired-image-two' >"$retired_media_dir/nested/two.jpg"
 cli_output="$(
   BACKONTRACK_DB_PATH="$cli_db" \
   BACKONTRACK_API_SECRET="backontrack-migration-test-secret-at-least-32-characters" \
     php server/migrate.php
 )"
-[[ "$cli_output" == *"Applied 43 migrations"* && "$cli_output" == *"202608160004"* ]] || {
+[[ "$cli_output" == *"Applied 44 migrations"* && "$cli_output" == *"202608170001"* ]] || {
   echo "The migration CLI did not initialize and report a new database." >&2
+  exit 1
+}
+[[ ! -e "$retired_media_dir" && "$cli_output" == *"Removed 2 retired media files"* ]] || {
+  echo "The migration CLI did not remove retired flashcard media." >&2
   exit 1
 }
 
@@ -343,9 +373,9 @@ php -r '
   $response = json_decode(file_get_contents($argv[1]), true, 512, JSON_THROW_ON_ERROR);
   if (
       ($response["status"] ?? null) !== "ok"
-      || count($response["appliedMigrations"] ?? []) !== 43
-      || ($response["currentVersion"] ?? null) !== "202608160004"
-      || ($response["migrationCount"] ?? null) !== 43
+      || count($response["appliedMigrations"] ?? []) !== 44
+      || ($response["currentVersion"] ?? null) !== "202608170001"
+      || ($response["migrationCount"] ?? null) !== 44
   ) {
       fwrite(STDERR, "The HTTP migration response was invalid.\n");
       exit(1);
@@ -392,12 +422,16 @@ php -r '
   $pdo->exec("DROP TABLE IF EXISTS image_concepts_fts");
 ' "$existing_db"
 sqlite3 "$existing_db" \
-  "DELETE FROM backontrack_schema_migrations WHERE version IN ('202608050001', '202608050002', '202608050003', '202608060001', '202608060002', '202608060003', '202608060004', '202608070001', '202608070002', '202608070003', '202608070004', '202608070005', '202608070006', '202608080001', '202608080003', '202608090001', '202608090002', '202608100001', '202608100002', '202608110001', '202608120001', '202608120002', '202608120003', '202608130001', '202608140001', '202608140002', '202608140003', '202608160001', '202608160002', '202608160003', '202608160004');
+  "DELETE FROM backontrack_schema_migrations WHERE version IN ('202608050001', '202608050002', '202608050003', '202608060001', '202608060002', '202608060003', '202608060004', '202608070001', '202608070002', '202608070003', '202608070004', '202608070005', '202608070006', '202608080001', '202608080003', '202608090001', '202608090002', '202608100001', '202608100002', '202608110001', '202608120001', '202608120002', '202608120003', '202608130001', '202608140001', '202608140002', '202608140003', '202608160001', '202608160002', '202608160003', '202608160004', '202608170001');
    DROP INDEX IF EXISTS idx_entries_task_source_session;
+   DROP INDEX IF EXISTS idx_entries_owner_occurrence;
+   DROP INDEX IF EXISTS idx_entries_owner_program_step_date;
    DROP INDEX IF EXISTS idx_interval_templates_owner_flashcard_review_set;
    DROP INDEX IF EXISTS idx_tasks_owner_flashcard_review_set;
+   DROP INDEX IF EXISTS idx_tasks_owner_active_type_order;
    DROP INDEX IF EXISTS idx_program_steps_owner_flashcard_review_set;
    DROP INDEX IF EXISTS idx_interval_sessions_owner_client_status;
+   DROP INDEX IF EXISTS idx_interval_sessions_owner_active_started;
    DROP INDEX IF EXISTS idx_flashcard_review_sessions_one_active_device;
    DROP INDEX IF EXISTS idx_flashcard_review_sessions_owner_client_status;
    DROP TABLE IF EXISTS image_concept_assets;
@@ -498,7 +532,7 @@ before_counts="$(sqlite3 "$existing_db" \
 existing_run="$(run_migrations "$existing_db")"
 after_counts="$(sqlite3 "$existing_db" \
   "SELECT (SELECT COUNT(*) FROM tasks) || ':' || (SELECT COUNT(*) FROM entries);")"
-[[ "$existing_run" == "202608050001,202608050002,202608050003,202608060001,202608060002,202608060003,202608060004,202608070001,202608070002,202608070003,202608070004,202608070005,202608070006,202608080001,202608080003,202608090001,202608090002,202608100001,202608100002,202608110001,202608120001,202608120002,202608120003,202608130001,202608140001,202608140002,202608140003,202608160001,202608160002,202608160003,202608160004" ]] || {
+[[ "$existing_run" == "202608050001,202608050002,202608050003,202608060001,202608060002,202608060003,202608060004,202608070001,202608070002,202608070003,202608070004,202608070005,202608070006,202608080001,202608080003,202608090001,202608090002,202608100001,202608100002,202608110001,202608120001,202608120002,202608120003,202608130001,202608140001,202608140002,202608140003,202608160001,202608160002,202608160003,202608160004,202608170001" ]] || {
   echo "An existing PHP database did not apply only the pending feature migrations." >&2
   exit 1
 }
@@ -636,8 +670,37 @@ flashcard_exclusion_columns="$(sqlite3 "$existing_db" \
 flashcard_image_columns="$(sqlite3 "$existing_db" \
   "SELECT COUNT(*) FROM pragma_table_info('flashcards')
    WHERE name IN ('image_url', 'image_file', 'library_image_id', 'image_metadata');")"
-[[ "$flashcard_image_columns" == 2 ]] || {
-  echo "The flashcard image migrations did not retain only upload and URL fields." >&2
+[[ "$flashcard_image_columns" == 0 ]] || {
+  echo "The retired flashcard image fields are still present." >&2
+  exit 1
+}
+
+sync_version_shape="$(sqlite3 "$existing_db" \
+  "SELECT (SELECT COUNT(*) FROM pragma_table_info('sync_record_versions')
+             WHERE name = 'modified_at') || ':' ||
+          (SELECT instr(upper(sql), 'WITHOUT ROWID') > 0 FROM sqlite_schema
+             WHERE type = 'table' AND name = 'sync_record_versions') || ':' ||
+          (SELECT COUNT(*) FROM sqlite_schema
+             WHERE type = 'index' AND name = 'idx_sync_record_versions_resource');")"
+[[ "$sync_version_shape" == "0:1:0" ]] || {
+  echo "The sync record-version table was not compacted: $sync_version_shape" >&2
+  exit 1
+}
+
+target_index_state="$(sqlite3 "$existing_db" \
+  "SELECT (SELECT COUNT(*) FROM sqlite_schema WHERE type = 'index' AND name IN (
+             'idx_entries_owner_occurrence',
+             'idx_entries_owner_program_step_date',
+             'idx_interval_sessions_owner_active_started',
+             'idx_tasks_owner_active_type_order',
+             'idx_sync_operation_receipts_account_applied'
+           )) || ':' ||
+          (SELECT COUNT(*) FROM sqlite_schema WHERE type = 'index' AND name IN (
+             'idx_flashcard_review_set_shares_set',
+             'idx_sync_operation_receipts_applied'
+           ));")"
+[[ "$target_index_state" == "5:0" ]] || {
+  echo "The targeted database index set is invalid: $target_index_state" >&2
   exit 1
 }
 

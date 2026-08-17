@@ -1387,7 +1387,6 @@ function snapshotCard(card: Flashcard) {
     note: card.note,
     frontAudio: card.frontAudio,
     backAudio: card.backAudio,
-    image: card.image,
     tags: [...card.tags],
   }
 }
@@ -1805,27 +1804,14 @@ async function runAgain(repetitions?: number) {
             </div>
             <div class="runner-progress-stack">
               <div class="runner-progress">
-                <div
-                  class="progress-rings"
-                  :class="{ 'progress-rings--with-image': Boolean(flashcardPhase?.card.image) }"
-                >
+                <div class="progress-rings">
                   <IntervalTypeIcon
                     v-if="current.step.kind"
                     class="runner-type-backdrop"
-                    :class="{ 'runner-type-backdrop--hidden': Boolean(flashcardPhase?.card.image) }"
                     :kind="current.step.kind"
                     size="clamp(8rem, 44vw, 8rem)"
-                    :animated="session.status === 'running' && !flashcardPhase?.card.image"
+                    :animated="session.status === 'running'"
                   />
-                  <transition name="runner-flashcard-image">
-                    <img
-                      v-if="flashcardPhase?.card.image"
-                      :key="flashcardPhase.card.image"
-                      :src="flashcardPhase.card.image"
-                      alt=""
-                      class="runner-flashcard-image"
-                    />
-                  </transition>
                   <v-progress-circular
                     v-if="showTotalProgress"
                     class="progress-ring progress-ring--total"
@@ -2588,22 +2574,6 @@ async function runAgain(repetitions?: number) {
   height: calc(100% - 32px) !important;
   opacity: 1;
 }
-.runner-flashcard-image {
-  position: absolute;
-  z-index: 0;
-  inset: 1.75rem;
-  width: calc(100% - 3.5rem);
-  height: calc(100% - 3.5rem);
-  border-radius: 100%;
-  object-fit: cover;
-  opacity: .68;
-  pointer-events: none;
-  filter: brightness(.72) saturate(.9);
-}
-.runner-flashcard-image-enter-active,
-.runner-flashcard-image-leave-active { transition: opacity 200ms ease; }
-.runner-flashcard-image-enter-from,
-.runner-flashcard-image-leave-to { opacity: 0; }
 .progress-rings__content {
   position: absolute;
   z-index: 2;
@@ -2612,7 +2582,6 @@ async function runAgain(repetitions?: number) {
   place-items: center;
 }
 .timer-value { display: inline-block; font-family: "Arial Narrow", Impact, sans-serif; font-size: 4rem; font-weight: 900; letter-spacing: -.04em; transform-origin: center; }
-.progress-rings--with-image .timer-value { text-shadow: 0 .125rem .75rem rgba(0, 0, 0, .9); }
 .timer-value--count { color: rgb(var(--v-theme-warning)); animation: timer-value-pulse 560ms cubic-bezier(.22, 1, .36, 1); }
 @keyframes timer-value-pulse {
   0% { transform: scale(1); }
@@ -3056,9 +3025,7 @@ async function runAgain(repetitions?: number) {
     transition: opacity 160ms ease;
   }
 
-  .runner-type-backdrop,
-  .runner-flashcard-image-enter-active,
-  .runner-flashcard-image-leave-active {
+  .runner-type-backdrop {
     transition: none;
   }
 

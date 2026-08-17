@@ -139,7 +139,7 @@ function localCreateDefaults(resource: string, body: Record<string, unknown>) {
   const now = new Date().toISOString()
   if (resource === 'flashcards') {
     return {
-      note: '', image_url: '', image_file: '',
+      note: '',
       front_audio_url: '', front_audio_file: '', back_audio_url: '', back_audio_file: '',
       tags: [], created_at: now, updated_at: now, last_reviewed_at: '',
       passive_views: 0, success_count: 0, error_count: 0,
@@ -979,8 +979,6 @@ class ApiClient {
           front: sourceCard.front,
           back: sourceCard.back,
           note: sourceCard.note || '',
-          image_url: sourceCard.image_url || '',
-          image_file: sourceCard.image_file || '',
           tags: [scopeTag.id],
         }))
         await putLocalProjectionCreate(accountId, 'review_set_cards', {
@@ -1034,8 +1032,6 @@ class ApiClient {
         ...body,
         tags: Array.isArray(reviewSet?.tags) ? reviewSet.tags : [],
         note: typeof body.note === 'string' ? body.note : '',
-        image_url: typeof body.image_url === 'string' ? body.image_url : '',
-        image_file: '',
         created_at: now,
         updated_at: now,
         last_reviewed_at: '',
@@ -1128,45 +1124,6 @@ class ApiClient {
     )
   }
 
-  async updateFlashcardReviewSetCardImage(reviewSetId: string, cardId: string, image: Blob) {
-    if (image.type !== 'image/jpeg') {
-      throw new ApiError(422, 'The card image must be compressed as a JPEG.')
-    }
-    const accountId = this.authStore.record?.id || ''
-    if (accountId && await hasLocalBootstrap(accountId)) {
-      const reviewSet = await getLocalRecord(accountId, 'accessible_flashcard_review_sets', reviewSetId)
-      if (reviewSet?.owner === accountId) return this.updateFlashcardImage(cardId, image)
-      return putLocalSharedCardPatch(accountId, reviewSetId, cardId, {
-        image_url: await blobDataUrl(image),
-        image_file: '',
-        updated_at: new Date().toISOString(),
-      })
-    }
-    return request<RecordModel>(
-      `/flashcard-review-sets/${encodeURIComponent(reviewSetId)}/cards/${encodeURIComponent(cardId)}/image`,
-      { method: 'POST', body: { image: await blobDataUrl(image) } },
-      this.authStore,
-    )
-  }
-
-  async removeFlashcardReviewSetCardImage(reviewSetId: string, cardId: string) {
-    const accountId = this.authStore.record?.id || ''
-    if (accountId && await hasLocalBootstrap(accountId)) {
-      const reviewSet = await getLocalRecord(accountId, 'accessible_flashcard_review_sets', reviewSetId)
-      if (reviewSet?.owner === accountId) return this.removeFlashcardImage(cardId)
-      return putLocalSharedCardPatch(accountId, reviewSetId, cardId, {
-        image_url: '',
-        image_file: '',
-        updated_at: new Date().toISOString(),
-      })
-    }
-    return request<RecordModel>(
-      `/flashcard-review-sets/${encodeURIComponent(reviewSetId)}/cards/${encodeURIComponent(cardId)}/image`,
-      { method: 'DELETE' },
-      this.authStore,
-    )
-  }
-
   async updateFlashcardReviewSetCardAudio(
     reviewSetId: string,
     cardId: string,
@@ -1208,41 +1165,6 @@ class ApiClient {
     }
     return request<RecordModel>(
       `/flashcard-review-sets/${encodeURIComponent(reviewSetId)}/cards/${encodeURIComponent(cardId)}/audio/${side}`,
-      { method: 'DELETE' },
-      this.authStore,
-    )
-  }
-
-  async updateFlashcardImage(cardId: string, image: Blob) {
-    if (image.type !== 'image/jpeg') {
-      throw new ApiError(422, 'The card image must be compressed as a JPEG.')
-    }
-    const accountId = this.authStore.record?.id || ''
-    if (accountId && await hasLocalBootstrap(accountId)) {
-      return putLocalPatch(accountId, 'flashcards', cardId, {
-        image_url: await blobDataUrl(image),
-        image_file: '',
-        updated_at: new Date().toISOString(),
-      })
-    }
-    return request<RecordModel>(
-      `/flashcards/${encodeURIComponent(cardId)}/image`,
-      { method: 'POST', body: { image: await blobDataUrl(image) } },
-      this.authStore,
-    )
-  }
-
-  async removeFlashcardImage(cardId: string) {
-    const accountId = this.authStore.record?.id || ''
-    if (accountId && await hasLocalBootstrap(accountId)) {
-      return putLocalPatch(accountId, 'flashcards', cardId, {
-        image_url: '',
-        image_file: '',
-        updated_at: new Date().toISOString(),
-      })
-    }
-    return request<RecordModel>(
-      `/flashcards/${encodeURIComponent(cardId)}/image`,
       { method: 'DELETE' },
       this.authStore,
     )

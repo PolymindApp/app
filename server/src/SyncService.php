@@ -14,13 +14,27 @@ final class SyncService
     private const PROTOCOL_VERSION = 2;
     private const MAX_OPERATIONS = 100;
     private const MAX_CHANGES = 500;
+    private const BOOTSTRAP_PAGE_SIZE = 500;
     private const SYNC_RETENTION_DAYS = 30;
+    private const SYNC_COMPACTION_INTERVAL_SECONDS = 3600;
     private const FLASHCARD_REVIEW_PREFERENCE_FIELDS = [
         'mode', 'card_sides', 'indefinite', 'max_cards', 'front_seconds',
         'back_seconds', 'back_speech_repeat_count', 'note_before_back',
         'speech_enabled', 'front_language', 'back_language', 'sort_mode',
         'excluded_cards',
     ];
+    /** @var array<string, list<array<string, mixed>>> */
+    private array $cardsByOwner = [];
+    /** @var array<string, array<string, string>> */
+    private array $tagNamesByOwner = [];
+    /** @var array<string, array<string, array<string, mixed>>> */
+    private array $cardStatsByReviewer = [];
+    /** @var array<string, array<string, array<string, mixed>>> */
+    private array $reviewSetPreferencesByAccount = [];
+    /** @var array<string, list<array<string, mixed>>> */
+    private array $accessibleReviewSetsByAccount = [];
+    /** @var array<string, list<array<string, mixed>>> */
+    private array $reviewSetSharesByAccount = [];
 
     public function __construct(
         private readonly Database $database,
@@ -43,24 +57,131 @@ final class SyncService
             ? min(max(0, (int) $body['watermark']), $currentCursor)
             : $currentCursor;
 
+        [$sectionIndex, $sectionOffset] = $this->bootstrapPagePosition($body['pageToken'] ?? null);
+        $collections = Schema::collections();
+        $sections = [
+            ...array_keys($collections),
+            '__user',
+            '__accessible_review_sets',
+            '__shared_review_set_cards',
+            '__review_set_shares',
+        ];
+        if ($sectionIndex >= count($sections)) {
+            throw new ApiException(422, 'The bootstrap page token is invalid.');
+        }
+
         $resources = [];
-        foreach (Schema::collections() as $name => $config) {
-            $statement = $this->database->pdo->prepare(
-                "SELECT * FROM {$name} WHERE owner = :owner ORDER BY id",
-            );
-            $statement->execute(['owner' => $account]);
-            foreach ($statement->fetchAll() as $record) {
-                $resources[] = $this->ownedEnvelope($name, $config, $record, $account);
+        $nextPageToken = null;
+        for ($index = $sectionIndex; $index < count($sections); $index++) {
+            $offset = $index === $sectionIndex ? $sectionOffset : 0;
+            $remaining = self::BOOTSTRAP_PAGE_SIZE - count($resources);
+            if ($remaining <= 0) {
+                $nextPageToken = $index . ':0';
+                break;
+            }
+
+            $section = $sections[$index];
+            if (isset($collections[$section])) {
+                $statement = $this->database->pdo->prepare(
+                    "SELECT records.*,
+                            versions.revision AS _sync_revision,
+                            versions.field_clocks AS _sync_field_clocks
+                     FROM {$section} AS records
+                     LEFT JOIN sync_record_versions AS versions
+                       ON versions.account_id = records.owner
+                      AND versions.resource = :resource
+                      AND versions.record_id = records.id
+                     WHERE records.owner = :owner
+                     ORDER BY records.id
+                     LIMIT :limit OFFSET :offset",
+                );
+                $statement->bindValue(':resource', $section);
+                $statement->bindValue(':owner', $account);
+                $statement->bindValue(':limit', $remaining + 1, PDO::PARAM_INT);
+                $statement->bindValue(':offset', $offset, PDO::PARAM_INT);
+                $statement->execute();
+                $sectionRows = array_map(
+                    fn (array $record): array => $this->ownedEnvelope(
+                        $section,
+                        $collections[$section],
+                        $record,
+                        $account,
+                    ),
+                    $statement->fetchAll(),
+                );
+            } else {
+                $sectionRows = match ($section) {
+                    '__user' => [$this->userEnvelope($account)],
+                    '__accessible_review_sets' => array_map(
+                        fn (array $reviewSet): array => $this->projectionEnvelope(
+                            'accessible_flashcard_review_sets',
+                            (string) $reviewSet['id'],
+                            $reviewSet,
+                        ),
+                        $this->accessibleReviewSets($account),
+                    ),
+                    '__shared_review_set_cards' => $this->bootstrapSharedReviewSetCards($account),
+                    '__review_set_shares' => array_map(
+                        fn (array $share): array => $this->projectionEnvelope(
+                            'flashcard_review_set_shares',
+                            (string) $share['id'],
+                            $share,
+                        ),
+                        $this->reviewSetShares($account),
+                    ),
+                    default => [],
+                };
+                $sectionRows = array_slice($sectionRows, $offset, $remaining + 1);
+            }
+
+            $hasMoreInSection = count($sectionRows) > $remaining;
+            array_push($resources, ...array_slice($sectionRows, 0, $remaining));
+            if ($hasMoreInSection) {
+                $nextPageToken = $index . ':' . ($offset + $remaining);
+                break;
+            }
+            if (count($resources) === self::BOOTSTRAP_PAGE_SIZE && $index + 1 < count($sections)) {
+                $nextPageToken = ($index + 1) . ':0';
+                break;
             }
         }
 
-        $resources[] = $this->userEnvelope($account);
+        // The bootstrap watermark is not acknowledged until the client durably stores
+        // the response and sends that cursor in its next exchange.
+        if ($nextPageToken === null) {
+            $this->touchClient($account, $clientId, 0, $confirmedReceiptSequence);
+        }
+        return [
+            'watermark' => $watermark,
+            'receiptWatermark' => $confirmedReceiptSequence,
+            'nextPageToken' => $nextPageToken,
+            'resources' => $resources,
+            'protocolVersion' => self::PROTOCOL_VERSION,
+        ];
+    }
+
+    /** @return array{0: int, 1: int} */
+    private function bootstrapPagePosition(mixed $token): array
+    {
+        if ($token === null || $token === '') {
+            return [0, 0];
+        }
+        if (!is_string($token) || preg_match('/^(\d+):(\d+)$/', $token, $matches) !== 1) {
+            throw new ApiException(422, 'The bootstrap page token is invalid.');
+        }
+        return [(int) $matches[1], (int) $matches[2]];
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function bootstrapSharedReviewSetCards(string $account): array
+    {
+        $resources = [];
         foreach ($this->accessibleReviewSets($account) as $reviewSet) {
-            $resources[] = $this->projectionEnvelope(
-                'accessible_flashcard_review_sets',
-                (string) $reviewSet['id'],
-                $reviewSet,
-            );
+            // Owned cards already arrive through the flashcards collection. Keeping a
+            // second projection doubled a large portion of the original bootstrap.
+            if ((string) ($reviewSet['owner'] ?? '') === $account) {
+                continue;
+            }
             foreach ($this->reviewSetCards($reviewSet, $account) as $card) {
                 $resources[] = $this->projectionEnvelope(
                     'review_set_cards',
@@ -69,24 +190,7 @@ final class SyncService
                 );
             }
         }
-        foreach ($this->reviewSetShares($account) as $share) {
-            $resources[] = $this->projectionEnvelope(
-                'flashcard_review_set_shares',
-                (string) $share['id'],
-                $share,
-            );
-        }
-
-        // The bootstrap watermark is not acknowledged until the client durably stores
-        // the response and sends that cursor in its next exchange.
-        $this->touchClient($account, $clientId, 0, $confirmedReceiptSequence);
-        return [
-            'watermark' => $watermark,
-            'receiptWatermark' => $confirmedReceiptSequence,
-            'nextPageToken' => null,
-            'resources' => $resources,
-            'protocolVersion' => self::PROTOCOL_VERSION,
-        ];
+        return $resources;
     }
 
     public function exchange(array $user, array $body): array
@@ -106,54 +210,73 @@ final class SyncService
             throw new ApiException(422, 'Too many sync operations were included.');
         }
 
-        $confirmedReceiptSequence = $this->confirmReceipts(
-            $account,
-            $clientId,
-            $confirmedReceiptSequence,
-        );
-        if ($cursor < $this->retentionWatermark($account)) {
-            $this->touchClient($account, $clientId, $cursor, $confirmedReceiptSequence);
-            return [
-                'cursor' => $this->currentChangeCursor($account),
-                'receiptWatermark' => $confirmedReceiptSequence,
-                'hasMore' => false,
+        $pdo = $this->database->pdo;
+        $pdo->exec('BEGIN IMMEDIATE');
+        try {
+            $confirmedReceiptSequence = $this->confirmReceipts(
+                $account,
+                $clientId,
+                $confirmedReceiptSequence,
+            );
+            if ($cursor < $this->retentionWatermark($account)) {
+                $this->touchClient($account, $clientId, $cursor, $confirmedReceiptSequence);
+                $response = [
+                    'cursor' => $this->currentChangeCursor($account),
+                    'receiptWatermark' => $confirmedReceiptSequence,
+                    'hasMore' => false,
+                    'serverTime' => $this->now(),
+                    'acknowledgements' => [],
+                    'changes' => [],
+                    'resetRequired' => true,
+                    'protocolVersion' => self::PROTOCOL_VERSION,
+                ];
+                $pdo->exec('COMMIT');
+                return $response;
+            }
+
+            $acknowledgements = [];
+            $receiptWatermark = $confirmedReceiptSequence;
+            foreach ($operations as $operation) {
+                if (!is_array($operation) || array_is_list($operation)) {
+                    throw new ApiException(422, 'A sync operation is invalid.');
+                }
+                $acknowledgement = $this->applyOperation($operation, $account, $clientId);
+                $this->resetReadCaches();
+                $receiptWatermark = max(
+                    $receiptWatermark,
+                    (int) ($acknowledgement['receiptSequence'] ?? 0),
+                );
+                unset($acknowledgement['receiptSequence']);
+                $acknowledgements[] = $acknowledgement;
+            }
+
+            $changeResult = $this->changesAfter($account, $cursor);
+            $clientStateChanged = $this->touchClient(
+                $account,
+                $clientId,
+                $cursor,
+                $confirmedReceiptSequence,
+            );
+            $this->compactSyncHistory($account, $clientStateChanged);
+
+            $response = [
+                'cursor' => $changeResult['cursor'],
+                'receiptWatermark' => $receiptWatermark,
+                'hasMore' => $changeResult['hasMore'],
                 'serverTime' => $this->now(),
-                'acknowledgements' => [],
-                'changes' => [],
-                'resetRequired' => true,
+                'acknowledgements' => $acknowledgements,
+                'changes' => $changeResult['changes'],
+                'resetRequired' => false,
                 'protocolVersion' => self::PROTOCOL_VERSION,
             ];
-        }
-
-        $acknowledgements = [];
-        $receiptWatermark = $confirmedReceiptSequence;
-        foreach ($operations as $operation) {
-            if (!is_array($operation) || array_is_list($operation)) {
-                throw new ApiException(422, 'A sync operation is invalid.');
+            $pdo->exec('COMMIT');
+            return $response;
+        } catch (Throwable $exception) {
+            if ($pdo->inTransaction()) {
+                $pdo->exec('ROLLBACK');
             }
-            $acknowledgement = $this->applyOperation($operation, $account, $clientId);
-            $receiptWatermark = max(
-                $receiptWatermark,
-                (int) ($acknowledgement['receiptSequence'] ?? 0),
-            );
-            unset($acknowledgement['receiptSequence']);
-            $acknowledgements[] = $acknowledgement;
+            throw $exception;
         }
-
-        $changeResult = $this->changesAfter($account, $cursor);
-        $this->touchClient($account, $clientId, $cursor, $confirmedReceiptSequence);
-        $this->compactSyncHistory($account);
-
-        return [
-            'cursor' => $changeResult['cursor'],
-            'receiptWatermark' => $receiptWatermark,
-            'hasMore' => $changeResult['hasMore'],
-            'serverTime' => $this->now(),
-            'acknowledgements' => $acknowledgements,
-            'changes' => $changeResult['changes'],
-            'resetRequired' => false,
-            'protocolVersion' => self::PROTOCOL_VERSION,
-        ];
     }
 
     private function applyOperation(array $operation, string $account, string $clientId): array
@@ -239,6 +362,16 @@ final class SyncService
             $response['receiptSequence'] = (int) $pdo->lastInsertId();
         }
         return $response;
+    }
+
+    private function resetReadCaches(): void
+    {
+        $this->cardsByOwner = [];
+        $this->tagNamesByOwner = [];
+        $this->cardStatsByReviewer = [];
+        $this->reviewSetPreferencesByAccount = [];
+        $this->accessibleReviewSetsByAccount = [];
+        $this->reviewSetSharesByAccount = [];
     }
 
     private function compactReceiptResponse(array $response): array
@@ -640,7 +773,6 @@ final class SyncService
         string $clientId,
     ): array {
         if ($resource === 'flashcards') {
-            $payload = $this->prepareFlashcardImagePayload($payload);
             $payload = $this->prepareFlashcardAudioPayload($payload);
         }
         if ($resource === 'journal_entries') {
@@ -718,7 +850,6 @@ final class SyncService
         $current = $this->ownedRecord($resource, $recordId, $account);
         $normalizedCurrent = $this->normalizeRecord($config, $current);
         if ($resource === 'flashcards') {
-            $payload = $this->prepareFlashcardImagePayload($payload);
             $payload = $this->prepareFlashcardAudioPayload($payload);
         }
         if ($resource === 'journal_entries') {
@@ -932,7 +1063,7 @@ final class SyncService
             throw new ApiException(500, 'Flashcard schema is unavailable.');
         }
         $payload = array_intersect_key($payload, array_flip([
-            'front', 'back', 'note', 'image_url', 'front_audio_url', 'back_audio_url',
+            'front', 'back', 'note', 'front_audio_url', 'back_audio_url',
         ]));
         if ($kind === 'create') {
             $tags = $this->stringArray($reviewSet['tags'] ?? []);
@@ -1017,7 +1148,7 @@ final class SyncService
         }
         if ($resource === 'flashcards') {
             $values += [
-                'note' => '', 'image_url' => '', 'image_file' => '',
+                'note' => '',
                 'front_audio_url' => '', 'front_audio_file' => '',
                 'back_audio_url' => '', 'back_audio_file' => '',
                 'tags' => [], 'created_at' => $now, 'updated_at' => $now,
@@ -1056,11 +1187,17 @@ final class SyncService
                     ->execute(['id' => $recordId, 'owner' => $account]);
             }
             foreach (['entries', 'occurrences'] as $table) {
-                $pdo->prepare("DELETE FROM {$table} WHERE program_step = :id AND owner = :owner")
+                $pdo->prepare(
+                    "DELETE FROM {$table}
+                     WHERE program_step = :id AND owner = :owner AND program_step <> ''",
+                )
                     ->execute(['id' => $recordId, 'owner' => $account]);
             }
         } elseif ($resource === 'occurrences') {
-            $pdo->prepare('DELETE FROM entries WHERE occurrence = :id AND owner = :owner')
+            $pdo->prepare(
+                "DELETE FROM entries
+                 WHERE occurrence = :id AND owner = :owner AND occurrence <> ''",
+            )
                 ->execute(['id' => $recordId, 'owner' => $account]);
         } elseif ($resource === 'tracking_trackers') {
             $pdo->prepare('DELETE FROM tracking_entries WHERE tracker = :id AND owner = :owner')
@@ -1233,25 +1370,6 @@ final class SyncService
                 'owner' => $account,
             ]);
         }
-    }
-
-    private function prepareFlashcardImagePayload(array $payload): array
-    {
-        $encoded = $payload['image_url'] ?? null;
-        if (!is_string($encoded) || !str_starts_with($encoded, 'data:image/jpeg;base64,')) {
-            return $payload;
-        }
-        $filename = $this->storeSyncSquareJpeg(
-            $encoded,
-            dirname($this->config->databasePath) . DIRECTORY_SEPARATOR . 'flashcard-images',
-            'card image',
-        );
-
-        return [
-            ...$payload,
-            'image_url' => '',
-            'image_file' => $filename,
-        ];
     }
 
     private function prepareFlashcardAudioPayload(array $payload): array
@@ -1488,9 +1606,10 @@ final class SyncService
             $nextCursor = max($nextCursor, (int) $row['sequence']);
             $latest[(string) $row['resource'] . ':' . (string) $row['record_id']] = $row;
         }
+        $preloadedChanges = $this->preloadChangeEnvelopes(array_values($latest), $account);
         $changes = [];
-        foreach ($latest as $row) {
-            $changes[] = $this->changeEnvelope($row, $account);
+        foreach ($latest as $key => $row) {
+            $changes[] = $preloadedChanges[$key] ?? $this->changeEnvelope($row, $account);
         }
         $more = false;
         if (count($rows) === self::MAX_CHANGES) {
@@ -1501,6 +1620,117 @@ final class SyncService
             $more = $check->fetchColumn() !== false;
         }
         return ['cursor' => $nextCursor, 'hasMore' => $more, 'changes' => $changes];
+    }
+
+    /**
+     * @param list<array<string, mixed>> $changes
+     * @return array<string, array<string, mixed>>
+     */
+    private function preloadChangeEnvelopes(array $changes, string $account): array
+    {
+        $upsertsByResource = [];
+        $idsByResource = [];
+        foreach ($changes as $change) {
+            $resource = (string) ($change['resource'] ?? '');
+            if (($change['action'] ?? '') !== 'upsert') {
+                continue;
+            }
+            $upsertsByResource[$resource][] = $change;
+            if (Schema::collection($resource) !== null) {
+                $idsByResource[$resource][] = (string) $change['record_id'];
+            }
+        }
+
+        $envelopes = [];
+        foreach ($idsByResource as $resource => $ids) {
+            $ids = array_values(array_unique($ids));
+            $placeholders = implode(',', array_fill(0, count($ids), '?'));
+            $statement = $this->database->pdo->prepare(
+                "SELECT records.*,
+                        versions.revision AS _sync_revision,
+                        versions.field_clocks AS _sync_field_clocks
+                 FROM {$resource} AS records
+                 LEFT JOIN sync_record_versions AS versions
+                   ON versions.account_id = records.owner
+                  AND versions.resource = ?
+                  AND versions.record_id = records.id
+                 WHERE records.owner = ? AND records.id IN ({$placeholders})",
+            );
+            $statement->execute([$resource, $account, ...$ids]);
+            $config = Schema::collection($resource);
+            foreach ($statement->fetchAll() as $record) {
+                $id = (string) $record['id'];
+                $envelopes[$resource . ':' . $id] = $this->ownedEnvelope(
+                    $resource,
+                    $config,
+                    $record,
+                    $account,
+                );
+            }
+        }
+
+        if (isset($upsertsByResource['users'])) {
+            $envelopes['users:' . $account] = $this->userEnvelope($account);
+        }
+
+        $accessibleSets = [];
+        if (
+            isset($upsertsByResource['accessible_flashcard_review_sets'])
+            || isset($upsertsByResource['review_set_cards'])
+        ) {
+            foreach ($this->accessibleReviewSets($account) as $reviewSet) {
+                $accessibleSets[(string) $reviewSet['id']] = $reviewSet;
+            }
+        }
+
+        foreach ($upsertsByResource['accessible_flashcard_review_sets'] ?? [] as $change) {
+            $recordId = (string) $change['record_id'];
+            $record = $accessibleSets[$recordId] ?? null;
+            $envelopes['accessible_flashcard_review_sets:' . $recordId] = $this->projectionEnvelope(
+                'accessible_flashcard_review_sets',
+                $recordId,
+                is_array($record) ? $record : null,
+                !is_array($record),
+            );
+        }
+
+        $cardsByReviewSet = [];
+        foreach ($upsertsByResource['review_set_cards'] ?? [] as $change) {
+            $recordId = (string) $change['record_id'];
+            [$reviewSetId, $cardId] = array_pad(explode(':', $recordId, 2), 2, '');
+            $reviewSet = $accessibleSets[$reviewSetId] ?? null;
+            if (is_array($reviewSet) && !isset($cardsByReviewSet[$reviewSetId])) {
+                $cardsByReviewSet[$reviewSetId] = [];
+                foreach ($this->reviewSetCards($reviewSet, $account) as $card) {
+                    $cardsByReviewSet[$reviewSetId][(string) $card['id']] = $card;
+                }
+            }
+            $card = $cardsByReviewSet[$reviewSetId][$cardId] ?? null;
+            $envelopes['review_set_cards:' . $recordId] = $this->projectionEnvelope(
+                'review_set_cards',
+                $recordId,
+                is_array($card) ? ['review_set_id' => $reviewSetId, ...$card] : null,
+                !is_array($card),
+            );
+        }
+
+        if (isset($upsertsByResource['flashcard_review_set_shares'])) {
+            $shares = [];
+            foreach ($this->reviewSetShares($account) as $share) {
+                $shares[(string) $share['id']] = $share;
+            }
+            foreach ($upsertsByResource['flashcard_review_set_shares'] as $change) {
+                $recordId = (string) $change['record_id'];
+                $share = $shares[$recordId] ?? null;
+                $envelopes['flashcard_review_set_shares:' . $recordId] = $this->projectionEnvelope(
+                    'flashcard_review_set_shares',
+                    $recordId,
+                    is_array($share) ? $share : null,
+                    !is_array($share),
+                );
+            }
+        }
+        return $envelopes;
     }
 
     private function changeEnvelope(array $change, string $account): array
@@ -1554,7 +1784,14 @@ final class SyncService
 
     private function ownedEnvelope(string $resource, array $config, array $record, string $account): array
     {
-        $version = $this->versionRow($account, $resource, (string) $record['id']);
+        $hasJoinedVersion = array_key_exists('_sync_revision', $record);
+        $version = $hasJoinedVersion
+            ? [
+                'revision' => $record['_sync_revision'],
+                'field_clocks' => $record['_sync_field_clocks'],
+            ]
+            : $this->versionRow($account, $resource, (string) $record['id']);
+        unset($record['_sync_revision'], $record['_sync_field_clocks']);
         return [
             'resource' => $resource,
             'id' => (string) $record['id'],
@@ -1623,6 +1860,9 @@ final class SyncService
 
     private function accessibleReviewSets(string $account): array
     {
+        if (isset($this->accessibleReviewSetsByAccount[$account])) {
+            return $this->accessibleReviewSetsByAccount[$account];
+        }
         $statement = $this->database->pdo->prepare(
             "SELECT sets.*, shares.id AS share_id,
                     CASE WHEN sets.owner = :account THEN 'owner' ELSE shares.role END AS access_role,
@@ -1635,7 +1875,11 @@ final class SyncService
              ORDER BY sets.owner <> :account, sets.sort_order, sets.name",
         );
         $statement->execute(['account' => $account]);
-        return array_map(fn (array $record): array => $this->reviewSetResponse($record, $account), $statement->fetchAll());
+        $this->accessibleReviewSetsByAccount[$account] = array_map(
+            fn (array $record): array => $this->reviewSetResponse($record, $account),
+            $statement->fetchAll(),
+        );
+        return $this->accessibleReviewSetsByAccount[$account];
     }
 
     private function accessibleReviewSet(string $id, string $account, bool $throw = true): ?array
@@ -1668,12 +1912,18 @@ final class SyncService
             throw new ApiException(500, 'Review set schema is unavailable.');
         }
         $result = $this->normalizeRecord($config, $record);
-        $preference = $this->database->pdo->prepare(
-            'SELECT * FROM flashcard_review_set_preferences
-             WHERE review_set = :review_set AND account = :account',
-        );
-        $preference->execute(['review_set' => $record['id'], 'account' => $account]);
-        $settings = $preference->fetch();
+        if (!isset($this->reviewSetPreferencesByAccount[$account])) {
+            $preference = $this->database->pdo->prepare(
+                'SELECT * FROM flashcard_review_set_preferences WHERE account = :account',
+            );
+            $preference->execute(['account' => $account]);
+            $this->reviewSetPreferencesByAccount[$account] = [];
+            foreach ($preference->fetchAll() as $preferenceRow) {
+                $this->reviewSetPreferencesByAccount[$account][(string) $preferenceRow['review_set']]
+                    = $preferenceRow;
+            }
+        }
+        $settings = $this->reviewSetPreferencesByAccount[$account][(string) $record['id']] ?? null;
         if (is_array($settings)) {
             foreach ([
                 'mode', 'card_sides', 'indefinite', 'max_cards', 'front_seconds',
@@ -1748,14 +1998,20 @@ final class SyncService
         if ($config === null) {
             return [];
         }
+        if (!isset($this->cardStatsByReviewer[$account])) {
+            $stats = $this->database->pdo->prepare(
+                'SELECT * FROM flashcard_review_card_stats WHERE reviewer = :reviewer',
+            );
+            $stats->execute(['reviewer' => $account]);
+            $this->cardStatsByReviewer[$account] = [];
+            foreach ($stats->fetchAll() as $row) {
+                $this->cardStatsByReviewer[$account][(string) $row['card']] = $row;
+            }
+        }
         return array_map(function (array $card) use ($config, $account): array {
             $result = $this->normalizeRecord($config, $card);
             $result['tag_details'] = $this->tagDetails((string) $card['owner'], $this->stringArray($card['tags'] ?? []));
-            $stats = $this->database->pdo->prepare(
-                'SELECT * FROM flashcard_review_card_stats WHERE reviewer = :reviewer AND card = :card',
-            );
-            $stats->execute(['reviewer' => $account, 'card' => $card['id']]);
-            $row = $stats->fetch();
+            $row = $this->cardStatsByReviewer[$account][(string) $card['id']] ?? null;
             if (is_array($row)) {
                 foreach (['last_reviewed_at', 'passive_views', 'success_count', 'error_count'] as $field) {
                     $result[$field] = $row[$field];
@@ -1783,9 +2039,15 @@ final class SyncService
     private function matchingCards(array $reviewSet): array
     {
         $tags = $this->stringArray($reviewSet['tags'] ?? []);
-        $statement = $this->database->pdo->prepare('SELECT * FROM flashcards WHERE owner = :owner ORDER BY created_at DESC');
-        $statement->execute(['owner' => $reviewSet['owner']]);
-        return array_values(array_filter($statement->fetchAll(), function (array $card) use ($tags): bool {
+        $owner = (string) $reviewSet['owner'];
+        if (!isset($this->cardsByOwner[$owner])) {
+            $statement = $this->database->pdo->prepare(
+                'SELECT * FROM flashcards WHERE owner = :owner ORDER BY created_at DESC',
+            );
+            $statement->execute(['owner' => $owner]);
+            $this->cardsByOwner[$owner] = $statement->fetchAll();
+        }
+        return array_values(array_filter($this->cardsByOwner[$owner], function (array $card) use ($tags): bool {
             if ($tags === []) {
                 return true;
             }
@@ -1795,6 +2057,9 @@ final class SyncService
 
     private function reviewSetShares(string $account): array
     {
+        if (isset($this->reviewSetSharesByAccount[$account])) {
+            return $this->reviewSetSharesByAccount[$account];
+        }
         $statement = $this->database->pdo->prepare(
             'SELECT shares.id, shares.review_set, shares.role,
                     shares.recipient_email AS email, shares.created_at, shares.updated_at
@@ -1803,7 +2068,8 @@ final class SyncService
              WHERE sets.owner = :owner ORDER BY shares.created_at',
         );
         $statement->execute(['owner' => $account]);
-        return $statement->fetchAll();
+        $this->reviewSetSharesByAccount[$account] = $statement->fetchAll();
+        return $this->reviewSetSharesByAccount[$account];
     }
 
     private function tagDetails(string $owner, array $ids): array
@@ -1811,13 +2077,21 @@ final class SyncService
         if ($ids === []) {
             return [];
         }
-        $statement = $this->database->pdo->prepare('SELECT id, name FROM flashcard_tags WHERE owner = :owner');
-        $statement->execute(['owner' => $owner]);
-        $names = [];
-        foreach ($statement->fetchAll() as $tag) {
-            $names[(string) $tag['id']] = (string) $tag['name'];
+        if (!isset($this->tagNamesByOwner[$owner])) {
+            $statement = $this->database->pdo->prepare(
+                'SELECT id, name FROM flashcard_tags WHERE owner = :owner',
+            );
+            $statement->execute(['owner' => $owner]);
+            $this->tagNamesByOwner[$owner] = [];
+            foreach ($statement->fetchAll() as $tag) {
+                $this->tagNamesByOwner[$owner][(string) $tag['id']] = (string) $tag['name'];
+            }
         }
-        return array_map(static fn (string $id): array => ['id' => $id, 'name' => $names[$id] ?? 'Removed tag'], $ids);
+        $names = $this->tagNamesByOwner[$owner];
+        return array_map(
+            static fn (string $id): array => ['id' => $id, 'name' => $names[$id] ?? 'Removed tag'],
+            $ids,
+        );
     }
 
     private function normalizeRecord(array $config, array $record): array
@@ -2141,8 +2415,21 @@ final class SyncService
         return (int) $statement->fetchColumn();
     }
 
-    private function compactSyncHistory(string $account): void
+    private function compactSyncHistory(string $account, bool $clientStateChanged): void
     {
+        $lastCompaction = $this->database->pdo->prepare(
+            'SELECT compacted_at FROM sync_retention_watermarks WHERE account_id = :account',
+        );
+        $lastCompaction->execute(['account' => $account]);
+        $compactedAt = $lastCompaction->fetchColumn();
+        $compactionCutoff = gmdate(
+            'Y-m-d\TH:i:s.v\Z',
+            time() - self::SYNC_COMPACTION_INTERVAL_SECONDS,
+        );
+        if (!$clientStateChanged && is_string($compactedAt) && $compactedAt >= $compactionCutoff) {
+            return;
+        }
+
         $receiptCutoff = gmdate(
             'Y-m-d\TH:i:s.v\Z',
             time() - (self::SYNC_RETENTION_DAYS * 86400),
@@ -2170,9 +2457,7 @@ final class SyncService
         $cursor = $candidate === false || $candidate === null
             ? $this->currentChangeCursor($account)
             : (int) $candidate;
-        if ($cursor <= $this->retentionWatermark($account)) {
-            return;
-        }
+        $previousWatermark = $this->retentionWatermark($account);
 
         $watermark = $this->database->pdo->prepare(
             'INSERT INTO sync_retention_watermarks (account_id, minimum_cursor, compacted_at)
@@ -2186,10 +2471,12 @@ final class SyncService
             'cursor' => $cursor,
             'compacted' => $this->now(),
         ]);
-        $changes = $this->database->pdo->prepare(
-            'DELETE FROM sync_change_log WHERE account_id = :account AND sequence <= :cursor',
-        );
-        $changes->execute(['account' => $account, 'cursor' => $cursor]);
+        if ($cursor > $previousWatermark) {
+            $changes = $this->database->pdo->prepare(
+                'DELETE FROM sync_change_log WHERE account_id = :account AND sequence <= :cursor',
+            );
+            $changes->execute(['account' => $account, 'cursor' => $cursor]);
+        }
     }
 
     private function touchClient(
@@ -2197,7 +2484,7 @@ final class SyncService
         string $clientId,
         int $cursor,
         int $confirmedReceiptSequence,
-    ): void
+    ): bool
     {
         $statement = $this->database->pdo->prepare(
             'INSERT INTO sync_clients (
@@ -2211,7 +2498,11 @@ final class SyncService
                 confirmed_receipt_sequence = MAX(
                     sync_clients.confirmed_receipt_sequence,
                     excluded.confirmed_receipt_sequence
-                )',
+                )
+             WHERE excluded.acknowledged_cursor > sync_clients.acknowledged_cursor
+                OR excluded.confirmed_receipt_sequence > sync_clients.confirmed_receipt_sequence
+                OR excluded.protocol_version <> sync_clients.protocol_version
+                OR sync_clients.last_seen_at < :refresh_before',
         );
         $statement->execute([
             'account' => $account,
@@ -2220,7 +2511,9 @@ final class SyncService
             'protocol' => self::PROTOCOL_VERSION,
             'seen' => $this->now(),
             'receipt' => $confirmedReceiptSequence,
+            'refresh_before' => gmdate('Y-m-d\TH:i:s.v\Z', time() - 900),
         ]);
+        return $statement->rowCount() > 0;
     }
 
     private function now(): string

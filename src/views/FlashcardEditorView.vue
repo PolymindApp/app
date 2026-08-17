@@ -5,15 +5,10 @@ import { useRoute, useRouter } from 'vue-router'
 import AppForm from '@/components/AppForm.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import FlashcardAudioSection from '@/components/FlashcardAudioSection.vue'
-import FlashcardImageField from '@/components/FlashcardImageField.vue'
 import FlashcardTagCombobox from '@/components/FlashcardTagCombobox.vue'
 import FormActionBar from '@/components/FormActionBar.vue'
-import {
-  squareImageSourceIsValid,
-  squareImageSourceSignature,
-} from '@/services/avatarImage'
 import { useFlashcardStore } from '@/stores/flashcards'
-import type { FlashcardAudioValue, FlashcardDraft, SquareImageSourceValue } from '@/types/domain'
+import type { FlashcardAudioValue, FlashcardDraft } from '@/types/domain'
 
 const route = useRoute()
 const router = useRouter()
@@ -30,12 +25,6 @@ const error = ref('')
 const savedNotice = ref(false)
 const original = ref('')
 const draft = reactive<FlashcardDraft>({ front: '', back: '', note: '', tags: [] })
-const cardImage = ref<SquareImageSourceValue>({
-  source: 'none',
-  url: '',
-  existingUrl: '',
-  existingSource: 'none',
-})
 const frontAudio = ref<FlashcardAudioValue>(emptyAudio())
 const backAudio = ref<FlashcardAudioValue>(emptyAudio())
 const frontAudioRecording = ref(false)
@@ -55,7 +44,6 @@ const signature = computed(() => JSON.stringify({
   back: draft.back,
   note: draft.note,
   tags: draft.tags,
-  image: squareImageSourceSignature(cardImage.value),
   frontAudio: frontAudio.value.url,
   backAudio: backAudio.value.url,
 }))
@@ -67,7 +55,6 @@ const canSave = computed(() => (
   && signature.value !== original.value
   && Boolean(draft.front.trim())
   && Boolean(draft.back.trim())
-  && squareImageSourceIsValid(cardImage.value)
 ))
 
 function focusFrontWithoutScrolling() {
@@ -111,12 +98,6 @@ onMounted(async () => {
         note: card.note,
         tags: [...card.tags],
       })
-      cardImage.value = {
-        source: card.imageSource,
-        url: card.imageSource === 'url' ? card.image : '',
-        existingUrl: card.image,
-        existingSource: card.imageSource,
-      }
       frontAudio.value = existingAudio(card.frontAudio || '')
       backAudio.value = existingAudio(card.backAudio || '')
     }
@@ -160,13 +141,11 @@ async function save() {
       await store.saveReviewSetCard(
         reviewSetId.value,
         cardDraft,
-        cardImage.value,
         { front: frontAudio.value, back: backAudio.value },
       )
     } else {
       await store.saveCard(
         cardDraft,
-        cardImage.value,
         { front: frontAudio.value, back: backAudio.value },
       )
     }
@@ -179,12 +158,6 @@ async function save() {
 
     const retainedTags = [...draft.tags]
     Object.assign(draft, { id: undefined, front: '', back: '', note: '', tags: retainedTags })
-    cardImage.value = {
-      source: 'none',
-      url: '',
-      existingUrl: '',
-      existingSource: 'none',
-    }
     frontAudio.value = emptyAudio()
     backAudio.value = emptyAudio()
     original.value = signature.value
@@ -289,12 +262,6 @@ async function remove() {
             v-model:back="backAudio"
             :disabled="saving"
             @recording-change="setAudioRecording"
-            @error="error = $event"
-          />
-          <FlashcardImageField
-            v-model="cardImage"
-            :loading="saving"
-            :initial-search="draft.front || draft.back"
             @error="error = $event"
           />
         </div>

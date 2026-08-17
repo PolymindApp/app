@@ -249,7 +249,7 @@ function reviewSet(accessRole: FlashcardReviewSet['accessRole'] = 'owner'): Flas
   }
 }
 
-function intervalSession(status: IntervalSession['status'], image = ''): IntervalSession {
+function intervalSession(status: IntervalSession['status']): IntervalSession {
   const now = new Date().toISOString()
   return {
     id: 'session-1',
@@ -286,7 +286,6 @@ function intervalSession(status: IntervalSession['status'], image = ''): Interva
         front: 'House',
         back: 'Maison',
         note: '',
-        image,
         tags: [],
       }],
     },
@@ -393,7 +392,6 @@ describe('IntervalRunnerView flashcard area', () => {
       front: 'House',
       back: 'Maison',
       note: '',
-      image: '',
       tags: [],
       difficulty: 0,
       createdAt: '2026-08-01T00:00:00.000Z',
@@ -893,24 +891,10 @@ describe('IntervalRunnerView flashcard area', () => {
     wrapper.unmount()
   })
 
-  it('shows a flashcard image inside the progress rings and fades the type icon', async () => {
-    mocks.intervalStore.sessions = reactive([intervalSession('running', '/flashcard-image.jpg')])
+  it('keeps the interval type icon visible during flashcard review', async () => {
     const wrapper = mountRunner()
     await flushPromises()
 
-    const image = wrapper.get('.progress-rings .runner-flashcard-image')
-    expect(image.attributes('src')).toBe('/flashcard-image.jpg')
-    expect(wrapper.find('.interval-review-card .runner-flashcard-image').exists()).toBe(false)
-    expect(wrapper.get('.runner-type-backdrop').classes()).toContain('runner-type-backdrop--hidden')
-
-    wrapper.unmount()
-  })
-
-  it('keeps the interval type icon visible when the flashcard has no image', async () => {
-    const wrapper = mountRunner()
-    await flushPromises()
-
-    expect(wrapper.find('.runner-flashcard-image').exists()).toBe(false)
     expect(wrapper.get('.runner-type-backdrop').classes()).not.toContain('runner-type-backdrop--hidden')
 
     wrapper.unmount()

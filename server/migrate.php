@@ -5,6 +5,7 @@ declare(strict_types=1);
 use BackOnTrack\Api\ApiException;
 use BackOnTrack\Api\Config;
 use BackOnTrack\Api\Database;
+use BackOnTrack\Api\MigrationRunner;
 
 require __DIR__ . '/src/ApiException.php';
 require __DIR__ . '/src/Config.php';
@@ -21,6 +22,49 @@ function respondToMigrationRequest(int $status, array $body): never
     http_response_code($status);
     echo json_encode($body, JSON_UNESCAPED_SLASHES);
     exit;
+}
+
+/** @return array{files: int, bytes: int} */
+function removeRetiredFlashcardMedia(string $databasePath): array
+{
+    $directory = dirname($databasePath) . DIRECTORY_SEPARATOR . 'flashcard-images';
+    if (is_link($directory) || is_file($directory)) {
+        $bytes = is_file($directory) ? (int) (filesize($directory) ?: 0) : 0;
+        if (!unlink($directory)) {
+            throw new ApiException(500, 'The retired flashcard media path could not be removed.');
+        }
+        return ['files' => 1, 'bytes' => $bytes];
+    }
+    if (!is_dir($directory)) {
+        return ['files' => 0, 'bytes' => 0];
+    }
+
+    $files = 0;
+    $bytes = 0;
+    $iterator = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($directory, FilesystemIterator::SKIP_DOTS),
+        RecursiveIteratorIterator::CHILD_FIRST,
+    );
+    foreach ($iterator as $item) {
+        $path = $item->getPathname();
+        if ($item->isLink() || $item->isFile()) {
+            if ($item->isFile()) {
+                $bytes += $item->getSize();
+            }
+            if (!unlink($path)) {
+                throw new ApiException(500, 'A retired flashcard media file could not be removed.');
+            }
+            $files++;
+            continue;
+        }
+        if ($item->isDir() && !rmdir($path)) {
+            throw new ApiException(500, 'A retired flashcard media directory could not be removed.');
+        }
+    }
+    if (!rmdir($directory)) {
+        throw new ApiException(500, 'The retired flashcard media directory could not be removed.');
+    }
+    return ['files' => $files, 'bytes' => $bytes];
 }
 
 if (!$isCli && strtoupper($_SERVER['REQUEST_METHOD'] ?? '') !== 'GET') {
@@ -46,11 +90,19 @@ try {
     require __DIR__ . '/src/MigrationRunner.php';
     require __DIR__ . '/src/Database.php';
 
-    $database = new Database($config->databasePath);
+    $database = new Database($config->databasePath, false);
+    $journalMode = strtolower((string) $database->pdo->query('PRAGMA journal_mode = WAL')->fetchColumn());
+    if ($journalMode !== 'wal') {
+        throw new ApiException(500, 'The SQLite database could not enable WAL mode.');
+    }
+    $runner = new MigrationRunner($database->pdo, __DIR__ . '/migrations');
+    $appliedMigrations = $runner->migrate();
+    $database->assertCompatibleSchema();
+    $database->pdo->exec('PRAGMA optimize');
+    $retiredMedia = removeRetiredFlashcardMedia($config->databasePath);
     $versions = $database->pdo
         ->query('SELECT version FROM backontrack_schema_migrations ORDER BY version')
         ->fetchAll(PDO::FETCH_COLUMN);
-    $appliedMigrations = $database->migrationsApplied;
     $currentVersion = $versions === [] ? null : (string) end($versions);
 
     if (!$isCli) {
@@ -59,6 +111,7 @@ try {
             'appliedMigrations' => $appliedMigrations,
             'currentVersion' => $currentVersion,
             'migrationCount' => count($versions),
+            'retiredMediaRemoved' => $retiredMedia,
         ]);
     }
 
@@ -84,6 +137,17 @@ try {
             count($versions) === 1 ? '' : 's',
         ),
     );
+    if ($retiredMedia['files'] > 0) {
+        fwrite(
+            STDOUT,
+            sprintf(
+                "Removed %d retired media file%s (%d bytes).\n",
+                $retiredMedia['files'],
+                $retiredMedia['files'] === 1 ? '' : 's',
+                $retiredMedia['bytes'],
+            ),
+        );
+    }
 } catch (ApiException $exception) {
     if (!$isCli) {
         error_log('[backontrack-migration] ' . $exception->getMessage());

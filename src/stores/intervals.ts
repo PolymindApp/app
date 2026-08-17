@@ -63,7 +63,6 @@ function mapSession(record: Record<string, any>): IntervalSession {
             ...(typeof card.backAudio === 'string' && card.backAudio
               ? { backAudio: apiAssetUrl(card.backAudio) }
               : {}),
-            image: apiAssetUrl(typeof card.image === 'string' ? card.image : ''),
           })),
         } as IntervalFlashcardReviewSnapshot
       : undefined

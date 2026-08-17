@@ -70,7 +70,6 @@ function mountEditor() {
         FlashcardAudioSection: true,
         AppForm: AppFormStub,
         ConfirmDialog: true,
-        FlashcardImageField: true,
         FlashcardTagCombobox: true,
         FormActionBar: FormActionBarStub,
         VAlert: { template: '<div><slot /></div>' },

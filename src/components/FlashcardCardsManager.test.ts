@@ -87,8 +87,6 @@ function card(id: string, front: string, tags: string[]): Flashcard {
     front,
     back: `${front} back`,
     note: '',
-    image: '',
-    imageSource: 'none',
     tags,
     createdAt: '2026-08-08T12:00:00.000Z',
     updatedAt: '2026-08-08T12:00:00.000Z',
@@ -113,7 +111,6 @@ function mountManager(props: Record<string, unknown> = {}, attachTo?: Element) {
       stubs: {
         ActionBottomSheet: ActionBottomSheetStub,
         ConfirmDialog: ConfirmDialogStub,
-        FlashcardBulkImageAssignmentDialog: true,
         FlashcardCardsTable: TableStub,
         FlashcardTagCombobox: true,
         VAlert: { template: '<div><slot /></div>' },

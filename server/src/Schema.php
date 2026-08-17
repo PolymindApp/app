@@ -41,8 +41,6 @@ final class Schema
                     'front' => self::text(5000, true),
                     'back' => self::text(5000, true),
                     'note' => self::text(2000),
-                    'image_url' => self::text(2048),
-                    'image_file' => self::text(52),
                     'front_audio_url' => self::text(2048),
                     'front_audio_file' => self::text(64),
                     'back_audio_url' => self::text(2048),

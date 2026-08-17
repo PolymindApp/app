@@ -27,9 +27,8 @@ describe('BackOnTrack API client adapter', () => {
 
   it('does not prefix an already resolved API asset URL again', async () => {
     const { apiAssetUrl } = await import('./api')
-
-    expect(apiAssetUrl('/api/flashcard-images/card-1.jpg'))
-      .toBe('/api/flashcard-images/card-1.jpg')
+    expect(apiAssetUrl('/api/flashcard-audio/card-1.webm'))
+      .toBe('/api/flashcard-audio/card-1.webm')
   })
 
   it('authenticates and persists the bearer token', async () => {

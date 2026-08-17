@@ -345,8 +345,6 @@ export interface Flashcard {
   note: string
   frontAudio?: string
   backAudio?: string
-  image: string
-  imageSource: SquareImageSource
   tags: string[]
   tagDetails?: FlashcardTag[]
   createdAt: string
@@ -459,7 +457,6 @@ export interface FlashcardReviewQueueCard {
   note: string
   frontAudio?: string
   backAudio?: string
-  image: string
   tags: string[]
 }
 

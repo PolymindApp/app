@@ -205,8 +205,6 @@ const card: Flashcard = {
   front: 'House',
   back: 'Maison',
   note: '',
-  image: '',
-  imageSource: 'none',
   tags: [],
   createdAt: '2026-08-08T12:00:00.000Z',
   updatedAt: '2026-08-08T12:00:00.000Z',
@@ -234,7 +232,7 @@ function runningSession(): FlashcardReviewSession {
     speechEnabled: reviewSet.speechEnabled,
     frontLanguage: reviewSet.frontLanguage,
     backLanguage: reviewSet.backLanguage,
-    queue: [{ id: card.id, front: card.front, back: card.back, note: '', image: '', tags: [] }],
+    queue: [{ id: card.id, front: card.front, back: card.back, note: '', tags: [] }],
     startedAt: '2026-08-08T12:00:00.000Z',
     updatedAt: '2026-08-08T12:00:00.000Z',
     elapsedSeconds: 0,
@@ -614,8 +612,8 @@ describe('FlashcardReviewRunnerView Review set preview', () => {
       frontLanguage: 'en-CA',
       backLanguage: 'fr-CA',
       queue: [
-        { id: 'card-1', front: 'House', back: 'Maison', note: '', image: '', tags: [] },
-        { id: 'card-2', front: 'Tree', back: 'Arbre', note: '', image: '', tags: [] },
+        { id: 'card-1', front: 'House', back: 'Maison', note: '', tags: [] },
+        { id: 'card-2', front: 'Tree', back: 'Arbre', note: '', tags: [] },
       ],
       totalCards: 2,
     }
@@ -744,9 +742,9 @@ describe('FlashcardReviewRunnerView Review set preview', () => {
       frontLanguage: 'en-CA',
       backLanguage: 'fr-CA',
       queue: [
-        { id: 'card-1', front: 'House', back: 'Maison', note: '', image: '', tags: [] },
-        { id: 'card-2', front: 'Tree', back: 'Arbre', note: '', image: '', tags: [] },
-        { id: 'card-3', front: 'Book', back: 'Livre', note: '', image: '', tags: [] },
+        { id: 'card-1', front: 'House', back: 'Maison', note: '', tags: [] },
+        { id: 'card-2', front: 'Tree', back: 'Arbre', note: '', tags: [] },
+        { id: 'card-3', front: 'Book', back: 'Livre', note: '', tags: [] },
       ],
       totalCards: 3,
     }
@@ -793,7 +791,6 @@ describe('FlashcardReviewRunnerView Review set preview', () => {
       front: 'Tree',
       back: 'Arbre',
       note: '',
-      image: '',
       tags: [],
     }
     active.queue.push(secondCard)

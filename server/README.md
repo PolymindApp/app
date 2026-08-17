@@ -76,13 +76,12 @@ chmod 600 private/data.db
 For a new installation, create the database with:
 
 ```bash
-sqlite3 private/data.db 'VACUUM;'
 php server/migrate.php
 ```
 
 ## Database migrations
 
-The API applies pending migrations automatically before handling a request. For deployments, run them explicitly after uploading the new server code and before directing traffic to it:
+The API performs a cheap current-version check before handling a request and returns `503` for an outdated schema. For deployments, run migrations after uploading the new server code and before directing traffic to it:
 
 ```bash
 php server/migrate.php
@@ -116,6 +115,7 @@ The reconstructed PHP-era history is:
 | `202608140002` | Removal of the retired stock-image library and attribution fields |
 | `202608160003` | Bounded sync receipts, client-confirmed receipt watermarks, and change-log retention cursors |
 | `202608160004` | Counted passive-review batches, compact immutable clocks, and v2-only retention cursors |
+| `202608170001` | Retired flashcard images, compacted sync versions, and added targeted indexes |
 
 Existing PHP databases are advanced without recreating application data. The schema is validated after migration, including required columns.
 
@@ -123,11 +123,11 @@ Migration files in `server/migrations` are immutable after deployment. Any later
 
 ## Offline synchronization
 
-Authenticated clients initialize their local database with `POST /sync/bootstrap`, then use `POST /sync/exchange` for both queued operations and cursor-based pulls. An exchange accepts at most 100 ordered operations and returns at most 500 coalesced changes. Operation receipts make retries safe across browser service workers, native background execution, request timeouts, and foreground recovery.
+Authenticated clients initialize their local database with `POST /sync/bootstrap`, then use `POST /sync/exchange` for both queued operations and cursor-based pulls. Bootstrap responses contain at most 500 resources; clients follow `nextPageToken` while carrying the first page's `watermark`. Large JSON responses use gzip when the client accepts it. An exchange accepts at most 100 ordered operations and returns at most 500 coalesced changes. Operation receipts make retries safe across browser service workers, native background execution, request timeouts, and foreground recovery.
 
 Sync protocol v2 bounds that bookkeeping. The client persists `receiptWatermark` in the same IndexedDB transaction that reconciles acknowledgements, then sends it back as `confirmedReceiptSequence`; the server removes those confirmed receipts. Stored duplicate responses contain only the operation outcome rather than full resource snapshots. Pending, undispatched patches to the same record are coalesced locally. Change-log rows acknowledged by every active v2 client in the last 30 days are removed, and a client behind the retained cursor receives `resetRequired` so it can bootstrap without losing its local outbox. Stale v1 registrations do not pin the v2 log. Unconfirmed receipts also expire after 30 days as an abandoned-client fallback.
 
-Owned collection records carry server revisions and per-field hybrid logical clocks. The exchange applies last-writer-wins only to fields changed by both clients; deletes are terminal for the same record ID. Immutable flashcard review events use one wildcard clock, and passive background catch-ups store one event per card with a `view_count` instead of one row per elapsed view. Reviewer statistics still advance by the complete counted batch exactly once. Unique tag names and task occurrences return replacement IDs so clients can rewrite queued relationships rather than dropping work. Review-set access, shared-card projections, preferences, shares, account settings, avatars, and compressed card images use the same exchange contract.
+Owned collection records carry server revisions and per-field hybrid logical clocks. The exchange applies last-writer-wins only to fields changed by both clients; deletes are terminal for the same record ID. Immutable flashcard review events use one wildcard clock, and passive background catch-ups store one event per card with a `view_count` instead of one row per elapsed view. Reviewer statistics still advance by the complete counted batch exactly once. Unique tag names and task occurrences return replacement IDs so clients can rewrite queued relationships rather than dropping work. Review-set access, shared-card projections, preferences, shares, account settings, avatars, and journal images use the same exchange contract.
 
 The initial bootstrap is the only network-dependent preparation step. After it completes, token expiry does not remove the cached account. The client must reauthenticate before it can exchange again, and sign-out should flush before erasing local account data.
 
@@ -139,7 +139,7 @@ Recommended deployment order:
 4. Run `php server/migrate.php`, or call its authenticated HTTPS endpoint.
 5. Verify `/health`, then deploy or enable the client.
 
-The release workflow calls the authenticated endpoint after its upload job succeeds. Configure the same `BACKONTRACK_MIGRATION_KEY` value in the host's root `.env` and the GitHub `Web` environment secret. `MIGRATION_URL` may be set as a `Web` environment variable when the default deployment URL is not appropriate. The first ordinary API request also applies pending migrations as a fallback. Keep the backup: migrations are forward-only and do not perform automatic rollbacks after a successful deployment.
+The release workflow calls the authenticated endpoint after its upload job succeeds. Configure the same `BACKONTRACK_MIGRATION_KEY` value in the host's root `.env` and the GitHub `Web` environment secret. `MIGRATION_URL` may be set as a `Web` environment variable when the default deployment URL is not appropriate. Keep the backup: migrations are forward-only and do not perform automatic rollbacks after a successful deployment.
 
 ## Flashcard face recordings
 
@@ -151,11 +151,11 @@ Owners use `/flashcards/{id}/audio/{front|back}` to add or remove recordings. Re
 
 `GET /flashcard-review-sets` returns the authenticated account’s owned sets and sets shared with it. Each record includes its `access_role`, owner display metadata, resolved tag names, current matching-card count, and that account’s effective review settings.
 
-Owners manage access through `/flashcard-review-sets/{id}/shares` and `/flashcard-review-set-shares/{shareId}`. Shares accept any valid email address and a `readonly` or `editor` role. Create, list, and update responses expose only the invited email and role—not account profile data or registration state. An invitation for an unregistered address is claimed automatically on that account’s first authenticated request after registration. Read-only recipients may review and list cards. Editors may also use the set-scoped card and image-upload endpoints to mutate the owner’s matching source cards, but cannot change card tags, set identity, tag filters, or sharing. New editor-created cards receive the set’s current tags automatically.
+Owners manage access through `/flashcard-review-sets/{id}/shares` and `/flashcard-review-set-shares/{shareId}`. Shares accept any valid email address and a `readonly` or `editor` role. Create, list, and update responses expose only the invited email and role—not account profile data or registration state. An invitation for an unregistered address is claimed automatically on that account’s first authenticated request after registration. Read-only recipients may review and list cards. Editors may also use the set-scoped card endpoints to mutate the owner’s matching source cards, but cannot change card tags, set identity, tag filters, or sharing. New editor-created cards receive the set’s current tags automatically.
 
 Review preferences and card statistics are keyed by account, so one recipient’s timing, speech, sorting, success, and error history do not alter another account’s experience. Sessions retain both the reviewer and source owner. Recipients may attach accessible sets to their tasks, program steps, and interval templates. Removing a share detaches those references transactionally while keeping immutable review events and session snapshots.
 
-`POST /flashcard-review-sets/{id}/copies` creates a recipient-owned set and copies every card currently matching the shared filter. Copied cards, tags, settings, and non-library image files are independent; the original live share remains in place.
+`POST /flashcard-review-sets/{id}/copies` creates a recipient-owned set and copies every card currently matching the shared filter. Copied cards, tags, and settings are independent; the original live share remains in place.
 
 ## Apache/shared hosting
 

@@ -185,7 +185,7 @@ function cardTagNames(card: Flashcard) {
             />
           </div>
           <div class="card-library-header__cell" aria-hidden="true">
-            <slot name="image-column-heading">Image</slot>
+            <slot name="action-column-heading">Card</slot>
           </div>
           <div class="card-library-header__cell" aria-hidden="true">Faces</div>
           <div v-if="showLastColumn" class="card-library-header__cell" aria-hidden="true">
@@ -209,7 +209,7 @@ function cardTagNames(card: Flashcard) {
         >
           <colgroup>
             <col v-if="selectable" class="card-library-table__select-column">
-            <col class="card-library-table__image-column">
+            <col class="card-library-table__action-column">
             <col class="card-library-table__faces-column">
             <col v-if="showLastColumn" class="card-library-table__tags-column">
             <col v-if="showLastColumn" class="card-library-table__notes-column">
@@ -217,8 +217,8 @@ function cardTagNames(card: Flashcard) {
           <thead class="card-library-table__semantic-heading">
             <tr>
               <th v-if="selectable" scope="col" aria-label="Selection" />
-              <th scope="col" class="card-library-table__image-heading">
-                <slot name="image-column-heading">Image</slot>
+              <th scope="col" class="card-library-table__action-heading">
+                <slot name="action-column-heading">Card</slot>
               </th>
               <th scope="col" class="card-library-table__faces-heading">Faces</th>
               <th v-if="showLastColumn" scope="col" class="card-library-table__tags-heading">
@@ -264,26 +264,9 @@ function cardTagNames(card: Flashcard) {
                   @update:model-value="toggleCardSelection(card.id, Boolean($event))"
                 />
               </td>
-              <td class="card-library-table__image-cell text-no-wrap">
-                <slot name="image-column" :card="card">
-                  <div class="flashcard-table__image-frame">
-                    <v-img
-                      v-if="card.image"
-                      :src="card.image"
-                      alt=""
-                      cover
-                      class="flashcard-table__image"
-                    >
-                      <template #error>
-                        <div class="flashcard-table__image-placeholder" aria-label="Image unavailable">
-                          <v-icon icon="mdi-image-off-outline" size="18" aria-hidden="true" />
-                        </div>
-                      </template>
-                    </v-img>
-                    <div v-else class="flashcard-table__image-placeholder" aria-label="No image">
-                      <v-icon icon="mdi-image-outline" size="18" aria-hidden="true" />
-                    </div>
-                  </div>
+              <td class="card-library-table__action-cell text-no-wrap">
+                <slot name="action-column" :card="card">
+                  <v-icon icon="mdi-card-text-outline" size="18" color="secondary" aria-hidden="true" />
                 </slot>
               </td>
               <td class="card-library-table__faces-cell text-no-wrap">
@@ -353,15 +336,15 @@ function cardTagNames(card: Flashcard) {
 
 .card-library-table__semantic-heading { position: absolute; width: .0625rem; height: .0625rem; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
 .card-library-table__select-column { width: 3rem; }
-.card-library-table__image-column { width: 3rem; }
+.card-library-table__action-column { width: 3rem; }
 .card-library-table--without-last-column .card-library-table__faces-column { width: auto; }
 .card-library-table__faces-column { width: 40%; }
 .card-library-table__tags-column { width: 20%; }
 .card-library-table__notes-column { min-width: 12rem; }
 .card-library-table th.card-library-table__select,
 .card-library-table td.card-library-table__select { padding-right: .25rem !important; padding-left: .25rem !important; text-align: center; }
-.card-library-table th.card-library-table__image-heading,
-.card-library-table td.card-library-table__image-cell { padding-right: .5rem !important; padding-left: .5rem !important; }
+.card-library-table th.card-library-table__action-heading,
+.card-library-table td.card-library-table__action-cell { padding-right: .5rem !important; padding-left: .5rem !important; text-align: center; }
 .card-library-table tbody .card-library-table__select { position: relative; z-index: 2; cursor: pointer; }
 .card-library-table__select :deep(.v-selection-control) { position: relative; z-index: 2; justify-content: center; }
 .card-library-table td { height: 4rem !important; padding: .5rem .75rem !important; vertical-align: middle; }
@@ -384,9 +367,6 @@ function cardTagNames(card: Flashcard) {
 .card-library-pagination :deep(.v-btn) { min-width: 2.75rem; min-height: 2.75rem; }
 .flashcard-table__text { display: -webkit-box; overflow-wrap: anywhere; font-size: .78rem; line-height: 1.35; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .flashcard-table__faces { display: grid; min-width: 0; gap: .2rem; }
-.flashcard-table__image-frame { width: 2rem; height: 2rem; overflow: hidden; border: .0625rem solid rgba(var(--v-theme-on-surface), .08); border-radius: .35rem; background: rgba(var(--v-theme-on-surface), .05); }
-.flashcard-table__image { width: 100%; height: 100%; }
-.flashcard-table__image-placeholder { display: grid; width: 100%; height: 100%; color: rgba(var(--v-theme-on-surface), .3); place-items: center; background: rgba(var(--v-theme-on-surface), .025); }
 .flashcard-table__front { color: rgb(var(--v-theme-on-surface)); font-weight: 900; }
 .flashcard-table__back { color: rgba(var(--v-theme-on-surface), .72); }
 .flashcard-table__tags,

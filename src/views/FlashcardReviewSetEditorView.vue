@@ -332,9 +332,9 @@ async function remove() {
           @add-card="openNewCard"
           @open-card="openCard"
         >
-          <template #image-column-heading><span v-if="canEditCards" class="d-sr-only">Edit</span></template>
+          <template #action-column-heading><span v-if="canEditCards" class="d-sr-only">Edit</span></template>
           <template #last-column-heading>Tags</template>
-          <template #image-column="{ card }">
+          <template #action-column="{ card }">
             <div
               v-if="canEditCards"
               class="review-set-card-edit"

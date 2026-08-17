@@ -180,8 +180,8 @@ describe('flashcard Review set restart', () => {
       sortOrder: 0, createdAt: '2026-08-10T12:00:00Z', updatedAt: '2026-08-10T12:00:00Z',
     }]
     store.cards = [{
-      id: 'card-1', front: 'One', back: 'Un', note: 'First', image: '',
-      imageSource: 'none', tags: ['tag-1'], createdAt: '2026-08-10T12:00:00Z',
+      id: 'card-1', front: 'One', back: 'Un', note: 'First',
+      tags: ['tag-1'], createdAt: '2026-08-10T12:00:00Z',
       updatedAt: '2026-08-10T12:00:00Z', passiveViews: 0, successCount: 0, errorCount: 0,
     }]
     store.sessions = [{
@@ -190,7 +190,7 @@ describe('flashcard Review set restart', () => {
       sortMode: 'recently_added', tags: [], frontSeconds: 5, backSeconds: 5,
       backSpeechRepeatCount: 1, noteBeforeBack: false, speechEnabled: false,
       frontLanguage: '', backLanguage: '', queue: [{
-        id: 'card-2', front: 'Two', back: 'Deux', note: '', image: '', tags: [],
+        id: 'card-2', front: 'Two', back: 'Deux', note: '', tags: [],
       }], startedAt: '2026-08-10T12:00:00Z', updatedAt: '2026-08-10T12:00:42Z',
       elapsedSeconds: 42, totalCards: 2, viewedCount: 0, successCount: 0,
       errorCount: 0, ejectedCount: 1,
@@ -226,9 +226,9 @@ describe('flashcard Review set restart', () => {
       sortMode: 'recently_added', tags: [], frontSeconds: 5, backSeconds: 5,
       backSpeechRepeatCount: 1, noteBeforeBack: false, speechEnabled: false,
       frontLanguage: '', backLanguage: '', queue: [{
-        id: 'card-1', front: 'One', back: 'Un', note: '', image: '', tags: [],
+        id: 'card-1', front: 'One', back: 'Un', note: '', tags: [],
       }, {
-        id: 'card-2', front: 'Two', back: 'Deux', note: '', image: '', tags: [],
+        id: 'card-2', front: 'Two', back: 'Deux', note: '', tags: [],
       }], startedAt: '2026-08-10T12:00:00Z', updatedAt: '2026-08-10T12:00:42Z',
       elapsedSeconds: 42, totalCards: 2, viewedCount: 0, successCount: 0,
       errorCount: 0, ejectedCount: 0,
@@ -251,11 +251,11 @@ describe('flashcard Review set restart', () => {
       sortMode: 'recently_added', tags: [], frontSeconds: 4, backSeconds: 5,
       backSpeechRepeatCount: 2, noteBeforeBack: false, speechEnabled: true,
       frontLanguage: 'en-CA', backLanguage: 'fr-CA', queue: [{
-        id: 'card-1', front: 'One', back: 'Un', note: '', image: '', tags: [],
+        id: 'card-1', front: 'One', back: 'Un', note: '', tags: [],
       }, {
-        id: 'card-2', front: 'Two', back: 'Deux', note: '', image: '', tags: [],
+        id: 'card-2', front: 'Two', back: 'Deux', note: '', tags: [],
       }, {
-        id: 'card-3', front: 'Three', back: 'Trois', note: '', image: '', tags: [],
+        id: 'card-3', front: 'Three', back: 'Trois', note: '', tags: [],
       }], startedAt: '2026-08-16T21:44:15Z', updatedAt: '2026-08-16T21:44:15Z',
       elapsedSeconds: 0, totalCards: 3, viewedCount: 0, successCount: 0,
       errorCount: 0, ejectedCount: 0,

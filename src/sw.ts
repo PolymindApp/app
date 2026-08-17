@@ -7,8 +7,8 @@ declare const self: ServiceWorkerGlobalScope & {
   __WB_MANIFEST: Array<{ url: string; revision?: string }>
 }
 
-const CACHE_NAME = 'backontrack-shell-v7'
-const MEDIA_CACHE_NAME = 'backontrack-media-v1'
+const CACHE_NAME = 'backontrack-shell-v8'
+const MEDIA_CACHE_NAME = 'backontrack-media-v2'
 const precacheUrls = self.__WB_MANIFEST.map(entry => new URL(entry.url, self.location.origin).pathname)
 
 self.addEventListener('install', event => {
@@ -31,7 +31,7 @@ self.addEventListener('fetch', event => {
   const url = new URL(request.url)
   if (request.method !== 'GET') return
   const mediaRequest = request.destination === 'image'
-    || /\/(?:avatars|flashcard-images|journal-images)\/[a-f0-9]{48}\.jpg$/i.test(url.pathname)
+    || /\/(?:avatars|journal-images)\/[a-f0-9]{48}\.jpg$/i.test(url.pathname)
   if (mediaRequest) {
     event.respondWith(staleWhileRevalidate(request, MEDIA_CACHE_NAME))
     return

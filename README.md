@@ -4,7 +4,7 @@ A mobile-first personal management app for tasks, plans, habits, workouts, and p
 
 ## Offline-first data
 
-After the first authenticated bootstrap, the app reads and writes its core data from IndexedDB. Edits, deletions, task progress, interval state, flashcard reviews, settings, shares, and compressed images update the interface immediately and enter an ordered outbox. The app exchanges that outbox with the PHP API in the background, pulls remote changes every two minutes after activity, progressively backs idle pulls off to five minutes, and retries automatically after reconnect, focus, or app resume. A service worker precaches the web shell and uses Background Sync when the browser supports it; Android and iOS use Capacitor Background Runner as a best-effort closed-app uploader.
+After the first authenticated bootstrap, the app reads and writes its core data from IndexedDB. Edits, deletions, task progress, interval state, flashcard reviews, settings, shares, and journal images update the interface immediately and enter an ordered outbox. The app exchanges that outbox with the PHP API in the background, pulls remote changes every two minutes after activity, progressively backs idle pulls off to five minutes, and retries automatically after reconnect, focus, or app resume. A service worker precaches the web shell and uses Background Sync when the browser supports it; Android and iOS use Capacitor Background Runner as a best-effort closed-app uploader.
 
 Synchronization is idempotent per client operation. Additive activity records are retained, mutable records merge by field clock, and server-observed deletion wins over pending edits. Duplicate tag and occurrence creates resolve to the existing server ID and rewrite later queued relations. The synchronization panel shows the five most recent rejected operations; local changes can be discarded individually or all at once before a clean snapshot is fetched.
 
@@ -32,14 +32,13 @@ pnpm dev:all
 
 Open `http://localhost:5183`. Vite proxies `/api` to the PHP server at `http://127.0.0.1:8090`.
 
-The database is intentionally ignored by Git. For a new empty installation only:
+The database is intentionally ignored by Git. For a new installation:
 
 ```bash
-sqlite3 private/data.db 'VACUUM;'
 pnpm api:migrate
 ```
 
-Every API startup also applies pending migrations automatically. The explicit command is useful for checking an upgrade before serving requests. `server/schema.sql` is a readable snapshot of the current schema, not the upgrade mechanism.
+The API refuses to serve against an outdated schema. Run migrations explicitly before starting or deploying the API; `server/schema.sql` is a readable snapshot of the current schema, not the upgrade mechanism.
 
 `pnpm api:serve` uses a local-development signing secret when no secret or local configuration is supplied. That fallback is bound to `127.0.0.1` and must never be used for deployment.
 
@@ -171,8 +170,6 @@ GET    /flashcard-review-sets/{id}/cards
 POST   /flashcard-review-sets/{id}/cards
 PATCH  /flashcard-review-sets/{id}/cards/{cardId}
 DELETE /flashcard-review-sets/{id}/cards/{cardId}
-POST   /flashcard-review-sets/{id}/cards/{cardId}/image
-DELETE /flashcard-review-sets/{id}/cards/{cardId}/image
 POST   /flashcard-review-sets/{id}/cards/{cardId}/audio/{front|back}
 DELETE /flashcard-review-sets/{id}/cards/{cardId}/audio/{front|back}
 PATCH  /interval-sessions/{id}/flashcards

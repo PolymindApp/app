@@ -3,15 +3,12 @@ import { computed, nextTick, reactive, ref, watch } from 'vue'
 import AppDialog from '@/components/AppDialog.vue'
 import AppForm from '@/components/AppForm.vue'
 import FlashcardAudioSection from '@/components/FlashcardAudioSection.vue'
-import FlashcardImageField from '@/components/FlashcardImageField.vue'
 import FlashcardTagCombobox from '@/components/FlashcardTagCombobox.vue'
-import { squareImageSourceIsValid, squareImageSourceSignature } from '@/services/avatarImage'
 import { useFlashcardStore } from '@/stores/flashcards'
 import type {
   Flashcard,
   FlashcardAudioValue,
   FlashcardDraft,
-  SquareImageSourceValue,
 } from '@/types/domain'
 
 const props = defineProps<{
@@ -33,7 +30,6 @@ const saving = ref(false)
 const error = ref('')
 const original = ref('')
 const draft = reactive<FlashcardDraft>({ front: '', back: '', note: '', tags: [] })
-const cardImage = ref<SquareImageSourceValue>(emptyImage())
 const frontAudio = ref<FlashcardAudioValue>(emptyAudio())
 const backAudio = ref<FlashcardAudioValue>(emptyAudio())
 const frontAudioRecording = ref(false)
@@ -45,7 +41,6 @@ const signature = computed(() => JSON.stringify({
   back: draft.back,
   note: draft.note,
   tags: draft.tags,
-  image: squareImageSourceSignature(cardImage.value),
   frontAudio: frontAudio.value.url,
   backAudio: backAudio.value.url,
 }))
@@ -56,7 +51,6 @@ const canSave = computed(() => (
   && signature.value !== original.value
   && Boolean(draft.front.trim())
   && Boolean(draft.back.trim())
-  && squareImageSourceIsValid(cardImage.value)
 ))
 
 watch(() => props.modelValue, async (open) => {
@@ -68,12 +62,6 @@ watch(() => props.modelValue, async (open) => {
   Object.assign(draft, card
     ? { id: card.id, front: card.front, back: card.back, note: card.note, tags: [...card.tags] }
     : { id: undefined, front: '', back: '', note: '', tags: [...(props.initialTags || [])] })
-  cardImage.value = card ? {
-    source: card.imageSource,
-    url: card.imageSource === 'url' ? card.image : '',
-    existingUrl: card.image,
-    existingSource: card.imageSource,
-  } : emptyImage()
   frontAudio.value = card ? existingAudio(card.frontAudio || '') : emptyAudio()
   backAudio.value = card ? existingAudio(card.backAudio || '') : emptyAudio()
   await nextTick()
@@ -81,10 +69,6 @@ watch(() => props.modelValue, async (open) => {
   form.value?.resetValidation()
   frontField.value?.focus()
 })
-
-function emptyImage(): SquareImageSourceValue {
-  return { source: 'none', url: '', existingUrl: '', existingSource: 'none' }
-}
 
 function emptyAudio(): FlashcardAudioValue {
   return { url: '', existingUrl: '' }
@@ -116,12 +100,10 @@ async function save() {
       ? await store.saveReviewSetCard(
           props.reviewSetId!,
           cardDraft,
-          cardImage.value,
           { front: frontAudio.value, back: backAudio.value },
         )
       : await store.saveCard(
           cardDraft,
-          cardImage.value,
           { front: frontAudio.value, back: backAudio.value },
         )
     emit('saved', card)
@@ -194,12 +176,6 @@ async function save() {
               v-model:back="backAudio"
               :disabled="saving || !modelValue"
               @recording-change="setAudioRecording"
-              @error="error = $event"
-            />
-            <FlashcardImageField
-              v-model="cardImage"
-              :loading="saving"
-              :initial-search="draft.front || draft.back"
               @error="error = $event"
             />
           </div>

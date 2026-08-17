@@ -40,6 +40,8 @@ const baseUrl = (import.meta.env.VITE_API_URL || '/api').replace(/\/+$/, '')
 const STATUS_EVENT = 'backontrack-sync-status-changed'
 const MUTATION_SYNC_DELAY_MS = 50
 const MAX_SYNC_REQUEST_BYTES = 2_400_000
+const MEDIA_CACHE_NAME = 'backontrack-media-v2'
+const RETIRED_MEDIA_CACHE_NAME = 'backontrack-media-v1'
 
 export const offlineSyncStatus = reactive<SyncStatusSnapshot>({
   phase: 'idle',
@@ -277,7 +279,10 @@ export async function clearBackgroundSyncStage() {
 
 export async function clearOfflineMediaCache() {
   if (!('caches' in window)) return
-  await caches.delete('backontrack-media-v1')
+  await Promise.all([
+    caches.delete(MEDIA_CACHE_NAME),
+    caches.delete(RETIRED_MEDIA_CACHE_NAME),
+  ])
 }
 
 async function performSync() {
@@ -344,12 +349,22 @@ async function performSync() {
 
 async function bootstrap(accountId: string) {
   const metadata = await initializeLocalMetadata(accountId)
-  const response = await syncRequest<SyncBootstrapResponse>('/sync/bootstrap', {
-    clientId: metadata.clientId || syncClientId(),
-    confirmedReceiptSequence: metadata.confirmedReceiptSequence,
-  })
-  await completeLocalBootstrap(accountId, response.watermark, response.resources)
-  void warmMediaCache(response.resources)
+  const resources: SyncBootstrapResponse['resources'] = []
+  let pageToken: string | null = null
+  let watermark: number | undefined
+  do {
+    const response = await syncRequest<SyncBootstrapResponse>('/sync/bootstrap', {
+      clientId: metadata.clientId || syncClientId(),
+      confirmedReceiptSequence: metadata.confirmedReceiptSequence,
+      pageToken,
+      ...(watermark === undefined ? {} : { watermark }),
+    })
+    watermark = response.watermark
+    pageToken = response.nextPageToken
+    resources.push(...response.resources)
+    void warmMediaCache(response.resources)
+  } while (pageToken !== null)
+  await completeLocalBootstrap(accountId, watermark || 0, resources)
 }
 
 async function warmMediaCache(resources: SyncBootstrapResponse['resources']) {
@@ -365,12 +380,12 @@ async function warmMediaCache(resources: SyncBootstrapResponse['resources']) {
     const data = resource.data
     if (!data) continue
     add(data.avatar)
-    if (typeof data.image_file === 'string' && data.image_file) {
-      add(resource.resource === 'journal_entries'
-        ? `/journal-images/${data.image_file}`
-        : `/flashcard-images/${data.image_file}`)
-    } else {
-      add(data.image_url)
+    if (resource.resource === 'journal_entries') {
+      if (typeof data.image_file === 'string' && data.image_file) {
+        add(`/journal-images/${data.image_file}`)
+      } else {
+        add(data.image_url)
+      }
     }
     for (const side of ['front', 'back']) {
       const audioFile = data[`${side}_audio_file`]
@@ -383,12 +398,11 @@ async function warmMediaCache(resources: SyncBootstrapResponse['resources']) {
         ? data.cards
         : []
     cards.forEach(card => {
-      add(card?.image)
       add(card?.frontAudio)
       add(card?.backAudio)
     })
   }
-  const cache = await caches.open('backontrack-media-v1')
+  const cache = await caches.open(MEDIA_CACHE_NAME)
   await Promise.allSettled([...urls].map(async url => {
     const request = new Request(url, { mode: new URL(url, location.href).origin === location.origin ? 'same-origin' : 'no-cors' })
     if (await cache.match(request)) return

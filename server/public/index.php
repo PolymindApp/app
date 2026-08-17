@@ -17,7 +17,6 @@ try {
     $debug = Config::debugEnabled($serverRoot);
     require dirname($serverRoot) . '/vendor/autoload.php';
     require $serverRoot . '/src/Mailer.php';
-    require $serverRoot . '/src/MigrationRunner.php';
     require $serverRoot . '/src/Database.php';
     require $serverRoot . '/src/Schema.php';
     require $serverRoot . '/src/SyncService.php';

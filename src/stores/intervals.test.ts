@@ -185,7 +185,6 @@ describe('interval task attribution', () => {
         front: 'Casa',
         back: 'House',
         note: '',
-        image: '/api/flashcard-images/card-1.jpg',
         tags: ['tag-1'],
       }],
     }
@@ -208,7 +207,6 @@ describe('interval task attribution', () => {
       flashcard_snapshot: flashcardReview,
     }))
     expect(session.flashcardReview).toEqual(flashcardReview)
-    expect(session.flashcardReview?.cards[0]?.image).toBe('/api/flashcard-images/card-1.jpg')
   })
 
   it('snapshots the current interval type sounds when starting a session', async () => {
@@ -354,7 +352,7 @@ describe('interval task attribution', () => {
         flashcard_snapshot: {
           reviewSet: 'set-1',
           name: 'Vocabulary',
-          cards: [{ id: 'card-1', front: 'One', back: 'Un', note: '', image: '', tags: [] }],
+          cards: [{ id: 'card-1', front: 'One', back: 'Un', note: '', tags: [] }],
         },
         started_at: '2026-08-10T16:00:00.000Z',
         ended_at: '2026-08-10T16:02:00.000Z',
@@ -550,7 +548,7 @@ describe('interval task attribution', () => {
         speechEnabled: true,
         frontLanguage: 'es',
         backLanguage: 'en',
-        cards: [{ id: 'card-1', front: 'Hola', back: 'Hello', note: '', image: '', tags: [] }],
+        cards: [{ id: 'card-1', front: 'Hola', back: 'Hello', note: '', tags: [] }],
       }
       const sessionRecord = {
         id: 'session-tts',
@@ -610,7 +608,7 @@ describe('interval task attribution', () => {
       speechPausedElapsedMs: 2_500,
       frontLanguage: '',
       backLanguage: '',
-      cards: [{ id: 'card-1', front: 'Hola', back: 'Hello', note: '', image: '', tags: ['tag-1'] }],
+      cards: [{ id: 'card-1', front: 'Hola', back: 'Hello', note: '', tags: ['tag-1'] }],
     }
     apiMocks.updateIntervalSessionFlashcards.mockResolvedValue({
       id: 'session-1',

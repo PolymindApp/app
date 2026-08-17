@@ -111,30 +111,6 @@ final class Api
             if (
                 ($method === 'POST' || $method === 'DELETE')
                 && preg_match(
-                    '#^/flashcards/([a-zA-Z0-9_-]{1,64})/image/?$#',
-                    $path,
-                    $flashcardImageMatches,
-                ) === 1
-            ) {
-                $this->flashcardImage(
-                    $method,
-                    $flashcardImageMatches[1],
-                    $this->authenticate(),
-                );
-            }
-            if (
-                $method === 'GET'
-                && preg_match(
-                    '#^/flashcard-images/([a-f0-9]{48}\.jpg)$#',
-                    $path,
-                    $flashcardImageFileMatches,
-                ) === 1
-            ) {
-                $this->serveFlashcardImage($flashcardImageFileMatches[1]);
-            }
-            if (
-                ($method === 'POST' || $method === 'DELETE')
-                && preg_match(
                     '#^/flashcards/([a-zA-Z0-9_-]{1,64})/audio/(front|back)/?$#',
                     $path,
                     $flashcardAudioMatches,
@@ -327,21 +303,6 @@ final class Api
             ) {
                 $this->bulkUpdateSharedFlashcards(
                     $sharedCardBulkMatches[1],
-                    $this->authenticate(),
-                );
-            }
-            if (
-                ($method === 'POST' || $method === 'DELETE')
-                && preg_match(
-                    '#^/flashcard-review-sets/([a-zA-Z0-9_-]{1,64})/cards/([a-zA-Z0-9_-]{1,64})/image/?$#',
-                    $path,
-                    $sharedCardImageMatches,
-                ) === 1
-            ) {
-                $this->sharedFlashcardImage(
-                    $method,
-                    $sharedCardImageMatches[1],
-                    $sharedCardImageMatches[2],
                     $this->authenticate(),
                 );
             }
@@ -1002,93 +963,6 @@ final class Api
         }
     }
 
-    private function flashcardImage(string $method, string $id, array $user): never
-    {
-        $owner = (string) $user['id'];
-        $this->rateLimit('flashcard-image-update:' . $owner, 60, 900);
-        $card = $this->ownedRecord('flashcards', $id, $owner);
-        $oldFilename = $this->validAvatarFilename($card['image_file'] ?? null);
-        $updated = $this->now();
-
-        if ($method === 'DELETE') {
-            $statement = $this->database->pdo->prepare(
-                "UPDATE flashcards
-                 SET image_url = '', image_file = '', updated_at = :updated_at
-                 WHERE id = :id AND owner = :owner",
-            );
-            $statement->execute([
-                'updated_at' => $updated,
-                'id' => $id,
-                'owner' => $owner,
-            ]);
-            $card = $this->ownedRecord('flashcards', $id, $owner);
-            $this->syncFlashcardWithActiveReviewQueues($card, $owner, false);
-            if ($oldFilename !== null) {
-                $this->removeFlashcardImageFileIfUnused($oldFilename);
-            }
-            $this->respond($this->normalizeRecord(
-                $this->requireCollection('flashcards'),
-                $card,
-            ));
-        }
-
-        $bytes = $this->compressedSquareJpegBytes($this->jsonBody(), 'card image');
-        $directory = $this->flashcardImageDirectory();
-        $filename = $this->storeSquareJpeg($bytes, $directory, 'card image');
-        $destination = $directory . DIRECTORY_SEPARATOR . $filename;
-
-        try {
-            $statement = $this->database->pdo->prepare(
-                "UPDATE flashcards
-                 SET image_url = '', image_file = :image_file, updated_at = :updated_at
-                 WHERE id = :id AND owner = :owner",
-            );
-            $statement->execute([
-                'image_file' => $filename,
-                'updated_at' => $updated,
-                'id' => $id,
-                'owner' => $owner,
-            ]);
-        } catch (Throwable $exception) {
-            @unlink($destination);
-            throw $exception;
-        }
-
-        $card = $this->ownedRecord('flashcards', $id, $owner);
-        $this->syncFlashcardWithActiveReviewQueues($card, $owner, false);
-        if ($oldFilename !== null && !hash_equals($oldFilename, $filename)) {
-            $this->removeFlashcardImageFileIfUnused($oldFilename);
-        }
-        $this->respond($this->normalizeRecord(
-            $this->requireCollection('flashcards'),
-            $card,
-        ));
-    }
-
-    private function serveFlashcardImage(string $filename): never
-    {
-        $validated = $this->validAvatarFilename($filename);
-        if ($validated === null) {
-            throw new ApiException(404, 'Card image not found.');
-        }
-        $path = $this->flashcardImageDirectory() . DIRECTORY_SEPARATOR . $validated;
-        if (!is_file($path) || !is_readable($path)) {
-            throw new ApiException(404, 'Card image not found.');
-        }
-        $contents = file_get_contents($path);
-        if ($contents === false) {
-            throw new ApiException(404, 'Card image not found.');
-        }
-
-        header('Content-Type: image/jpeg');
-        header('Cache-Control: public, max-age=31536000, immutable');
-        header('Content-Length: ' . strlen($contents));
-        header('Content-Disposition: inline; filename="flashcard.jpg"');
-        header('ETag: "' . substr($validated, 0, 48) . '"');
-        echo $contents;
-        exit;
-    }
-
     private function flashcardAudio(
         string $method,
         string $id,
@@ -1398,52 +1272,12 @@ final class Api
         return $filename;
     }
 
-    private function validateFlashcardImageUrl(mixed $value): string
-    {
-        if (!is_string($value)) {
-            throw new ApiException(422, 'The card image URL is invalid.', ['image_url' => 'url']);
-        }
-        $url = trim($value);
-        if ($url === '') {
-            return '';
-        }
-        $parts = parse_url($url);
-        if (
-            filter_var($url, FILTER_VALIDATE_URL) === false
-            || !is_array($parts)
-            || !in_array(strtolower((string) ($parts['scheme'] ?? '')), ['http', 'https'], true)
-            || ($parts['host'] ?? '') === ''
-            || isset($parts['user'])
-            || isset($parts['pass'])
-        ) {
-            throw new ApiException(
-                422,
-                'Use a complete HTTP or HTTPS card image URL.',
-                ['image_url' => 'url'],
-            );
-        }
-        return $url;
-    }
-
-    private function flashcardImagePath(array $card): string
-    {
-        $filename = $this->validAvatarFilename($card['image_file'] ?? null);
-        return $filename === null
-            ? (string) ($card['image_url'] ?? '')
-            : '/flashcard-images/' . $filename;
-    }
-
     private function flashcardAudioPath(array $card, string $side): string
     {
         $filename = $this->validFlashcardAudioFilename($card[$side . '_audio_file'] ?? null);
         return $filename === null
             ? (string) ($card[$side . '_audio_url'] ?? '')
             : '/flashcard-audio/' . $filename;
-    }
-
-    private function flashcardImageDirectory(): string
-    {
-        return dirname($this->config->databasePath) . DIRECTORY_SEPARATOR . 'flashcard-images';
     }
 
     private function flashcardAudioDirectory(): string
@@ -1471,31 +1305,6 @@ final class Api
             return;
         }
         $path = $this->journalImageDirectory() . DIRECTORY_SEPARATOR . $validated;
-        if (is_file($path)) {
-            @unlink($path);
-        }
-    }
-
-    private function removeFlashcardImageFileIfUnused(string $filename): void
-    {
-        $validated = $this->validAvatarFilename($filename);
-        if ($validated === null) {
-            return;
-        }
-        $statement = $this->database->pdo->prepare(
-            'SELECT
-                (SELECT COUNT(*) FROM flashcards WHERE image_file = :filename)
-                + (SELECT COUNT(*) FROM flashcard_review_sessions WHERE queue_state LIKE :needle)
-                + (SELECT COUNT(*) FROM interval_sessions WHERE flashcard_snapshot LIKE :needle)',
-        );
-        $statement->execute([
-            'filename' => $validated,
-            'needle' => '%' . $validated . '%',
-        ]);
-        if ((int) $statement->fetchColumn() > 0) {
-            return;
-        }
-        $path = $this->flashcardImageDirectory() . DIRECTORY_SEPARATOR . $validated;
         if (is_file($path)) {
             @unlink($path);
         }
@@ -2496,7 +2305,7 @@ final class Api
         if ($collection['name'] === 'flashcards') {
             $this->rejectFields($body, [
                 'created_at', 'updated_at', 'last_reviewed_at',
-                'passive_views', 'success_count', 'error_count', 'image_file',
+                'passive_views', 'success_count', 'error_count',
                 'front_audio_url',
                 'front_audio_file', 'back_audio_url', 'back_audio_file',
             ]);
@@ -2513,11 +2322,6 @@ final class Api
             $body += ['tracker' => []];
         }
         $values = $this->validateRecordInput($collection, $body, true);
-        if ($collection['name'] === 'flashcards') {
-            $values['image_url'] = $this->validateFlashcardImageUrl(
-                $values['image_url'] ?? '',
-            );
-        }
         $values['id'] = $this->newId();
         $values['owner'] = $user['id'];
         if ($collection['name'] === 'interval_sessions') {
@@ -2536,8 +2340,6 @@ final class Api
             $now = (new DateTimeImmutable('now'))->format('Y-m-d\TH:i:s.v\Z');
             $values += [
                 'note' => '',
-                'image_url' => '',
-                'image_file' => '',
                 'front_audio_url' => '',
                 'front_audio_file' => '',
                 'back_audio_url' => '',
@@ -2635,7 +2437,7 @@ final class Api
             throw new ApiException(405, 'This collection is written through the review session endpoints.');
         }
         if ($collection['name'] === 'flashcards') {
-            $this->allowOnlyFields($body, ['front', 'back', 'note', 'image_url', 'tags']);
+            $this->allowOnlyFields($body, ['front', 'back', 'note', 'tags']);
         }
         if ($collection['name'] === 'flashcard_review_sets') {
             $this->allowOnlyFields($body, [
@@ -2671,13 +2473,6 @@ final class Api
         if ($collection['name'] === 'tracking_trackers') {
             $this->validateTrackerDefinitionUpdate($existing, $values, (string) $user['id']);
         }
-        $oldFlashcardImage = null;
-        if ($collection['name'] === 'flashcards' && array_key_exists('image_url', $values)) {
-            $values['image_url'] = $this->validateFlashcardImageUrl($values['image_url']);
-            $oldFlashcardImage = $this->validAvatarFilename($existing['image_file'] ?? null);
-            $values['image_file'] = '';
-        }
-
         $combined = array_merge($this->normalizeRecord($collection, $existing), $values);
         if ($collection['name'] === 'flashcard_review_sets') {
             $this->validateFlashcardSpeechSettings($combined);
@@ -2727,9 +2522,6 @@ final class Api
         $record = $this->ownedRecord($collection['name'], $id, (string) $user['id']);
         if ($collection['name'] === 'flashcards') {
             $this->syncFlashcardWithActiveReviewQueues($record, (string) $user['id'], false);
-            if ($oldFlashcardImage !== null) {
-                $this->removeFlashcardImageFileIfUnused($oldFlashcardImage);
-            }
         } elseif (
             $collection['name'] === 'flashcard_review_sets'
             && array_intersect(array_keys($values), self::FLASHCARD_REVIEW_PREFERENCE_FIELDS) !== []
@@ -2782,7 +2574,6 @@ final class Api
             'note' => (string) ($card['note'] ?? ''),
             'frontAudio' => $this->flashcardAudioPath($card, 'front'),
             'backAudio' => $this->flashcardAudioPath($card, 'back'),
-            'image' => $this->flashcardImagePath($card),
             'tags' => $cardTags,
         ];
         $statement = $this->database->pdo->prepare(
@@ -3417,7 +3208,6 @@ final class Api
         }
         $recipientTags = $this->flashcardTagIdMap($account);
         $mappedTags = [];
-        $createdFiles = [];
         $pdo = $this->database->pdo;
         $pdo->beginTransaction();
         try {
@@ -3467,12 +3257,12 @@ final class Api
             ]);
             $cardStatement = $pdo->prepare(
                 'INSERT INTO flashcards (
-                    id, owner, front, back, note, image_url, image_file,
+                    id, owner, front, back, note,
                     front_audio_url, front_audio_file, back_audio_url, back_audio_file,
                     tags, created_at, updated_at,
                     last_reviewed_at, passive_views, success_count, error_count
                  ) VALUES (
-                    :id, :owner, :front, :back, :note, :image_url, :image_file,
+                    :id, :owner, :front, :back, :note,
                     :front_audio_url, :front_audio_file, :back_audio_url, :back_audio_file,
                     :tags, :created_at, :updated_at,
                     :last_reviewed_at, 0, 0, 0
@@ -3486,13 +3276,6 @@ final class Api
                         $copiedTags[] = $mappedTags[$tagId];
                     }
                 }
-                $imageFile = (string) ($card['image_file'] ?? '');
-                if ($imageFile !== '') {
-                    $imageFile = $this->duplicateFlashcardImageFile($imageFile);
-                    if ($imageFile !== '') {
-                        $createdFiles[] = $imageFile;
-                    }
-                }
                 $copiedCardId = $this->newId();
                 $cardStatement->execute([
                     'id' => $copiedCardId,
@@ -3500,8 +3283,6 @@ final class Api
                     'front' => $card['front'],
                     'back' => $card['back'],
                     'note' => $card['note'] ?? '',
-                    'image_url' => $card['image_url'] ?? '',
-                    'image_file' => $imageFile,
                     'front_audio_url' => $card['front_audio_url'] ?? '',
                     'front_audio_file' => $card['front_audio_file'] ?? '',
                     'back_audio_url' => $card['back_audio_url'] ?? '',
@@ -3529,9 +3310,6 @@ final class Api
             if ($pdo->inTransaction()) {
                 $pdo->rollBack();
             }
-            foreach ($createdFiles as $filename) {
-                $this->removeFlashcardImageFileIfUnused($filename);
-            }
             throw $exception;
         }
 
@@ -3553,22 +3331,21 @@ final class Api
         }
         $this->requireFlashcardReviewSetEditor($reviewSet, $account);
         $body = $this->jsonBody();
-        $this->allowOnlyFields($body, ['front', 'back', 'note', 'image_url']);
+        $this->allowOnlyFields($body, ['front', 'back', 'note']);
         $fields = $this->requireCollection('flashcards')['config']['fields'];
         $front = $this->validateField('front', $body['front'] ?? null, $fields['front']);
         $back = $this->validateField('back', $body['back'] ?? null, $fields['back']);
         $note = $this->validateField('note', $body['note'] ?? '', $fields['note']);
-        $imageUrl = $this->validateFlashcardImageUrl($body['image_url'] ?? '');
         $tags = $this->reviewSetTagIds($reviewSet);
         $now = $this->now();
         $cardId = $this->newId();
         $statement = $this->database->pdo->prepare(
             "INSERT INTO flashcards (
-                id, owner, front, back, note, image_url, image_file,
+                id, owner, front, back, note,
                 tags, created_at, updated_at,
                 last_reviewed_at, passive_views, success_count, error_count
              ) VALUES (
-                :id, :owner, :front, :back, :note, :image_url, '',
+                :id, :owner, :front, :back, :note,
                 :tags, :created_at, :updated_at, '', 0, 0, 0
              )",
         );
@@ -3578,7 +3355,6 @@ final class Api
             'front' => $front,
             'back' => $back,
             'note' => $note,
-            'image_url' => $imageUrl,
             'tags' => json_encode($tags, JSON_THROW_ON_ERROR),
             'created_at' => $now,
             'updated_at' => $now,
@@ -3639,11 +3415,11 @@ final class Api
         $createdCards = [];
         $statement = $this->database->pdo->prepare(
             "INSERT INTO flashcards (
-                id, owner, front, back, note, image_url, image_file,
+                id, owner, front, back, note,
                 tags, created_at, updated_at,
                 last_reviewed_at, passive_views, success_count, error_count
              ) VALUES (
-                :id, :owner, :front, :back, :note, '', '',
+                :id, :owner, :front, :back, :note,
                 :tags, :created_at, :updated_at, '', 0, 0, 0
              )",
         );
@@ -3737,19 +3513,13 @@ final class Api
         }
 
         $body = $this->jsonBody();
-        $this->allowOnlyFields($body, ['front', 'back', 'note', 'image_url']);
+        $this->allowOnlyFields($body, ['front', 'back', 'note']);
         $fields = $this->requireCollection('flashcards')['config']['fields'];
         $values = [];
         foreach (['front', 'back', 'note'] as $field) {
             if (array_key_exists($field, $body)) {
                 $values[$field] = $this->validateField($field, $body[$field], $fields[$field]);
             }
-        }
-        $oldImage = null;
-        if (array_key_exists('image_url', $body)) {
-            $values['image_url'] = $this->validateFlashcardImageUrl($body['image_url']);
-            $values['image_file'] = '';
-            $oldImage = $this->validAvatarFilename($card['image_file'] ?? null);
         }
         if ($values === []) {
             throw new ApiException(422, 'At least one writable field is required.');
@@ -3770,57 +3540,6 @@ final class Api
         ]);
         $card = $this->ownedRecord('flashcards', $cardId, (string) $reviewSet['owner']);
         $this->syncFlashcardWithActiveReviewQueues($card, (string) $reviewSet['owner'], false);
-        if ($oldImage !== null) {
-            $this->removeFlashcardImageFileIfUnused($oldImage);
-        }
-        $this->respond($this->flashcardResponseForReviewer($card, $account));
-    }
-
-    private function sharedFlashcardImage(
-        string $method,
-        string $reviewSetId,
-        string $cardId,
-        array $user,
-    ): never {
-        $account = (string) $user['id'];
-        $reviewSet = $this->accessibleFlashcardReviewSet($reviewSetId, $account);
-        $this->requireFlashcardReviewSetEditor($reviewSet, $account);
-        $card = $this->matchingSourceFlashcard($reviewSet, $cardId);
-        $sourceOwner = (string) $reviewSet['owner'];
-        $this->rateLimit('flashcard-image-update:' . $account, 60, 900);
-        $oldFilename = $this->validAvatarFilename($card['image_file'] ?? null);
-        $updated = $this->now();
-        if ($method === 'DELETE') {
-            $statement = $this->database->pdo->prepare(
-                "UPDATE flashcards SET image_url = '', image_file = '', updated_at = :updated_at
-                 WHERE id = :id AND owner = :owner",
-            );
-            $statement->execute(['updated_at' => $updated, 'id' => $cardId, 'owner' => $sourceOwner]);
-        } else {
-            $bytes = $this->compressedSquareJpegBytes($this->jsonBody(), 'card image');
-            $filename = $this->storeSquareJpeg($bytes, $this->flashcardImageDirectory(), 'card image');
-            try {
-                $statement = $this->database->pdo->prepare(
-                    "UPDATE flashcards SET image_url = '', image_file = :image_file,
-                        updated_at = :updated_at
-                     WHERE id = :id AND owner = :owner",
-                );
-                $statement->execute([
-                    'image_file' => $filename,
-                    'updated_at' => $updated,
-                    'id' => $cardId,
-                    'owner' => $sourceOwner,
-                ]);
-            } catch (Throwable $exception) {
-                @unlink($this->flashcardImageDirectory() . DIRECTORY_SEPARATOR . $filename);
-                throw $exception;
-            }
-        }
-        $card = $this->ownedRecord('flashcards', $cardId, $sourceOwner);
-        $this->syncFlashcardWithActiveReviewQueues($card, $sourceOwner, false);
-        if ($oldFilename !== null && ($method === 'DELETE' || !hash_equals($oldFilename, (string) $card['image_file']))) {
-            $this->removeFlashcardImageFileIfUnused($oldFilename);
-        }
         $this->respond($this->flashcardResponseForReviewer($card, $account));
     }
 
@@ -4126,7 +3845,6 @@ final class Api
                         'note' => (string) ($card['note'] ?? ''),
                         'frontAudio' => $this->flashcardAudioPath($card, 'front'),
                         'backAudio' => $this->flashcardAudioPath($card, 'back'),
-                        'image' => $this->flashcardImagePath($card),
                         'tags' => is_array($tags) ? array_values($tags) : [],
                     ]);
                     $ejectedCount--;
@@ -4624,7 +4342,6 @@ final class Api
                 'note' => (string) ($card['note'] ?? ''),
                 'frontAudio' => $this->flashcardAudioPath($card, 'front'),
                 'backAudio' => $this->flashcardAudioPath($card, 'back'),
-                'image' => $this->flashcardImagePath($card),
                 'tags' => is_array($tags) ? array_values($tags) : [],
             ];
         }, $cards);
@@ -5526,7 +5243,8 @@ final class Api
         $statement->execute(['id' => $id, 'owner' => $owner]);
         foreach (['entries', 'occurrences'] as $table) {
             $statement = $this->database->pdo->prepare(
-                "DELETE FROM {$table} WHERE program_step = :id AND owner = :owner",
+                "DELETE FROM {$table}
+                 WHERE program_step = :id AND owner = :owner AND program_step <> ''",
             );
             $statement->execute(['id' => $id, 'owner' => $owner]);
         }
@@ -5536,7 +5254,8 @@ final class Api
     private function deleteOccurrence(string $id, string $owner): void
     {
         $statement = $this->database->pdo->prepare(
-            'DELETE FROM entries WHERE occurrence = :id AND owner = :owner',
+            "DELETE FROM entries
+             WHERE occurrence = :id AND owner = :owner AND occurrence <> ''",
         );
         $statement->execute(['id' => $id, 'owner' => $owner]);
         $this->deleteOwnedRow('occurrences', $id, $owner);
@@ -5597,7 +5316,6 @@ final class Api
     private function deleteFlashcard(string $id, string $owner): void
     {
         $card = $this->ownedRecord('flashcards', $id, $owner);
-        $imageFile = $this->validAvatarFilename($card['image_file'] ?? null);
         $audioFiles = array_filter([
             $this->validFlashcardAudioFilename($card['front_audio_file'] ?? null),
             $this->validFlashcardAudioFilename($card['back_audio_file'] ?? null),
@@ -5611,9 +5329,6 @@ final class Api
         );
         $statement->execute(['id' => $id]);
         $this->deleteOwnedRow('flashcards', $id, $owner);
-        if ($imageFile !== null) {
-            $this->removeFlashcardImageFileIfUnused($imageFile);
-        }
         foreach ($audioFiles as $audioFile) {
             $this->removeDeletedFlashcardAudioFileIfUnused($audioFile);
         }
@@ -7059,20 +6774,6 @@ final class Api
         }
     }
 
-    private function duplicateFlashcardImageFile(string $filename): string
-    {
-        $validated = $this->validAvatarFilename($filename);
-        if ($validated === null) {
-            return '';
-        }
-        $source = $this->flashcardImageDirectory() . DIRECTORY_SEPARATOR . $validated;
-        $bytes = is_file($source) && is_readable($source) ? file_get_contents($source) : false;
-        if ($bytes === false) {
-            return '';
-        }
-        return $this->storeSquareJpeg($bytes, $this->flashcardImageDirectory(), 'card image');
-    }
-
     private function relationExists(string $table, string $id, string $owner): bool
     {
         if ($id === '') {
@@ -7156,6 +6857,17 @@ final class Api
                 $parameters[$key] = $value;
                 $operator = $matches[2] === '!=' ? '<>' : $matches[2];
                 $clauses[] = "{$field} {$operator} :{$key}";
+                if (
+                    $operator === '='
+                    && is_string($value)
+                    && $value !== ''
+                    && in_array($field, ['occurrence', 'program_step'], true)
+                ) {
+                    $clauses[] = "{$field} <> ''";
+                }
+                if ($operator === '=' && $field === 'active' && $value === 1) {
+                    $clauses[] = 'active = TRUE';
+                }
             }
             $groups[] = '(' . implode(' AND ', $clauses) . ')';
         }
@@ -7483,11 +7195,50 @@ final class Api
             || str_contains(strtolower($exception->getMessage()), 'constraint');
     }
 
+    private function acceptsGzip(): bool
+    {
+        $preferences = [];
+        foreach (explode(',', strtolower((string) ($_SERVER['HTTP_ACCEPT_ENCODING'] ?? ''))) as $item) {
+            $parts = array_map('trim', explode(';', $item));
+            $encoding = array_shift($parts);
+            if ($encoding === '') {
+                continue;
+            }
+            $quality = 1.0;
+            foreach ($parts as $parameter) {
+                if (preg_match('/^q\s*=\s*(0(?:\.\d+)?|1(?:\.0+)?)$/', $parameter, $matches) === 1) {
+                    $quality = (float) $matches[1];
+                    break;
+                }
+            }
+            $preferences[$encoding] = $quality;
+        }
+        if (array_key_exists('gzip', $preferences)) {
+            return $preferences['gzip'] > 0;
+        }
+        return ($preferences['*'] ?? 0.0) > 0;
+    }
+
     private function respond(mixed $body, int $status = 200): never
     {
         http_response_code($status);
         if ($status !== 204) {
-            echo json_encode($body, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+            $json = json_encode($body, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+            if (
+                strlen($json) >= 1024
+                && function_exists('gzencode')
+                && $this->acceptsGzip()
+            ) {
+                $compressed = gzencode($json, 6);
+                if (is_string($compressed)) {
+                    header('Content-Encoding: gzip');
+                    header('Vary: Accept-Encoding', false);
+                    header('Content-Length: ' . strlen($compressed));
+                    echo $compressed;
+                    exit;
+                }
+            }
+            echo $json;
         }
         exit;
     }

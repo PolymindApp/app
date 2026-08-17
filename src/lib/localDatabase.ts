@@ -12,14 +12,6 @@ const CLIENT_ID_KEY = 'backontrack-sync-client-id'
 const SYNC_DATA_CHANGED_EVENT = 'backontrack-sync-data-changed'
 const SYNC_OUTBOX_CHANGED_EVENT = 'backontrack-sync-outbox-changed'
 
-interface LocalMediaBlob {
-  id: string
-  accountId: string
-  blob: Blob
-  mimeType: string
-  createdAt: string
-}
-
 interface LocalAlias {
   key: string
   accountId: string
@@ -28,12 +20,30 @@ interface LocalAlias {
   remoteId: string
 }
 
+const retiredCardMediaKeys = new Set([
+  'image',
+  'image_url',
+  'image_file',
+])
+
+function stripRetiredCardMedia(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stripRetiredCardMedia)
+  if (!value || typeof value !== 'object') return value
+  return Object.fromEntries(Object.entries(value)
+    .filter(([key]) => !retiredCardMediaKeys.has(key))
+    .map(([key, item]) => [key, stripRetiredCardMedia(item)]))
+}
+
+function stripRetiredCardMediaClocks(clocks: Record<string, string>) {
+  return Object.fromEntries(Object.entries(clocks)
+    .filter(([field]) => !retiredCardMediaKeys.has(field)))
+}
+
 class BackOnTrackLocalDatabase extends Dexie {
   resources!: EntityTable<LocalSyncResource, 'key'>
   outbox!: EntityTable<SyncOperation, 'operationId'>
   metadata!: EntityTable<SyncMetadata, 'accountId'>
   issues!: EntityTable<SyncIssue, 'id'>
-  media!: EntityTable<LocalMediaBlob, 'id'>
   aliases!: EntityTable<LocalAlias, 'key'>
 
   constructor() {
@@ -45,6 +55,44 @@ class BackOnTrackLocalDatabase extends Dexie {
       issues: '&id,[accountId+resolved],accountId,resolved,createdAt',
       media: '&id,accountId,createdAt',
       aliases: '&key,[accountId+resource+localId],accountId,resource,localId',
+    })
+    this.version(2).stores({
+      resources: '&key,[accountId+resource],accountId',
+      outbox: '&operationId,[accountId+status],[accountId+status+nextAttemptAt+sequence],accountId,[accountId+resource+recordId]',
+      metadata: '&accountId',
+      issues: '&id,[accountId+resolved],accountId',
+      media: null,
+      aliases: '&key,accountId',
+    }).upgrade(async transaction => {
+      await transaction.table('resources').toCollection().modify((resource: LocalSyncResource) => {
+        if (!resource.data) return
+        if (['flashcards', 'review_set_cards'].includes(resource.resource)) {
+          resource.data = stripRetiredCardMedia(resource.data) as Record<string, any>
+          resource.fieldClocks = stripRetiredCardMediaClocks(resource.fieldClocks)
+          return
+        }
+        if (resource.resource === 'flashcard_review_sessions' && 'queue_state' in resource.data) {
+          resource.data.queue_state = stripRetiredCardMedia(resource.data.queue_state)
+        }
+        if (resource.resource === 'interval_sessions' && 'flashcard_snapshot' in resource.data) {
+          resource.data.flashcard_snapshot = stripRetiredCardMedia(resource.data.flashcard_snapshot)
+        }
+      })
+      await transaction.table('outbox').toCollection().modify((operation: SyncOperation) => {
+        if (['flashcards', 'review_set_cards'].includes(operation.resource)) {
+          operation.payload = stripRetiredCardMedia(operation.payload) as Record<string, unknown>
+          operation.fieldClocks = stripRetiredCardMediaClocks(operation.fieldClocks)
+          return
+        }
+        if (operation.resource === 'flashcard_review_sessions' && 'queue_state' in operation.payload) {
+          operation.payload.queue_state = stripRetiredCardMedia(operation.payload.queue_state)
+        }
+        if (operation.resource === 'interval_sessions' && 'flashcard_snapshot' in operation.payload) {
+          operation.payload.flashcard_snapshot = stripRetiredCardMedia(
+            operation.payload.flashcard_snapshot,
+          )
+        }
+      })
     })
   }
 }
@@ -146,6 +194,7 @@ export async function completeLocalBootstrap(
     localDatabase.resources,
     localDatabase.metadata,
     localDatabase.outbox,
+    localDatabase.aliases,
     async () => {
       const existingPending = await localDatabase.outbox
         .where('[accountId+status]')
@@ -164,10 +213,8 @@ export async function completeLocalBootstrap(
       await localDatabase.resources.bulkDelete(currentRows
         .filter(row => !row.locallyModified && !pendingKeys.has(row.key))
         .map(row => row.key))
-      for (const row of rows) {
-        if (row.locallyModified) continue
-        await localDatabase.resources.put(row)
-      }
+      await localDatabase.resources.bulkPut(rows.filter(row => !row.locallyModified))
+      await localDatabase.aliases.where('accountId').equals(accountId).delete()
       const previous = await localDatabase.metadata.get(accountId)
       await localDatabase.metadata.put({
         accountId,
@@ -289,9 +336,7 @@ export async function putLocalCreate(
   const id = typeof plainData.id === 'string' && plainData.id ? plainData.id : createLocalRecordId()
   const record = { ...plainData, id, owner: plainData.owner || accountId }
   const fieldClock = createFieldClock()
-  const clocks = resource === 'flashcard_review_events'
-    ? { '*': fieldClock }
-    : Object.fromEntries(Object.keys(record).map(field => [field, fieldClock]))
+  const clocks = { '*': fieldClock }
   const operation = makeOperation(accountId, resource, id, 'create', record, clocks, options)
   const row: LocalSyncResource = {
     key: resourceKey(accountId, resource, id),
@@ -471,7 +516,7 @@ export async function putLocalSharedCardCreate(
   const id = `${reviewSetId}:${cardId}`
   const record = { ...plainData, id: cardId, review_set_id: reviewSetId }
   const fieldClock = createFieldClock()
-  const clocks = Object.fromEntries(Object.keys(record).map(field => [field, fieldClock]))
+  const clocks = { '*': fieldClock }
   await localDatabase.transaction('rw', localDatabase.resources, localDatabase.outbox, async () => {
     await localDatabase.resources.put({
       key: resourceKey(accountId, 'review_set_cards', id),
@@ -593,11 +638,15 @@ function makeOperation(
 export async function pendingOperations(accountId: string, limit = 100) {
   const now = Date.now()
   return localDatabase.outbox
-    .where('[accountId+status]')
-    .equals([accountId, 'pending'])
-    .filter(operation => operation.nextAttemptAt <= now)
-    .sortBy('sequence')
-    .then(operations => operations.slice(0, limit))
+    .where('[accountId+status+nextAttemptAt+sequence]')
+    .between(
+      [accountId, 'pending', Dexie.minKey, Dexie.minKey],
+      [accountId, 'pending', now, Dexie.maxKey],
+      true,
+      true,
+    )
+    .limit(limit)
+    .toArray()
 }
 
 export async function pendingOperationCount(accountId: string) {
@@ -775,12 +824,7 @@ async function mergeRemoteResource(accountId: string, remote: SyncResource) {
   const key = resourceKey(accountId, remote.resource, remote.id)
   const current = await localDatabase.resources.get(key)
   if (remote.deleted) {
-    await localDatabase.resources.put({
-      key,
-      accountId,
-      ...remote,
-      locallyModified: false,
-    })
+    await localDatabase.resources.delete(key)
     if (current?.locallyModified) {
       await localDatabase.outbox
         .where('[accountId+resource+recordId]')
@@ -854,18 +898,6 @@ export async function resolveLocalAlias(accountId: string, resource: string, id:
   return (await localDatabase.aliases.get(aliasKey(accountId, resource, id)))?.remoteId || id
 }
 
-export async function saveLocalMedia(accountId: string, blob: Blob) {
-  const id = `media-${crypto.randomUUID()}`
-  await localDatabase.media.put({
-    id,
-    accountId,
-    blob,
-    mimeType: blob.type,
-    createdAt: new Date().toISOString(),
-  })
-  return { id, url: URL.createObjectURL(blob) }
-}
-
 export async function eraseLocalAccount(accountId: string) {
   await localDatabase.transaction(
     'rw',
@@ -873,7 +905,6 @@ export async function eraseLocalAccount(accountId: string) {
     localDatabase.outbox,
     localDatabase.metadata,
     localDatabase.issues,
-    localDatabase.media,
     localDatabase.aliases,
     async () => {
       await Promise.all([
@@ -881,7 +912,6 @@ export async function eraseLocalAccount(accountId: string) {
         localDatabase.outbox.where('accountId').equals(accountId).delete(),
         localDatabase.metadata.delete(accountId),
         localDatabase.issues.where('accountId').equals(accountId).delete(),
-        localDatabase.media.where('accountId').equals(accountId).delete(),
         localDatabase.aliases.where('accountId').equals(accountId).delete(),
       ])
     },

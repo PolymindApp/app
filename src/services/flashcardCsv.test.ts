@@ -7,8 +7,6 @@ describe('flashcard CSV parsing', () => {
       front: 'What is "grain, raising"?',
       back: 'Wet the wood\nbefore sanding.',
       note: '',
-      image: '',
-      imageSource: 'none',
       tags: ['tag-1', 'tag-2'],
       tagDetails: [{ id: 'tag-2', name: 'Finishing' }],
       createdAt: '2026-08-17T12:00:00.000Z',

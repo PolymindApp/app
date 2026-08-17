@@ -9,10 +9,11 @@ use PDOException;
 
 final class Database
 {
-    public readonly PDO $pdo;
-    public readonly array $migrationsApplied;
+    public const EXPECTED_SCHEMA_VERSION = '202608170001';
 
-    public function __construct(string $path, ?string $migrationDirectory = null)
+    public readonly PDO $pdo;
+
+    public function __construct(string $path, bool $verifySchema = true)
     {
         try {
             $this->pdo = new PDO('sqlite:' . $path, null, null, [
@@ -22,17 +23,41 @@ final class Database
             ]);
             $this->pdo->exec('PRAGMA busy_timeout = 5000');
             $this->pdo->exec('PRAGMA foreign_keys = ON');
-            $this->migrationsApplied = (new MigrationRunner(
-                $this->pdo,
-                $migrationDirectory ?? dirname(__DIR__) . '/migrations',
-            ))->migrate();
-            $this->assertCompatibleSchema();
+            $this->pdo->exec('PRAGMA synchronous = NORMAL');
+            $this->pdo->exec('PRAGMA temp_store = MEMORY');
+            $this->pdo->exec('PRAGMA cache_size = -8192');
+            if ($verifySchema) {
+                $this->assertCurrentSchema();
+            }
         } catch (PDOException $exception) {
             throw new ApiException(500, 'Could not open the application database.', [], $exception);
         }
     }
 
-    private function assertCompatibleSchema(): void
+    /**
+     * Keep the request path cheap: one indexed migration lookup replaces migration
+     * discovery, checksum validation, and a write transaction on every request.
+     */
+    private function assertCurrentSchema(): void
+    {
+        try {
+            $version = $this->pdo
+                ->query('SELECT version FROM backontrack_schema_migrations ORDER BY version DESC LIMIT 1')
+                ->fetchColumn();
+            if (is_string($version) && hash_equals(self::EXPECTED_SCHEMA_VERSION, $version)) {
+                return;
+            }
+        } catch (PDOException) {
+            // The migration endpoint below provides the actionable recovery path.
+        }
+
+        throw new ApiException(
+            503,
+            'The database schema is out of date. Run server/migrate.php before serving requests.',
+        );
+    }
+
+    public function assertCompatibleSchema(): void
     {
         $required = [
             'users' => [
@@ -41,7 +66,7 @@ final class Database
             ],
             'tags' => ['id', 'owner', 'name'],
             'flashcards' => [
-                'id', 'owner', 'front', 'back', 'note', 'image_url', 'image_file',
+                'id', 'owner', 'front', 'back', 'note',
                 'front_audio_url', 'front_audio_file', 'back_audio_url', 'back_audio_file',
                 'tags', 'created_at', 'updated_at', 'last_reviewed_at',
                 'passive_views', 'success_count', 'error_count',
