@@ -215,6 +215,7 @@ function programStepRequirementItems(progress: TaskProgress): ProgramStepRequire
           .filter(Boolean)
           .join(' · '),
         icon: completion.complete ? 'mdi-check-circle' : 'mdi-timer-play-outline',
+        color: interval?.color || TASK_TYPE_PRESENTATION.interval.color,
         complete: completion.complete,
         disabled: locked || (!completion.complete && !intervalCanStart(progress)),
       }
@@ -230,6 +231,7 @@ function programStepRequirementItems(progress: TaskProgress): ProgramStepRequire
       title,
       subtitle: [completion.complete ? 'Complete' : '', reviewDetails].filter(Boolean).join(' · '),
       icon: completion.complete ? 'mdi-check-circle' : 'mdi-cards-playing-outline',
+      color: TASK_TYPE_PRESENTATION.flashcards.color,
       complete: completion.complete,
       disabled: locked || (!completion.complete && (
         !progressIsToday(progress)
@@ -867,6 +869,7 @@ function intervalMeta(progress: TaskProgress, completion?: ProgramStepCompletion
   return {
     name: template.name,
     duration: formatIntervalDuration(intervalDuration(template.definition)),
+    color: template.color,
   }
 }
 

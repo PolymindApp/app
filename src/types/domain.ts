@@ -97,6 +97,7 @@ export interface ProgramStepRequirementListItem extends Pick<ProgramStepCompleti
   title: string
   subtitle: string
   icon: string
+  color?: string
   disabled?: boolean
 }
 

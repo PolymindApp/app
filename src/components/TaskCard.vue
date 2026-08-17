@@ -347,7 +347,7 @@ onBeforeUnmount(() => clearTimeout(stepSyncHideTimer))
           @click="emit('runProgramStepRequirement', progress, requirement.id)"
         >
           <template #prepend>
-            <span class="task-detail-item__icon" :style="{ background: taskColor }">
+            <span class="task-detail-item__icon" :style="{ background: requirement.color || taskColor }">
               <v-icon :icon="requirement.icon" size="1.125rem" />
             </span>
           </template>
