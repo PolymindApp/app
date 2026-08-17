@@ -35,7 +35,8 @@ final class TransientAudioFocus {
     private static volatile TransientAudioFocus instance;
 
     private final AudioManager audioManager;
-    private final AudioManager.OnAudioFocusChangeListener focusChangeListener = ignored -> {};
+    private final AudioManager.OnAudioFocusChangeListener focusChangeListener =
+        this::handleAudioFocusChange;
     private AudioFocusRequest focusRequest;
     private int activeLeases;
     private boolean focusGranted;
@@ -51,6 +52,11 @@ final class TransientAudioFocus {
 
     static Lease acquireStepSpeech(Context context, AudioAttributes audioAttributes) {
         return get(context).acquireLease(audioAttributes);
+    }
+
+    static void reapplyActiveFocusIfNecessary() {
+        TransientAudioFocus focus = instance;
+        if (focus != null) focus.reapplyFocusIfNecessary();
     }
 
     private static TransientAudioFocus get(Context context) {
@@ -82,6 +88,27 @@ final class TransientAudioFocus {
         }
         activeLeases += 1;
         return new Lease(this);
+    }
+
+    private synchronized void handleAudioFocusChange(int focusChange) {
+        if (focusChange == AudioManager.AUDIOFOCUS_GAIN) {
+            focusGranted = activeLeases > 0;
+            return;
+        }
+
+        if (
+            focusChange == AudioManager.AUDIOFOCUS_LOSS
+                || focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT
+                || focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK
+        ) {
+            focusGranted = false;
+        }
+    }
+
+    private synchronized void reapplyFocusIfNecessary() {
+        if (activeLeases <= 0 || focusGranted || audioManager == null || focusRequest == null) return;
+        focusGranted = audioManager.requestAudioFocus(focusRequest)
+            == AudioManager.AUDIOFOCUS_REQUEST_GRANTED;
     }
 
     private synchronized void releaseLease() {
