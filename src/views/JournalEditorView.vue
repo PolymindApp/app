@@ -313,7 +313,7 @@ async function removeEntry() {
 </template>
 
 <style scoped>
-.journal-editor-page { padding-bottom: 6rem; }
+.journal-editor-page { padding-bottom: 5rem; }
 .journal-editor-fields,
 .journal-editor-context { display: grid; gap: 1rem; }
 .journal-editor-reflection { display: grid; gap: .25rem; }

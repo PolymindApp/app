@@ -273,7 +273,7 @@ onMounted(async () => {
 <style scoped>
 .journal-page { padding-bottom: calc(5rem + var(--page-safe-area-bottom)); }
 .journal-action-bar { position: fixed; z-index: 20; right: 0; bottom: calc(4.5rem + env(safe-area-inset-bottom)); left: 0; padding: .75rem 1rem; border-top: .0625rem solid rgba(var(--v-theme-on-surface), .08); background: rgb(var(--v-theme-background)); }
-.journal-action-bar__inner { width: 100%; max-width: 45.5rem; margin: 0 auto; }
+.journal-action-bar__inner { width: 100%; max-width: 868px; margin: 0 auto; }
 .journal-date-stage { display: grid; min-width: 0; overflow-x: clip; }
 .journal-date-content { min-width: 0; grid-area: 1 / 1; align-self: start; }
 .journal-loading { display: flex; align-items: center; justify-content: center; gap: .75rem; }
