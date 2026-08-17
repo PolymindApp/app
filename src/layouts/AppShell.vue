@@ -951,6 +951,24 @@ function releaseLeavingPage(element: Element) {
 }
 
 :where(
+  .page-level-forward-enter-active,
+  .page-level-back-enter-active,
+  .page-depth-deeper-enter-active,
+  .page-depth-higher-enter-active
+) > .page-action-area--route-slide {
+  transition: transform 220ms cubic-bezier(.22, 1, .36, 1);
+}
+
+:where(
+  .page-level-forward-leave-active,
+  .page-level-back-leave-active,
+  .page-depth-deeper-leave-active,
+  .page-depth-higher-leave-active
+) > .page-action-area--route-slide {
+  transition: transform 180ms cubic-bezier(.4, 0, 1, 1);
+}
+
+:where(
   .page-level-forward-leave-active,
   .page-level-back-leave-active,
   .page-depth-deeper-leave-active,
@@ -974,10 +992,19 @@ function releaseLeavingPage(element: Element) {
   transition: opacity 240ms ease !important;
 }
 
+.page-route-early-leave > .page-action-area--route-slide,
+.page-route-early-leave-resetting > .page-action-area--route-slide {
+  transition: transform 180ms cubic-bezier(.4, 0, 1, 1);
+}
+
 .page-route-early-leave {
   opacity: 0;
   pointer-events: none;
   will-change: opacity;
+}
+
+.page-route-early-leave > .page-action-area--route-slide {
+  transform: translateY(100%);
 }
 
 :where(
@@ -991,6 +1018,19 @@ function releaseLeavingPage(element: Element) {
   .page-depth-higher-leave-to
 ) {
   opacity: 0;
+}
+
+:where(
+  .page-level-forward-enter-from,
+  .page-level-forward-leave-to,
+  .page-level-back-enter-from,
+  .page-level-back-leave-to,
+  .page-depth-deeper-enter-from,
+  .page-depth-deeper-leave-to,
+  .page-depth-higher-enter-from,
+  .page-depth-higher-leave-to
+) > .page-action-area--route-slide {
+  transform: translateY(100%);
 }
 
 .page-level-forward-enter-from > :not(.page-action-area) { transform: translateX(1.5rem); }
@@ -1018,6 +1058,20 @@ function releaseLeavingPage(element: Element) {
     .page-depth-higher-enter-from,
     .page-depth-higher-leave-to
   ) > :not(.page-action-area) {
+    transform: none;
+  }
+
+  :where(
+    .page-level-forward-enter-from,
+    .page-level-forward-leave-to,
+    .page-level-back-enter-from,
+    .page-level-back-leave-to,
+    .page-depth-deeper-enter-from,
+    .page-depth-deeper-leave-to,
+    .page-depth-higher-enter-from,
+    .page-depth-higher-leave-to,
+    .page-route-early-leave
+  ) > .page-action-area--route-slide {
     transform: none;
   }
 }

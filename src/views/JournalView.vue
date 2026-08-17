@@ -126,7 +126,7 @@ onMounted(async () => {
       class="mb-3"
     />
 
-    <div class="journal-action-bar page-action-area">
+    <div class="journal-action-bar page-action-area page-action-area--route-slide">
       <div class="journal-action-bar__inner">
         <v-btn
           block

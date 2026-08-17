@@ -187,7 +187,7 @@ async function reorderReviewSets(result: LongPressDragResult) {
       {{ notice }}
     </v-alert>
 
-    <section class="card-library-action-bar page-action-area">
+    <section class="card-library-action-bar page-action-area page-action-area--route-slide">
       <div
         class="card-library-summary"
         aria-labelledby="card-library-summary-title"
