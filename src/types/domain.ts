@@ -196,6 +196,7 @@ export interface IntervalFlashcardReviewSnapshot {
   speechEnabled: boolean
   speechPaused?: boolean
   speechPausedElapsedMs?: number
+  playbackOffsetMs?: number
   frontLanguage: string
   backLanguage: string
   cards: FlashcardReviewQueueCard[]

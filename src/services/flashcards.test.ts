@@ -9,6 +9,7 @@ import {
   flashcardTextFontSize,
   flashcardDifficulty,
   formatReviewDuration,
+  intervalFlashcardNavigationOffsetMs,
   intervalFlashcardPhase,
   reviewSetCardCount,
   sessionAccuracy,
@@ -254,6 +255,33 @@ describe('flashcard review helpers', () => {
       cycle: 1,
       side: 'front',
     })
+  })
+
+  it('moves interval Review set playback to the previous or next card', () => {
+    const review = createIntervalFlashcardReviewSnapshot(reviewSet, cards)!
+    review.cards.push({ ...review.cards[0]!, id: 'third' })
+    const elapsedMs = 3_000
+
+    const nextReview = {
+      ...review,
+      playbackOffsetMs: intervalFlashcardNavigationOffsetMs(review, elapsedMs, 'next'),
+    }
+    expect(intervalFlashcardPhase(nextReview, elapsedMs)).toMatchObject({
+      cardIndex: 1,
+      side: 'front',
+      progress: 0,
+    })
+
+    const previousReview = {
+      ...review,
+      playbackOffsetMs: intervalFlashcardNavigationOffsetMs(review, elapsedMs, 'previous'),
+    }
+    expect(intervalFlashcardPhase(previousReview, elapsedMs)).toMatchObject({
+      cardIndex: 2,
+      side: 'front',
+      progress: 0,
+    })
+    expect(intervalFlashcardNavigationOffsetMs(nextReview, elapsedMs, 'previous')).toBe(-elapsedMs)
   })
 
   it('skips hidden card faces in attached interval reviews', () => {

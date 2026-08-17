@@ -115,6 +115,17 @@ describe('background interval Review set playback', () => {
     }))
   })
 
+  it('applies manual card navigation to native Review set playback', async () => {
+    const navigatedSession = session()
+    navigatedSession.flashcardReview!.playbackOffsetMs = 8_750
+
+    await syncBackgroundInterval(navigatedSession)
+
+    expect(nativeMocks.plugin.start).toHaveBeenCalledWith(expect.objectContaining({
+      elapsedMs: 10_000,
+    }))
+  })
+
   it('marks an assigned sound-pack cue as a transition signal', async () => {
     await playNativeIntervalCue('cine-hit', true)
 

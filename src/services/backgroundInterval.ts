@@ -84,20 +84,24 @@ export async function syncBackgroundInterval(session: IntervalSession) {
   if (Capacitor.getPlatform() !== 'android' || session.status !== 'running') return
   try {
     const runtime = reconcileIntervalRuntime(session.definition, session.runtime).runtime
+    const playbackOffsetMs = session.flashcardReview?.playbackOffsetMs
+    const nativeFlashcardReviewElapsedMs = (
+      runtime.flashcardReviewAccumulatedMs
+        ?? intervalFlashcardReviewElapsedMs(
+          session.definition,
+          runtime.stepIndex,
+          runtime.remainingMs,
+        )
+    ) + (Number.isFinite(playbackOffsetMs)
+      ? playbackOffsetMs!
+      : 0)
     await BackgroundInterval.start({
       sessionId: session.id,
       sessionName: session.name,
       steps: nativeSteps(session),
       stepIndex: runtime.stepIndex,
       remainingMs: Math.max(1, Math.round(runtime.remainingMs)),
-      elapsedMs: Math.max(0, Math.round(
-        runtime.flashcardReviewAccumulatedMs
-          ?? intervalFlashcardReviewElapsedMs(
-            session.definition,
-            runtime.stepIndex,
-            runtime.remainingMs,
-          ),
-      )),
+      elapsedMs: Math.max(0, Math.round(nativeFlashcardReviewElapsedMs)),
       soundEnabled: session.cues.soundEnabled,
       vibrationEnabled: session.cues.vibrationEnabled,
       ...(session.flashcardReview?.speechEnabled
