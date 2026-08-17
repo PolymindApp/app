@@ -218,13 +218,46 @@ export function flashcardSideFromSwipe(
   start: { x: number; y: number },
   end: { x: number; y: number },
 ): FlashcardReviewSide | undefined {
+  const direction = flashcardSwipeDirection(start, end)
+  if (direction !== 'left' && direction !== 'right') return undefined
+  return direction === 'left' ? 'back' : 'front'
+}
+
+export function flashcardSwipeDirection(
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+): 'left' | 'right' | 'up' | 'down' | undefined {
   const horizontalDistance = end.x - start.x
   const verticalDistance = end.y - start.y
+  const horizontalMagnitude = Math.abs(horizontalDistance)
+  const verticalMagnitude = Math.abs(verticalDistance)
+
   if (
-    Math.abs(horizontalDistance) < MIN_FLASHCARD_SWIPE_DISTANCE
-    || Math.abs(horizontalDistance) < Math.abs(verticalDistance) * FLASHCARD_SWIPE_AXIS_RATIO
-  ) return undefined
-  return horizontalDistance < 0 ? 'back' : 'front'
+    horizontalMagnitude >= MIN_FLASHCARD_SWIPE_DISTANCE
+    && horizontalMagnitude >= verticalMagnitude * FLASHCARD_SWIPE_AXIS_RATIO
+  ) return horizontalDistance < 0 ? 'left' : 'right'
+
+  if (
+    verticalMagnitude >= MIN_FLASHCARD_SWIPE_DISTANCE
+    && verticalMagnitude >= horizontalMagnitude * FLASHCARD_SWIPE_AXIS_RATIO
+  ) return verticalDistance < 0 ? 'up' : 'down'
+
+  return undefined
+}
+
+export function flashcardReviewActionFromSwipe(
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+): {
+  action: 'previous' | 'next' | FlashcardReviewSide
+  transition: 'previous' | 'next' | FlashcardReviewSide
+} | undefined {
+  const direction = flashcardSwipeDirection(start, end)
+  if (direction === 'left') return { action: 'back', transition: 'next' }
+  if (direction === 'right') return { action: 'front', transition: 'previous' }
+  if (direction === 'up') return { action: 'next', transition: 'back' }
+  if (direction === 'down') return { action: 'previous', transition: 'front' }
+  return undefined
 }
 
 export function flashcardTextFontSize(
@@ -521,6 +554,26 @@ export function intervalFlashcardNavigationOffsetMs(
       : review.cards.length - 1
 
   return targetAbsoluteCardIndex * cardDurationMs - elapsedMs
+}
+
+export function intervalFlashcardSideOffsetMs(
+  review: IntervalFlashcardReviewSnapshot,
+  elapsedMs: number,
+  side: FlashcardReviewSide,
+) {
+  const currentOffsetMs = Number.isFinite(review.playbackOffsetMs) ? review.playbackOffsetMs! : 0
+  if (!review.cards.length || !flashcardReviewShowsSide(review.cardSides, side)) {
+    return currentOffsetMs
+  }
+
+  const cardDurationMs = intervalFlashcardCardDurationMs(review)
+  const playbackElapsedMs = intervalFlashcardPlaybackElapsedMs(review, elapsedMs)
+  const currentAbsoluteCardIndex = Math.floor(playbackElapsedMs / cardDurationMs)
+  const sideOffsetMs = side === 'back' && flashcardReviewShowsSide(review.cardSides, 'front')
+    ? Math.max(1000, review.frontSeconds * 1000)
+    : 0
+
+  return currentAbsoluteCardIndex * cardDurationMs + sideOffsetMs - elapsedMs
 }
 
 export function intervalFlashcardPhase(

@@ -6,11 +6,14 @@ import {
   FLASHCARD_BULK_MENU_ITEMS,
   flashcardAccuracy,
   flashcardSideFromSwipe,
+  flashcardReviewActionFromSwipe,
+  flashcardSwipeDirection,
   flashcardTextFontSize,
   flashcardDifficulty,
   formatReviewDuration,
   intervalFlashcardNavigationOffsetMs,
   intervalFlashcardPhase,
+  intervalFlashcardSideOffsetMs,
   reviewSetCardCount,
   sessionAccuracy,
   sortFlashcardsForReview,
@@ -84,6 +87,26 @@ describe('flashcard review helpers', () => {
     expect(flashcardSideFromSwipe({ x: 40, y: 100 }, { x: 120, y: 95 })).toBe('front')
     expect(flashcardSideFromSwipe({ x: 100, y: 100 }, { x: 70, y: 100 })).toBeUndefined()
     expect(flashcardSideFromSwipe({ x: 100, y: 40 }, { x: 160, y: 140 })).toBeUndefined()
+  })
+
+  it('identifies horizontal and vertical swipe directions while rejecting short or diagonal gestures', () => {
+    expect(flashcardSwipeDirection({ x: 120, y: 100 }, { x: 40, y: 105 })).toBe('left')
+    expect(flashcardSwipeDirection({ x: 40, y: 100 }, { x: 120, y: 95 })).toBe('right')
+    expect(flashcardSwipeDirection({ x: 100, y: 120 }, { x: 105, y: 40 })).toBe('up')
+    expect(flashcardSwipeDirection({ x: 100, y: 40 }, { x: 95, y: 120 })).toBe('down')
+    expect(flashcardSwipeDirection({ x: 100, y: 100 }, { x: 130, y: 100 })).toBeUndefined()
+    expect(flashcardSwipeDirection({ x: 100, y: 40 }, { x: 180, y: 120 })).toBeUndefined()
+  })
+
+  it('maps horizontal swipes to faces and vertical swipes to card navigation', () => {
+    expect(flashcardReviewActionFromSwipe({ x: 120, y: 100 }, { x: 40, y: 105 }))
+      .toEqual({ action: 'back', transition: 'next' })
+    expect(flashcardReviewActionFromSwipe({ x: 40, y: 100 }, { x: 120, y: 95 }))
+      .toEqual({ action: 'front', transition: 'previous' })
+    expect(flashcardReviewActionFromSwipe({ x: 100, y: 120 }, { x: 105, y: 40 }))
+      .toEqual({ action: 'next', transition: 'back' })
+    expect(flashcardReviewActionFromSwipe({ x: 100, y: 40 }, { x: 95, y: 120 }))
+      .toEqual({ action: 'previous', transition: 'front' })
   })
 
   it('scales flashcard faces and notes down as their text becomes longer', () => {
@@ -282,6 +305,32 @@ describe('flashcard review helpers', () => {
       progress: 0,
     })
     expect(intervalFlashcardNavigationOffsetMs(nextReview, elapsedMs, 'previous')).toBe(-elapsedMs)
+  })
+
+  it('moves interval Review set playback between the current card faces', () => {
+    const review = createIntervalFlashcardReviewSnapshot(reviewSet, cards)!
+    const frontElapsedMs = 1_500
+    const backReview = {
+      ...review,
+      playbackOffsetMs: intervalFlashcardSideOffsetMs(review, frontElapsedMs, 'back'),
+    }
+
+    expect(intervalFlashcardPhase(backReview, frontElapsedMs)).toMatchObject({
+      cardIndex: 0,
+      side: 'back',
+      progress: 0,
+    })
+
+    const backElapsedMs = 5_000
+    const frontReview = {
+      ...review,
+      playbackOffsetMs: intervalFlashcardSideOffsetMs(review, backElapsedMs, 'front'),
+    }
+    expect(intervalFlashcardPhase(frontReview, backElapsedMs)).toMatchObject({
+      cardIndex: 0,
+      side: 'front',
+      progress: 0,
+    })
   })
 
   it('skips hidden card faces in attached interval reviews', () => {
