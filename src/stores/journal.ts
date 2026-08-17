@@ -7,7 +7,7 @@ import { useTaskStore } from '@/stores/tasks'
 import type { JournalEntry, JournalEntryDraft, SquareImageSourceValue } from '@/types/domain'
 
 export function mapJournalEntry(record: Record<string, any>): JournalEntry {
-  const trackers = stringList(record.tracker)
+  const trackers = stringList(decodedJsonValue(record.tracker))
   return {
     id: record.id,
     title: record.title || '',
@@ -33,7 +33,17 @@ function stringList(value: unknown) {
   return typeof value === 'string' && value ? [value] : []
 }
 
+function decodedJsonValue(value: unknown) {
+  if (typeof value !== 'string' || !value) return value
+  try {
+    return JSON.parse(value)
+  } catch {
+    return value
+  }
+}
+
 function trackerSnapshotMap(value: unknown, trackers: string[]) {
+  value = decodedJsonValue(value)
   if (value && typeof value === 'object' && !Array.isArray(value)) {
     return Object.fromEntries(Object.entries(value)
       .filter((entry): entry is [string, string] => typeof entry[1] === 'string' && Boolean(entry[1])))

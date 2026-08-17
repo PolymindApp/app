@@ -29,7 +29,7 @@ vi.mock('@/stores/tasks', () => ({
   useTaskStore: () => taskMocks,
 }))
 
-import { useJournalStore } from './journal'
+import { mapJournalEntry, useJournalStore } from './journal'
 import { useSnackbarStore } from './snackbar'
 
 function record(id: string, date = '2026-08-02') {
@@ -79,6 +79,21 @@ describe('journal store', () => {
       image: `/api/journal-images/${'a'.repeat(48)}.jpg`,
     })
     expect(store.loadedRange).toBe('2026-07-27:2026-08-02')
+  })
+
+  it('ignores serialized empty journal connections', () => {
+    const entry = mapJournalEntry({
+      ...record('journal-empty-connections'),
+      task: '',
+      tracker: '[]',
+      task_snapshot: '',
+      tracker_snapshot: '[]',
+    })
+
+    expect(entry.task).toBeUndefined()
+    expect(entry.trackers).toEqual([])
+    expect(entry.taskSnapshot).toBe('')
+    expect(entry.trackerSnapshots).toEqual({})
   })
 
   it('persists a plain copied context with a reflection', async () => {
