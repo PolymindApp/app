@@ -79,6 +79,7 @@ const emit = defineEmits<{
 .form-action-bar__inner {
   display: flex;
   width: 100%;
+  max-width: 54.25rem;
   margin: 0 auto;
   align-items: center;
   gap: .5rem;
@@ -115,7 +116,7 @@ const emit = defineEmits<{
 @media (min-width: 60rem) {
   .form-action-bar {
     bottom: 0;
-    left: 14rem;
+    left: 17rem;
   }
 
   .form-action-bar__inner {
