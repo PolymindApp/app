@@ -1,6 +1,34 @@
-import { parseFlashcardCsv } from '@/services/flashcardCsv'
+import { formatFlashcardsCsv, parseFlashcardCsv } from '@/services/flashcardCsv'
 
 describe('flashcard CSV parsing', () => {
+  it('formats cards as importer-compatible CSV with tag names and escaped fields', () => {
+    const csv = formatFlashcardsCsv([{
+      id: 'card-1',
+      front: 'What is "grain, raising"?',
+      back: 'Wet the wood\nbefore sanding.',
+      note: '',
+      image: '',
+      imageSource: 'none',
+      tags: ['tag-1', 'tag-2'],
+      tagDetails: [{ id: 'tag-2', name: 'Finishing' }],
+      createdAt: '2026-08-17T12:00:00.000Z',
+      updatedAt: '2026-08-17T12:00:00.000Z',
+      passiveViews: 0,
+      successCount: 0,
+      errorCount: 0,
+    }], [{ id: 'tag-1', name: 'Woodworking' }])
+
+    expect(parseFlashcardCsv(csv)).toEqual({
+      rows: [{
+        front: 'What is "grain, raising"?',
+        back: 'Wet the wood\nbefore sanding.',
+        note: '',
+        tags: ['Woodworking', 'Finishing'],
+      }],
+      errors: [],
+    })
+  })
+
   it('parses required columns and optional pipe-separated tags', () => {
     const result = parseFlashcardCsv([
       'front,back,tags',

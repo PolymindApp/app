@@ -117,9 +117,9 @@ const excludedCardIds = computed(() => new Set(draft.excludedCards || []))
 const includedCardCount = computed(() => orderedMatchingCards.value
   .filter(card => !excludedCardIds.value.has(card.id)).length)
 const reviewSetBulkActions = computed<FlashcardBulkAction[]>(() => {
-  if (!canEditCards.value) return []
+  if (!canEditCards.value) return ['export_clipboard']
   if (isOwner.value) return FLASHCARD_BULK_MENU_ITEMS.map(item => item.action)
-  return ['delete']
+  return ['export_clipboard', 'delete']
 })
 
 function ensureSpeechLanguages() {

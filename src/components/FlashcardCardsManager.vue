@@ -5,6 +5,8 @@ import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import FlashcardCardsTable from '@/components/FlashcardCardsTable.vue'
 import FlashcardTagCombobox from '@/components/FlashcardTagCombobox.vue'
 import TagSelectionChip from '@/components/TagSelectionChip.vue'
+import { copyTextToClipboard } from '@/services/clipboard'
+import { formatFlashcardsCsv } from '@/services/flashcardCsv'
 import { cardMatchesSearch, FLASHCARD_BULK_MENU_ITEMS } from '@/services/flashcards'
 import { useFlashcardStore } from '@/stores/flashcards'
 import type {
@@ -77,6 +79,8 @@ const store = useFlashcardStore()
 const searchQuery = ref<string | null>('')
 const selectedCardIds = ref<string[]>([])
 const bulkError = ref('')
+const bulkNotice = ref('')
+const bulkNoticeOpen = ref(false)
 const bulkSaving = ref(false)
 const bulkSheetOpen = ref(false)
 const bulkTagSheetOpen = ref(false)
@@ -175,6 +179,8 @@ watch(searchQuery, () => {
 
 watch(selectedCardIds, () => {
   bulkError.value = ''
+  bulkNotice.value = ''
+  bulkNoticeOpen.value = false
 }, { deep: true })
 
 watch(() => props.cards.map(card => card.id), (ids) => {
@@ -208,7 +214,28 @@ function chooseBulkAction(action: FlashcardBulkAction | FlashcardSelectionAction
     return
   }
   if (action === 'clear_tags') clearTagsDialog.value = true
+  else if (action === 'export_clipboard') void exportSelectedCards()
   else if (action === 'delete') deleteCardsDialog.value = true
+}
+
+async function exportSelectedCards() {
+  if (!selectedCards.value.length) return
+  bulkError.value = ''
+  bulkNotice.value = ''
+  bulkNoticeOpen.value = false
+  bulkSaving.value = true
+  try {
+    const copied = await copyTextToClipboard(formatFlashcardsCsv(selectedCards.value, props.tags))
+    if (!copied) throw new Error('Could not copy the selected cards to the clipboard.')
+    bulkNotice.value = `${selectedCards.value.length} ${selectedCards.value.length === 1 ? 'card' : 'cards'} copied to the clipboard.`
+    bulkNoticeOpen.value = true
+  } catch (cause) {
+    bulkError.value = cause instanceof Error
+      ? cause.message
+      : 'Could not copy the selected cards to the clipboard.'
+  } finally {
+    bulkSaving.value = false
+  }
 }
 
 async function runSelectionAction(action: FlashcardSelectionAction) {
@@ -337,7 +364,6 @@ async function deleteSelectedCards() {
     <v-alert v-if="bulkError" type="error" variant="tonal" density="compact" class="mb-3">
       {{ bulkError }}
     </v-alert>
-
     <FlashcardCardsTable
       v-if="filteredCards.length"
       v-model="selectedCardIds"
@@ -483,6 +509,10 @@ async function deleteSelectedCards() {
         @confirm="deleteSelectedCards"
       />
     </template>
+
+    <v-snackbar v-model="bulkNoticeOpen" color="success" :timeout="2400">
+      {{ bulkNotice }}
+    </v-snackbar>
   </div>
 </template>
 

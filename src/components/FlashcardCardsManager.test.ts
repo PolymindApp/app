@@ -1,13 +1,20 @@
 import { defineComponent, nextTick } from 'vue'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import FlashcardCardsManager from '@/components/FlashcardCardsManager.vue'
 import type { Flashcard } from '@/types/domain'
 
 const bulkUpdateCards = vi.hoisted(() => vi.fn())
+const copyTextToClipboard = vi.hoisted(() => vi.fn())
+
+vi.mock('@/services/clipboard', () => ({ copyTextToClipboard }))
 
 vi.mock('@/stores/flashcards', () => ({
   useFlashcardStore: () => ({ bulkUpdateCards }),
 }))
+
+beforeEach(() => {
+  copyTextToClipboard.mockReset().mockResolvedValue(true)
+})
 
 const TextFieldStub = defineComponent({
   props: { modelValue: String, label: String },
@@ -124,6 +131,10 @@ function mountManager(props: Record<string, unknown> = {}, attachTo?: Element) {
         VListSubheader: { template: '<div><slot /></div>' },
         VMenu: { template: '<div><slot name="activator" :props="{}" /><slot /></div>' },
         VSelect: true,
+        VSnackbar: {
+          props: ['modelValue'],
+          template: '<div v-if="modelValue" class="snackbar"><slot /></div>',
+        },
         VTextField: TextFieldStub,
       },
     },
@@ -185,6 +196,24 @@ describe('FlashcardCardsManager', () => {
     expect(wrapper.get('.table-stub').attributes('data-selectable')).toBe('true')
     expect(wrapper.findAll('.bulk-item').map(item => item.text())).toContain('Swap front and back')
     expect(wrapper.findAll('.bulk-item').map(item => item.text())).toContain('Swap note and back')
+    expect(wrapper.findAll('.bulk-item').map(item => item.text())).toContain('Export cards to clipboard')
+  })
+
+  it('exports selected cards to the clipboard as importer-compatible CSV', async () => {
+    const wrapper = mountManager({ libraryActions: true, selectable: true })
+
+    await wrapper.get('.select-all-cards').trigger('click')
+    await wrapper.findAll('.bulk-item')
+      .find(item => item.text() === 'Export cards to clipboard')!
+      .trigger('click')
+    await flushPromises()
+
+    expect(copyTextToClipboard).toHaveBeenCalledWith([
+      'front,back,note,tags',
+      'Tagged card,Tagged card back,,Vocabulary',
+      'Untagged card,Untagged card back,,',
+    ].join('\n'))
+    expect(wrapper.text()).toContain('2 cards copied to the clipboard.')
   })
 
   it.each([

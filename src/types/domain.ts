@@ -305,8 +305,9 @@ export type FlashcardBulkAction =
   | 'set_tags'
   | 'remove_tags'
   | 'clear_tags'
+  | 'export_clipboard'
   | 'delete'
-export type FlashcardBulkRecordAction = FlashcardBulkAction
+export type FlashcardBulkRecordAction = Exclude<FlashcardBulkAction, 'export_clipboard'>
 export type FlashcardSelectionAction = 'exclude' | 'include'
 export interface FlashcardSelectionActionItem {
   action: FlashcardSelectionAction

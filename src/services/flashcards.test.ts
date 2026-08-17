@@ -3,6 +3,7 @@ import {
   cardMatchesSearch,
   createFlashcardReviewPreviewSession,
   createIntervalFlashcardReviewSnapshot,
+  FLASHCARD_BULK_MENU_ITEMS,
   flashcardAccuracy,
   flashcardSideFromSwipe,
   flashcardTextFontSize,
@@ -67,6 +68,16 @@ const reviewSet: FlashcardReviewSet = {
 }
 
 describe('flashcard review helpers', () => {
+  it('places clipboard export directly below Clear tags with a top divider', () => {
+    const exportIndex = FLASHCARD_BULK_MENU_ITEMS.findIndex(item => item.action === 'export_clipboard')
+
+    expect(FLASHCARD_BULK_MENU_ITEMS[exportIndex - 1]?.action).toBe('clear_tags')
+    expect(FLASHCARD_BULK_MENU_ITEMS[exportIndex]).toMatchObject({
+      title: 'Export cards to clipboard',
+      divider: true,
+    })
+  })
+
   it('maps horizontal swipes to card sides without intercepting short or vertical gestures', () => {
     expect(flashcardSideFromSwipe({ x: 120, y: 100 }, { x: 40, y: 105 })).toBe('back')
     expect(flashcardSideFromSwipe({ x: 40, y: 100 }, { x: 120, y: 95 })).toBe('front')

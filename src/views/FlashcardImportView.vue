@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppForm from '@/components/AppForm.vue'
 import FormActionBar from '@/components/FormActionBar.vue'
+import { copyTextToClipboard } from '@/services/clipboard'
 import { parseFlashcardCsv } from '@/services/flashcardCsv'
 import { useFlashcardStore } from '@/stores/flashcards'
 
@@ -79,39 +80,7 @@ async function copyAiPrompt() {
   promptCopyError.value = ''
   if (promptCopiedTimer !== undefined) window.clearTimeout(promptCopiedTimer)
 
-  let copied = false
-  if (navigator.clipboard?.writeText) {
-    try {
-      await navigator.clipboard.writeText(activeAiPrompt.value)
-      copied = true
-    } catch {
-      // Some browsers and Android WebViews expose the API but deny access.
-    }
-  }
-
-  if (!copied) {
-    const previousFocus = document.activeElement instanceof HTMLElement
-      ? document.activeElement
-      : undefined
-    const textarea = document.createElement('textarea')
-    textarea.value = activeAiPrompt.value
-    textarea.readOnly = true
-    textarea.style.position = 'fixed'
-    textarea.style.left = '-100vw'
-    textarea.style.opacity = '0'
-    document.body.appendChild(textarea)
-    textarea.focus()
-    textarea.select()
-    try {
-      copied = document.execCommand('copy')
-    } catch {
-      copied = false
-    }
-    textarea.remove()
-    previousFocus?.focus()
-  }
-
-  if (!copied) {
+  if (!await copyTextToClipboard(activeAiPrompt.value)) {
     promptCopyError.value = 'Could not copy the prompt. Try again or copy it manually.'
     return
   }

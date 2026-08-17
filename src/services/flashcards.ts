@@ -183,6 +183,12 @@ export const FLASHCARD_BULK_MENU_ITEMS = [
   { action: 'set_tags', title: 'Set tags', icon: 'mdi-tag-check-outline' },
   { action: 'remove_tags', title: 'Remove tags', icon: 'mdi-tag-minus-outline', requiresTags: true },
   { action: 'clear_tags', title: 'Clear tags', icon: 'mdi-tag-off-outline', requiresTags: true },
+  {
+    action: 'export_clipboard',
+    title: 'Export cards to clipboard',
+    icon: 'mdi-clipboard-arrow-up-outline',
+    divider: true,
+  },
   { action: 'delete', title: 'Delete cards', icon: 'mdi-delete-outline', color: 'error', divider: true },
 ] as const satisfies ReadonlyArray<{
   action: FlashcardBulkAction

@@ -1,4 +1,9 @@
-import type { FlashcardCsvParseResult, FlashcardImportRow } from '@/types/domain'
+import type {
+  Flashcard,
+  FlashcardCsvParseResult,
+  FlashcardImportRow,
+  FlashcardTag,
+} from '@/types/domain'
 
 export const MAX_FLASHCARD_IMPORT_ROWS = 500
 
@@ -10,6 +15,24 @@ interface CsvRecord {
 type CsvDelimiter = ',' | '\t' | ';' | '\u001F' | '，'
 
 const CSV_DELIMITERS: CsvDelimiter[] = [',', '\t', ';', '\u001F', '，']
+
+function formatCsvField(value: string) {
+  return /[",\r\n]/.test(value)
+    ? `"${value.replace(/"/g, '""')}"`
+    : value
+}
+
+export function formatFlashcardsCsv(cards: readonly Flashcard[], tags: readonly FlashcardTag[]) {
+  const tagNameById = new Map(tags.map(tag => [tag.id, tag.name]))
+  cards.forEach(card => card.tagDetails?.forEach(tag => tagNameById.set(tag.id, tag.name)))
+  const rows = cards.map(card => [
+    card.front,
+    card.back,
+    card.note,
+    card.tags.flatMap(tag => tagNameById.get(tag) || []).join('|'),
+  ].map(formatCsvField).join(','))
+  return ['front,back,note,tags', ...rows].join('\n')
+}
 
 function normalizeClipboardText(value: string) {
   return value
