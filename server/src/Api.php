@@ -3570,7 +3570,9 @@ final class Api
     private function startFlashcardReviewSession(string $reviewSetId, array $user): never
     {
         $body = $this->jsonBody();
-        $this->allowOnlyFields($body, ['task', 'program_step', 'task_date']);
+        $this->allowOnlyFields($body, [
+            'task', 'program_step', 'program_step_completion', 'task_date',
+        ]);
 
         $sessionCollection = $this->requireCollection('flashcard_review_sessions');
         $fields = $sessionCollection['config']['fields'];
@@ -3579,6 +3581,11 @@ final class Api
             'program_step',
             $body['program_step'] ?? '',
             $fields['program_step'],
+        );
+        $programStepCompletionId = $this->validateField(
+            'program_step_completion',
+            $body['program_step_completion'] ?? '',
+            $fields['program_step_completion'],
         );
         $taskDate = $this->validateField(
             'task_date',
@@ -3594,7 +3601,7 @@ final class Api
         );
         $sourceOwner = (string) $reviewSet['owner'];
         if ($taskId === '') {
-            if ($programStepId !== '' || $taskDate !== '') {
+            if ($programStepId !== '' || $programStepCompletionId !== '' || $taskDate !== '') {
                 throw new ApiException(422, 'Task details require an attached Review set task.');
             }
         } else {
@@ -3605,6 +3612,7 @@ final class Api
             if (!$this->flashcardAttributionMatchesReviewSet(
                 $taskId,
                 $programStepId,
+                $programStepCompletionId,
                 $reviewSetId,
                 $owner,
             )) {
@@ -3654,7 +3662,8 @@ final class Api
                     note_before_back_snapshot,
                     speech_enabled_snapshot, front_language_snapshot, back_language_snapshot, queue_state,
                     started_at, ended_at, updated_at, elapsed_seconds, total_cards, viewed_count,
-                    success_count, error_count, ejected_count, task, program_step, task_date
+                    success_count, error_count, ejected_count, task, program_step,
+                    program_step_completion, task_date
                  ) VALUES (
                     :id, :owner, :source_owner, :review_set, :status, :snapshot_name, :mode_snapshot,
                     :card_sides_snapshot, :sort_snapshot, :sort_direction_snapshot, :indefinite_snapshot, :max_cards_snapshot,
@@ -3663,7 +3672,7 @@ final class Api
                     :note_before_back_snapshot,
                     :speech_enabled_snapshot, :front_language_snapshot, :back_language_snapshot, :queue_state,
                     :started_at, :ended_at, :updated_at, 0, :total_cards, 0, 0, 0, 0,
-                    :task, :program_step, :task_date
+                    :task, :program_step, :program_step_completion, :task_date
                  )',
             );
             $statement->execute([
@@ -3701,6 +3710,7 @@ final class Api
                 'total_cards' => count($queue),
                 'task' => $taskId,
                 'program_step' => $programStepId,
+                'program_step_completion' => $programStepCompletionId,
                 'task_date' => $taskDate,
             ]);
         } catch (PDOException $exception) {
@@ -4396,9 +4406,55 @@ final class Api
         ];
     }
 
+    private function programStepCompletions(array $step): array
+    {
+        $completions = $step['completions'] ?? [];
+        if (is_string($completions)) {
+            $completions = $this->decodeJsonColumn($completions);
+        }
+        if (is_array($completions) && array_is_list($completions) && $completions !== []) {
+            return array_values(array_filter($completions, 'is_array'));
+        }
+        if (($step['completion_type'] ?? '') === 'day_off') {
+            return [];
+        }
+        return [[
+            'id' => 'completion-legacy',
+            'type' => (string) ($step['completion_type'] ?? 'check'),
+            'targetValue' => (float) ($step['target_value'] ?? 0),
+            'targetOperator' => (string) ($step['target_operator'] ?? 'gte'),
+            'unit' => (string) ($step['unit'] ?? ''),
+            'customUnit' => (string) ($step['custom_unit'] ?? ''),
+            'intervalTemplate' => (string) ($step['interval_template'] ?? ''),
+            'flashcardReviewSet' => (string) ($step['flashcard_review_set'] ?? ''),
+        ]];
+    }
+
+    private function matchingProgramStepCompletionId(
+        array $step,
+        string $requestedId,
+        string $type,
+        string $sourceId,
+    ): string {
+        $sourceField = $type === 'interval' ? 'intervalTemplate' : 'flashcardReviewSet';
+        $matches = array_values(array_filter(
+            $this->programStepCompletions($step),
+            static fn (array $completion): bool => (
+                (string) ($completion['type'] ?? '') === $type
+                && (string) ($completion[$sourceField] ?? '') === $sourceId
+                && ($requestedId === '' || (string) ($completion['id'] ?? '') === $requestedId)
+            ),
+        ));
+        if ($requestedId !== '') {
+            return $matches === [] ? '' : $requestedId;
+        }
+        return count($matches) === 1 ? (string) ($matches[0]['id'] ?? '') : '';
+    }
+
     private function flashcardAttributionMatchesReviewSet(
         string $taskId,
         string $programStepId,
+        string $programStepCompletionId,
         string $reviewSetId,
         string $owner,
     ): bool {
@@ -4421,14 +4477,12 @@ final class Api
         }
 
         $statement = $this->database->pdo->prepare(
-            "SELECT 1 FROM program_steps
+            "SELECT program_steps.* FROM program_steps
              JOIN tasks ON tasks.id = program_steps.task AND tasks.owner = program_steps.owner
              WHERE program_steps.id = :program_step
                AND program_steps.task = :task
                AND program_steps.owner = :owner
                AND program_steps.active = TRUE
-               AND program_steps.completion_type = 'flashcards'
-               AND program_steps.flashcard_review_set = :review_set
                AND tasks.type = 'program'
              LIMIT 1",
         );
@@ -4436,9 +4490,14 @@ final class Api
             'program_step' => $programStepId,
             'task' => $taskId,
             'owner' => $owner,
-            'review_set' => $reviewSetId,
         ]);
-        return $statement->fetchColumn() !== false;
+        $step = $statement->fetch();
+        return is_array($step) && $this->matchingProgramStepCompletionId(
+            $step,
+            $programStepCompletionId,
+            'flashcards',
+            $reviewSetId,
+        ) !== '';
     }
 
     private function completeIntervalSession(string $id, array $user): never
@@ -5112,6 +5171,20 @@ final class Api
             }
         }
 
+        $sourceType = array_key_exists('review_set', $session) ? 'flashcards' : 'interval';
+        $sourceId = $sourceType === 'flashcards'
+            ? (string) ($session['review_set'] ?? '')
+            : (string) ($session['template'] ?? '');
+        $completionId = $this->matchingProgramStepCompletionId(
+            $programStep,
+            (string) ($session['program_step_completion'] ?? ''),
+            $sourceType,
+            $sourceId,
+        );
+        if ($completionId === '') {
+            return null;
+        }
+
         $statement = $this->database->pdo->prepare(
             "SELECT * FROM occurrences
              WHERE task = :task AND program_step = :program_step AND scheduled_date = :scheduled_date
@@ -5126,27 +5199,60 @@ final class Api
         ]);
         $occurrence = $statement->fetch();
 
+        $completionState = is_array($occurrence)
+            ? $this->decodeJsonColumn($occurrence['completion_state'] ?? '{}')
+            : [];
+        if (!is_array($completionState) || array_is_list($completionState)) {
+            $completionState = [];
+        }
+        $completionState[$completionId] = true;
+        $stepComplete = $this->programStepRequirementsComplete(
+            $programStep,
+            $completionState,
+            $taskId,
+            $programStepId,
+            $taskDate,
+            $owner,
+        );
+        $nextStatus = $stepComplete ? 'completed' : 'pending';
+        $nextCompletedAt = $stepComplete ? $completedAt : '';
+
         if (is_array($occurrence)) {
             $update = $this->database->pdo->prepare(
-                'UPDATE occurrences SET status = :status, completed_at = :completed_at
+                'UPDATE occurrences SET status = :status, completed_at = :completed_at,
+                    completion_state = :completion_state
                  WHERE id = :id AND owner = :owner',
             );
             $update->execute([
-                'status' => 'completed',
-                'completed_at' => $completedAt,
+                'status' => $nextStatus,
+                'completed_at' => $nextCompletedAt,
+                'completion_state' => json_encode($completionState, JSON_THROW_ON_ERROR),
                 'id' => $occurrence['id'],
                 'owner' => $owner,
             ]);
             $occurrence = $this->ownedRecord('occurrences', (string) $occurrence['id'], $owner);
         } else {
             $occurrenceId = $this->newId();
+            $completionDefinitions = $this->programStepCompletions($programStep);
+            $snapshotTarget = count($completionDefinitions) > 1
+                ? count($completionDefinitions)
+                : (float) ($completionDefinitions[0]['targetValue'] ?? 1);
+            $snapshotUnit = count($completionDefinitions) > 1
+                ? 'requirements'
+                : (string) (
+                    $completionDefinitions[0]['customUnit']
+                    ?? $completionDefinitions[0]['unit']
+                    ?? ''
+                );
             $insert = $this->database->pdo->prepare(
                 "INSERT INTO occurrences (
                     id, owner, task, program_step, scheduled_date, status, sealed,
-                    completed_at, snapshot_name, snapshot_target, snapshot_unit
+                    completed_at, snapshot_name, snapshot_target, snapshot_unit,
+                    completion_state
                  ) VALUES (
-                    :id, :owner, :task, :program_step, :scheduled_date, 'completed', FALSE,
-                    :completed_at, :snapshot_name, 1, ''
+                    :id, :owner, :task, :program_step, :scheduled_date, :status, FALSE,
+                    :completed_at, :snapshot_name, :snapshot_target, :snapshot_unit,
+                    :completion_state
                  )",
             );
             $insert->execute([
@@ -5155,13 +5261,65 @@ final class Api
                 'task' => $taskId,
                 'program_step' => $programStepId,
                 'scheduled_date' => $taskDate,
-                'completed_at' => $completedAt,
+                'status' => $nextStatus,
+                'completed_at' => $nextCompletedAt,
                 'snapshot_name' => (string) ($programStep['name'] ?? $task['name']),
+                'snapshot_target' => $snapshotTarget,
+                'snapshot_unit' => $snapshotUnit,
+                'completion_state' => json_encode($completionState, JSON_THROW_ON_ERROR),
             ]);
             $occurrence = $this->ownedRecord('occurrences', $occurrenceId, $owner);
         }
 
         return $this->normalizeRecord($this->requireCollection('occurrences'), $occurrence);
+    }
+
+    private function programStepRequirementsComplete(
+        array $step,
+        array $completionState,
+        string $taskId,
+        string $programStepId,
+        string $taskDate,
+        string $owner,
+    ): bool {
+        $completions = $this->programStepCompletions($step);
+        if ($completions === []) {
+            return false;
+        }
+        foreach ($completions as $completion) {
+            $id = (string) ($completion['id'] ?? '');
+            $type = (string) ($completion['type'] ?? '');
+            if ($type !== 'quantity') {
+                if ($id === '' || ($completionState[$id] ?? false) !== true) {
+                    return false;
+                }
+                continue;
+            }
+            $statement = $this->database->pdo->prepare(
+                'SELECT COALESCE(SUM(value), 0) FROM entries
+                 WHERE owner = :owner AND task = :task AND program_step = :program_step
+                   AND program_step_completion = :completion AND entry_date = :entry_date',
+            );
+            $statement->execute([
+                'owner' => $owner,
+                'task' => $taskId,
+                'program_step' => $programStepId,
+                'completion' => $id,
+                'entry_date' => $taskDate,
+            ]);
+            $value = (float) $statement->fetchColumn();
+            $target = (float) ($completion['targetValue'] ?? 0);
+            $operator = (string) ($completion['targetOperator'] ?? 'gte');
+            $met = match ($operator) {
+                'eq' => abs($value - $target) < 0.000001,
+                'lte' => false,
+                default => $value >= $target,
+            };
+            if (!$met) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private function deleteRecord(array $collection, string $id, array $user): never
@@ -5211,12 +5369,12 @@ final class Api
         );
         $statement->execute(['id' => $id, 'owner' => $owner]);
         $statement = $this->database->pdo->prepare(
-            "UPDATE interval_sessions SET task = '', program_step = ''
+            "UPDATE interval_sessions SET task = '', program_step = '', program_step_completion = ''
              WHERE task = :id AND owner = :owner",
         );
         $statement->execute(['id' => $id, 'owner' => $owner]);
         $statement = $this->database->pdo->prepare(
-            "UPDATE flashcard_review_sessions SET task = '', program_step = ''
+            "UPDATE flashcard_review_sessions SET task = '', program_step = '', program_step_completion = ''
              WHERE task = :id AND owner = :owner",
         );
         $statement->execute(['id' => $id, 'owner' => $owner]);
@@ -5232,12 +5390,12 @@ final class Api
     private function deleteProgramStep(string $id, string $owner): void
     {
         $statement = $this->database->pdo->prepare(
-            "UPDATE interval_sessions SET program_step = ''
+            "UPDATE interval_sessions SET program_step = '', program_step_completion = ''
              WHERE program_step = :id AND owner = :owner",
         );
         $statement->execute(['id' => $id, 'owner' => $owner]);
         $statement = $this->database->pdo->prepare(
-            "UPDATE flashcard_review_sessions SET program_step = ''
+            "UPDATE flashcard_review_sessions SET program_step = '', program_step_completion = ''
              WHERE program_step = :id AND owner = :owner",
         );
         $statement->execute(['id' => $id, 'owner' => $owner]);
@@ -5343,13 +5501,20 @@ final class Api
         );
         $statement->execute(['id' => $id, 'owner' => $owner]);
         $attachedTasks = $statement->fetchAll();
-        $statement = $this->database->pdo->prepare(
-            'SELECT program_steps.id, program_steps.name, tasks.name AS task_name
+        $statement = $this->database->pdo->prepare(<<<'SQL'
+            SELECT program_steps.id, program_steps.name, tasks.name AS task_name
              FROM program_steps
              JOIN tasks ON tasks.id = program_steps.task AND tasks.owner = program_steps.owner
-             WHERE program_steps.flashcard_review_set = :id AND program_steps.owner = :owner
-             ORDER BY tasks.sort_order, program_steps.sort_order, program_steps.name',
-        );
+             WHERE program_steps.owner = :owner AND (
+                program_steps.flashcard_review_set = :id
+                OR EXISTS (
+                    SELECT 1 FROM json_each(program_steps.completions)
+                    WHERE json_extract(json_each.value, '$.type') = 'flashcards'
+                      AND json_extract(json_each.value, '$.flashcardReviewSet') = :id
+                )
+             )
+             ORDER BY tasks.sort_order, program_steps.sort_order, program_steps.name
+            SQL);
         $statement->execute(['id' => $id, 'owner' => $owner]);
         $attachedProgramSteps = $statement->fetchAll();
         $statement = $this->database->pdo->prepare(
@@ -5411,13 +5576,20 @@ final class Api
         );
         $statement->execute(['id' => $id, 'owner' => $owner]);
         $attachedTasks = $statement->fetchAll();
-        $statement = $this->database->pdo->prepare(
-            'SELECT program_steps.id, program_steps.name, tasks.name AS task_name
+        $statement = $this->database->pdo->prepare(<<<'SQL'
+            SELECT program_steps.id, program_steps.name, tasks.name AS task_name
              FROM program_steps
              JOIN tasks ON tasks.id = program_steps.task AND tasks.owner = program_steps.owner
-             WHERE program_steps.interval_template = :id AND program_steps.owner = :owner
-             ORDER BY tasks.sort_order, program_steps.sort_order, program_steps.name',
-        );
+             WHERE program_steps.owner = :owner AND (
+                program_steps.interval_template = :id
+                OR EXISTS (
+                    SELECT 1 FROM json_each(program_steps.completions)
+                    WHERE json_extract(json_each.value, '$.type') = 'interval'
+                      AND json_extract(json_each.value, '$.intervalTemplate') = :id
+                )
+             )
+             ORDER BY tasks.sort_order, program_steps.sort_order, program_steps.name
+            SQL);
         $statement->execute(['id' => $id, 'owner' => $owner]);
         $attachedProgramSteps = $statement->fetchAll();
         if ($attachedTasks !== [] || $attachedProgramSteps !== []) {
@@ -5931,6 +6103,44 @@ final class Api
                     'Only Review set program steps may have an attached Review set.',
                 );
             }
+            $completions = $this->programStepCompletions($record);
+            if ($completionType !== 'day_off' && $active && $completions === []) {
+                throw new ApiException(422, 'Add at least one completion requirement.');
+            }
+            $completionIds = [];
+            foreach ($completions as $completion) {
+                $id = (string) ($completion['id'] ?? '');
+                $type = (string) ($completion['type'] ?? '');
+                if ($id === '' || strlen($id) > 64 || isset($completionIds[$id])) {
+                    throw new ApiException(422, 'Each completion requirement must have a unique id.');
+                }
+                $completionIds[$id] = true;
+                if (!in_array($type, ['check', 'quantity', 'interval', 'flashcards'], true)) {
+                    throw new ApiException(422, 'A completion requirement has an invalid type.');
+                }
+                if ($type === 'quantity') {
+                    $target = $completion['targetValue'] ?? null;
+                    $operator = (string) ($completion['targetOperator'] ?? '');
+                    if (!is_int($target) && !is_float($target)) {
+                        throw new ApiException(422, 'Every quantity requirement needs a numeric target.');
+                    }
+                    if ((float) $target < 0 || !in_array($operator, ['gte', 'lte', 'eq'], true)) {
+                        throw new ApiException(422, 'A quantity requirement has invalid target settings.');
+                    }
+                }
+                if ($type === 'interval') {
+                    $attached = (string) ($completion['intervalTemplate'] ?? '');
+                    if (!$this->relationExists('interval_templates', $attached, $owner)) {
+                        throw new ApiException(422, 'Select a valid interval for every interval requirement.');
+                    }
+                }
+                if ($type === 'flashcards') {
+                    $attached = (string) ($completion['flashcardReviewSet'] ?? '');
+                    if (!$this->flashcardReviewSetIsAccessible($attached, $owner)) {
+                        throw new ApiException(422, 'Select a valid Review set for every Review set requirement.');
+                    }
+                }
+            }
             return;
         }
 
@@ -5953,6 +6163,22 @@ final class Api
             if ($step !== '' && !$this->relationMatchesTask('program_steps', $step, $task, $owner)) {
                 throw new ApiException(422, 'The selected program step is invalid.');
             }
+            $completionId = (string) ($record['program_step_completion'] ?? '');
+            if ($completionId !== '' && $step === '') {
+                throw new ApiException(422, 'A program completion requires its program step.');
+            }
+            if ($completionId !== '' && $step !== '') {
+                $stepRecord = $this->ownedRecord('program_steps', $step, $owner);
+                $known = array_filter(
+                    $this->programStepCompletions($stepRecord),
+                    static fn (array $completion): bool => (
+                        (string) ($completion['id'] ?? '') === $completionId
+                    ),
+                );
+                if ($known === []) {
+                    throw new ApiException(422, 'The selected program completion is invalid.');
+                }
+            }
 
             $occurrence = (string) ($record['occurrence'] ?? '');
             if ($occurrence !== '' && !$this->relationMatchesTask('occurrences', $occurrence, $task, $owner)) {
@@ -5968,6 +6194,7 @@ final class Api
             }
             $task = (string) ($record['task'] ?? '');
             $programStep = (string) ($record['program_step'] ?? '');
+            $programStepCompletion = (string) ($record['program_step_completion'] ?? '');
             if ($task === '' && $programStep !== '') {
                 throw new ApiException(422, 'A program step interval must include its task.');
             }
@@ -5976,6 +6203,7 @@ final class Api
                 && !$this->intervalAttributionMatchesTemplate(
                     $task,
                     $programStep,
+                    $programStepCompletion,
                     $template,
                     $owner,
                 )
@@ -6193,19 +6421,31 @@ final class Api
         $template = (string) ($record['template'] ?? '');
         $taskId = (string) ($record['task'] ?? '');
         $programStepId = (string) ($record['program_step'] ?? '');
+        $programStepCompletionId = (string) ($record['program_step_completion'] ?? '');
         if ($source === 'template' && $template === '') {
             throw new ApiException(422, 'A saved interval session requires a template.');
         }
-        if ($source === 'quick' && ($template !== '' || $taskId !== '' || $programStepId !== '')) {
+        if ($source === 'quick' && (
+            $template !== ''
+            || $taskId !== ''
+            || $programStepId !== ''
+            || $programStepCompletionId !== ''
+        )) {
             throw new ApiException(422, 'Quick intervals must run standalone.');
         }
         if ($taskId === '') {
-            if ($programStepId !== '') {
+            if ($programStepId !== '' || $programStepCompletionId !== '') {
                 throw new ApiException(422, 'A program step interval must include its task.');
             }
             return;
         }
-        if (!$this->intervalAttributionMatchesTemplate($taskId, $programStepId, $template, $owner)) {
+        if (!$this->intervalAttributionMatchesTemplate(
+            $taskId,
+            $programStepId,
+            $programStepCompletionId,
+            $template,
+            $owner,
+        )) {
             throw new ApiException(422, 'The selected task or program step is not attached to this interval.');
         }
 
@@ -6231,6 +6471,7 @@ final class Api
     private function intervalAttributionMatchesTemplate(
         string $taskId,
         string $programStepId,
+        string $programStepCompletionId,
         string $templateId,
         string $owner,
     ): bool
@@ -6254,14 +6495,12 @@ final class Api
         }
 
         $statement = $this->database->pdo->prepare(
-            "SELECT 1 FROM program_steps
+            "SELECT program_steps.* FROM program_steps
              JOIN tasks ON tasks.id = program_steps.task AND tasks.owner = program_steps.owner
              WHERE program_steps.id = :program_step
                AND program_steps.task = :task
                AND program_steps.owner = :owner
                AND program_steps.active = TRUE
-               AND program_steps.completion_type = 'interval'
-               AND program_steps.interval_template = :template
                AND tasks.type = 'program'
              LIMIT 1",
         );
@@ -6269,9 +6508,14 @@ final class Api
             'program_step' => $programStepId,
             'task' => $taskId,
             'owner' => $owner,
-            'template' => $templateId,
         ]);
-        return $statement->fetchColumn() !== false;
+        $step = $statement->fetch();
+        return is_array($step) && $this->matchingProgramStepCompletionId(
+            $step,
+            $programStepCompletionId,
+            'interval',
+            $templateId,
+        ) !== '';
     }
 
     private function intervalAttributionIsOpenOnDate(
@@ -6718,12 +6962,41 @@ final class Api
 
     private function detachFlashcardReviewSetFromAccount(string $reviewSetId, string $account): void
     {
-        foreach (['tasks', 'program_steps', 'interval_templates'] as $table) {
+        foreach (['tasks', 'interval_templates'] as $table) {
             $statement = $this->database->pdo->prepare(
                 "UPDATE {$table} SET flashcard_review_set = ''
                  WHERE flashcard_review_set = :review_set AND owner = :owner",
             );
             $statement->execute(['review_set' => $reviewSetId, 'owner' => $account]);
+        }
+        $statement = $this->database->pdo->prepare(
+            'SELECT * FROM program_steps WHERE owner = :owner',
+        );
+        $statement->execute(['owner' => $account]);
+        $update = $this->database->pdo->prepare(
+            "UPDATE program_steps SET flashcard_review_set = '', completions = :completions
+             WHERE id = :id AND owner = :owner",
+        );
+        foreach ($statement->fetchAll() as $step) {
+            $completions = $this->programStepCompletions($step);
+            $changed = false;
+            foreach ($completions as &$completion) {
+                if (
+                    ($completion['type'] ?? '') === 'flashcards'
+                    && ($completion['flashcardReviewSet'] ?? '') === $reviewSetId
+                ) {
+                    $completion['flashcardReviewSet'] = '';
+                    $changed = true;
+                }
+            }
+            unset($completion);
+            if ($changed || (string) ($step['flashcard_review_set'] ?? '') === $reviewSetId) {
+                $update->execute([
+                    'completions' => json_encode($completions, JSON_THROW_ON_ERROR),
+                    'id' => $step['id'],
+                    'owner' => $account,
+                ]);
+            }
         }
     }
 

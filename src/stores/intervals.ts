@@ -71,6 +71,7 @@ function mapSession(record: Record<string, any>): IntervalSession {
     template: record.template || undefined,
     task: record.task || undefined,
     programStep: record.program_step || undefined,
+    programStepCompletion: record.program_step_completion || undefined,
     taskDate: record.task_date || '',
     source: record.source,
     status: record.status,
@@ -287,6 +288,7 @@ export const useIntervalStore = defineStore('intervals', () => {
     template?: string
     task?: string
     programStep?: string
+    programStepCompletion?: string
     taskDate?: string
     flashcardReview?: IntervalFlashcardReviewSnapshot
   }) {
@@ -313,6 +315,7 @@ export const useIntervalStore = defineStore('intervals', () => {
       template: input.template || '',
       task: input.task || '',
       program_step: input.programStep || '',
+      program_step_completion: input.programStepCompletion || '',
       task_date: input.task ? input.taskDate || '' : '',
       source: input.source,
       status: 'running',
@@ -520,6 +523,7 @@ export const useIntervalStore = defineStore('intervals', () => {
         sourceId: mapped.template,
         taskId: mapped.task,
         programStepId: mapped.programStep,
+        programStepCompletionId: mapped.programStepCompletion,
         taskDate: mapped.taskDate,
         startedAt: mapped.startedAt,
         status: mapped.status === 'completed' ? 'completed' : 'ended',
@@ -545,7 +549,12 @@ export const useIntervalStore = defineStore('intervals', () => {
       && mapped.task
       && mapped.taskDate
     ) {
-      await taskStore.completeAttributedTask(mapped.task, mapped.taskDate, mapped.programStep || '')
+      await taskStore.completeAttributedTask(
+        mapped.task,
+        mapped.taskDate,
+        mapped.programStep || '',
+        mapped.programStepCompletion || '',
+      )
     }
     localStorage.removeItem(RECOVERY_KEY)
     return mapped

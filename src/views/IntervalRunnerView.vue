@@ -87,6 +87,7 @@ import type {
   IntervalSession,
   IntervalSettingsApplyTarget,
   RunnerSessionAction,
+  TaskProgress,
 } from '@/types/domain'
 
 const route = useRoute()
@@ -115,7 +116,12 @@ const repetitionDialog = ref(false)
 const selectedRepetitions = ref(MIN_GLOBAL_REPETITIONS)
 const repetitionDefinition = ref<IntervalDefinition>()
 const pendingRepetitionStart = ref<
-  | { kind: 'template'; taskId?: string; programStepId?: string }
+  | {
+      kind: 'template'
+      taskId?: string
+      programStepId?: string
+      programStepCompletionId?: string
+    }
   | { kind: 'run-again' }
 >()
 const repetitionError = ref('')
@@ -339,6 +345,9 @@ const playActionLabel = computed(() => hasStarted.value ? 'Resume' : 'Start')
 const returnTo = computed(() => route.query.from === 'tasks' ? '/tasks' : '/intervals')
 const originTaskId = computed(() => typeof route.query.task === 'string' ? route.query.task : '')
 const originProgramStepId = computed(() => typeof route.query.step === 'string' ? route.query.step : '')
+const originProgramStepCompletionId = computed(() => (
+  typeof route.query.completion === 'string' ? route.query.completion : ''
+))
 const originTaskDate = computed(() => {
   if (typeof route.query.date !== 'string') return toDateKey(new Date())
   const parsed = parseISO(route.query.date)
@@ -355,8 +364,9 @@ const attachedProgressCandidates = computed(() => {
     .map((task) => taskStore.makeProgress(task, taskDate))
   const stepProgress = taskStore.steps
     .filter((step) => step.active
-      && step.completionType === 'interval'
-      && step.intervalTemplate === templateId)
+      && step.completions?.some(completion => (
+        completion.type === 'interval' && completion.intervalTemplate === templateId
+      )))
     .flatMap((step) => {
       const task = taskStore.tasks.find((item) => item.id === step.task && item.type === 'program')
       return task ? [taskStore.makeProgress(task, taskDate, step)] : []
@@ -368,6 +378,13 @@ const eligibleTaskProgress = computed(() => {
   return attachedProgressCandidates.value
     .filter((item) => (item.status === 'pending' || item.status === 'missed')
       && !item.complete
+      && (!item.programStep || item.completionItems?.some(completion => (
+        completion.type === 'interval'
+        && completion.intervalTemplate === (typeof route.params.templateId === 'string'
+          ? route.params.templateId
+          : session.value?.template)
+        && !completion.complete
+      )))
       && !item.locked
       && item.task.active
       && (Boolean(item.occurrence)
@@ -375,6 +392,22 @@ const eligibleTaskProgress = computed(() => {
           ? stepsForDate(item.task, taskStore.steps, today).some((step) => step.id === item.programStep?.id)
           : isTaskScheduled(item.task, today))))
 })
+function intervalCompletionId(progress: TaskProgress) {
+  if (!progress.programStep) return undefined
+  const templateId = typeof route.params.templateId === 'string'
+    ? route.params.templateId
+    : session.value?.template
+  return progress.completionItems?.find(completion => (
+    completion.id === originProgramStepCompletionId.value
+    && completion.type === 'interval'
+    && completion.intervalTemplate === templateId
+    && !completion.complete
+  ))?.id || progress.completionItems?.find(completion => (
+    completion.type === 'interval'
+    && completion.intervalTemplate === templateId
+    && !completion.complete
+  ))?.id
+}
 const attributedTaskName = computed(() => {
   const taskId = session.value?.task
   if (!taskId) return undefined
@@ -462,6 +495,7 @@ onMounted(async () => {
         template: template.id,
         task: originTaskId.value || undefined,
         programStep: originProgramStepId.value || undefined,
+        programStepCompletion: originProgramStepCompletionId.value || undefined,
         taskDate: originTaskId.value ? originTaskDate.value : toDateKey(now),
         source: 'template',
         status: 'paused',
@@ -477,7 +511,12 @@ onMounted(async () => {
       }
       if (originTaskId.value && !eligibleTaskProgress.value.some((item) =>
         item.task.id === originTaskId.value
-        && (item.programStep?.id || '') === originProgramStepId.value,
+        && (item.programStep?.id || '') === originProgramStepId.value
+        && (!originProgramStepCompletionId.value || item.completionItems?.some(completion => (
+          completion.id === originProgramStepCompletionId.value
+          && completion.type === 'interval'
+          && !completion.complete
+        )))
       )) {
         error.value = 'This interval task or program step is not open today.'
         return
@@ -913,6 +952,7 @@ async function requestStartTemplate() {
       originTaskId.value
       && active.task === originTaskId.value
       && (active.programStep || '') === originProgramStepId.value
+      && (active.programStepCompletion || '') === originProgramStepCompletionId.value
     ) {
       await router.replace({
         name: 'interval-runner',
@@ -928,17 +968,31 @@ async function requestStartTemplate() {
     attributionSheet.value = true
     return
   }
-  await startTemplate(originTaskId.value || undefined, originProgramStepId.value || undefined)
+  await startTemplate(
+    originTaskId.value || undefined,
+    originProgramStepId.value || undefined,
+    originProgramStepCompletionId.value || undefined,
+  )
 }
 
-async function startTemplate(taskId?: string, programStepId?: string, repetitions?: number) {
+async function startTemplate(
+  taskId?: string,
+  programStepId?: string,
+  programStepCompletionId?: string,
+  repetitions?: number,
+) {
   const item = previewSession.value
   if (!item || starting.value) return
   const repetitionSettings = intervalGlobalRepetitionSettings(item.definition)
   if (repetitionSettings.enabled && repetitions === undefined) {
     selectedRepetitions.value = repetitionSettings.defaultCount
     repetitionDefinition.value = item.definition
-    pendingRepetitionStart.value = { kind: 'template', taskId, programStepId }
+    pendingRepetitionStart.value = {
+      kind: 'template',
+      taskId,
+      programStepId,
+      programStepCompletionId,
+    }
     repetitionError.value = ''
     attributionSheet.value = false
     repetitionDialog.value = true
@@ -952,7 +1006,10 @@ async function startTemplate(taskId?: string, programStepId?: string, repetition
     const attributedProgress = taskId
       ? eligibleTaskProgress.value.find((progress) =>
           progress.task.id === taskId
-          && (progress.programStep?.id || '') === (programStepId || ''),
+          && (progress.programStep?.id || '') === (programStepId || '')
+          && (!programStepCompletionId || progress.completionItems?.some(completion => (
+            completion.id === programStepCompletionId && !completion.complete
+          ))),
         )
       : undefined
     if (attributedProgress?.status === 'missed') {
@@ -970,10 +1027,15 @@ async function startTemplate(taskId?: string, programStepId?: string, repetition
       template: item.template,
       task: taskId,
       programStep: programStepId,
+      ...(programStepCompletionId ? { programStepCompletion: programStepCompletionId } : {}),
       taskDate: taskId ? item.taskDate : undefined,
       flashcardReview: item.flashcardReview,
     })
-    if (started.task !== taskId || started.programStep !== programStepId) {
+    if (
+      started.task !== taskId
+      || started.programStep !== programStepId
+      || started.programStepCompletion !== programStepCompletionId
+    ) {
       repetitionDialog.value = false
       repetitionDefinition.value = undefined
       pendingRepetitionStart.value = undefined
@@ -1014,6 +1076,7 @@ async function confirmRepetitionStart() {
   await startTemplate(
     pending.taskId,
     pending.programStepId,
+    pending.programStepCompletionId,
     selectedRepetitions.value,
   )
 }
@@ -2360,9 +2423,9 @@ async function runAgain(repetitions?: number) {
         :key="`${item.task.id}-${item.programStep?.id || ''}`"
         prepend-icon="mdi-format-list-checks"
         :title="item.programStep?.name || item.task.name"
-        :subtitle="item.programStep ? `${item.task.name} · Complete this step when the interval finishes` : 'Complete this task when the interval finishes'"
+        :subtitle="item.programStep ? `${item.task.name} · Complete one requirement when the interval finishes` : 'Complete this task when the interval finishes'"
         rounded="lg"
-        @click="startTemplate(item.task.id, item.programStep?.id)"
+        @click="startTemplate(item.task.id, item.programStep?.id, intervalCompletionId(item))"
       />
       <v-list-item
         prepend-icon="mdi-timer-outline"

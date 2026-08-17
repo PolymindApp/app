@@ -151,6 +151,7 @@ function mapSession(record: Record<string, any>): FlashcardReviewSession {
     ejectedCount: Number(record.ejected_count || 0),
     task: record.task || undefined,
     programStep: record.program_step || undefined,
+    programStepCompletion: record.program_step_completion || undefined,
     taskDate: record.task_date || undefined,
   }
 }
@@ -861,13 +862,19 @@ export const useFlashcardStore = defineStore('flashcards', () => {
 
   async function startReview(
     reviewSetId: string,
-    attribution: { task?: string; programStep?: string; taskDate?: string } = {},
+    attribution: {
+      task?: string
+      programStep?: string
+      programStepCompletion?: string
+      taskDate?: string
+    } = {},
   ) {
     const active = activeSession.value
     if (active) {
       const sameLaunch = active.reviewSet === reviewSetId
         && (active.task || '') === (attribution.task || '')
         && (active.programStep || '') === (attribution.programStep || '')
+        && (active.programStepCompletion || '') === (attribution.programStepCompletion || '')
         && (active.taskDate || '') === (attribution.taskDate || '')
       if (sameLaunch) return active
       throw new Error(`${active.name} is already in progress. Finish or end it before starting another review.`)
@@ -916,6 +923,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
         ejected_count: 0,
         task: attribution.task || '',
         program_step: attribution.programStep || '',
+        program_step_completion: attribution.programStepCompletion || '',
         task_date: attribution.task ? attribution.taskDate || '' : '',
       })
     } else {
@@ -979,6 +987,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
         sourceId: session.reviewSet,
         taskId: session.task,
         programStepId: session.programStep,
+        programStepCompletionId: session.programStepCompletion,
         taskDate: session.taskDate,
         startedAt: session.startedAt,
         status: session.status === 'completed' ? 'completed' : 'ended',

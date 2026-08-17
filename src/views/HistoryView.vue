@@ -43,11 +43,11 @@ onMounted(() => { if (!tasks.value.length) store.load().catch(() => undefined) }
 
 function statusIcon(item: TaskProgress) {
   const isQuantitative = item.programStep
-    ? item.programStep.completionType === 'quantity'
+    ? item.completionItems?.length === 1 && item.completionItems[0]?.type === 'quantity'
     : item.task.type === 'duration' || item.task.type === 'daily_total' || item.task.type === 'step_counter'
   if (isQuantitative) {
-    const target = item.programStep?.targetValue || item.task.targetValue || 0
-    const operator = item.programStep?.targetOperator || item.task.targetOperator || 'gte'
+    const target = item.completionItems?.[0]?.targetValue || item.task.targetValue || 0
+    const operator = item.completionItems?.[0]?.targetOperator || item.task.targetOperator || 'gte'
     const state = goalState(item.value, target, operator)
     if (state === 'exceeded') return { icon: 'mdi-alert-outline', color: 'warning', state }
     if (state === 'not_enough') return { icon: 'mdi-trending-down', color: 'error', state }
@@ -63,6 +63,20 @@ function valueColor(item: TaskProgress) {
   if (status.color === 'warning') return 'text-warning'
   if (status.color === 'error') return 'text-error'
   return ''
+}
+
+function progressValue(item: TaskProgress) {
+  if (item.completionItems && item.completionItems.length > 1) {
+    return `${item.completionItems.filter(completion => completion.complete).length} / ${item.completionItems.length}`
+  }
+  if (!item.value) return ''
+  const completion = item.completionItems?.[0]
+  const unit = completion?.customUnit
+    || completion?.unit
+    || item.task.customUnit
+    || item.task.unit
+    || ''
+  return `${Number(item.value.toFixed(2))}${unit ? ` ${unit}` : ''}`
 }
 </script>
 
@@ -116,7 +130,7 @@ function valueColor(item: TaskProgress) {
             <strong class="text-body-2">{{ item.programStep?.name || item.task.name }}</strong>
             <p class="text-caption muted">{{ item.programStep ? item.task.name : item.task.description || 'Personal' }}</p>
           </div>
-          <span v-if="item.value" class="history-value" :class="valueColor(item)">{{ Number(item.value.toFixed(2)) }} {{ item.programStep?.customUnit || item.programStep?.unit || item.task.customUnit || item.task.unit }}</span>
+          <span v-if="progressValue(item)" class="history-value" :class="valueColor(item)">{{ progressValue(item) }}</span>
           <span v-else class="text-caption muted text-capitalize">{{ item.status }}</span>
         </div>
       </template>

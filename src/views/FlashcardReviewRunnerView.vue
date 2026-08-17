@@ -317,6 +317,9 @@ onMounted(async () => {
         ...prepared,
         task: typeof route.query.task === 'string' ? route.query.task : undefined,
         programStep: typeof route.query.step === 'string' ? route.query.step : undefined,
+        programStepCompletion: typeof route.query.completion === 'string'
+          ? route.query.completion
+          : undefined,
         taskDate: typeof route.query.date === 'string' ? route.query.date : undefined,
       }
       initializeLocalState(previewSession.value)
@@ -590,6 +593,9 @@ async function startPreviewReview() {
     const started = await store.startReview(preview.reviewSet, {
       task: preview.task,
       programStep: preview.programStep,
+      ...(preview.programStepCompletion
+        ? { programStepCompletion: preview.programStepCompletion }
+        : {}),
       taskDate: preview.taskDate,
     })
     currentSessionId.value = started.id

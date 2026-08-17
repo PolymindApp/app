@@ -6,6 +6,11 @@ import { createLocalRecordId, hasLocalBootstrap, listLocalRecords, repairLegacyH
 import { readHealthConnectSteps } from '@/services/healthConnect'
 import { healthConnectEntrySession, isHealthConnectEntry } from '@/services/healthConnectEntries'
 import { completedIntervalFlashcardReviewSeconds } from '@/services/intervals'
+import {
+  normalizeProgramStepCompletions,
+  programStepCompletionPayload,
+  programStepPrimaryCompletion,
+} from '@/services/programStepCompletions'
 import { dailyTotalCompletionPercent, isTaskScheduled, meetsTarget, programCycleDay, progressPercent, stepsForDate, toDateKey } from '@/services/schedule'
 import { taskNeedsReview } from '@/services/taskCardActions'
 import { sanitizeTaskEntryNote } from '@/services/taskEntryNotes'
@@ -29,6 +34,10 @@ const asNumberArray = (value: unknown, fallback: number[] = []) =>
 
 const asStringArray = (value: unknown) =>
   Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
+
+const asBooleanRecord = (value: unknown) => value && typeof value === 'object' && !Array.isArray(value)
+  ? Object.fromEntries(Object.entries(value).map(([key, item]) => [key, item === true || item === 1]))
+  : {}
 
 function mapTask(record: Record<string, any>): Task {
   return {
@@ -70,6 +79,8 @@ function mapTask(record: Record<string, any>): Task {
 }
 
 function mapStep(record: Record<string, any>): ProgramStep {
+  const completions = normalizeProgramStepCompletions(record)
+  const primary = programStepPrimaryCompletion(completions)
   return {
     id: record.id,
     task: record.task,
@@ -77,14 +88,15 @@ function mapStep(record: Record<string, any>): ProgramStep {
     description: record.description || '',
     sortOrder: record.sort_order || 0,
     cycleDays: asNumberArray(record.cycle_days),
-    completionType: record.completion_type,
-    targetValue: record.target_value || undefined,
-    targetOperator: record.target_operator || undefined,
-    unit: record.unit || undefined,
-    customUnit: record.custom_unit || undefined,
+    completionType: record.completion_type === 'day_off' ? 'day_off' : primary?.type || 'check',
+    targetValue: primary?.targetValue,
+    targetOperator: primary?.targetOperator,
+    unit: primary?.unit,
+    customUnit: primary?.customUnit,
     active: record.active !== false,
-    intervalTemplate: record.interval_template || undefined,
-    flashcardReviewSet: record.flashcard_review_set || undefined,
+    intervalTemplate: primary?.intervalTemplate,
+    flashcardReviewSet: primary?.flashcardReviewSet,
+    completions,
   }
 }
 
@@ -100,6 +112,7 @@ function mapOccurrence(record: Record<string, any>): Occurrence {
     snapshotName: record.snapshot_name,
     snapshotTarget: record.snapshot_target || undefined,
     snapshotUnit: record.snapshot_unit || undefined,
+    completionState: asBooleanRecord(record.completion_state),
   }
 }
 
@@ -109,6 +122,7 @@ function mapEntry(record: Record<string, any>): Entry {
     task: record.task,
     occurrence: record.occurrence || undefined,
     programStep: record.program_step || undefined,
+    programStepCompletion: record.program_step_completion || undefined,
     entryDate: record.entry_date,
     createdAt: record.created_at || `${record.entry_date}T00:00:00Z`,
     value: Number(record.value),
@@ -136,6 +150,7 @@ export const useTaskStore = defineStore('tasks', () => {
     revision: number
     status?: Occurrence['status']
     sealed?: boolean
+    completionState?: Record<string, boolean>
   }>>>({})
   let stepCountRequest = 0
   let progressRangeRequest = 0
@@ -236,37 +251,98 @@ export const useTaskStore = defineStore('tasks', () => {
     const journalEntryCount = !step && task.type === 'journal'
       ? journalEntryCountByTaskDate.value.get(occurrenceStatusKey(task.id, dateKey)) || 0
       : 0
-    const value = trackingTrackerIds.length
+    const matchingEntries = entriesFor(task, date, step)
+    const baseValue = trackingTrackerIds.length
       ? loggedTrackingTrackerCount
       : !step && task.type === 'journal'
         ? journalEntryCount
-      : entriesFor(task, date, step).reduce((sum, entry) => sum + entry.value, 0)
+      : matchingEntries.reduce((sum, entry) => sum + entry.value, 0)
+    const storedStatus = optimisticPatch?.status ?? occurrence?.status ?? 'pending'
+    const occurrenceComplete = storedStatus === 'completed'
+    const occurrenceSkipped = storedStatus === 'skipped'
+    const occurrenceSealed = optimisticPatch?.sealed ?? Boolean(occurrence?.sealed)
+    const completionState = optimisticPatch?.completionState ?? occurrence?.completionState ?? {}
+    const stepCompletions = step?.completions?.length
+      ? step.completions
+      : step && step.completionType !== 'day_off'
+        ? normalizeProgramStepCompletions({
+            completions: [{
+              id: 'completion-legacy',
+              type: step.completionType,
+              targetValue: step.targetValue,
+              targetOperator: step.targetOperator,
+              unit: step.unit,
+              customUnit: step.customUnit,
+              intervalTemplate: step.intervalTemplate,
+              flashcardReviewSet: step.flashcardReviewSet,
+            }],
+            completion_type: step.completionType,
+            target_value: step.targetValue,
+            target_operator: step.targetOperator,
+            unit: step.unit,
+            custom_unit: step.customUnit,
+            interval_template: step.intervalTemplate,
+            flashcard_review_set: step.flashcardReviewSet,
+          })
+        : []
+    const completionItems = step ? stepCompletions.map((completion) => {
+      const itemEntries = matchingEntries.filter(entry => (
+        entry.programStepCompletion === completion.id
+        || (stepCompletions.length === 1 && !entry.programStepCompletion)
+      ))
+      const itemValue = itemEntries.reduce((sum, entry) => sum + entry.value, 0)
+      const target = completion.targetValue ?? 1
+      const operator = completion.targetOperator || 'gte'
+      const legacyComplete = stepCompletions.length === 1
+        && !Object.keys(completionState).length
+        && occurrenceComplete
+      const complete = completion.type === 'quantity'
+        ? operator !== 'lte' && meetsTarget(itemValue, target, operator)
+        : completionState[completion.id] === true || legacyComplete
+      return {
+        ...completion,
+        value: itemValue,
+        percent: completion.type === 'quantity'
+          ? progressPercent(itemValue, target, operator)
+          : complete ? 100 : 0,
+        complete,
+      }
+    }) : undefined
+    const value = completionItems?.length && completionItems.length > 1
+      ? completionItems.filter(item => item.complete).length
+      : completionItems?.[0]?.type === 'quantity'
+        ? completionItems[0].value
+        : baseValue
     const isSessionDuration = !step
       && ['interval', 'flashcards'].includes(task.type)
       && task.sessionGoalType === 'duration'
-    const target = trackingTrackerIds.length || (!step && task.type === 'journal'
-      ? 1
-      : isSessionDuration
-        ? task.sessionTargetSeconds || 1
-        : step?.targetValue || task.targetValue || 1)
-    const operator = step?.targetOperator || task.targetOperator || 'gte'
+    const target = completionItems?.length && completionItems.length > 1
+      ? completionItems.length
+      : completionItems?.[0]?.type === 'quantity'
+        ? completionItems[0].targetValue ?? 1
+        : trackingTrackerIds.length || (!step && task.type === 'journal'
+          ? 1
+          : isSessionDuration
+            ? task.sessionTargetSeconds || 1
+            : task.targetValue || 1)
+    const operator = completionItems?.[0]?.targetOperator || task.targetOperator || 'gte'
     const targetReached = task.type === 'tracking' && !step
       ? trackingTrackerIds.length > 0 && value === target
       : task.type === 'journal' && !step
         ? value > 0
       : meetsTarget(value, target, operator)
-    const storedStatus = optimisticPatch?.status ?? occurrence?.status ?? 'pending'
-    const occurrenceComplete = storedStatus === 'completed'
-    const occurrenceSkipped = storedStatus === 'skipped'
-    const isOccurrenceDriven = (step && ['check', 'interval', 'flashcards'].includes(step.completionType))
-      || (!step && ['check', 'interval', 'flashcards'].includes(task.type) && !isSessionDuration)
-    const occurrenceSealed = optimisticPatch?.sealed ?? Boolean(occurrence?.sealed)
+    const isOccurrenceDriven = !step
+      && ['check', 'interval', 'flashcards'].includes(task.type)
+      && !isSessionDuration
     const manuallyCompleted = isSessionDuration && occurrenceComplete && occurrenceSealed
+    const manuallyCompletedStep = Boolean(step && occurrenceComplete && occurrenceSealed)
     const isDailyTotal = !step && task.type === 'daily_total'
     const sealed = (isDailyTotal || isSessionDuration) && occurrenceSealed
     const complete = occurrenceSkipped
       ? false
-      : isOccurrenceDriven
+      : completionItems
+        ? manuallyCompletedStep || (completionItems.length > 0 && completionItems.every(item => item.complete))
+        : isOccurrenceDriven
         ? occurrenceComplete
         : manuallyCompleted
           ? true
@@ -278,7 +354,13 @@ export const useTaskStore = defineStore('tasks', () => {
       scheduledDate: toDateKey(date),
       occurrence,
       value,
-      percent: isOccurrenceDriven || manuallyCompleted
+      percent: completionItems
+        ? manuallyCompletedStep
+          ? 100
+          : completionItems.length
+            ? Math.round(completionItems.reduce((sum, item) => sum + item.percent, 0) / completionItems.length)
+            : 0
+        : isOccurrenceDriven || manuallyCompleted
         ? (occurrenceComplete ? 100 : 0)
         : progressPercent(value, target, operator),
       complete,
@@ -291,6 +373,7 @@ export const useTaskStore = defineStore('tasks', () => {
             ? 'pending'
             : storedStatus,
       programStep: step,
+      completionItems,
       locked: step ? isStepLocked(task, step, date) : false,
     }
   }
@@ -574,8 +657,19 @@ export const useTaskStore = defineStore('tasks', () => {
       status: 'pending',
       sealed: false,
       snapshotName: step?.name || task.name,
-      snapshotTarget: step?.targetValue || task.targetValue || 0,
-      snapshotUnit: step?.customUnit || step?.unit || task.customUnit || task.unit || '',
+      snapshotTarget: step?.completions && step.completions.length > 1
+        ? step.completions.length
+        : step?.completions?.[0]?.targetValue ?? step?.targetValue ?? task.targetValue ?? 0,
+      snapshotUnit: step?.completions && step.completions.length > 1
+        ? 'requirements'
+        : step?.completions?.[0]?.customUnit
+          || step?.completions?.[0]?.unit
+          || step?.customUnit
+          || step?.unit
+          || task.customUnit
+          || task.unit
+          || '',
+      completionState: {},
     }
     occurrences.value.push(occurrence)
 
@@ -591,6 +685,7 @@ export const useTaskStore = defineStore('tasks', () => {
           snapshot_name: occurrence.snapshotName,
           snapshot_target: occurrence.snapshotTarget,
           snapshot_unit: occurrence.snapshotUnit || '',
+          completion_state: {},
         })
         Object.assign(occurrence, mapOccurrence(record))
         return occurrence
@@ -611,6 +706,7 @@ export const useTaskStore = defineStore('tasks', () => {
       status?: Occurrence['status']
       sealed?: boolean
       completedAt?: string
+      completionState?: Record<string, boolean>
     },
     waitFor?: Promise<unknown>,
   ) {
@@ -627,6 +723,7 @@ export const useTaskStore = defineStore('tasks', () => {
         revision,
         ...(patch.status !== undefined ? { status: patch.status } : {}),
         ...(patch.sealed !== undefined ? { sealed: patch.sealed } : {}),
+        ...(patch.completionState !== undefined ? { completionState: patch.completionState } : {}),
       },
     }
     try {
@@ -636,6 +733,7 @@ export const useTaskStore = defineStore('tasks', () => {
       if (patch.status !== undefined) payload.status = patch.status
       if (patch.sealed !== undefined) payload.sealed = patch.sealed
       if (patch.completedAt !== undefined) payload.completed_at = patch.completedAt
+      if (patch.completionState !== undefined) payload.completion_state = patch.completionState
       const record = await api.collection('occurrences').update(occurrence.id, payload)
       Object.assign(occurrence, mapOccurrence(record))
       return occurrence
@@ -659,14 +757,47 @@ export const useTaskStore = defineStore('tasks', () => {
     void syncTaskReminders()
   }
 
-  async function completeAttributedTask(taskId: string, dateKey: string, programStepId = '') {
+  async function setProgramStepCompletion(
+    progress: TaskProgress,
+    completionId: string,
+    complete: boolean,
+  ) {
+    if (!progress.programStep?.completions?.some(item => item.id === completionId)) return
+    const completionState = {
+      ...(progress.occurrence?.completionState || {}),
+      ...(optimisticOccurrencePatches.value[
+        occurrenceStatusKey(progress.task.id, progress.scheduledDate, progress.programStep.id)
+      ]?.completionState || {}),
+      [completionId]: complete,
+    }
+    const completionItems = progress.completionItems?.map(item => (
+      item.id === completionId ? { ...item, complete } : item
+    )) || []
+    const stepComplete = completionItems.length > 0 && completionItems.every(item => item.complete)
+    await updateOccurrenceOptimistically(progress, {
+      completionState,
+      status: stepComplete ? 'completed' : 'pending',
+      sealed: false,
+      completedAt: stepComplete ? new Date().toISOString() : '',
+    })
+    void syncTaskReminders()
+  }
+
+  async function completeAttributedTask(
+    taskId: string,
+    dateKey: string,
+    programStepId = '',
+    programStepCompletionId = '',
+  ) {
     if (!taskId || !dateKey) return undefined
     const progress = progressForDate(parseISO(dateKey)).find(item => (
       item.task.id === taskId
       && (item.programStep?.id || '') === programStepId
     ))
     if (!progress) return undefined
-    if (!progress.complete) await toggleComplete(progress, true)
+    if (programStepId && programStepCompletionId) {
+      await setProgramStepCompletion(progress, programStepCompletionId, true)
+    } else if (!progress.complete) await toggleComplete(progress, true)
     return occurrenceFor(progress.task, parseISO(dateKey), progress.programStep)
   }
 
@@ -676,6 +807,7 @@ export const useTaskStore = defineStore('tasks', () => {
     sourceId?: string
     taskId?: string
     programStepId?: string
+    programStepCompletionId?: string
     taskDate?: string
     startedAt: string
     status: 'completed' | 'ended'
@@ -685,7 +817,12 @@ export const useTaskStore = defineStore('tasks', () => {
     if (!tasks.value.length) await load()
     const taskDate = input.taskDate || toDateKey(new Date(input.startedAt))
     if (input.programStepId && input.taskId && input.status === 'completed') {
-      await completeAttributedTask(input.taskId, taskDate, input.programStepId)
+      await completeAttributedTask(
+        input.taskId,
+        taskDate,
+        input.programStepId,
+        input.programStepCompletionId,
+      )
     }
     if (!input.sourceId) return
 
@@ -771,6 +908,7 @@ export const useTaskStore = defineStore('tasks', () => {
         sourceId,
         taskId: String(record.task || ''),
         programStepId: String(record.program_step || ''),
+        programStepCompletionId: String(record.program_step_completion || ''),
         taskDate,
         startedAt,
         status,
@@ -823,18 +961,34 @@ export const useTaskStore = defineStore('tasks', () => {
     void syncTaskReminders()
   }
 
-  async function addEntry(progress: TaskProgress, amount: number, kind?: Entry['kind'], note = '') {
+  async function addEntry(
+    progress: TaskProgress,
+    amount: number,
+    kind?: Entry['kind'],
+    note = '',
+    programStepCompletionId = '',
+  ) {
     if (progress.sealed) return
     if (amount === 0) throw new Error('Task log entries cannot have a value of zero.')
     const progressDate = parseISO(progress.scheduledDate)
     const occurrencePromise = ensureOccurrence(progress.task, progressDate, progress.programStep)
     const occurrence = occurrenceFor(progress.task, progressDate, progress.programStep)!
-    const unit = progress.programStep?.customUnit || progress.programStep?.unit || progress.task.customUnit || progress.task.unit || (progress.task.type === 'duration' ? 'hours' : '')
+    const completion = progress.programStep?.completions?.find(
+      item => item.id === programStepCompletionId,
+    )
+    const unit = completion?.customUnit
+      || completion?.unit
+      || progress.programStep?.customUnit
+      || progress.programStep?.unit
+      || progress.task.customUnit
+      || progress.task.unit
+      || (progress.task.type === 'duration' ? 'hours' : '')
     const entry: Entry = {
       id: createLocalRecordId(),
       task: progress.task.id,
       occurrence: occurrence.id,
       programStep: progress.programStep?.id,
+      programStepCompletion: programStepCompletionId || undefined,
       entryDate: progress.scheduledDate,
       createdAt: new Date().toISOString(),
       value: amount,
@@ -851,6 +1005,7 @@ export const useTaskStore = defineStore('tasks', () => {
         task: entry.task,
         occurrence: entry.occurrence,
         program_step: entry.programStep || '',
+        program_step_completion: entry.programStepCompletion || '',
         entry_date: entry.entryDate,
         value: entry.value,
         kind: entry.kind,
@@ -934,9 +1089,7 @@ export const useTaskStore = defineStore('tasks', () => {
   async function syncEntryProgress(progress: TaskProgress, waitFor?: Promise<unknown>) {
     const progressDate = parseISO(progress.scheduledDate)
     const updated = makeProgress(progress.task, progressDate, progress.programStep)
-    const isCheck = progress.programStep
-      ? progress.programStep.completionType === 'check'
-      : progress.task.type === 'check'
+    const isCheck = !progress.programStep && progress.task.type === 'check'
     const occurrence = occurrenceFor(
       progress.task,
       progressDate,
@@ -1044,22 +1197,27 @@ export const useTaskStore = defineStore('tasks', () => {
     else tasks.value = [...tasks.value, optimisticTask]
     let optimisticSteps: ProgramStep[] = []
     if (draft.type === 'program') {
-      optimisticSteps = draft.steps.map((step, index) => mapStep({
-        id: step.id || createLocalRecordId(),
-        task: optimisticTask.id,
-        name: step.name,
-        description: step.description,
-        sort_order: index,
-        cycle_days: [index + 1],
-        completion_type: step.completionType,
-        target_value: step.targetValue || 0,
-        target_operator: step.targetOperator || 'gte',
-        unit: step.unit || '',
-        custom_unit: step.customUnit || '',
-        active: true,
-        interval_template: step.completionType === 'interval' ? step.intervalTemplate || '' : '',
-        flashcard_review_set: step.completionType === 'flashcards' ? step.flashcardReviewSet || '' : '',
-      }))
+      optimisticSteps = draft.steps.map((step, index) => {
+        const completions = step.completionType === 'day_off' ? [] : step.completions || []
+        const primary = programStepPrimaryCompletion(completions)
+        return mapStep({
+          id: step.id || createLocalRecordId(),
+          task: optimisticTask.id,
+          name: step.name,
+          description: step.description,
+          sort_order: index,
+          cycle_days: [index + 1],
+          completion_type: step.completionType === 'day_off' ? 'day_off' : primary?.type || 'check',
+          target_value: primary?.targetValue ?? 0,
+          target_operator: primary?.targetOperator || 'gte',
+          unit: primary?.unit || '',
+          custom_unit: primary?.customUnit || '',
+          active: true,
+          interval_template: primary?.type === 'interval' ? primary.intervalTemplate || '' : '',
+          flashcard_review_set: primary?.type === 'flashcards' ? primary.flashcardReviewSet || '' : '',
+          completions: programStepCompletionPayload(completions),
+        })
+      })
       steps.value = [
         ...steps.value.filter(step => step.task !== optimisticTask.id),
         ...optimisticSteps,
@@ -1083,10 +1241,13 @@ export const useTaskStore = defineStore('tasks', () => {
             active: false,
             interval_template: '',
             flashcard_review_set: '',
+            completions: [],
           }),
         ))
         const stepRecords = await Promise.all(
           draft.steps.map((step, index) => {
+            const completions = step.completionType === 'day_off' ? [] : step.completions || []
+            const primary = programStepPrimaryCompletion(completions)
             const stepPayload = {
               owner: api.authStore.record!.id,
               task: taskId,
@@ -1094,14 +1255,15 @@ export const useTaskStore = defineStore('tasks', () => {
               description: step.description,
               sort_order: index,
               cycle_days: [index + 1],
-              completion_type: step.completionType,
-              target_value: step.targetValue || 0,
-              target_operator: step.targetOperator || 'gte',
-              unit: step.unit || '',
-              custom_unit: step.customUnit || '',
+              completion_type: step.completionType === 'day_off' ? 'day_off' : primary?.type || 'check',
+              target_value: primary?.targetValue ?? 0,
+              target_operator: primary?.targetOperator || 'gte',
+              unit: primary?.unit || '',
+              custom_unit: primary?.customUnit || '',
               active: true,
-              interval_template: step.completionType === 'interval' ? step.intervalTemplate || '' : '',
-              flashcard_review_set: step.completionType === 'flashcards' ? step.flashcardReviewSet || '' : '',
+              interval_template: primary?.type === 'interval' ? primary.intervalTemplate || '' : '',
+              flashcard_review_set: primary?.type === 'flashcards' ? primary.flashcardReviewSet || '' : '',
+              completions: programStepCompletionPayload(completions),
             }
             return step.id
               ? api.collection('program_steps').update(step.id, stepPayload)
@@ -1308,6 +1470,7 @@ export const useTaskStore = defineStore('tasks', () => {
     makeProgress,
     entriesFor,
     toggleComplete,
+    setProgramStepCompletion,
     completeAttributedTask,
     applyLocalSessionProgress,
     setDailyTotalSealed,

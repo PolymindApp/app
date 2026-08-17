@@ -13,13 +13,20 @@ import TimerWheelPicker from '@/components/TimerWheelPicker.vue'
 import type { LongPressDragResult } from '@/directives/longPressDrag'
 import { reviewSetCardCount } from '@/services/flashcards'
 import { formatIntervalDuration, intervalDuration, intervalStepCount } from '@/services/intervals'
+import { createProgramStepCompletion } from '@/services/programStepCompletions'
 import { requestTaskReminderPermission, taskRemindersAvailable } from '@/services/taskReminders'
-import { TASK_TYPE_OPTIONS } from '@/services/taskTypes'
+import { TASK_TYPE_OPTIONS, TASK_TYPE_PRESENTATION } from '@/services/taskTypes'
 import { useFlashcardStore } from '@/stores/flashcards'
 import { useIntervalStore } from '@/stores/intervals'
 import { useTaskStore } from '@/stores/tasks'
 import { useTrackingStore } from '@/stores/tracking'
-import type { ProgramStepDraft, TaskDraft, TaskType } from '@/types/domain'
+import type {
+  ProgramStepCompletion,
+  ProgramStepCompletionStyleItem,
+  ProgramStepDraft,
+  TaskDraft,
+  TaskType,
+} from '@/types/domain'
 
 const allowAutomaticFocus = Capacitor.getPlatform() !== 'android'
 const route = useRoute()
@@ -39,6 +46,69 @@ const stepDragIds = new WeakMap<ProgramStepDraft, string>()
 let nextStepDragId = 0
 const typeLocked = computed(() => Boolean(route.params.id))
 const isEditing = computed(() => Boolean(route.params.id))
+const completionStyleItems = computed<ProgramStepCompletionStyleItem[]>(() => [
+  { type: 'subheader', title: 'Basic' },
+  {
+    type: 'item',
+    title: 'Check-off',
+    value: 'check',
+    completionType: 'check',
+    icon: 'mdi-check-circle-outline',
+    color: TASK_TYPE_PRESENTATION.check.color,
+    props: { subtitle: 'A separate check-off' },
+  },
+  {
+    type: 'item',
+    title: 'Quantity target',
+    value: 'quantity',
+    completionType: 'quantity',
+    icon: 'mdi-chart-donut',
+    color: TASK_TYPE_PRESENTATION.daily_total.color,
+    props: { subtitle: 'Reach a numeric target' },
+  },
+  { type: 'subheader', title: 'Intervals' },
+  ...(intervalStore.templates.length
+    ? intervalStore.templates.map(interval => ({
+        type: 'item' as const,
+        title: interval.name,
+        value: `interval:${interval.id}`,
+        completionType: 'interval' as const,
+        sourceId: interval.id,
+        icon: 'mdi-timer-play-outline',
+        color: interval.color,
+        props: {
+          subtitle: `${formatIntervalDuration(intervalDuration(interval.definition))} · ${intervalStepCount(interval.definition)} intervals`,
+        },
+      }))
+    : [{
+        type: 'item' as const,
+        title: 'No saved intervals',
+        value: 'unavailable:interval',
+        icon: 'mdi-timer-off-outline',
+        color: TASK_TYPE_PRESENTATION.interval.color,
+        props: { subtitle: 'Create an interval first', disabled: true },
+      }]),
+  { type: 'subheader', title: 'Review sets' },
+  ...(flashcardStore.reviewSets.length
+    ? flashcardStore.reviewSets.map(reviewSet => ({
+        type: 'item' as const,
+        title: reviewSet.name,
+        value: `flashcards:${reviewSet.id}`,
+        completionType: 'flashcards' as const,
+        sourceId: reviewSet.id,
+        icon: 'mdi-cards-playing-outline',
+        color: TASK_TYPE_PRESENTATION.flashcards.color,
+        props: { subtitle: reviewSetSummary(reviewSet.id) },
+      }))
+    : [{
+        type: 'item' as const,
+        title: 'No Review sets',
+        value: 'unavailable:flashcards',
+        icon: 'mdi-cards-off-outline',
+        color: TASK_TYPE_PRESENTATION.flashcards.color,
+        props: { subtitle: 'Create a Review set first', disabled: true },
+      }]),
+])
 
 const weekdays = [
   { value: 1, label: 'M' }, { value: 2, label: 'T' }, { value: 3, label: 'W' },
@@ -148,20 +218,6 @@ function trackingTrackerFor(id: string) {
   return trackingStore.trackers.find(tracker => tracker.id === id)
 }
 
-function intervalForStep(step: ProgramStepDraft) {
-  return intervalStore.templates.find((item) => item.id === step.intervalTemplate)
-}
-
-function intervalSummaryForStep(step: ProgramStepDraft) {
-  const interval = intervalForStep(step)
-  if (!interval) return ''
-  return `${formatIntervalDuration(intervalDuration(interval.definition))} · ${intervalStepCount(interval.definition)} intervals`
-}
-
-function reviewSetForStep(step: ProgramStepDraft) {
-  return flashcardStore.reviewSets.find(item => item.id === step.flashcardReviewSet)
-}
-
 function reviewSetSummary(reviewSetId?: string) {
   const reviewSet = flashcardStore.reviewSets.find(item => item.id === reviewSetId)
   if (!reviewSet) return ''
@@ -176,7 +232,78 @@ function dayOffStep(sortOrder: number): ProgramStepDraft {
     cycleDays: [sortOrder + 1],
     completionType: 'day_off',
     active: true,
+    completions: [],
   }
+}
+
+function syncStepCompletionProjection(step: ProgramStepDraft) {
+  if (step.completionType === 'day_off') return
+  const primary = step.completions?.[0]
+  step.completionType = primary?.type || 'check'
+  step.targetValue = primary?.targetValue
+  step.targetOperator = primary?.targetOperator
+  step.unit = primary?.unit
+  step.customUnit = primary?.customUnit
+  step.intervalTemplate = primary?.intervalTemplate
+  step.flashcardReviewSet = primary?.flashcardReviewSet
+}
+
+function completionStyleItem(value: unknown) {
+  return completionStyleItems.value.find(item => item.value === value && item.completionType)
+}
+
+function completionStyleValue(completion: ProgramStepCompletion) {
+  const value = completion.type === 'interval'
+    ? `interval:${completion.intervalTemplate || ''}`
+    : completion.type === 'flashcards'
+      ? `flashcards:${completion.flashcardReviewSet || ''}`
+      : completion.type
+  return completionStyleItem(value) ? value : undefined
+}
+
+function setCompletionStyle(
+  step: ProgramStepDraft,
+  completion: ProgramStepCompletion,
+  value: unknown,
+) {
+  const item = completionStyleItem(value)
+  if (!item?.completionType) return
+  const type = item.completionType
+  completion.type = type
+  completion.targetValue = type === 'quantity' ? completion.targetValue || 1 : undefined
+  completion.targetOperator = type === 'quantity' ? completion.targetOperator || 'gte' : undefined
+  completion.unit = type === 'quantity' ? completion.unit || 'count' : undefined
+  completion.customUnit = type === 'quantity' ? completion.customUnit : undefined
+  completion.intervalTemplate = type === 'interval' ? item.sourceId : undefined
+  completion.flashcardReviewSet = type === 'flashcards' ? item.sourceId : undefined
+  syncStepCompletionProjection(step)
+}
+
+function addCompletion(step: ProgramStepDraft) {
+  step.completions ||= []
+  step.completions.push(createProgramStepCompletion('check'))
+  syncStepCompletionProjection(step)
+}
+
+function removeCompletion(step: ProgramStepDraft, completionId: string) {
+  if (!step.completions || step.completions.length <= 1) return
+  step.completions = step.completions.filter(item => item.id !== completionId)
+  syncStepCompletionProjection(step)
+}
+
+function reorderStepCompletions(step: ProgramStepDraft, result: LongPressDragResult) {
+  const completions = step.completions || []
+  const byId = new Map(completions.map(item => [item.id, item]))
+  const ordered = result.orderedIds
+    .map(id => byId.get(id))
+    .filter((item): item is ProgramStepCompletion => Boolean(item))
+  if (ordered.length !== completions.length) return
+  step.completions = ordered
+  syncStepCompletionProjection(step)
+}
+
+function completionDropHandler(step: ProgramStepDraft) {
+  return (result: LongPressDragResult) => reorderStepCompletions(step, result)
 }
 
 function syncProgramSequence() {
@@ -202,7 +329,16 @@ function orderedProgramItems(steps: ProgramStepDraft[], cycleLength: number) {
       continue
     }
     assignedDays.forEach((day, assignmentIndex) => {
-      const scheduledStep = assignmentIndex === 0 ? step : { ...step, id: undefined }
+      const scheduledStep = assignmentIndex === 0
+        ? step
+        : {
+            ...step,
+            id: undefined,
+            completions: step.completions?.map(completion => ({
+              ...completion,
+              id: createProgramStepCompletion(completion.type).id,
+            })),
+          }
       const daySteps = stepsByDay.get(day) || []
       daySteps.push(scheduledStep)
       stepsByDay.set(day, daySteps)
@@ -273,6 +409,7 @@ async function addStep(focusName = true) {
     active: true,
     intervalTemplate: undefined,
     flashcardReviewSet: undefined,
+    completions: [createProgramStepCompletion()],
   })
   syncProgramSequence()
   openStep.value = draft.steps.length - 1
@@ -371,20 +508,32 @@ async function save() {
     error.value = 'Choose a valid time for this task.'
     return
   }
+  const emptyCompletionStep = draft.type === 'program'
+    ? draft.steps.findIndex(step => step.completionType !== 'day_off' && !step.completions?.length)
+    : -1
+  if (emptyCompletionStep >= 0) {
+    openStep.value = emptyCompletionStep
+    error.value = 'Add at least one completion requirement to every program step.'
+    return
+  }
   const incompleteIntervalStep = draft.type === 'program'
-    ? draft.steps.findIndex(step => step.completionType === 'interval' && !step.intervalTemplate)
+    ? draft.steps.findIndex(step => step.completions?.some(item => (
+      item.type === 'interval' && !item.intervalTemplate
+    )))
     : -1
   if (incompleteIntervalStep >= 0) {
     openStep.value = incompleteIntervalStep
-    error.value = 'Select an interval for every interval program step.'
+    error.value = 'Select an interval for every interval requirement.'
     return
   }
   const incompleteFlashcardStep = draft.type === 'program'
-    ? draft.steps.findIndex(step => step.completionType === 'flashcards' && !step.flashcardReviewSet)
+    ? draft.steps.findIndex(step => step.completions?.some(item => (
+      item.type === 'flashcards' && !item.flashcardReviewSet
+    )))
     : -1
   if (incompleteFlashcardStep >= 0) {
     openStep.value = incompleteFlashcardStep
-    error.value = 'Select a Review set for every flashcard program step.'
+    error.value = 'Select a Review set for every Review set requirement.'
     return
   }
   saving.value = true
@@ -819,75 +968,98 @@ async function removeTask() {
                   :rules="[v => Boolean(v) || 'Name is required']"
                 />
                 <v-textarea v-model="step.description" label="Instructions (optional)" rows="2" variant="outlined" />
-                <v-select
-                  v-model="step.completionType"
-                  label="Completion style"
-                  :items="[
-                    { title: 'Check-off', value: 'check' },
-                    { title: 'Quantity target', value: 'quantity' },
-                    { title: 'Complete a saved interval', value: 'interval' },
-                    { title: 'Complete a Review set', value: 'flashcards' },
-                  ]"
-                />
               </div>
-              <div v-if="step.completionType === 'quantity'" class="target-grid mb-4">
-                <v-number-input
-                  v-model="step.targetValue"
-                  label="Target"
-                  :min="0"
-                  :precision="null"
-                />
-                <v-select v-model="step.targetOperator" label="Goal" :items="[{ title: 'At least', value: 'gte' }, { title: 'At most', value: 'lte' }, { title: 'Exactly', value: 'eq' }]" />
-                <v-select v-model="step.unit" label="Unit" :items="units" />
-                <v-text-field v-if="step.unit === 'custom'" v-model="step.customUnit" label="Custom unit" />
-              </div>
-              <div v-if="step.completionType === 'interval'" class="field-stack mb-4">
-                <template v-if="intervalStore.templates.length">
-                  <v-select
-                    v-model="step.intervalTemplate"
-                    label="Attached interval"
-                    :items="intervalItems"
-                    :rules="[v => Boolean(v) || 'Select an interval']"
-                  />
-                  <div v-if="intervalForStep(step)" class="interval-attachment-summary">
-                    <div
-                      class="interval-attachment-icon"
-                      :style="{ background: intervalForStep(step)?.color }"
+              <div class="completion-requirements mb-4">
+                <div class="d-flex align-center justify-space-between ga-3 mb-3">
+                  <div>
+                    <strong class="text-body-2">Completion requirements</strong>
+                    <p class="text-caption muted">Complete every item. Hold and drag to reorder.</p>
+                  </div>
+                  <v-btn
+                    size="small"
+                    variant="tonal"
+                    prepend-icon="mdi-plus"
+                    @click="addCompletion(step)"
+                  >
+                    Add
+                  </v-btn>
+                </div>
+                <div class="completion-requirement-list">
+                  <div
+                    v-for="(completion, completionIndex) in step.completions"
+                    :key="completion.id"
+                    v-long-press-drag="{
+                      id: completion.id,
+                      group: `program-step-completions-${stepDragId(step)}`,
+                      handle: '.completion-requirement__drag-handle',
+                      disabled: (step.completions?.length || 0) < 2,
+                      onDrop: completionDropHandler(step),
+                    }"
+                    class="completion-requirement"
+                  >
+                    <div class="completion-requirement__drag-handle">
+                      <v-icon icon="mdi-drag" size="20" color="medium-emphasis" />
+                      <strong>Requirement {{ completionIndex + 1 }}</strong>
+                      <v-btn
+                        icon="mdi-delete-outline"
+                        color="error"
+                        variant="text"
+                        size="small"
+                        :disabled="(step.completions?.length || 0) <= 1"
+                        :aria-label="`Remove requirement ${completionIndex + 1}`"
+                        @touchstart.stop
+                        @click.stop="removeCompletion(step, completion.id)"
+                      />
+                    </div>
+                    <v-select
+                      :model-value="completionStyleValue(completion)"
+                      label="Completion style"
+                      :items="completionStyleItems"
+                      autocomplete="off"
+                      :rules="[v => Boolean(v) || 'Select a completion style']"
+                      @update:model-value="setCompletionStyle(step, completion, $event)"
                     >
-                      <v-icon icon="mdi-timer-play-outline" />
+                      <template #item="{ props: itemProps, item }">
+                        <v-list-item v-bind="itemProps">
+                          <template #prepend>
+                            <span
+                              class="completion-style-icon mr-3"
+                              :style="{ background: item.raw.color }"
+                            >
+                              <v-icon :icon="item.raw.icon" size="18" />
+                            </span>
+                          </template>
+                        </v-list-item>
+                      </template>
+                      <template #selection="{ item }">
+                        <span class="completion-style-selection">
+                          <span
+                            class="completion-style-selection__icon"
+                            :style="{ background: item.raw.color }"
+                          >
+                            <v-icon :icon="item.raw.icon" size="14" />
+                          </span>
+                          <span class="text-truncate">{{ item.title }}</span>
+                        </span>
+                      </template>
+                    </v-select>
+                    <div v-if="completion.type === 'check'" class="completion-check-summary">
+                      <v-icon icon="mdi-check-circle-outline" color="secondary" />
+                      <span>A separate check-off is required.</span>
                     </div>
-                    <div class="min-width-0">
-                      <strong class="d-block text-truncate">{{ intervalForStep(step)?.name }}</strong>
-                      <p class="text-caption muted">{{ intervalSummaryForStep(step) }}</p>
+                    <div v-if="completion.type === 'quantity'" class="target-grid">
+                      <v-number-input
+                        v-model="completion.targetValue"
+                        label="Target"
+                        :min="0"
+                        :precision="null"
+                      />
+                      <v-select v-model="completion.targetOperator" label="Goal" :items="[{ title: 'At least', value: 'gte' }, { title: 'At most', value: 'lte' }, { title: 'Exactly', value: 'eq' }]" />
+                      <v-select v-model="completion.unit" label="Unit" :items="units" />
+                      <v-text-field v-if="completion.unit === 'custom'" v-model="completion.customUnit" label="Custom unit" autocomplete="off" />
                     </div>
                   </div>
-                </template>
-                <v-alert v-else type="warning" variant="tonal" density="compact">
-                  Create a saved interval before using this completion style.
-                </v-alert>
-              </div>
-              <div v-if="step.completionType === 'flashcards'" class="field-stack mb-4">
-                <template v-if="flashcardStore.reviewSets.length">
-                  <v-select
-                    v-model="step.flashcardReviewSet"
-                    label="Attached Review set"
-                    :items="reviewSetItems"
-                    autocomplete="off"
-                    :rules="[v => Boolean(v) || 'Select a Review set']"
-                  />
-                  <div v-if="reviewSetForStep(step)" class="interval-attachment-summary">
-                    <div class="flashcard-attachment-icon">
-                      <v-icon icon="mdi-cards-playing-outline" />
-                    </div>
-                    <div class="min-width-0">
-                      <strong class="d-block text-truncate">{{ reviewSetForStep(step)?.name }}</strong>
-                      <p class="text-caption muted">{{ reviewSetSummary(step.flashcardReviewSet) }}</p>
-                    </div>
-                  </div>
-                </template>
-                <v-alert v-else type="warning" variant="tonal" density="compact">
-                  Create a Review set before using this completion style.
-                </v-alert>
+                </div>
               </div>
               <v-btn
                 block
@@ -966,6 +1138,15 @@ async function removeTask() {
 .step-panels :deep(.v-expansion-panel) { border: 1px solid rgb(var(--v-theme-on-surface) / .08); }
 .step-panels :deep(.program-step-panel--draggable .program-step__drag-handle) { cursor: grab; }
 .step-panels :deep(.program-step-panel--day-off) { background: rgb(var(--v-theme-background)); }
+.completion-requirement-list { display: grid; }
+.completion-requirement { display: grid; padding: 0 1rem .5rem; border: .0625rem solid rgb(var(--v-theme-on-surface) / .1); border-radius: 1rem; background: rgb(var(--v-theme-background) / .6); }
+.completion-requirement .target-grid { grid-template-columns: 1fr; }
+.completion-requirement__drag-handle { display: flex; min-height: 2.75rem; align-items: center; gap: .65rem; cursor: grab; }
+.completion-requirement__drag-handle strong { min-width: 0; flex: 1 1 auto; font-size: .78rem; }
+.completion-check-summary { display: flex; min-height: 2.75rem; align-items: center; gap: .65rem; color: rgb(var(--v-theme-on-surface) / .68); font-size: .75rem; }
+.completion-style-icon { display: grid; width: 2.125rem; height: 2.125rem; flex: 0 0 auto; place-items: center; border-radius: .6875rem; color: #17200f; }
+.completion-style-selection { display: inline-flex; min-width: 0; align-items: center; gap: .5rem; }
+.completion-style-selection__icon { display: inline-grid; width: 1.5rem; height: 1.5rem; flex: 0 0 auto; place-items: center; border-radius: .5rem; color: #17200f; }
 .day-off-row { display: flex; width: 100%; min-width: 0; align-items: center; gap: .75rem; }
 .step-number.day-off-icon { background: rgb(var(--v-theme-background)); color: rgb(var(--v-theme-on-surface) / .68); }
 .interval-attachment-summary { display: flex; align-items: center; gap: .75rem; padding: .85rem; border-radius: 16px; background: rgb(var(--v-theme-surface-variant)); }
@@ -986,5 +1167,6 @@ async function removeTask() {
 @media (min-width: 37.5rem) {
   .type-selector { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .weekday-picker :deep(.v-btn) { width: auto; min-width: 0; flex: 1 1 0; }
+  .completion-requirement .target-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 </style>

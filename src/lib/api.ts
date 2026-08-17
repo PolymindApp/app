@@ -723,7 +723,12 @@ class ApiClient {
 
   startFlashcardReviewSession(
     reviewSetId: string,
-    input: { task?: string; programStep?: string; taskDate?: string } = {},
+    input: {
+      task?: string
+      programStep?: string
+      programStepCompletion?: string
+      taskDate?: string
+    } = {},
   ) {
     return request<RecordModel>(
       `/flashcard-review-sets/${encodeURIComponent(reviewSetId)}/sessions`,
@@ -732,6 +737,7 @@ class ApiClient {
         body: {
           task: input.task || '',
           program_step: input.programStep || '',
+          program_step_completion: input.programStepCompletion || '',
           task_date: input.taskDate || '',
         },
       },

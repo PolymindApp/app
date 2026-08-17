@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { formatIntervalDuration } from '@/services/intervals'
 import { goalState } from '@/services/schedule'
 import { TASK_TYPE_PRESENTATION } from '@/services/taskTypes'
-import type { TaskProgress, TrackingTaskTracker } from '@/types/domain'
+import type { ProgramStepRequirementListItem, TaskProgress, TrackingTaskTracker } from '@/types/domain'
 
 const MIN_STEP_SYNC_INDICATOR_MS = 1000
 
@@ -13,6 +13,7 @@ const props = defineProps<{
   valuePulse?: number
   interval?: { name: string; duration: string }
   reviewSet?: { name: string; cardCount: number; mode: 'manual' | 'passive' }
+  programStepRequirements?: ProgramStepRequirementListItem[]
   trackers?: TrackingTaskTracker[]
   canLogTracking?: boolean
   syncing?: boolean
@@ -22,24 +23,32 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{
   actions: [progress: TaskProgress]
+  runProgramStepRequirement: [progress: TaskProgress, completionId: string]
   logTracking: [progress: TaskProgress, trackerId: string]
   logTrackingTime: [progress: TaskProgress, trackerId: string]
 }>()
 
 const task = computed(() => props.progress.task)
 const step = computed(() => props.progress.programStep)
+const stepCompletionItems = computed(() => props.progress.completionItems || [])
+const hasMultipleStepCompletions = computed(() => stepCompletionItems.value.length > 1)
+const singleStepCompletion = computed(() => stepCompletionItems.value.length === 1
+  ? stepCompletionItems.value[0]
+  : undefined)
 const valueAnimating = ref(false)
 const stepSyncIndicatorVisible = ref(Boolean(props.syncing))
 let valueAnimationVersion = 0
 let stepSyncStartedAt = props.syncing ? Date.now() : 0
 let stepSyncHideTimer: ReturnType<typeof setTimeout> | undefined
 
-const isCheck = computed(() => step.value ? step.value.completionType === 'check' : task.value.type === 'check')
+const isCheck = computed(() => step.value
+  ? singleStepCompletion.value?.type === 'check'
+  : task.value.type === 'check')
 const isInterval = computed(() =>
-  (!step.value && task.value.type === 'interval') || step.value?.completionType === 'interval',
+  (!step.value && task.value.type === 'interval') || singleStepCompletion.value?.type === 'interval',
 )
 const isFlashcards = computed(() =>
-  (!step.value && task.value.type === 'flashcards') || step.value?.completionType === 'flashcards',
+  (!step.value && task.value.type === 'flashcards') || singleStepCompletion.value?.type === 'flashcards',
 )
 const isSessionDuration = computed(() =>
   !step.value
@@ -51,6 +60,7 @@ const isJournal = computed(() => !step.value && task.value.type === 'journal')
 const isDailyTotal = computed(() => !step.value && task.value.type === 'daily_total')
 const isStepCounter = computed(() => !step.value && task.value.type === 'step_counter')
 const isNumeric = computed(() => !isCheck.value
+  && !hasMultipleStepCompletions.value
   && !isTracking.value
   && !isJournal.value
   && !isInterval.value
@@ -59,11 +69,14 @@ const target = computed(() => isTracking.value
   ? task.value.trackingTrackers?.length ?? 0
   : isSessionDuration.value
     ? task.value.sessionTargetSeconds ?? 0
-    : step.value?.targetValue ?? task.value.targetValue ?? 0)
-const unit = computed(() => step.value?.customUnit || step.value?.unit || task.value.customUnit || task.value.unit || '')
-const operator = computed(() => ({ gte: 'at least', lte: 'at most', eq: 'exactly' })[step.value?.targetOperator || task.value.targetOperator || 'gte'])
-const targetOperator = computed(() => step.value?.targetOperator || task.value.targetOperator || 'gte')
+    : hasMultipleStepCompletions.value
+      ? stepCompletionItems.value.length
+      : singleStepCompletion.value?.targetValue ?? task.value.targetValue ?? 0)
+const unit = computed(() => singleStepCompletion.value?.customUnit || singleStepCompletion.value?.unit || task.value.customUnit || task.value.unit || '')
+const operator = computed(() => ({ gte: 'at least', lte: 'at most', eq: 'exactly' })[singleStepCompletion.value?.targetOperator || task.value.targetOperator || 'gte'])
+const targetOperator = computed(() => singleStepCompletion.value?.targetOperator || task.value.targetOperator || 'gte')
 const currentGoalState = computed(() => isCheck.value
+  || hasMultipleStepCompletions.value
   || (isInterval.value && !isSessionDuration.value)
   || (isFlashcards.value && !isSessionDuration.value)
   || isTracking.value
@@ -72,6 +85,9 @@ const currentGoalState = computed(() => isCheck.value
     : goalState(props.progress.value, target.value, targetOperator.value))
 
 function formatValue(value: number) {
+  if (hasMultipleStepCompletions.value) {
+    return `${value} of ${stepCompletionItems.value.length} requirements`
+  }
   if (isSessionDuration.value) return formatIntervalDuration(value)
   if (task.value.type === 'duration' && !step.value) return `${value % 1 === 0 ? value : value.toFixed(2)}h`
   if (isStepCounter.value) return `${Math.round(value).toLocaleString()} steps`
@@ -157,6 +173,10 @@ const stateIconColor = computed(() => {
 })
 const title = computed(() => step.value?.name || task.value.name)
 const baseSubtitle = computed(() => {
+  if (hasMultipleStepCompletions.value) {
+    const completed = stepCompletionItems.value.filter(item => item.complete).length
+    return `${task.value.name} · ${completed} of ${stepCompletionItems.value.length} requirements complete`
+  }
   if (isInterval.value) {
     return props.interval?.duration ? `Interval · ${props.interval.duration} total` : 'Interval'
   }
@@ -178,8 +198,12 @@ const baseSubtitle = computed(() => {
   return step.value ? `${task.value.name} · Program step` : task.value.description
 })
 const subtitle = computed(() => [props.timeLabel, baseSubtitle.value || 'Personal'].filter(Boolean).join(' · '))
-const showsProgress = computed(() => isTracking.value || isNumeric.value || isSessionDuration.value)
+const showsProgress = computed(() => hasMultipleStepCompletions.value
+  || isTracking.value
+  || isNumeric.value
+  || isSessionDuration.value)
 const hasPersistentDetails = computed(() => showsProgress.value
+  || Boolean(step.value && props.programStepRequirements?.length)
   || Boolean(props.stepCountError)
   || Boolean(numericGoalStatus.value)
   || props.progress.locked
@@ -301,19 +325,55 @@ onBeforeUnmount(() => clearTimeout(stepSyncHideTimer))
         :bg-opacity="0.14"
         rounded
         style="height: 0.5625rem; --v-progress-linear-height: 0.5625rem"
-        :class="isTracking ? 'mt-4' : 'mt-2'"
+        :class="isTracking || hasMultipleStepCompletions ? 'mt-4' : 'mt-2'"
       />
 
       <v-list
+        v-if="step && programStepRequirements?.length"
+        class="task-detail-list pa-0 mt-3"
+        bg-color="transparent"
+        :aria-label="`${title} completion requirements`"
+        @touchstart.stop
+        @click.stop
+      >
+        <v-list-item
+          v-for="requirement in programStepRequirements"
+          :key="requirement.id"
+          class="task-detail-item"
+          :title="requirement.title"
+          :subtitle="requirement.subtitle"
+          :disabled="requirement.disabled || busy"
+          rounded="lg"
+          @click="emit('runProgramStepRequirement', progress, requirement.id)"
+        >
+          <template #prepend>
+            <span class="task-detail-item__icon" :style="{ background: taskColor }">
+              <v-icon :icon="requirement.icon" size="1.125rem" />
+            </span>
+          </template>
+          <template #append>
+            <v-icon
+              v-if="requirement.complete"
+              icon="mdi-check-circle"
+              color="success"
+              size="1.125rem"
+              class="mr-2"
+              aria-label="Complete"
+            />
+          </template>
+        </v-list-item>
+      </v-list>
+
+      <v-list
         v-if="isTracking && trackers?.length"
-        class="tracking-task-trackers pa-0 mt-3"
+        class="task-detail-list pa-0 mt-3"
         bg-color="transparent"
         @touchstart.stop
         @click.stop
       >
         <template v-for="tracker in trackers" :key="tracker.id">
           <v-list-item
-            class="tracking-task-tracker"
+            class="task-detail-item"
             :title="tracker.name"
             :subtitle="tracker.loggedValue
               ? `${tracker.loggedValue} logged for this date`
@@ -323,7 +383,7 @@ onBeforeUnmount(() => clearTimeout(stepSyncHideTimer))
             @click="tracker.kind !== 'duration' && emit('logTracking', progress, tracker.id)"
           >
             <template #prepend>
-              <span class="tracking-task-tracker__icon" :style="{ background: tracker.color }">
+              <span class="task-detail-item__icon" :style="{ background: tracker.color }">
                 <v-icon :icon="tracker.icon" size="1.125rem" />
               </span>
             </template>
@@ -470,9 +530,9 @@ onBeforeUnmount(() => clearTimeout(stepSyncHideTimer))
 .metric-value--updated { animation: metric-value-pulse 560ms cubic-bezier(.22, 1, .36, 1); }
 .metric-target { color: rgb(var(--v-theme-on-surface) / .52); font-size: .72rem; }
 
-.tracking-task-trackers { display: grid; gap: .4rem; }
-.tracking-task-tracker { min-height: 2.75rem; background: rgba(var(--v-theme-on-surface), .04); }
-.tracking-task-tracker__icon {
+.task-detail-list { display: grid; gap: .4rem; }
+.task-detail-item { min-height: 2.75rem; background: rgba(var(--v-theme-on-surface), .04); }
+.task-detail-item__icon {
   display: grid;
   width: 2rem;
   height: 2rem;

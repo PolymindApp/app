@@ -734,7 +734,7 @@ final class SyncService
                     ]),
                 ];
             }
-            foreach (['tasks', 'program_steps', 'interval_templates'] as $table) {
+            foreach (['tasks', 'interval_templates'] as $table) {
                 $detach = $this->database->pdo->prepare(
                     "UPDATE {$table} SET flashcard_review_set = ''
                      WHERE flashcard_review_set = :review_set AND owner = :owner",
@@ -743,6 +743,46 @@ final class SyncService
                     'review_set' => $share['review_set'],
                     'owner' => $share['recipient'],
                 ]);
+            }
+            $this->database->pdo->prepare(
+                "UPDATE program_steps SET flashcard_review_set = ''
+                 WHERE flashcard_review_set = :review_set AND owner = :owner",
+            )->execute([
+                'review_set' => $share['review_set'],
+                'owner' => $share['recipient'],
+            ]);
+            $steps = $this->database->pdo->prepare(
+                'SELECT id, completions FROM program_steps WHERE owner = :owner',
+            );
+            $steps->execute(['owner' => $share['recipient']]);
+            $updateStep = $this->database->pdo->prepare(
+                "UPDATE program_steps SET flashcard_review_set = '', completions = :completions
+                 WHERE id = :id AND owner = :owner",
+            );
+            foreach ($steps->fetchAll() as $step) {
+                $completions = json_decode((string) $step['completions'], true);
+                if (!is_array($completions)) {
+                    continue;
+                }
+                $changed = false;
+                foreach ($completions as &$completion) {
+                    if (
+                        is_array($completion)
+                        && ($completion['type'] ?? '') === 'flashcards'
+                        && ($completion['flashcardReviewSet'] ?? '') === $share['review_set']
+                    ) {
+                        $completion['flashcardReviewSet'] = '';
+                        $changed = true;
+                    }
+                }
+                unset($completion);
+                if ($changed) {
+                    $updateStep->execute([
+                        'completions' => json_encode($completions, JSON_THROW_ON_ERROR),
+                        'id' => $step['id'],
+                        'owner' => $share['recipient'],
+                    ]);
+                }
             }
             $preferences = $this->database->pdo->prepare(
                 'DELETE FROM flashcard_review_set_preferences
@@ -1174,7 +1214,7 @@ final class SyncService
             $pdo->prepare("UPDATE journal_entries SET task = '' WHERE task = :id AND owner = :owner")
                 ->execute(['id' => $recordId, 'owner' => $account]);
             foreach (['interval_sessions', 'flashcard_review_sessions'] as $table) {
-                $pdo->prepare("UPDATE {$table} SET task = '', program_step = '' WHERE task = :id AND owner = :owner")
+                $pdo->prepare("UPDATE {$table} SET task = '', program_step = '', program_step_completion = '' WHERE task = :id AND owner = :owner")
                     ->execute(['id' => $recordId, 'owner' => $account]);
             }
             foreach (['entries', 'occurrences', 'program_steps'] as $table) {
@@ -1183,7 +1223,7 @@ final class SyncService
             }
         } elseif ($resource === 'program_steps') {
             foreach (['interval_sessions', 'flashcard_review_sessions'] as $table) {
-                $pdo->prepare("UPDATE {$table} SET program_step = '' WHERE program_step = :id AND owner = :owner")
+                $pdo->prepare("UPDATE {$table} SET program_step = '', program_step_completion = '' WHERE program_step = :id AND owner = :owner")
                     ->execute(['id' => $recordId, 'owner' => $account]);
             }
             foreach (['entries', 'occurrences'] as $table) {
@@ -1287,11 +1327,63 @@ final class SyncService
                 throw new ApiException(422, 'Session objectives are only available for Interval and Review set tasks.');
             }
         }
+        if ($resource === 'program_steps') {
+            $completions = $values['completions'] ?? [];
+            if (!is_array($completions) || !array_is_list($completions)) {
+                throw new ApiException(422, 'Program step completions must be an array.');
+            }
+            $ids = [];
+            foreach ($completions as $completion) {
+                if (!is_array($completion)) {
+                    throw new ApiException(422, 'A program step completion is invalid.');
+                }
+                $id = (string) ($completion['id'] ?? '');
+                $type = (string) ($completion['type'] ?? '');
+                if ($id === '' || strlen($id) > 64 || isset($ids[$id])) {
+                    throw new ApiException(422, 'Each completion requirement must have a unique id.');
+                }
+                $ids[$id] = true;
+                if (!in_array($type, ['check', 'quantity', 'interval', 'flashcards'], true)) {
+                    throw new ApiException(422, 'A completion requirement has an invalid type.');
+                }
+                if ($type === 'interval') {
+                    $statement = $this->database->pdo->prepare(
+                        'SELECT 1 FROM interval_templates WHERE id = :id AND owner = :owner',
+                    );
+                    $statement->execute([
+                        'id' => (string) ($completion['intervalTemplate'] ?? ''),
+                        'owner' => $account,
+                    ]);
+                    if ($statement->fetchColumn() === false) {
+                        throw new ApiException(422, 'A selected interval is unavailable.');
+                    }
+                }
+                if ($type === 'flashcards') {
+                    $statement = $this->database->pdo->prepare(
+                        'SELECT 1 FROM flashcard_review_sets
+                         LEFT JOIN flashcard_review_set_shares
+                           ON flashcard_review_set_shares.review_set = flashcard_review_sets.id
+                          AND flashcard_review_set_shares.recipient = :owner
+                         WHERE flashcard_review_sets.id = :id
+                           AND (flashcard_review_sets.owner = :owner
+                                OR flashcard_review_set_shares.recipient = :owner)',
+                    );
+                    $statement->execute([
+                        'id' => (string) ($completion['flashcardReviewSet'] ?? ''),
+                        'owner' => $account,
+                    ]);
+                    if ($statement->fetchColumn() === false) {
+                        throw new ApiException(422, 'A selected Review set is unavailable.');
+                    }
+                }
+            }
+        }
         $relations = match ($resource) {
             'program_steps' => ['task' => 'tasks'],
             'occurrences', 'entries' => ['task' => 'tasks', 'program_step' => 'program_steps'],
             'tracking_entries' => ['tracker' => 'tracking_trackers'],
             'interval_sessions' => ['template' => 'interval_templates', 'task' => 'tasks', 'program_step' => 'program_steps'],
+            'flashcard_review_sessions' => ['task' => 'tasks', 'program_step' => 'program_steps'],
             default => [],
         };
         foreach ($relations as $field => $table) {

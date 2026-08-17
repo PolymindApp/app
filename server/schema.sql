@@ -208,7 +208,8 @@ CREATE TABLE program_steps (
     quick_amounts JSON DEFAULT NULL,
     active BOOLEAN NOT NULL DEFAULT FALSE,
     interval_template TEXT NOT NULL DEFAULT '',
-    flashcard_review_set TEXT NOT NULL DEFAULT ''
+    flashcard_review_set TEXT NOT NULL DEFAULT '',
+    completions JSON NOT NULL DEFAULT '[]'
 );
 
 CREATE INDEX idx_program_steps_task_order ON program_steps (task, sort_order);
@@ -228,7 +229,8 @@ CREATE TABLE occurrences (
     completed_at TEXT NOT NULL DEFAULT '',
     snapshot_name TEXT NOT NULL DEFAULT '',
     snapshot_target NUMERIC NOT NULL DEFAULT 0,
-    snapshot_unit TEXT NOT NULL DEFAULT ''
+    snapshot_unit TEXT NOT NULL DEFAULT '',
+    completion_state JSON NOT NULL DEFAULT '{}'
 );
 
 CREATE UNIQUE INDEX idx_occurrences_unique
@@ -250,7 +252,8 @@ CREATE TABLE entries (
     note VARCHAR(255) NOT NULL DEFAULT ''
         CHECK (length(note) <= 255 AND instr(note, char(10)) = 0 AND instr(note, char(13)) = 0),
     source_type TEXT NOT NULL DEFAULT '',
-    source_session TEXT NOT NULL DEFAULT ''
+    source_session TEXT NOT NULL DEFAULT '',
+    program_step_completion TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX idx_entries_owner_date ON entries (owner, entry_date);
@@ -298,6 +301,7 @@ CREATE TABLE interval_sessions (
     runtime_state JSON DEFAULT NULL,
     task TEXT NOT NULL DEFAULT '',
     program_step TEXT NOT NULL DEFAULT '',
+    program_step_completion TEXT NOT NULL DEFAULT '',
     task_date TEXT NOT NULL DEFAULT '',
     note TEXT NOT NULL DEFAULT '',
     flashcard_snapshot JSON NOT NULL DEFAULT '{}',
@@ -351,6 +355,7 @@ CREATE TABLE flashcard_review_sessions (
     ejected_count INTEGER NOT NULL DEFAULT 0,
     task TEXT NOT NULL DEFAULT '',
     program_step TEXT NOT NULL DEFAULT '',
+    program_step_completion TEXT NOT NULL DEFAULT '',
     task_date TEXT NOT NULL DEFAULT '',
     client_id TEXT NOT NULL DEFAULT ''
 );

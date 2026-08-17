@@ -39,7 +39,13 @@ import { useFlashcardStore } from '@/stores/flashcards'
 import { useJournalStore } from '@/stores/journal'
 import { useTaskStore } from '@/stores/tasks'
 import { useTrackingStore } from '@/stores/tracking'
-import type { Entry, TaskProgress, TrackingTracker } from '@/types/domain'
+import type {
+  Entry,
+  ProgramStepCompletionProgress,
+  ProgramStepRequirementListItem,
+  TaskProgress,
+  TrackingTracker,
+} from '@/types/domain'
 
 const allowAutomaticFocus = Capacitor.getPlatform() !== 'android'
 const HEALTH_CONNECT_RESUME_DELAY_MS = 500
@@ -64,6 +70,10 @@ const busy = ref(false)
 const busyProgressKeys = ref(new Set<string>())
 const exactDialog = ref(false)
 const exactProgress = ref<TaskProgress>()
+const exactCompletionId = ref('')
+const exactCompletion = computed(() => exactProgress.value?.completionItems?.find(
+  item => item.id === exactCompletionId.value,
+))
 const exactAmountInput = ref('')
 const exactNote = ref('')
 const exactNoteHistory = ref<Entry[]>([])
@@ -150,6 +160,86 @@ interface TaskMainActionItem {
   disabled?: boolean
 }
 
+function completionSourceName(completion: ProgramStepCompletionProgress) {
+  if (completion.type === 'interval') {
+    return intervalStore.templates.find(item => item.id === completion.intervalTemplate)?.name
+      || 'Saved interval'
+  }
+  if (completion.type === 'flashcards') {
+    return flashcardStore.reviewSets.find(item => item.id === completion.flashcardReviewSet)?.name
+      || 'Review set'
+  }
+  return completion.type === 'quantity' ? 'Quantity target' : 'Check-off'
+}
+
+function completionValueLabel(completion: ProgramStepCompletionProgress) {
+  const unit = completion.customUnit || completion.unit || ''
+  return `${Number(completion.value.toFixed(2))} of ${completion.targetValue ?? 0}${unit ? ` ${unit}` : ''}`
+}
+
+function programStepRequirementItems(progress: TaskProgress): ProgramStepRequirementListItem[] {
+  const completions = progress.completionItems || []
+  return completions.map((completion, index) => {
+    const sourceName = completionSourceName(completion)
+    const title = completions.length > 1 ? `${index + 1}. ${sourceName}` : sourceName
+    const locked = Boolean(progress.locked)
+
+    if (completion.type === 'check') {
+      return {
+        id: completion.id,
+        title,
+        subtitle: completion.complete ? 'Checked off' : 'Not checked off',
+        icon: completion.complete ? 'mdi-check-circle' : 'mdi-check-circle-outline',
+        complete: completion.complete,
+        disabled: locked,
+      }
+    }
+
+    if (completion.type === 'quantity') {
+      return {
+        id: completion.id,
+        title,
+        subtitle: completionValueLabel(completion),
+        icon: 'mdi-plus-minus-variant',
+        complete: completion.complete,
+        disabled: locked || Boolean(progress.sealed),
+      }
+    }
+
+    if (completion.type === 'interval') {
+      const interval = intervalMeta(progress, completion)
+      return {
+        id: completion.id,
+        title,
+        subtitle: [completion.complete ? 'Complete' : '', interval?.duration ? `${interval.duration} total` : 'Saved interval unavailable']
+          .filter(Boolean)
+          .join(' · '),
+        icon: completion.complete ? 'mdi-check-circle' : 'mdi-timer-play-outline',
+        complete: completion.complete,
+        disabled: locked || (!completion.complete && !intervalCanStart(progress)),
+      }
+    }
+
+    const reviewSet = reviewSetMeta(progress, completion)
+    const cardLabel = reviewSet?.cardCount === 1 ? 'card' : 'cards'
+    const reviewDetails = reviewSet
+      ? `${reviewSet.mode === 'passive' ? 'Passive' : 'Manual'} · ${reviewSet.cardCount} ${cardLabel}`
+      : 'Review set unavailable'
+    return {
+      id: completion.id,
+      title,
+      subtitle: [completion.complete ? 'Complete' : '', reviewDetails].filter(Boolean).join(' · '),
+      icon: completion.complete ? 'mdi-check-circle' : 'mdi-cards-playing-outline',
+      complete: completion.complete,
+      disabled: locked || (!completion.complete && (
+        !progressIsToday(progress)
+        || progress.status !== 'pending'
+        || !reviewSet?.cardCount
+      )),
+    }
+  })
+}
+
 const taskActionIsScheduled = computed(() => {
   const progress = taskActionProgress.value
   return Boolean(progress && selectedProgress.value.some(item => progressKey(item) === progressKey(progress)))
@@ -158,6 +248,7 @@ const taskMainActionItems = computed<TaskMainActionItem[]>(() => {
   const progress = taskActionProgress.value
   if (!progress || !taskActionIsScheduled.value || progress.status === 'skipped') return []
   const items: TaskMainActionItem[] = []
+  if (progress.programStep) return items
   const completionType = progress.programStep?.completionType || progress.task.type
   const completionDriven = ['check', 'interval', 'flashcards'].includes(completionType)
   const locked = Boolean(progress.locked)
@@ -539,6 +630,34 @@ function runTaskMainAction(action: TaskMainActionItem) {
   if (action.id === 'write-journal') openJournalTask(progress)
 }
 
+function runProgramStepRequirement(progress: TaskProgress, completionId: string) {
+  const completion = progress.completionItems?.find(item => item.id === completionId)
+  const requirement = programStepRequirementItems(progress).find(item => item.id === completionId)
+  if (!completion || requirement?.disabled || progressIsBusy(progress)) return
+
+  if (completion.type === 'check') {
+    void runForProgress(progress, () => store.setProgramStepCompletion(
+      progress,
+      completion.id,
+      !completion.complete,
+    ))
+    return
+  }
+  if (completion.type === 'quantity') {
+    void openExact(progress, false, completion.id)
+    return
+  }
+  if (completion.complete) {
+    void runForProgress(progress, () => store.setProgramStepCompletion(progress, completion.id, false))
+    return
+  }
+  if (completion.type === 'interval') {
+    void startIntervalTask(progress, completion)
+    return
+  }
+  void startFlashcardTask(progress, completion)
+}
+
 function taskEntryKindLabel(entry: Entry) {
   if (isHealthConnectEntry(entry)) return 'Health Connect'
   if (entry.kind === 'duration') return 'Duration'
@@ -649,8 +768,9 @@ async function confirmTaskStatusChange() {
   }
 }
 
-async function openExact(progress: TaskProgress, additional = false) {
+async function openExact(progress: TaskProgress, additional = false, completionId = '') {
   exactProgress.value = progress
+  exactCompletionId.value = completionId
   exactEditingEntry.value = undefined
   exactLoggingAdditional.value = additional
   exactAmountInput.value = ''
@@ -684,6 +804,7 @@ function editTaskLogEntry(entry: Entry) {
   const progress = taskActionProgress.value
   if (!progress || progress.sealed || busy.value || isHealthConnectEntry(entry)) return
   exactProgress.value = progress
+  exactCompletionId.value = entry.programStepCompletion || ''
   exactEditingEntry.value = entry
   exactLoggingAdditional.value = false
   exactAmountInput.value = String(Number(entry.value.toFixed(2)))
@@ -737,8 +858,10 @@ function openTimeLogger(progress: TaskProgress) {
   })
 }
 
-function intervalMeta(progress: TaskProgress) {
-  const templateId = progress.programStep?.intervalTemplate || progress.task.intervalTemplate
+function intervalMeta(progress: TaskProgress, completion?: ProgramStepCompletionProgress) {
+  const templateId = completion?.intervalTemplate
+    || progress.programStep?.intervalTemplate
+    || progress.task.intervalTemplate
   const template = intervalStore.templates.find((item) => item.id === templateId)
   if (!template) return undefined
   return {
@@ -747,8 +870,10 @@ function intervalMeta(progress: TaskProgress) {
   }
 }
 
-function reviewSetMeta(progress: TaskProgress) {
-  const reviewSetId = progress.programStep?.flashcardReviewSet || progress.task.flashcardReviewSet
+function reviewSetMeta(progress: TaskProgress, completion?: ProgramStepCompletionProgress) {
+  const reviewSetId = completion?.flashcardReviewSet
+    || progress.programStep?.flashcardReviewSet
+    || progress.task.flashcardReviewSet
   const reviewSet = flashcardStore.reviewSets.find(item => item.id === reviewSetId)
   if (!reviewSet) return undefined
   return {
@@ -758,18 +883,22 @@ function reviewSetMeta(progress: TaskProgress) {
   }
 }
 
-function reviewSessionMatchesProgress(progress: TaskProgress) {
+function reviewSessionMatchesProgress(progress: TaskProgress, completionId = '') {
   const active = flashcardStore.activeSession
   return active?.task === progress.task.id
     && (active.programStep || '') === (progress.programStep?.id || '')
+    && (active.programStepCompletion || '') === completionId
     && active.taskDate === progress.scheduledDate
 }
 
-async function startFlashcardTask(progress: TaskProgress) {
+async function startFlashcardTask(
+  progress: TaskProgress,
+  completion?: ProgramStepCompletionProgress,
+) {
   flashcardStartError.value = ''
   const active = flashcardStore.activeSession
   if (active) {
-    if (reviewSessionMatchesProgress(progress)) {
+    if (reviewSessionMatchesProgress(progress, completion?.id)) {
       await router.push({
         name: 'flashcard-review-runner',
         params: { sessionId: active.id },
@@ -780,7 +909,9 @@ async function startFlashcardTask(progress: TaskProgress) {
     }
     return
   }
-  const reviewSetId = progress.programStep?.flashcardReviewSet || progress.task.flashcardReviewSet
+  const reviewSetId = completion?.flashcardReviewSet
+    || progress.programStep?.flashcardReviewSet
+    || progress.task.flashcardReviewSet
   if (!reviewSetId) {
     flashcardStartError.value = 'This task or program step does not have an attached Review set.'
     return
@@ -791,23 +922,28 @@ async function startFlashcardTask(progress: TaskProgress) {
     query: {
       task: progress.task.id,
       ...(progress.programStep ? { step: progress.programStep.id } : {}),
+      ...(completion ? { completion: completion.id } : {}),
       date: progress.scheduledDate,
       from: 'tasks',
     },
   })
 }
 
-function sessionMatchesProgress(progress: TaskProgress) {
+function sessionMatchesProgress(progress: TaskProgress, completionId = '') {
   const active = intervalStore.activeSession
   return active?.task === progress.task.id
     && (active.programStep || '') === (progress.programStep?.id || '')
+    && (active.programStepCompletion || '') === completionId
 }
 
-async function startIntervalTask(progress: TaskProgress) {
+async function startIntervalTask(
+  progress: TaskProgress,
+  completion?: ProgramStepCompletionProgress,
+) {
   intervalStartError.value = ''
   const active = intervalStore.activeSession
   if (active) {
-    if (sessionMatchesProgress(progress)) {
+    if (sessionMatchesProgress(progress, completion?.id)) {
       await router.push({
         name: 'interval-runner',
         params: { sessionId: active.id },
@@ -818,7 +954,9 @@ async function startIntervalTask(progress: TaskProgress) {
     }
     return
   }
-  const templateId = progress.programStep?.intervalTemplate || progress.task.intervalTemplate
+  const templateId = completion?.intervalTemplate
+    || progress.programStep?.intervalTemplate
+    || progress.task.intervalTemplate
   if (!templateId) {
     intervalStartError.value = 'This task or program step does not have an attached interval.'
     return
@@ -829,6 +967,7 @@ async function startIntervalTask(progress: TaskProgress) {
     query: {
       task: progress.task.id,
       ...(progress.programStep ? { step: progress.programStep.id } : {}),
+      ...(completion ? { completion: completion.id } : {}),
       date: progress.scheduledDate,
       from: 'tasks',
     },
@@ -876,7 +1015,7 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
   const progress = exactProgress.value
   exactAction.value = mode
   const amount = mode === 'set'
-    ? exactAmount.value - progress.value
+    ? exactAmount.value - (exactCompletion.value?.value ?? progress.value)
     : mode === 'subtract'
       ? -exactAmount.value
       : exactAmount.value
@@ -890,6 +1029,7 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
     amount,
     mode === 'add' ? undefined : 'adjustment',
     progress.task.entryNotesEnabled ? exactNote.value.trim() : '',
+    exactCompletionId.value,
   ))
   pulseProgressValue(progress)
   exactDialog.value = false
@@ -1015,10 +1155,12 @@ async function saveTaskLogEntry() {
                     :step-count-error="item.task.type === 'step_counter' ? stepCountError : ''"
                     :interval="intervalMeta(item)"
                     :review-set="reviewSetMeta(item)"
+                    :program-step-requirements="programStepRequirementItems(item)"
                     :trackers="trackingMeta(item)"
                     :can-log-tracking="trackingCanLog(item)"
                     @log-tracking="openTrackingLogger"
                     @log-tracking-time="openTrackingTimeLogger"
+                    @run-program-step-requirement="runProgramStepRequirement"
                     @actions="openTaskActions"
                   />
                 </div>
@@ -1058,10 +1200,12 @@ async function saveTaskLogEntry() {
                 :step-count-error="item.task.type === 'step_counter' ? stepCountError : ''"
                 :interval="intervalMeta(item)"
                 :review-set="reviewSetMeta(item)"
+                :program-step-requirements="programStepRequirementItems(item)"
                 :trackers="trackingMeta(item)"
                 :can-log-tracking="trackingCanLog(item)"
                 @log-tracking="openTrackingLogger"
                 @log-tracking-time="openTrackingTimeLogger"
+                @run-program-step-requirement="runProgramStepRequirement"
                 @actions="openTaskActions"
               />
             </div>

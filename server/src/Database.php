@@ -9,7 +9,7 @@ use PDOException;
 
 final class Database
 {
-    public const EXPECTED_SCHEMA_VERSION = '202608170001';
+    public const EXPECTED_SCHEMA_VERSION = '202608170002';
 
     public readonly PDO $pdo;
 
@@ -87,16 +87,19 @@ final class Database
                 'id', 'owner', 'task', 'name', 'description', 'sort_order',
                 'cycle_days', 'completion_type', 'target_value', 'target_operator',
                 'unit', 'custom_unit', 'quick_amounts', 'active', 'interval_template',
+                'flashcard_review_set', 'completions',
             ],
             'occurrences' => [
                 'id', 'owner', 'task', 'program_step', 'scheduled_date', 'status',
                 'sealed', 'completed_at', 'snapshot_name', 'snapshot_target',
                 'snapshot_unit',
+                'completion_state',
             ],
             'entries' => [
                 'id', 'owner', 'task', 'occurrence', 'program_step', 'entry_date',
                 'created_at', 'value', 'kind', 'unit', 'note', 'source_type',
                 'source_session',
+                'program_step_completion',
             ],
             'interval_templates' => [
                 'id', 'owner', 'name', 'description', 'color', 'definition',
@@ -108,6 +111,7 @@ final class Database
                 'definition_snapshot', 'cue_snapshot', 'started_at', 'ended_at',
                 'planned_seconds', 'elapsed_seconds', 'runtime_state', 'task',
                 'program_step', 'task_date', 'note', 'flashcard_snapshot',
+                'program_step_completion',
             ],
             'tracking_trackers' => [
                 'id', 'owner', 'name', 'description', 'role', 'kind', 'category',

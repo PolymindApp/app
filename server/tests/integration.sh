@@ -96,7 +96,7 @@ suffix="$(php -r 'echo bin2hex(random_bytes(5));')"
 password="correct-horse-battery"
 
 migration_version="$(sqlite3 "$test_db" 'SELECT MAX(version) FROM backontrack_schema_migrations;')"
-[[ "$migration_version" == 202608170001 ]] || {
+[[ "$migration_version" == 202608170002 ]] || {
   echo "The API did not apply the complete database migration sequence." >&2
   exit 1
 }
@@ -1160,6 +1160,10 @@ program_step_payload="$(php -r '
     "target_value" => 1, "target_operator" => "gte", "unit" => "",
     "custom_unit" => "", "quick_amounts" => [], "active" => true,
     "interval_template" => $argv[2],
+    "completions" => [
+      ["id" => "interval-copy-1", "type" => "interval", "intervalTemplate" => $argv[2]],
+      ["id" => "interval-copy-2", "type" => "interval", "intervalTemplate" => $argv[2]],
+    ],
   ], JSON_THROW_ON_ERROR);
 ' "$program_task_id" "$interval_template_id")"
 program_step_response="$(curl --silent --show-error --fail \
@@ -1173,6 +1177,7 @@ program_session_payload="$(php -r '
   $payload = json_decode($argv[1], true, 512, JSON_THROW_ON_ERROR);
   $payload["task"] = $argv[2];
   $payload["program_step"] = $argv[3];
+  $payload["program_step_completion"] = "interval-copy-1";
   $payload["started_at"] = "2026-08-01T15:00:00Z";
   $payload["runtime_state"]["stepStartedAt"] = "2026-08-01T15:00:00Z";
   $payload["runtime_state"]["updatedAt"] = "2026-08-01T15:00:00Z";
@@ -1191,10 +1196,40 @@ curl --silent --show-error --fail \
   --data "$program_completion_payload" \
   "$api_url/interval-sessions/$program_session_id/complete" >/dev/null
 
-program_step_completion_count="$(sqlite3 "$test_db" \
-  "SELECT COUNT(*) FROM occurrences WHERE task = '$program_task_id' AND program_step = '$program_step_id' AND scheduled_date = '2026-08-01' AND status = 'completed';")"
-[[ "$program_step_completion_count" == 1 ]] || {
-  echo "An attached interval did not complete its selected program step." >&2
+first_program_requirement_state="$(sqlite3 "$test_db" \
+  "SELECT status || ':' || json_extract(completion_state, '$.interval-copy-1') || ':' || COALESCE(json_extract(completion_state, '$.interval-copy-2'), 0)
+   FROM occurrences WHERE task = '$program_task_id' AND program_step = '$program_step_id' AND scheduled_date = '2026-08-01';")"
+[[ "$first_program_requirement_state" == "pending:1:0" ]] || {
+  echo "The first duplicate interval did not remain independent." >&2
+  exit 1
+}
+
+second_program_session_payload="$(php -r '
+  $payload = json_decode($argv[1], true, 512, JSON_THROW_ON_ERROR);
+  $payload["program_step_completion"] = "interval-copy-2";
+  $payload["started_at"] = "2026-08-01T15:01:00Z";
+  $payload["runtime_state"]["stepStartedAt"] = "2026-08-01T15:01:00Z";
+  $payload["runtime_state"]["updatedAt"] = "2026-08-01T15:01:00Z";
+  echo json_encode($payload, JSON_THROW_ON_ERROR);
+' "$program_session_payload")"
+second_program_session_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "$second_program_session_payload" \
+  "$api_url/collections/interval_sessions/records")"
+second_program_session_id="$(json_field id <<<"$second_program_session_response")"
+second_program_completion_payload='{"runtime_state":{"stepIndex":1,"remainingMs":0,"accumulatedMs":1000,"updatedAt":"2026-08-01T15:01:01Z"},"elapsed_seconds":1,"ended_at":"2026-08-01T15:01:01Z"}'
+curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "$second_program_completion_payload" \
+  "$api_url/interval-sessions/$second_program_session_id/complete" >/dev/null
+
+program_step_completion_state="$(sqlite3 "$test_db" \
+  "SELECT status || ':' || json_extract(completion_state, '$.interval-copy-1') || ':' || json_extract(completion_state, '$.interval-copy-2')
+   FROM occurrences WHERE task = '$program_task_id' AND program_step = '$program_step_id' AND scheduled_date = '2026-08-01';")"
+[[ "$program_step_completion_state" == "completed:1:1" ]] || {
+  echo "Duplicate attached intervals did not complete independently in order." >&2
   exit 1
 }
 
@@ -2858,7 +2893,7 @@ bob_program_id="$(json_field id <<<"$bob_program_response")"
 bob_program_step_response="$(curl --silent --show-error --fail \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $bob_token" \
-  --data "{\"task\":\"$bob_program_id\",\"name\":\"Shared cards\",\"description\":\"\",\"sort_order\":0,\"cycle_days\":[1],\"completion_type\":\"flashcards\",\"target_value\":1,\"target_operator\":\"gte\",\"unit\":\"\",\"custom_unit\":\"\",\"quick_amounts\":[],\"active\":true,\"interval_template\":\"\",\"flashcard_review_set\":\"$manual_review_set_id\"}" \
+  --data "{\"task\":\"$bob_program_id\",\"name\":\"Shared cards\",\"description\":\"\",\"sort_order\":0,\"cycle_days\":[1],\"completion_type\":\"flashcards\",\"target_value\":1,\"target_operator\":\"gte\",\"unit\":\"\",\"custom_unit\":\"\",\"quick_amounts\":[],\"active\":true,\"interval_template\":\"\",\"flashcard_review_set\":\"$manual_review_set_id\",\"completions\":[{\"id\":\"shared-review\",\"type\":\"flashcards\",\"flashcardReviewSet\":\"$manual_review_set_id\"}]}" \
   "$api_url/collections/program_steps/records")"
 bob_program_step_id="$(json_field id <<<"$bob_program_step_response")"
 
@@ -2873,7 +2908,10 @@ share_delete_status="$(curl --silent --output /dev/null --write-out '%{http_code
   -X DELETE -H "Authorization: Bearer $alice_token" \
   "$api_url/flashcard-review-set-shares/$share_id")"
 detached_shared_integrations="$(sqlite3 "$test_db" \
-  "SELECT (SELECT flashcard_review_set FROM tasks WHERE id = '$bob_shared_task_id') || ':' || (SELECT flashcard_review_set FROM program_steps WHERE id = '$bob_program_step_id') || ':' || (SELECT flashcard_review_set FROM interval_templates WHERE id = '$bob_interval_id');")"
+  "SELECT (SELECT flashcard_review_set FROM tasks WHERE id = '$bob_shared_task_id')
+     || ':' || (SELECT flashcard_review_set FROM program_steps WHERE id = '$bob_program_step_id')
+     || ':' || (SELECT json_extract(completions, '\$[0].flashcardReviewSet') FROM program_steps WHERE id = '$bob_program_step_id')
+     || ':' || (SELECT flashcard_review_set FROM interval_templates WHERE id = '$bob_interval_id');")"
 revoked_original_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
   -H "Authorization: Bearer $bob_token" \
   "$api_url/flashcard-review-sets/$manual_review_set_id/cards")"
@@ -2882,7 +2920,7 @@ copied_set_status="$(curl --silent --output /dev/null --write-out '%{http_code}'
   "$api_url/flashcard-review-sets/$copied_set_id/cards")"
 preserved_shared_history="$(sqlite3 "$test_db" \
   "SELECT COUNT(*) FROM flashcard_review_sessions WHERE id = '$bob_shared_session_id' AND owner = '$bob_id' AND source_owner = '$alice_id';")"
-[[ "$share_delete_status" == 204 && "$detached_shared_integrations" == "::" \
+[[ "$share_delete_status" == 204 && "$detached_shared_integrations" == ":::" \
   && "$revoked_original_status" == 404 && "$copied_set_status" == 200 \
   && "$preserved_shared_history" == 1 ]] || {
   echo "Revoking a Review set did not detach integrations while preserving history and copies." >&2

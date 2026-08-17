@@ -1650,6 +1650,80 @@ describe('interval task completion', () => {
       status: 'completed',
     })
   })
+
+  it('tracks mixed requirements and duplicate intervals independently', () => {
+    const store = useTaskStore()
+    const programTask: Task = {
+      ...task,
+      id: 'mixed-program',
+      type: 'program',
+      cycleLength: 1,
+      programRepeat: true,
+    }
+    const mixedStep: ProgramStep = {
+      id: 'mixed-step',
+      task: programTask.id,
+      name: 'Mixed work',
+      description: '',
+      sortOrder: 0,
+      cycleDays: [1],
+      completionType: 'check',
+      active: true,
+      completions: [
+        { id: 'check-1', type: 'check' },
+        {
+          id: 'quantity-1',
+          type: 'quantity',
+          targetValue: 5,
+          targetOperator: 'gte',
+          unit: 'count',
+        },
+        { id: 'interval-1', type: 'interval', intervalTemplate: 'template-1' },
+        { id: 'interval-2', type: 'interval', intervalTemplate: 'template-1' },
+      ],
+    }
+    store.entries = [{
+      ...entry('mixed-quantity', 5),
+      task: programTask.id,
+      programStep: mixedStep.id,
+      programStepCompletion: 'quantity-1',
+      kind: 'quantity',
+      unit: 'count',
+    }]
+    store.occurrences = [{
+      ...completedOccurrence,
+      id: 'mixed-occurrence',
+      task: programTask.id,
+      programStep: mixedStep.id,
+      status: 'pending',
+      completedAt: undefined,
+      snapshotName: mixedStep.name,
+      completionState: {
+        'check-1': true,
+        'interval-1': true,
+      },
+    }]
+
+    const partial = store.makeProgress(programTask, selectedDate, mixedStep)
+    expect(partial).toMatchObject({ value: 3, percent: 75, complete: false, status: 'pending' })
+    expect(partial.completionItems?.map(item => [item.id, item.complete])).toEqual([
+      ['check-1', true],
+      ['quantity-1', true],
+      ['interval-1', true],
+      ['interval-2', false],
+    ])
+
+    store.occurrences[0]!.completionState = {
+      ...store.occurrences[0]!.completionState,
+      'interval-2': true,
+    }
+    expect(store.makeProgress(programTask, selectedDate, mixedStep)).toMatchObject({
+      value: 4,
+      percent: 100,
+      complete: true,
+      status: 'completed',
+    })
+  })
 })
 
 describe('task ordering', () => {

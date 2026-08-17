@@ -28,7 +28,9 @@ export type TaskCardActionId = typeof TASK_CARD_ACTION_ITEMS[number]['id']
 
 export function taskCanLogAmounts(progress?: TaskProgress) {
   if (!progress) return false
-  if (progress.programStep) return progress.programStep.completionType === 'quantity'
+  if (progress.programStep) return progress.completionItems?.length
+    ? progress.completionItems.some(item => item.type === 'quantity')
+    : progress.programStep.completionType === 'quantity'
   return progress.task.type === 'duration' || progress.task.type === 'daily_total'
 }
 
@@ -38,7 +40,9 @@ export function taskCanLogAdditionalValue(progress?: TaskProgress) {
 
 export function taskIntervalCanStart(progress: TaskProgress, currentDate: string) {
   const isInterval = progress.programStep
-    ? progress.programStep.completionType === 'interval'
+    ? progress.completionItems?.length
+      ? progress.completionItems.some(item => item.type === 'interval' && !item.complete)
+      : progress.programStep.completionType === 'interval'
     : progress.task.type === 'interval'
   return isInterval
     && progress.scheduledDate === currentDate
@@ -56,7 +60,7 @@ export function taskNeedsReview(progress: TaskProgress, currentDate: string) {
   }
 
   const isQuantitative = progress.programStep
-    ? progress.programStep.completionType === 'quantity'
+    ? false
     : ['duration', 'daily_total', 'step_counter'].includes(progress.task.type)
       || (['interval', 'flashcards'].includes(progress.task.type)
         && progress.task.sessionGoalType === 'duration')

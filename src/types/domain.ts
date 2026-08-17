@@ -8,6 +8,7 @@ export type TargetOperator = 'gte' | 'lte' | 'eq'
 export type OccurrenceStatus = 'pending' | 'completed' | 'missed' | 'carried' | 'rescheduled' | 'skipped'
 export type SessionCountMode = 'task' | 'linked'
 export type SessionGoalType = 'complete' | 'duration'
+export type ProgramStepCompletionType = 'check' | 'quantity' | 'interval' | 'flashcards'
 
 export interface WeekDateMarker {
   date: string
@@ -72,6 +73,45 @@ export interface ProgramStep {
   active: boolean
   intervalTemplate?: string
   flashcardReviewSet?: string
+  completions?: ProgramStepCompletion[]
+}
+
+export interface ProgramStepCompletion {
+  id: string
+  type: ProgramStepCompletionType
+  targetValue?: number
+  targetOperator?: TargetOperator
+  unit?: string
+  customUnit?: string
+  intervalTemplate?: string
+  flashcardReviewSet?: string
+}
+
+export interface ProgramStepCompletionProgress extends ProgramStepCompletion {
+  value: number
+  percent: number
+  complete: boolean
+}
+
+export interface ProgramStepRequirementListItem extends Pick<ProgramStepCompletionProgress, 'id' | 'complete'> {
+  title: string
+  subtitle: string
+  icon: string
+  disabled?: boolean
+}
+
+export interface ProgramStepCompletionStyleItem {
+  type?: 'item' | 'subheader'
+  title: string
+  value?: string
+  completionType?: ProgramStepCompletionType
+  sourceId?: string
+  icon?: string
+  color?: string
+  props?: {
+    subtitle?: string
+    disabled?: boolean
+  }
 }
 
 export interface Occurrence {
@@ -85,6 +125,7 @@ export interface Occurrence {
   snapshotName: string
   snapshotTarget?: number
   snapshotUnit?: string
+  completionState?: Record<string, boolean>
 }
 
 export interface Entry {
@@ -92,6 +133,7 @@ export interface Entry {
   task: string
   occurrence?: string
   programStep?: string
+  programStepCompletion?: string
   entryDate: string
   createdAt: string
   value: number
@@ -112,6 +154,7 @@ export interface TaskProgress {
   sealed?: boolean
   status: OccurrenceStatus
   programStep?: ProgramStep
+  completionItems?: ProgramStepCompletionProgress[]
   locked?: boolean
 }
 
@@ -231,6 +274,7 @@ export interface IntervalSession {
   template?: string
   task?: string
   programStep?: string
+  programStepCompletion?: string
   taskDate: string
   source: 'template' | 'quick'
   status: IntervalSessionStatus
@@ -479,6 +523,7 @@ export interface FlashcardReviewSession extends FlashcardReviewSettings {
   ejectedCount: number
   task?: string
   programStep?: string
+  programStepCompletion?: string
   taskDate?: string
 }
 
