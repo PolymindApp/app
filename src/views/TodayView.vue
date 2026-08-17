@@ -997,7 +997,7 @@ async function saveTaskLogEntry() {
       <div class="task-timeline">
         <section v-for="group in timedProgressGroups" :key="group.hour" class="task-hour-group">
           <time class="task-hour-label" :datetime="`${group.hour}:00`">{{ group.label }}</time>
-          <TransitionGroup name="task-list" tag="div" class="task-stack task-hour-stack">
+          <div class="task-stack task-hour-stack">
             <div
               v-for="item in group.tasks"
               :key="visibilityKey(item)"
@@ -1020,7 +1020,7 @@ async function saveTaskLogEntry() {
                 @actions="openTaskActions"
               />
             </div>
-          </TransitionGroup>
+          </div>
         </section>
       </div>
     </section>
@@ -1031,7 +1031,7 @@ async function saveTaskLogEntry() {
       :class="{ 'mt-6': timedProgressGroups.length }"
     >
       <h3 class="task-schedule-label task-all-day-label">All day</h3>
-      <TransitionGroup name="task-list" tag="div" class="task-stack task-all-day-stack">
+      <div class="task-stack task-all-day-stack">
         <div
           v-for="item in allDayProgress"
           :key="visibilityKey(item)"
@@ -1061,7 +1061,7 @@ async function saveTaskLogEntry() {
             @actions="openTaskActions"
           />
         </div>
-      </TransitionGroup>
+      </div>
     </section>
 
     <v-card v-if="!selectedProgress.length && !loading" class="surface-card empty-card pa-8 text-center">
@@ -1488,29 +1488,11 @@ async function saveTaskLogEntry() {
   margin-bottom: var(--task-card-gap);
   border-radius: 1.5rem;
   grid-template-rows: 1fr;
-  transition: margin-bottom .22s cubic-bezier(.22, 1, .36, 1);
 }
 .task-masonry-item > * { min-height: 0; }
 .task-masonry-item.long-press-drag-ghost { overflow: hidden; }
 .task-stack :deep(.long-press-drag-placeholder) { margin-bottom: var(--task-card-gap); }
 .task-masonry-item--draggable :deep([data-task-drag-handle]) { cursor: grab; }
-.task-list-enter-active,
-.task-list-leave-active {
-  overflow: hidden;
-  transition:
-    grid-template-rows .22s cubic-bezier(.22, 1, .36, 1),
-    margin-bottom .22s cubic-bezier(.22, 1, .36, 1),
-    opacity .18s ease;
-}
-.task-list-enter-from,
-.task-list-leave-to { margin-bottom: 0; grid-template-rows: 0fr; opacity: 0; }
-.task-list-enter-from:only-child,
-.task-list-leave-to:only-child { margin-bottom: var(--task-card-gap); }
-.task-list-move {
-  transition:
-    transform .22s cubic-bezier(.22, 1, .36, 1),
-    margin-bottom .22s cubic-bezier(.22, 1, .36, 1);
-}
 .task-timeline { display: grid; gap: 1rem; }
 .task-hour-group { display: grid; min-width: 0; grid-template-columns: 2.5rem minmax(0, 1fr); gap: .75rem; }
 .task-hour-label {
@@ -1580,13 +1562,6 @@ async function saveTaskLogEntry() {
 .review-row { display: flex; flex-direction: column; align-items: stretch; gap: 1rem; border-top: .0625rem solid rgb(var(--v-theme-on-surface) / .08); }
 .review-actions { display: grid; gap: .5rem; }
 .review-actions .v-btn { width: 100%; }
-
-@media (prefers-reduced-motion: reduce) {
-  .task-masonry-item,
-  .task-list-enter-active,
-  .task-list-leave-active,
-  .task-list-move { transition-duration: 0s; }
-}
 
 @media (min-width: 43.75rem) {
   .task-stack { grid-template-columns: repeat(2, minmax(0, 1fr)); }

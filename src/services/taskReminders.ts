@@ -18,17 +18,14 @@ const MAX_SCHEDULED_TASK_REMINDERS = 400
 interface NativeTaskReminderStatus {
   notificationsEnabled: boolean
   channelEnabled: boolean
-  doNotDisturbActive: boolean
-  bypassesDoNotDisturb: boolean
 }
 
 interface NativeTaskReminderSettingsPlugin {
   getStatus(): Promise<NativeTaskReminderStatus>
   openNotificationSettings(): Promise<void>
-  openDoNotDisturbSettings(): Promise<void>
 }
 
-export type TaskReminderCapability = 'notifications' | 'exact_alarms' | 'do_not_disturb'
+export type TaskReminderCapability = 'notifications' | 'exact_alarms'
 
 export interface TaskReminderCapabilityIssue {
   code: TaskReminderCapability
@@ -98,13 +95,6 @@ export async function checkTaskReminderCapabilities(): Promise<TaskReminderCapab
       action: 'Allow precise reminders',
     })
   }
-  if (nativeStatus.doNotDisturbActive && !nativeStatus.bypassesDoNotDisturb) {
-    issues.push({
-      code: 'do_not_disturb',
-      message: 'Do Not Disturb is silencing task reminders. Allow BackOnTrack under Apps.',
-      action: 'Allow during Do Not Disturb',
-    })
-  }
   return issues
 }
 
@@ -114,11 +104,6 @@ export async function openTaskReminderCapabilitySettings(capability: TaskReminde
     await LocalNotifications.changeExactNotificationSetting()
     return
   }
-  if (capability === 'do_not_disturb') {
-    await NativeTaskReminderSettings.openDoNotDisturbSettings()
-    return
-  }
-
   await LocalNotifications.createChannel(CHANNEL)
   const permissionGranted = await requestTaskReminderPermission()
   const enabled = await LocalNotifications.areEnabled()

@@ -23,8 +23,6 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 public class TaskReminderSettingsPlugin extends Plugin {
 
     private static final String CHANNEL_ID = "task-reminders";
-    private static final String ACTION_ZEN_MODE_SETTINGS = "android.settings.ZEN_MODE_SETTINGS";
-
     @PluginMethod
     public void getStatus(PluginCall call) {
         NotificationManager manager = (NotificationManager) getContext()
@@ -32,10 +30,6 @@ public class TaskReminderSettingsPlugin extends Plugin {
         NotificationChannel channel = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
             ? manager.getNotificationChannel(CHANNEL_ID)
             : null;
-        int interruptionFilter = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
-            ? manager.getCurrentInterruptionFilter()
-            : NotificationManager.INTERRUPTION_FILTER_ALL;
-
         JSObject result = new JSObject();
         result.put(
             "notificationsEnabled",
@@ -45,12 +39,6 @@ public class TaskReminderSettingsPlugin extends Plugin {
             "channelEnabled",
             channel == null || channel.getImportance() != NotificationManager.IMPORTANCE_NONE
         );
-        result.put(
-            "doNotDisturbActive",
-            interruptionFilter != NotificationManager.INTERRUPTION_FILTER_ALL
-                && interruptionFilter != NotificationManager.INTERRUPTION_FILTER_UNKNOWN
-        );
-        result.put("bypassesDoNotDisturb", channel != null && channel.canBypassDnd());
         call.resolve(result);
     }
 
@@ -70,11 +58,6 @@ public class TaskReminderSettingsPlugin extends Plugin {
         intent.putExtra(Settings.EXTRA_APP_PACKAGE, getContext().getPackageName());
         if (channelBlocked) intent.putExtra(Settings.EXTRA_CHANNEL_ID, CHANNEL_ID);
         openSettings(call, intent);
-    }
-
-    @PluginMethod
-    public void openDoNotDisturbSettings(PluginCall call) {
-        openSettings(call, new Intent(ACTION_ZEN_MODE_SETTINGS));
     }
 
     @ActivityCallback

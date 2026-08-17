@@ -87,22 +87,22 @@ describe('TaskReminderSettings', () => {
 
   it('shows missing capabilities and rechecks after returning from settings', async () => {
     reminderMocks.checkCapabilities.mockResolvedValueOnce([{
-      code: 'do_not_disturb',
-      message: 'Do Not Disturb is silencing task reminders. Allow BackOnTrack under Apps.',
-      action: 'Allow during Do Not Disturb',
+      code: 'notifications',
+      message: 'Android is blocking task notifications.',
+      action: 'Allow notifications',
     }]).mockResolvedValueOnce([])
     const wrapper = mountSettings(true, ['08:00'])
 
     await wrapper.get('.time-wheel').trigger('click')
     await flushPromises()
 
-    expect(wrapper.text()).toContain('Do Not Disturb is silencing task reminders.')
+    expect(wrapper.text()).toContain('Android is blocking task notifications.')
     const settingsButton = wrapper.findAll('button')
-      .find(button => button.text() === 'Allow during Do Not Disturb')
+      .find(button => button.text() === 'Allow notifications')
     await settingsButton?.trigger('click')
     await flushPromises()
 
-    expect(reminderMocks.openCapabilitySettings).toHaveBeenCalledWith('do_not_disturb')
+    expect(reminderMocks.openCapabilitySettings).toHaveBeenCalledWith('notifications')
     expect(reminderMocks.checkCapabilities).toHaveBeenCalledTimes(2)
     expect(wrapper.text()).not.toContain('Reminder setup needs attention')
   })

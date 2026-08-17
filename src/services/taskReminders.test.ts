@@ -13,7 +13,6 @@ const mocks = vi.hoisted(() => ({
   getReminderStatus: vi.fn(),
   isNativePlatform: vi.fn(),
   getPlatform: vi.fn(),
-  openDoNotDisturbSettings: vi.fn(),
   openNotificationSettings: vi.fn(),
   requestPermissions: vi.fn(),
   schedule: vi.fn(),
@@ -26,7 +25,6 @@ vi.mock('@capacitor/core', () => ({
   },
   registerPlugin: () => ({
     getStatus: mocks.getReminderStatus,
-    openDoNotDisturbSettings: mocks.openDoNotDisturbSettings,
     openNotificationSettings: mocks.openNotificationSettings,
   }),
 }))
@@ -86,8 +84,6 @@ beforeEach(() => {
   mocks.getReminderStatus.mockResolvedValue({
     notificationsEnabled: true,
     channelEnabled: true,
-    doNotDisturbActive: false,
-    bypassesDoNotDisturb: false,
   })
   mocks.getPending.mockResolvedValue({
     notifications: [
@@ -218,7 +214,7 @@ describe('task reminders', () => {
     expect(mocks.requestPermissions).toHaveBeenCalled()
   })
 
-  it('reports blocked notifications, imprecise alarms, and Do Not Disturb', async () => {
+  it('reports blocked notifications and imprecise alarms without warning about Do Not Disturb', async () => {
     mocks.areEnabled.mockResolvedValue({ value: false })
     mocks.checkExactNotificationSetting.mockResolvedValue({ exact_alarm: 'denied' })
     mocks.getReminderStatus.mockResolvedValue({
@@ -231,7 +227,6 @@ describe('task reminders', () => {
     await expect(checkTaskReminderCapabilities()).resolves.toEqual([
       expect.objectContaining({ code: 'notifications' }),
       expect.objectContaining({ code: 'exact_alarms' }),
-      expect.objectContaining({ code: 'do_not_disturb' }),
     ])
     expect(mocks.createChannel).toHaveBeenCalledWith(expect.objectContaining({ id: 'task-reminders' }))
   })
@@ -241,19 +236,15 @@ describe('task reminders', () => {
 
     await openTaskReminderCapabilitySettings('notifications')
     await openTaskReminderCapabilitySettings('exact_alarms')
-    await openTaskReminderCapabilitySettings('do_not_disturb')
 
     expect(mocks.openNotificationSettings).toHaveBeenCalledOnce()
     expect(mocks.changeExactNotificationSetting).toHaveBeenCalledOnce()
-    expect(mocks.openDoNotDisturbSettings).toHaveBeenCalledOnce()
   })
 
   it('opens notification settings when only the reminder channel is blocked', async () => {
     mocks.getReminderStatus.mockResolvedValue({
       notificationsEnabled: true,
       channelEnabled: false,
-      doNotDisturbActive: false,
-      bypassesDoNotDisturb: false,
     })
 
     await openTaskReminderCapabilitySettings('notifications')
