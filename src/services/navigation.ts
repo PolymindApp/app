@@ -85,6 +85,11 @@ export function mainMenuTransitionDirection(
   return toIndex > fromIndex ? 'forward' : 'back'
 }
 
+export function routeTransitionIsInstant(fromName: unknown, toName: unknown) {
+  return fromName === 'flashcard-review-set-runner'
+    && toName === 'flashcard-review-runner'
+}
+
 export function readStoredMainMenuOrder(): MainNavItemId[] | undefined {
   if (typeof localStorage === 'undefined') return undefined
   const storedValue = localStorage.getItem(mainMenuOrderStorageKey)

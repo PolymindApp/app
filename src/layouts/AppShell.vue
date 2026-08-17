@@ -17,6 +17,7 @@ import {
   MAIN_MENU_VISIBILITY_CHANGED_EVENT,
   readStoredHiddenMainMenuItems,
   readStoredMainMenuOrder,
+  routeTransitionIsInstant,
   visibleMainNavItems,
 } from '@/services/navigation'
 import {
@@ -267,8 +268,14 @@ function restoreEarlyPageLeave(route?: string) {
 }
 
 const removeTransitionGuard = router.beforeEach((to, from) => {
-  if (to.meta.auth && from.meta.auth && to.path !== from.path) {
+  const instantTransition = routeTransitionIsInstant(from.name, to.name)
+  if (to.meta.auth && from.meta.auth && to.path !== from.path && !instantTransition) {
     beginEarlyPageLeave(to.fullPath)
+  }
+
+  if (instantTransition) {
+    pageTransition.value = 'page-instant'
+    return
   }
 
   const menuDirection = mainMenuTransitionDirection(items.value, from.path, to.path)

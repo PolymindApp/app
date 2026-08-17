@@ -7,6 +7,7 @@ import {
   orderedMainNavItems,
   readStoredHiddenMainMenuItems,
   readStoredMainMenuOrder,
+  routeTransitionIsInstant,
   storeHiddenMainMenuItems,
   storeMainMenuOrder,
   visibleMainNavItems,
@@ -68,6 +69,18 @@ describe('main menu ordering', () => {
     const items = visibleMainNavItems(DEFAULT_MAIN_MENU_ORDER, [])
     expect(mainMenuTransitionDirection(items, '/tracking', '/tracking/new')).toBeUndefined()
     expect(mainMenuTransitionDirection(items, '/settings', '/tasks')).toBeUndefined()
+  })
+
+  it('keeps the Review set preview-to-session handoff instant', () => {
+    expect(routeTransitionIsInstant(
+      'flashcard-review-set-runner',
+      'flashcard-review-runner',
+    )).toBe(true)
+    expect(routeTransitionIsInstant(
+      'flashcard-review-runner',
+      'flashcard-review-set-runner',
+    )).toBe(false)
+    expect(routeTransitionIsInstant('flashcards', 'flashcard-review-set-runner')).toBe(false)
   })
 
   it('normalizes and persists hidden items while keeping one destination visible', () => {
