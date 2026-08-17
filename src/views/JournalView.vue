@@ -3,9 +3,12 @@ import { computed, onMounted, ref } from 'vue'
 import { endOfMonth, format, isValid, parseISO } from 'date-fns'
 import { useRoute, useRouter } from 'vue-router'
 import { Intersect, Ripple } from 'vuetify/directives'
+import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
+import ColorSwatchPicker from '@/components/ColorSwatchPicker.vue'
 import {
   filterJournalEntries,
-  groupJournalEntries,
+  groupJournalEntriesByMonth,
+  journalEntryColors,
   journalEntryHeading,
 } from '@/services/journal'
 import { useJournalStore } from '@/stores/journal'
@@ -23,6 +26,9 @@ const timelinePage = ref(0)
 const timelineReady = ref(false)
 const loadingTimelinePage = ref(false)
 const hasMoreEntries = ref(true)
+const searchQuery = ref('')
+const selectedColor = ref('')
+const colorFilterOpen = ref(false)
 const timelineEnd = format(endOfMonth(timelineDate.value), 'yyyy-MM-dd')
 const infiniteScrollOptions = { rootMargin: '0px 0px 256px 0px' }
 const vIntersect = Intersect
@@ -30,13 +36,20 @@ const vRipple = Ripple
 
 const taskId = computed(() => typeof route.query.task === 'string' ? route.query.task : '')
 const trackerId = computed(() => typeof route.query.tracker === 'string' ? route.query.tracker : '')
+const availableColors = computed(() => journalEntryColors(timelineReady.value ? journalStore.entries : []))
+const allColorsGradient = computed(() => availableColors.value.length > 1
+  ? `conic-gradient(${[...availableColors.value, availableColors.value[0]].join(', ')})`
+  : 'conic-gradient(rgb(var(--v-theme-secondary)), rgb(var(--v-theme-info)), rgb(var(--v-theme-error)), rgb(var(--v-theme-secondary)))')
 const filteredTimelineEntries = computed(() => filterJournalEntries(
   timelineReady.value ? journalStore.entries : [],
   'all',
   taskId.value,
   trackerId.value,
+  searchQuery.value,
+  selectedColor.value,
+  entrySearchTags,
 ))
-const groups = computed(() => groupJournalEntries(filteredTimelineEntries.value))
+const groups = computed(() => groupJournalEntriesByMonth(filteredTimelineEntries.value))
 const showInitialLoading = computed(() => loadingTimelinePage.value && !timelineReady.value)
 const showEmptyState = computed(() => timelineReady.value
   && !loadingTimelinePage.value
@@ -44,6 +57,9 @@ const showEmptyState = computed(() => timelineReady.value
   && groups.value.length === 0)
 const filteredTask = computed(() => taskStore.tasks.find((task) => task.id === taskId.value))
 const filteredTracker = computed(() => trackingStore.trackers.find((tracker) => tracker.id === trackerId.value))
+const hasActiveFilter = computed(() => Boolean(
+  taskId.value || trackerId.value || searchQuery.value.trim() || selectedColor.value,
+))
 
 function initialDate() {
   const queryDate = typeof route.query.date === 'string' ? parseISO(route.query.date) : undefined
@@ -79,6 +95,14 @@ function trackerContexts(entry: JournalEntry) {
   })
 }
 
+function entrySearchTags(entry: JournalEntry) {
+  const task = taskName(entry)
+  return [
+    ...(task ? [task] : []),
+    ...trackerContexts(entry).map(context => context.name),
+  ]
+}
+
 function newEntryQuery() {
   return {
     date: format(timelineDate.value, 'yyyy-MM-dd'),
@@ -91,6 +115,11 @@ function clearSourceFilter(source: 'task' | 'tracker') {
   const query = { ...route.query }
   delete query[source]
   void router.replace({ name: 'journal', query })
+}
+
+function chooseColor(color: string) {
+  selectedColor.value = color
+  colorFilterOpen.value = false
 }
 
 async function loadMoreEntries(intersecting = true) {
@@ -135,6 +164,39 @@ onMounted(async () => {
     </div>
 
     <div class="journal-date-content">
+      <v-text-field
+        v-model="searchQuery"
+        class="journal-search mb-4"
+        label="Search journal"
+        type="search"
+        autocomplete="off"
+        clearable
+      >
+        <template #prepend-inner>
+          <v-btn
+            icon
+            variant="text"
+            class="journal-color-filter"
+            :class="{ 'journal-color-filter--active': selectedColor }"
+            :style="selectedColor
+              ? { '--journal-filter-color': selectedColor }
+              : { '--journal-filter-colors': allColorsGradient }"
+            :disabled="!availableColors.length"
+            :aria-label="selectedColor ? `Filter color ${selectedColor}` : 'Filter journal by color'"
+            :aria-pressed="Boolean(selectedColor)"
+            @pointerdown.stop
+            @touchend.stop
+            @click.stop="colorFilterOpen = true"
+          >
+            <span
+              class="journal-color-filter__swatch"
+              :class="{ 'journal-color-filter__swatch--active': selectedColor }"
+              aria-hidden="true"
+            />
+          </v-btn>
+        </template>
+      </v-text-field>
+
       <div v-if="taskId || trackerId" class="d-flex flex-wrap ga-2">
         <v-chip
           v-if="taskId"
@@ -178,9 +240,9 @@ onMounted(async () => {
       </div>
 
       <div v-else-if="groups.length" class="journal-groups">
-        <section v-for="group in groups" :key="group.date">
+        <section v-for="group in groups" :key="group.month">
           <div class="section-heading">
-            <h2>{{ format(parseISO(group.date), 'EEEE, MMMM d, yyyy') }}</h2>
+            <h2>{{ format(parseISO(`${group.month}-01`), 'MMMM yyyy') }}</h2>
           </div>
           <div class="journal-entry-list">
             <v-card
@@ -207,7 +269,7 @@ onMounted(async () => {
                   <div class="d-flex align-center ga-2 mt-3">
                     <span class="journal-entry__color-badge" aria-hidden="true" />
                     <span class="text-caption muted">
-                      {{ format(new Date(entry.occurredAt), 'h:mm a') }}
+                      {{ format(parseISO(entry.localDate), 'MMM d') }} · {{ format(new Date(entry.occurredAt), 'h:mm a') }}
                     </span>
                   </div>
                   <div v-if="taskName(entry) || trackerContexts(entry).length" class="d-flex flex-wrap ga-2 mt-3">
@@ -270,15 +332,31 @@ onMounted(async () => {
       <v-card v-else-if="showEmptyState" class="surface-card pa-8 mt-5 text-center">
         <v-icon icon="mdi-notebook-outline" size="42" color="secondary" class="mb-3" />
         <h2 class="text-h6 font-weight-black">
-          {{ taskId || trackerId ? 'No matching reflections' : 'No reflections yet' }}
+          {{ hasActiveFilter ? 'No matching reflections' : 'No reflections yet' }}
         </h2>
         <p class="text-body-2 muted mt-2">
-          {{ taskId || trackerId
-            ? 'Clear the filter to see the rest of your journal.'
+          {{ hasActiveFilter
+            ? 'Clear or change the filters to see more of your journal.'
             : 'Capture what happened, what you noticed, or what you want to remember.' }}
         </p>
       </v-card>
     </div>
+
+    <ActionBottomSheet
+      v-model="colorFilterOpen"
+      title="Filter by color"
+      aria-label="Journal color filter"
+    >
+      <template #content>
+        <ColorSwatchPicker
+          :model-value="selectedColor"
+          :colors="availableColors"
+          :allow-custom="false"
+          allow-empty
+          @update:model-value="chooseColor"
+        />
+      </template>
+    </ActionBottomSheet>
   </main>
 </template>
 
@@ -287,12 +365,17 @@ onMounted(async () => {
 .journal-action-bar { position: fixed; z-index: 20; right: 0; bottom: calc(4.5rem + env(safe-area-inset-bottom)); left: 0; padding: .75rem 1rem; border-top: .0625rem solid rgba(var(--v-theme-on-surface), .08); background: rgb(var(--v-theme-background)); }
 .journal-action-bar__inner { width: 100%; max-width: 868px; margin: 0 auto; }
 .journal-date-content { min-width: 0; }
+.journal-color-filter { width: 2.75rem; min-width: 2.75rem; height: 2.75rem; margin-inline-start: -.5rem; }
+.journal-color-filter__swatch { position: relative; display: block; box-sizing: border-box; width: 1.5rem; height: 1.5rem; flex: 0 0 1.5rem; border-radius: 50%; background: var(--journal-filter-colors); }
+.journal-color-filter__swatch::after { position: absolute; inset: .1875rem; border-radius: 50%; background: rgb(var(--v-theme-background)); content: ""; }
+.journal-color-filter__swatch--active { background: var(--journal-filter-color); box-shadow: 0 0 0 .0625rem rgb(var(--v-theme-on-surface) / .24); }
+.journal-color-filter__swatch--active::after { display: none; }
+.journal-color-filter--active { background: rgb(var(--v-theme-on-surface) / .06); }
 .journal-loading { display: flex; align-items: center; justify-content: center; gap: .75rem; }
 .journal-load-more { display: flex; min-height: 4rem; align-items: center; justify-content: center; gap: .625rem; }
 .journal-groups,
 .journal-entry-list { display: grid; gap: .75rem; }
 .journal-groups { gap: 1.25rem; }
-.journal-groups > section:first-child .section-heading { margin-top: 0; }
 .journal-entry { overflow: hidden; cursor: pointer; }
 .journal-entry__layout { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: .875rem; }
 .journal-entry__color-badge { display: block; width: 1.75rem; height: .625rem; border: .0625rem solid rgba(var(--v-theme-on-surface), .18); border-radius: 999rem; background: var(--journal-entry-color); box-shadow: 0 .125rem .375rem rgba(0, 0, 0, .24); }

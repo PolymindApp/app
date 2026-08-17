@@ -49,6 +49,8 @@ function mountView() {
   return mount(JournalView, {
     global: {
       stubs: {
+        ActionBottomSheet: { template: '<div><slot name="content" /><slot /></div>' },
+        ColorSwatchPicker: true,
         VAlert: { template: '<div><slot /><slot name="append" /></div>' },
         VBtn: { template: '<button><slot /></button>' },
         VCard: { template: '<article><slot /></article>' },
@@ -56,6 +58,7 @@ function mountView() {
         VIcon: true,
         VImg: true,
         VProgressCircular: true,
+        VTextField: true,
       },
     },
   })

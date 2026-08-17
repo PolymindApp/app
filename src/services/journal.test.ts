@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { filterJournalEntries, groupJournalEntries, groupJournalEntriesByContext, journalEntryHeading } from './journal'
+import { filterJournalEntries, groupJournalEntriesByContext, groupJournalEntriesByMonth, journalEntryColors, journalEntryHeading } from './journal'
 import type { JournalEntry } from '@/types/domain'
 
 function entry(id: string, date: string, context: Partial<JournalEntry> = {}): JournalEntry {
@@ -38,14 +38,59 @@ describe('journal timeline helpers', () => {
     expect(filterJournalEntries(entries, 'all', '', 'tracker-2').map(item => item.id)).toEqual(['tracker'])
   })
 
-  it('groups entries by day in reverse chronological order', () => {
-    expect(groupJournalEntries(entries).map(group => ({
-      date: group.date,
+  it('searches reflection content, tags, and dates while filtering colors case-insensitively', () => {
+    const searchableEntries = [
+      entry('title-match', '2026-08-01', { title: 'Morning planning', color: '#D4A5FF' }),
+      entry('body-match', '2026-08-02', { body: 'A useful MORNING reset', color: '#c7f464' }),
+      entry('context-match', '2026-08-03', { taskSnapshot: 'Morning routine', color: '#D4A5FF' }),
+    ]
+
+    expect(filterJournalEntries(searchableEntries, 'all', '', '', 'morning').map(item => item.id)).toEqual([
+      'title-match',
+      'body-match',
+      'context-match',
+    ])
+    expect(filterJournalEntries(searchableEntries, 'all', '', '', 'morning', '#d4a5ff').map(item => item.id)).toEqual([
+      'title-match',
+      'context-match',
+    ])
+    expect(filterJournalEntries(searchableEntries, 'all', '', '', 'morning aug 3').map(item => item.id)).toEqual([
+      'context-match',
+    ])
+    expect(filterJournalEntries(searchableEntries, 'all', '', '', '2026-08-02').map(item => item.id)).toEqual([
+      'body-match',
+    ])
+    expect(filterJournalEntries(
+      searchableEntries,
+      'all',
+      '',
+      '',
+      'energy',
+      '',
+      item => item.id === 'body-match' ? ['Energy'] : [],
+    ).map(item => item.id)).toEqual(['body-match'])
+  })
+
+  it('lists each available reflection color once in timeline order', () => {
+    expect(journalEntryColors([
+      entry('first', '2026-08-03', { color: '#D4A5FF' }),
+      entry('duplicate', '2026-08-02', { color: '#d4a5ff' }),
+      entry('second', '2026-08-01', { color: '#C7F464' }),
+    ])).toEqual(['#D4A5FF', '#C7F464'])
+  })
+
+  it('groups entries by month in reverse chronological order', () => {
+    expect(groupJournalEntriesByMonth([
+      ...entries,
+      entry('july', '2026-07-31'),
+      entry('june', '2026-06-15'),
+    ]).map(group => ({
+      month: group.month,
       entries: group.entries.map(item => item.id),
     }))).toEqual([
-      { date: '2026-08-03', entries: ['detached-tracker', 'unlinked'] },
-      { date: '2026-08-02', entries: ['both', 'tracker', 'detached-task'] },
-      { date: '2026-08-01', entries: ['task'] },
+      { month: '2026-08', entries: ['detached-tracker', 'unlinked', 'both', 'tracker', 'detached-task', 'task'] },
+      { month: '2026-07', entries: ['july'] },
+      { month: '2026-06', entries: ['june'] },
     ])
   })
 

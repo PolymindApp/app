@@ -2,23 +2,7 @@
 import { computed, ref } from 'vue'
 import AppDialog from '@/components/AppDialog.vue'
 
-defineOptions({
-  inheritAttrs: false,
-})
-
-const props = withDefaults(defineProps<{
-  modelValue: string
-  label?: string
-  customLabel?: string
-}>(), {
-  customLabel: 'Choose a custom color',
-})
-
-const emit = defineEmits<{
-  'update:modelValue': [value: string]
-}>()
-
-const colors = [
+const DEFAULT_COLORS = [
   '#C7F464',
   '#8FB8FF',
   '#FFB86B',
@@ -32,11 +16,40 @@ const colors = [
   '#5CC8FF',
   '#F4B8E4',
 ]
+
+defineOptions({
+  inheritAttrs: false,
+})
+
+const props = withDefaults(defineProps<{
+  modelValue: string
+  label?: string
+  customLabel?: string
+  colors?: string[]
+  allowCustom?: boolean
+  allowEmpty?: boolean
+  emptyLabel?: string
+}>(), {
+  customLabel: 'Choose a custom color',
+  allowCustom: true,
+  allowEmpty: false,
+  emptyLabel: 'Use all colors',
+})
+
+const emit = defineEmits<{
+  'update:modelValue': [value: string]
+}>()
+
 const customColorDialog = ref(false)
 const draftColor = ref(props.modelValue)
+const availableColors = computed(() => props.colors || DEFAULT_COLORS)
+const allColorsGradient = computed(() => availableColors.value.length > 1
+  ? `conic-gradient(${[...availableColors.value, availableColors.value[0]].join(', ')})`
+  : 'conic-gradient(rgb(var(--v-theme-secondary)), rgb(var(--v-theme-info)), rgb(var(--v-theme-error)), rgb(var(--v-theme-secondary)))')
 
 const isCustomColor = computed(() => (
-  !colors.some(color => color.toLowerCase() === props.modelValue.toLowerCase())
+  Boolean(props.modelValue)
+  && !availableColors.value.some(color => color.toLowerCase() === props.modelValue.toLowerCase())
 ))
 
 const customIconColor = computed(() => {
@@ -73,7 +86,25 @@ function applyCustomColor() {
     <legend v-if="label">{{ label }}</legend>
     <div class="color-picker__options">
       <button
-        v-for="color in colors"
+        v-if="allowEmpty"
+        type="button"
+        class="color-picker__swatch"
+        :class="{ 'color-picker__swatch--selected': !modelValue }"
+        :style="{ background: allColorsGradient }"
+        :aria-label="emptyLabel"
+        :aria-pressed="!modelValue"
+        @click="emit('update:modelValue', '')"
+      >
+        <v-icon
+          v-if="!modelValue"
+          class="color-picker__all-check"
+          icon="mdi-check-bold"
+          size="16"
+        />
+      </button>
+
+      <button
+        v-for="color in availableColors"
         :key="color"
         type="button"
         class="color-picker__swatch"
@@ -87,6 +118,7 @@ function applyCustomColor() {
       </button>
 
       <button
+        v-if="allowCustom"
         type="button"
         class="color-picker__custom"
         :class="{ 'color-picker__custom--selected': isCustomColor }"
@@ -176,6 +208,12 @@ function applyCustomColor() {
 .color-picker__custom--selected {
   border-color: rgb(var(--v-theme-on-surface));
   box-shadow: 0 0 0 2px rgb(var(--v-theme-background));
+}
+
+.color-picker__all-check {
+  border-radius: 50%;
+  background: rgb(var(--v-theme-background) / .72);
+  color: rgb(var(--v-theme-on-background));
 }
 
 .color-picker__custom {

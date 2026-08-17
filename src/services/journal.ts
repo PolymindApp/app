@@ -1,3 +1,4 @@
+import { format, parseISO } from 'date-fns'
 import type { JournalEntry } from '@/types/domain'
 
 export type JournalContextFilter = 'all' | 'tasks' | 'tracking' | 'unlinked'
@@ -8,10 +9,29 @@ export function filterJournalEntries(
   filter: JournalContextFilter,
   taskId = '',
   trackerId = '',
+  search = '',
+  color = '',
+  searchTags: (entry: JournalEntry) => string[] = () => [],
 ) {
+  const normalizedSearch = search.trim().toLocaleLowerCase()
+  const normalizedColor = color.trim().toLocaleLowerCase()
+
   return entries.filter((entry) => {
     if (taskId && entry.task !== taskId) return false
     if (trackerId && !entry.trackers.includes(trackerId)) return false
+    if (normalizedColor && entry.color.trim().toLocaleLowerCase() !== normalizedColor) return false
+    if (normalizedSearch) {
+      const searchableText = [
+        entry.title,
+        entry.body,
+        entry.taskSnapshot,
+        ...Object.values(entry.trackerSnapshots),
+        ...searchTags(entry),
+        ...journalEntryDateSearchTerms(entry.localDate),
+      ].join('\n').toLocaleLowerCase()
+      const searchTerms = normalizedSearch.split(/\s+/)
+      if (!searchTerms.every(term => searchableText.includes(term))) return false
+    }
     const hasTaskContext = Boolean(entry.task || entry.taskSnapshot)
     const hasTrackerContext = Boolean(entry.trackers.length || Object.keys(entry.trackerSnapshots).length)
     if (filter === 'tasks' && !hasTaskContext) return false
@@ -21,15 +41,38 @@ export function filterJournalEntries(
   })
 }
 
-export function groupJournalEntries(entries: JournalEntry[]) {
+function journalEntryDateSearchTerms(localDate: string) {
+  const date = parseISO(localDate)
+  return [
+    localDate,
+    format(date, 'yyyy-MM'),
+    format(date, 'MMMM yyyy'),
+    format(date, 'MMM d'),
+    format(date, 'MMMM d, yyyy'),
+    format(date, 'EEEE'),
+    format(date, 'M/d/yyyy'),
+  ]
+}
+
+export function journalEntryColors(entries: JournalEntry[]) {
+  const colors = new Map<string, string>()
+  for (const entry of entries) {
+    const color = entry.color.trim()
+    if (color && !colors.has(color.toLocaleLowerCase())) colors.set(color.toLocaleLowerCase(), color)
+  }
+  return [...colors.values()]
+}
+
+export function groupJournalEntriesByMonth(entries: JournalEntry[]) {
   const groups = new Map<string, JournalEntry[]>()
   const sorted = [...entries].sort((left, right) => right.occurredAt.localeCompare(left.occurredAt))
   for (const entry of sorted) {
-    const group = groups.get(entry.localDate) || []
+    const month = entry.localDate.slice(0, 7)
+    const group = groups.get(month) || []
     group.push(entry)
-    groups.set(entry.localDate, group)
+    groups.set(month, group)
   }
-  return [...groups].map(([date, items]) => ({ date, entries: items }))
+  return [...groups].map(([month, items]) => ({ month, entries: items }))
 }
 
 export function groupJournalEntriesByContext(entries: JournalEntry[]) {
