@@ -1,3 +1,5 @@
+const VISIBILITY_EDGE_TOLERANCE = 1
+
 export function nextIncompleteTaskKey(
   candidates: ReadonlyArray<{
     key: string
@@ -20,14 +22,14 @@ export function nextIncompleteTaskKey(
   const firstIncompleteTask = incompleteCandidates[0]
   const firstIncompleteTaskIsVisible = firstIncompleteTask
     && firstIncompleteTask.bottom > visibleTop
-    && firstIncompleteTask.bottom + bottomGap <= visibleBottom
+    && firstIncompleteTask.bottom + bottomGap <= visibleBottom + VISIBILITY_EDGE_TOLERANCE
 
   if (atPageTop && firstIncompleteTaskIsVisible) return undefined
 
   return incompleteCandidates
     .find(candidate => (
       candidate.bottom > visibleTop
-      && candidate.bottom + bottomGap > visibleBottom
+      && candidate.bottom + bottomGap > visibleBottom + VISIBILITY_EDGE_TOLERANCE
     ))
     ?.key
 }

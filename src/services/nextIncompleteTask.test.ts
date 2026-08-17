@@ -25,6 +25,11 @@ describe('nextIncompleteTaskKey', () => {
     expect(nextIncompleteTaskKey(tasks, 0, 773, false, 32)).toBe('third')
   })
 
+  it('advances when the current task is flush with the bottom edge within one pixel', () => {
+    expect(nextIncompleteTaskKey(tasks, 0, 771.25, false, 32)).toBe('third')
+    expect(nextIncompleteTaskKey(tasks, 0, 770.75, false, 32)).toBe('second')
+  })
+
   it('shows the first task at the top when its bottom is not visible', () => {
     expect(nextIncompleteTaskKey(tasks, 0, 450, true, 16)).toBe('first')
   })
