@@ -1,6 +1,6 @@
 import { defineComponent } from 'vue'
 import { config, mount } from '@vue/test-utils'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import TrackingWeeklyBarChart from '@/components/TrackingWeeklyBarChart.vue'
 import type { TrackingEntry, TrackingTracker } from '@/types/domain'
 
@@ -17,6 +17,10 @@ config.global.stubs.VBtn = VBtnStub
 
 beforeEach(() => {
   localStorage.clear()
+})
+
+afterEach(() => {
+  vi.useRealTimers()
 })
 
 function tracker(overrides: Partial<TrackingTracker>): TrackingTracker {
@@ -124,6 +128,42 @@ describe('TrackingWeeklyBarChart', () => {
     expect(wrapper.find('.chart-legend').attributes('aria-label')).toContain('Tuesday, July 28')
     expect(wrapper.find('.chart-legend').text()).not.toContain('()')
     expect(wrapper.findAll('.chart-legend__item').map(item => item.text())).toEqual(['Meditation', 'Mood'])
+  })
+
+  it('does not inspect or highlight future days with pointer or keyboard input', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 6, 29, 12))
+    const wrapper = mount(TrackingWeeklyBarChart, {
+      props: {
+        weekStart: new Date(2026, 6, 27, 12),
+        selectedDate: new Date(2026, 6, 29, 12),
+        trackers: [tracker({ id: 'meditation', name: 'Meditation' })],
+        entries: [entry('one', 'meditation', '2026-07-27', 1)],
+      },
+    })
+    const svg = wrapper.find('svg')
+    vi.spyOn(svg.element, 'getBoundingClientRect').mockReturnValue({
+      left: 0,
+      width: 720,
+    } as DOMRect)
+
+    expect(wrapper.find('.chart-legend').attributes('aria-label')).toContain('Wednesday, July 29')
+    expect(wrapper.findAll('.day-label--future')).toHaveLength(4)
+
+    await wrapper.find('.chart-plot').trigger('keydown', { key: 'End' })
+    expect(wrapper.find('.chart-legend').attributes('aria-label')).toContain('Wednesday, July 29')
+
+    svg.element.dispatchEvent(new MouseEvent('pointermove', { bubbles: true, clientX: 474 }))
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('.chart-legend').attributes('aria-label')).toContain('Wednesday, July 29')
+
+    svg.element.dispatchEvent(new MouseEvent('pointermove', { bubbles: true, clientX: 164 }))
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('.chart-legend').attributes('aria-label')).toContain('Tuesday, July 28')
+
+    await wrapper.find('.chart-plot').trigger('keydown', { key: 'ArrowRight' })
+    await wrapper.find('.chart-plot').trigger('keydown', { key: 'ArrowRight' })
+    expect(wrapper.find('.chart-legend').attributes('aria-label')).toContain('Wednesday, July 29')
   })
 
   it('starts with every tracker enabled and toggles chart series from the legend', async () => {

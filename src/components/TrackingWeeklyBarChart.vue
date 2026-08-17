@@ -23,6 +23,7 @@ const plotLeft = 16
 const plotRight = 16
 const plotTop = 14
 const plotBottom = 42
+const todayKey = format(new Date(), 'yyyy-MM-dd')
 const plotWidth = computed(() => Math.max(1, chartWidth.value - plotLeft - plotRight))
 const plotHeight = chartHeight - plotTop - plotBottom
 const groupWidth = computed(() => plotWidth.value / 7)
@@ -65,17 +66,32 @@ const series = computed(() => props.trackers
   .filter((item) => item.hasValues)
   .sort((a, b) => a.tracker.sortOrder - b.tracker.sortOrder || a.tracker.name.localeCompare(b.tracker.name)))
 const activeSeries = computed(() => series.value.filter(item => !inactiveTrackerIds.value.has(item.tracker.id)))
+const lastSelectableDayIndex = computed(() => {
+  let index = -1
+  for (const [dayIndex, day] of days.value.entries()) {
+    if (day.key <= todayKey) index = dayIndex
+  }
+  return index
+})
 
 const fallbackDayIndex = computed(() => {
   const selectedKey = format(props.selectedDate, 'yyyy-MM-dd')
   const index = days.value.findIndex(day => day.key === selectedKey)
   return index >= 0 ? index : 0
 })
-const readoutDayIndex = computed(() => selectedDayIndex.value ?? fallbackDayIndex.value)
-const readoutDay = computed(() => days.value[readoutDayIndex.value])
+const readoutDayIndex = computed(() => {
+  if (lastSelectableDayIndex.value < 0) return undefined
+  return Math.min(
+    selectedDayIndex.value ?? fallbackDayIndex.value,
+    lastSelectableDayIndex.value,
+  )
+})
+const readoutDay = computed(() => readoutDayIndex.value === undefined
+  ? undefined
+  : days.value[readoutDayIndex.value])
 const readoutValues = computed(() => series.value.map(item => ({
   tracker: item.tracker,
-  value: item.values[readoutDayIndex.value] ?? null,
+  value: readoutDayIndex.value === undefined ? null : item.values[readoutDayIndex.value] ?? null,
 })))
 const ariaLabel = computed(() => {
   const start = days.value[0]?.date
@@ -133,7 +149,9 @@ function selectFromPointer(event: PointerEvent) {
   const rect = (event.currentTarget as SVGElement).getBoundingClientRect()
   if (!rect.width) return
   const x = (event.clientX - rect.left) / rect.width * chartWidth.value
-  selectedDayIndex.value = Math.max(0, Math.min(6, Math.floor((x - plotLeft) / groupWidth.value)))
+  const dayIndex = Math.max(0, Math.min(6, Math.floor((x - plotLeft) / groupWidth.value)))
+  if (dayIndex > lastSelectableDayIndex.value) return
+  selectedDayIndex.value = dayIndex
 }
 
 function clearPointerSelection(event: PointerEvent) {
@@ -143,10 +161,11 @@ function clearPointerSelection(event: PointerEvent) {
 function onKeydown(event: KeyboardEvent) {
   if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
   event.preventDefault()
+  if (lastSelectableDayIndex.value < 0 || readoutDayIndex.value === undefined) return
   if (event.key === 'Home') selectedDayIndex.value = 0
-  else if (event.key === 'End') selectedDayIndex.value = 6
+  else if (event.key === 'End') selectedDayIndex.value = lastSelectableDayIndex.value
   else if (event.key === 'ArrowLeft') selectedDayIndex.value = Math.max(0, readoutDayIndex.value - 1)
-  else selectedDayIndex.value = Math.min(6, readoutDayIndex.value + 1)
+  else selectedDayIndex.value = Math.min(lastSelectableDayIndex.value, readoutDayIndex.value + 1)
 }
 </script>
 
@@ -180,6 +199,7 @@ function onKeydown(event: KeyboardEvent) {
           />
 
           <rect
+            v-if="readoutDayIndex !== undefined"
             :x="plotLeft + readoutDayIndex * groupWidth + 3"
             :y="plotTop"
             :width="groupWidth - 6"
@@ -210,7 +230,7 @@ function onKeydown(event: KeyboardEvent) {
             :key="day.key"
             :x="plotLeft + index * groupWidth + groupWidth / 2"
             :y="chartHeight - 14"
-            class="day-label"
+            :class="['day-label', { 'day-label--future': day.key > todayKey }]"
           >{{ day.label }}</text>
         </svg>
       </div>
@@ -264,6 +284,7 @@ svg { display: block; width: 100%; height: auto; touch-action: pan-y; }
 .selected-day { fill: rgba(var(--v-theme-secondary), .06); }
 .chart-bar { opacity: .92; transition: opacity 180ms ease; }
 .day-label { fill: rgba(var(--v-theme-on-surface), .54); font-family: inherit; font-size: .6875rem; font-weight: 800; text-anchor: middle; }
+.day-label--future { fill: rgba(var(--v-theme-on-surface), .24); }
 .weekly-chart-empty { color: rgba(var(--v-theme-on-surface), .58); font-size: .8rem; }
 
 @media (prefers-reduced-motion: reduce) {
