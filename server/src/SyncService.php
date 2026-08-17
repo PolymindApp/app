@@ -855,7 +855,7 @@ final class SyncService
                     $current[$side . '_audio_file'] ?? null,
                 );
                 if ($filename !== null) {
-                    $this->removeFlashcardAudioFileIfUnused($filename);
+                    $this->removeDeletedFlashcardAudioFileIfUnused($filename);
                 }
             }
         }
@@ -1432,6 +1432,23 @@ final class SyncService
             'filename' => $filename,
             'needle' => '%' . $filename . '%',
         ]);
+        if ((int) $statement->fetchColumn() > 0) {
+            return;
+        }
+        $path = dirname($this->config->databasePath) . DIRECTORY_SEPARATOR
+            . 'flashcard-audio' . DIRECTORY_SEPARATOR . $filename;
+        if (is_file($path)) {
+            @unlink($path);
+        }
+    }
+
+    private function removeDeletedFlashcardAudioFileIfUnused(string $filename): void
+    {
+        $statement = $this->database->pdo->prepare(
+            'SELECT COUNT(*) FROM flashcards
+             WHERE front_audio_file = :filename OR back_audio_file = :filename',
+        );
+        $statement->execute(['filename' => $filename]);
         if ((int) $statement->fetchColumn() > 0) {
             return;
         }

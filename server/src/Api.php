@@ -1527,6 +1527,26 @@ final class Api
         }
     }
 
+    private function removeDeletedFlashcardAudioFileIfUnused(string $filename): void
+    {
+        $validated = $this->validFlashcardAudioFilename($filename);
+        if ($validated === null) {
+            return;
+        }
+        $statement = $this->database->pdo->prepare(
+            'SELECT COUNT(*) FROM flashcards
+             WHERE front_audio_file = :filename OR back_audio_file = :filename',
+        );
+        $statement->execute(['filename' => $validated]);
+        if ((int) $statement->fetchColumn() > 0) {
+            return;
+        }
+        $path = $this->flashcardAudioDirectory() . DIRECTORY_SEPARATOR . $validated;
+        if (is_file($path)) {
+            @unlink($path);
+        }
+    }
+
     private function userSettings(string $method): never
     {
         $user = $this->authenticate();
@@ -5595,7 +5615,7 @@ final class Api
             $this->removeFlashcardImageFileIfUnused($imageFile);
         }
         foreach ($audioFiles as $audioFile) {
-            $this->removeFlashcardAudioFileIfUnused($audioFile);
+            $this->removeDeletedFlashcardAudioFileIfUnused($audioFile);
         }
     }
 

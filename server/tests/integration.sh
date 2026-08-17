@@ -2930,6 +2930,99 @@ flashcard_history_snapshot="$(sqlite3 "$test_db" \
   exit 1
 }
 
+audio_cleanup_card_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"front":"Audio cleanup","back":"Both faces","tags":[]}' \
+  "$api_url/collections/flashcards/records")"
+audio_cleanup_card_id="$(json_field id <<<"$audio_cleanup_card_response")"
+audio_cleanup_front_response="$(curl --silent --show-error --fail \
+  -X POST -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "$flashcard_audio_payload" \
+  "$api_url/flashcards/$audio_cleanup_card_id/audio/front")"
+audio_cleanup_front_file="$(json_field front_audio_file <<<"$audio_cleanup_front_response")"
+audio_cleanup_back_response="$(curl --silent --show-error --fail \
+  -X POST -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "$flashcard_audio_payload" \
+  "$api_url/flashcards/$audio_cleanup_card_id/audio/back")"
+audio_cleanup_back_file="$(json_field back_audio_file <<<"$audio_cleanup_back_response")"
+sqlite3 "$test_db" "
+  UPDATE flashcard_review_sessions
+  SET queue_state = json_set(
+    queue_state,
+    '\$[0].frontAudio', '/flashcard-audio/$audio_cleanup_front_file',
+    '\$[0].backAudio', '/flashcard-audio/$audio_cleanup_back_file'
+  )
+  WHERE id = '$manual_session_id';
+"
+curl --silent --show-error --fail \
+  -X DELETE -H "Authorization: Bearer $alice_token" \
+  "$api_url/collections/flashcards/records/$audio_cleanup_card_id" >/dev/null
+deleted_audio_cleanup_status="$(
+  curl --silent --output /dev/null --write-out '%{http_code}' \
+    "$api_url/flashcard-audio/$audio_cleanup_front_file"
+  printf ':'
+  curl --silent --output /dev/null --write-out '%{http_code}' \
+    "$api_url/flashcard-audio/$audio_cleanup_back_file"
+)"
+[[ "$deleted_audio_cleanup_status" == "404:404" ]] || {
+  echo "Deleting a flashcard did not remove both recorded audio files." >&2
+  exit 1
+}
+
+sync_audio_cleanup_card_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"front":"Synced audio cleanup","back":"Front face","tags":[]}' \
+  "$api_url/collections/flashcards/records")"
+sync_audio_cleanup_card_id="$(json_field id <<<"$sync_audio_cleanup_card_response")"
+sync_audio_cleanup_response="$(curl --silent --show-error --fail \
+  -X POST -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "$flashcard_audio_payload" \
+  "$api_url/flashcards/$sync_audio_cleanup_card_id/audio/front")"
+sync_audio_cleanup_file="$(json_field front_audio_file <<<"$sync_audio_cleanup_response")"
+sqlite3 "$test_db" "
+  UPDATE flashcard_review_sessions
+  SET queue_state = json_set(
+    queue_state,
+    '\$[0].frontAudio', '/flashcard-audio/$sync_audio_cleanup_file'
+  )
+  WHERE id = '$manual_session_id';
+"
+sync_audio_delete_body="$(php -r '
+  echo json_encode([
+      "clientId" => "integration-client",
+      "cursor" => 0,
+      "operations" => [[
+          "operationId" => "sync-delete-audio-card",
+          "resource" => "flashcards",
+          "recordId" => $argv[1],
+          "kind" => "delete",
+          "payload" => [],
+          "fieldClocks" => ["*" => "9999999999999-000001-integration-client"],
+          "dependsOn" => [],
+      ]],
+  ], JSON_THROW_ON_ERROR);
+' "$sync_audio_cleanup_card_id")"
+sync_audio_delete_response="$(curl --silent --show-error --fail \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data "$sync_audio_delete_body" \
+  "$api_url/sync/exchange")"
+sync_audio_delete_ack="$(php -r '
+  $data = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+  echo $data["acknowledgements"][0]["status"] ?? "";
+' <<<"$sync_audio_delete_response")"
+sync_deleted_audio_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  "$api_url/flashcard-audio/$sync_audio_cleanup_file")"
+[[ "$sync_audio_delete_ack" == applied && "$sync_deleted_audio_status" == 404 ]] || {
+  echo "Sync deletion did not remove the flashcard audio file." >&2
+  exit 1
+}
+
 flashcard_task_delete_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
   -X DELETE -H "Authorization: Bearer $alice_token" \
   "$api_url/collections/tasks/records/$flashcard_task_id")"
