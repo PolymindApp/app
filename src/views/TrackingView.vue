@@ -280,56 +280,57 @@ async function loadVisibleWeekEntries() {
     </div>
 
     <template v-else-if="store.trackers.length">
-          <section>
-            <div class="section-heading">
-              <h2>Things you did</h2>
-              <v-btn
-                size="small"
-                variant="text"
-                prepend-icon="mdi-plus"
-                :to="{ path: '/tracking/new', query: { role: 'factor' } }"
-              >
-                New
-              </v-btn>
-            </div>
-            <div v-if="factors.length" class="tracker-grid">
-              <TrackingTrackerCard
-                v-for="tracker in factors"
-                :key="tracker.id"
-                :tracker="tracker"
-                :entries="entriesForTracker(tracker.id)"
-                @log="startLog"
-                @actions="openTrackerActions"
-                @entry="startLog(tracker, $event)"
-              />
-            </div>
-            <p v-else class="tracker-section-empty muted py-4 text-center">No things tracked yet.</p>
-          </section>
-          <section>
-            <div class="section-heading">
-              <h2>How you felt</h2>
-              <v-btn
-                size="small"
-                variant="text"
-                prepend-icon="mdi-plus"
-                :to="{ path: '/tracking/new', query: { role: 'outcome' } }"
-              >
-                New
-              </v-btn>
-            </div>
-            <div v-if="outcomes.length" class="tracker-grid">
-              <TrackingTrackerCard
-                v-for="tracker in outcomes"
-                :key="tracker.id"
-                :tracker="tracker"
-                :entries="entriesForTracker(tracker.id)"
-                @log="startLog"
-                @actions="openTrackerActions"
-                @entry="startLog(tracker, $event)"
-              />
-            </div>
-            <p v-else class="tracker-section-empty muted py-4 text-center">No feelings tracked yet.</p>
-          </section>
+      <section>
+        <div class="section-heading">
+          <h2>Things you did</h2>
+          <v-btn
+            size="small"
+            variant="text"
+            prepend-icon="mdi-plus"
+            :to="{ path: '/tracking/new', query: { role: 'factor' } }"
+          >
+            New
+          </v-btn>
+        </div>
+        <div v-if="factors.length" class="tracker-grid">
+          <TrackingTrackerCard
+            v-for="tracker in factors"
+            :key="tracker.id"
+            :tracker="tracker"
+            :entries="entriesForTracker(tracker.id)"
+            @log="startLog"
+            @actions="openTrackerActions"
+            @entry="startLog(tracker, $event)"
+          />
+        </div>
+        <p v-else class="tracker-section-empty muted py-4 text-center">No things tracked yet.</p>
+      </section>
+
+      <section>
+        <div class="section-heading">
+          <h2>How you felt</h2>
+          <v-btn
+            size="small"
+            variant="text"
+            prepend-icon="mdi-plus"
+            :to="{ path: '/tracking/new', query: { role: 'outcome' } }"
+          >
+            New
+          </v-btn>
+        </div>
+        <div v-if="outcomes.length" class="tracker-grid">
+          <TrackingTrackerCard
+            v-for="tracker in outcomes"
+            :key="tracker.id"
+            :tracker="tracker"
+            :entries="entriesForTracker(tracker.id)"
+            @log="startLog"
+            @actions="openTrackerActions"
+            @entry="startLog(tracker, $event)"
+          />
+        </div>
+        <p v-else class="tracker-section-empty muted py-4 text-center">No feelings tracked yet.</p>
+      </section>
     </template>
 
     <template v-else-if="store.loaded">

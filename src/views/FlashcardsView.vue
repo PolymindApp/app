@@ -250,7 +250,7 @@ async function reorderReviewSets(result: LongPressDragResult) {
       </v-card>
     </div>
 
-        <section>
+    <section>
       <div class="section-heading mt-0">
         <h2>Your Review sets</h2>
         <v-btn
@@ -349,9 +349,9 @@ async function reorderReviewSets(result: LongPressDragResult) {
         <p class="text-body-2 muted mt-2 mb-5">Choose which tags to review and how the cards should move.</p>
         <v-btn color="secondary" :to="{ name: 'flashcard-review-set-new' }">Create Review set</v-btn>
       </v-card>
-        </section>
+    </section>
 
-        <section v-if="sharedReviewSets.length">
+    <section v-if="sharedReviewSets.length">
       <div class="section-heading">
         <h2>Shared with you</h2>
         <span class="text-caption muted">{{ sharedReviewSets.length }}</span>
@@ -420,8 +420,9 @@ async function reorderReviewSets(result: LongPressDragResult) {
           </div>
         </v-card>
       </div>
-        </section>
-        <section>
+    </section>
+
+    <section>
       <div class="section-heading">
         <h2>Recent reviews</h2>
       </div>
@@ -513,7 +514,7 @@ async function reorderReviewSets(result: LongPressDragResult) {
           </p>
         </v-card>
       </transition>
-        </section>
+    </section>
 
     <ActionBottomSheet
       v-model="reviewSetActionsOpen"
