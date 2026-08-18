@@ -26,6 +26,7 @@ import type {
   Task,
   TaskDraft,
   TaskLogImage,
+  TaskLogImageUpdate,
   TaskProgress,
 } from '@/types/domain'
 
@@ -146,6 +147,7 @@ function mapTaskLogImage(record: Record<string, any>): TaskLogImage {
       ? apiAssetUrl(`/task-log-images/${record.image_file}`)
       : apiAssetUrl(record.image_url || ''),
     usageCount: Number(record.usage_count || 0),
+    active: record.active !== false,
     createdAt: record.created_at || '',
     updatedAt: record.updated_at || '',
   }
@@ -1138,7 +1140,7 @@ export const useTaskStore = defineStore('tasks', () => {
 
   async function loadTaskLogImages(taskId: string) {
     const records = await api.collection('task_log_images').getFullList({
-      filter: `task = "${taskId}"`,
+      filter: `task = "${taskId}" && active = true`,
       sort: '-usage_count,-updated_at',
     })
     const images = records.map(mapTaskLogImage)
@@ -1185,6 +1187,7 @@ export const useTaskStore = defineStore('tasks', () => {
       label: input.label.trim(),
       amount: input.amount,
       unit,
+      active: true,
     })
     const imageLog = mapTaskLogImage(record)
     taskLogImages.value.unshift(imageLog)
@@ -1195,6 +1198,44 @@ export const useTaskStore = defineStore('tasks', () => {
     } catch (cause) {
       taskLogImages.value = taskLogImages.value.filter(item => item !== imageLog)
       await api.collection('task_log_images').delete(imageLog.id).catch(() => undefined)
+      throw cause
+    }
+  }
+
+  async function updateTaskLogImage(imageLog: TaskLogImage, input: TaskLogImageUpdate) {
+    const previous = { ...imageLog }
+    const updatedAt = new Date().toISOString()
+    imageLog.label = input.label.trim()
+    imageLog.amount = input.amount
+    imageLog.updatedAt = updatedAt
+    try {
+      const record = await api.collection('task_log_images').update(imageLog.id, {
+        label: imageLog.label,
+        amount: imageLog.amount,
+        updated_at: updatedAt,
+      })
+      Object.assign(imageLog, mapTaskLogImage(record))
+      if (input.image) {
+        Object.assign(imageLog, mapTaskLogImage(await api.updateTaskLogImage(imageLog.id, input.image)))
+      }
+      return imageLog
+    } catch (cause) {
+      Object.assign(imageLog, previous)
+      throw cause
+    }
+  }
+
+  async function archiveTaskLogImage(imageLog: TaskLogImage) {
+    const previous = { ...imageLog }
+    imageLog.active = false
+    try {
+      const record = await api.collection('task_log_images').update(imageLog.id, {
+        active: false,
+        updated_at: new Date().toISOString(),
+      })
+      Object.assign(imageLog, mapTaskLogImage(record))
+    } catch (cause) {
+      Object.assign(imageLog, previous)
       throw cause
     }
   }
@@ -1553,6 +1594,8 @@ export const useTaskStore = defineStore('tasks', () => {
     loadTaskLogImages,
     logTaskImage,
     createTaskLogImage,
+    updateTaskLogImage,
+    archiveTaskLogImage,
     setStatus,
     progressIsScheduled,
     toggleSkipped,

@@ -96,7 +96,7 @@ suffix="$(php -r 'echo bin2hex(random_bytes(5));')"
 password="correct-horse-battery"
 
 migration_version="$(sqlite3 "$test_db" 'SELECT MAX(version) FROM backontrack_schema_migrations;')"
-[[ "$migration_version" == 202608170003 ]] || {
+[[ "$migration_version" == 202608170004 ]] || {
   echo "The API did not apply the complete database migration sequence." >&2
   exit 1
 }
@@ -891,6 +891,18 @@ task_log_image_used_response="$(curl --silent --show-error --fail \
   "$api_url/collections/task_log_images/records/$task_log_image_id")"
 [[ "$(json_field usage_count <<<"$task_log_image_used_response")" == 1 ]] || {
   echo "The task log image use count was not persisted." >&2
+  exit 1
+}
+
+task_log_image_archived_response="$(curl --silent --show-error --fail \
+  -X PATCH -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $alice_token" \
+  --data '{"label":"Updated serving","amount":3,"active":false}' \
+  "$api_url/collections/task_log_images/records/$task_log_image_id")"
+[[ "$(json_field label <<<"$task_log_image_archived_response")" == "Updated serving" \
+  && "$(json_field amount <<<"$task_log_image_archived_response")" == 3 \
+  && -z "$(json_field active <<<"$task_log_image_archived_response")" ]] || {
+  echo "The task log image could not be edited and archived." >&2
   exit 1
 }
 

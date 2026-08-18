@@ -154,8 +154,15 @@ export interface TaskLogImage {
   unit: string
   image: string
   usageCount: number
+  active: boolean
   createdAt: string
   updatedAt: string
+}
+
+export interface TaskLogImageUpdate {
+  label: string
+  amount: number
+  image?: Blob
 }
 
 export interface TaskProgress {

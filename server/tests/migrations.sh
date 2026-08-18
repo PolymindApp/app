@@ -49,7 +49,7 @@ run_migrations() {
 
 sqlite3 "$empty_db" 'VACUUM'
 first_run="$(run_migrations "$empty_db")"
-[[ "$first_run" == "202607290001,202607290002,202607290003,202607300001,202607310001,202607310002,202607310003,202608010001,202608020001,202608020002,202608020003,202608020004,202608050001,202608050002,202608050003,202608060001,202608060002,202608060003,202608060004,202608070001,202608070002,202608070003,202608070004,202608070005,202608070006,202608080001,202608080003,202608090001,202608090002,202608100001,202608100002,202608110001,202608120001,202608120002,202608120003,202608130001,202608140001,202608140002,202608140003,202608160001,202608160002,202608160003,202608160004,202608170001,202608170002,202608170003" ]] || {
+[[ "$first_run" == "202607290001,202607290002,202607290003,202607300001,202607310001,202607310002,202607310003,202608010001,202608020001,202608020002,202608020003,202608020004,202608050001,202608050002,202608050003,202608060001,202608060002,202608060003,202608060004,202608070001,202608070002,202608070003,202608070004,202608070005,202608070006,202608080001,202608080003,202608090001,202608090002,202608100001,202608100002,202608110001,202608120001,202608120002,202608120003,202608130001,202608140001,202608140002,202608140003,202608160001,202608160002,202608160003,202608160004,202608170001,202608170002,202608170003,202608170004" ]] || {
   echo "An empty database did not apply the complete migration sequence." >&2
   exit 1
 }
@@ -96,7 +96,7 @@ for table in "${expected_tables[@]}"; do
 done
 
 migration_count="$(sqlite3 "$empty_db" 'SELECT COUNT(*) FROM backontrack_schema_migrations;')"
-[[ "$migration_count" == 46 ]] || {
+[[ "$migration_count" == 47 ]] || {
   echo "Migration history does not contain all migrations." >&2
   exit 1
 }
@@ -117,8 +117,9 @@ image_log_schema="$(sqlite3 "$empty_db" \
   "SELECT
      (SELECT COUNT(*) FROM pragma_table_info('tasks') WHERE name = 'log_with_images_enabled') || ':' ||
      (SELECT COUNT(*) FROM pragma_table_info('entries') WHERE name IN ('label', 'task_log_image')) || ':' ||
-     (SELECT COUNT(*) FROM sqlite_schema WHERE type = 'table' AND name = 'task_log_images');")"
-[[ "$image_log_schema" == "1:2:1" ]] || {
+     (SELECT COUNT(*) FROM sqlite_schema WHERE type = 'table' AND name = 'task_log_images') || ':' ||
+     (SELECT COUNT(*) FROM pragma_table_info('task_log_images') WHERE name = 'active');")"
+[[ "$image_log_schema" == "1:2:1:1" ]] || {
   echo "Task image logging fields were not installed." >&2
   exit 1
 }
@@ -226,7 +227,7 @@ preserved="$(sqlite3 "$empty_db" \
 
 sqlite3 "$empty_db" ".backup $stale_db"
 sqlite3 "$stale_db" \
-  "DELETE FROM backontrack_schema_migrations WHERE version = '202608170003';"
+  "DELETE FROM backontrack_schema_migrations WHERE version = '202608170004';"
 stale_status="$(php -r '
   require "server/src/ApiException.php";
   require "server/src/Database.php";
@@ -238,7 +239,7 @@ stale_status="$(php -r '
   }
 ' "$stale_db")"
 stale_count="$(sqlite3 "$stale_db" 'SELECT COUNT(*) FROM backontrack_schema_migrations;')"
-[[ "$stale_status" == 503 && "$stale_count" == 45 ]] || {
+[[ "$stale_status" == 503 && "$stale_count" == 46 ]] || {
   echo "The request database path did not reject a stale schema without mutating it." >&2
   exit 1
 }
@@ -333,7 +334,7 @@ cli_output="$(
   BACKONTRACK_API_SECRET="backontrack-migration-test-secret-at-least-32-characters" \
     php server/migrate.php
 )"
-[[ "$cli_output" == *"Applied 46 migrations"* && "$cli_output" == *"202608170003"* ]] || {
+[[ "$cli_output" == *"Applied 47 migrations"* && "$cli_output" == *"202608170004"* ]] || {
   echo "The migration CLI did not initialize and report a new database." >&2
   exit 1
 }
@@ -396,9 +397,9 @@ php -r '
   $response = json_decode(file_get_contents($argv[1]), true, 512, JSON_THROW_ON_ERROR);
   if (
       ($response["status"] ?? null) !== "ok"
-      || count($response["appliedMigrations"] ?? []) !== 46
-      || ($response["currentVersion"] ?? null) !== "202608170003"
-      || ($response["migrationCount"] ?? null) !== 46
+      || count($response["appliedMigrations"] ?? []) !== 47
+      || ($response["currentVersion"] ?? null) !== "202608170004"
+      || ($response["migrationCount"] ?? null) !== 47
   ) {
       fwrite(STDERR, "The HTTP migration response was invalid.\n");
       exit(1);
@@ -555,7 +556,7 @@ before_counts="$(sqlite3 "$existing_db" \
 existing_run="$(run_migrations "$existing_db")"
 after_counts="$(sqlite3 "$existing_db" \
   "SELECT (SELECT COUNT(*) FROM tasks) || ':' || (SELECT COUNT(*) FROM entries);")"
-[[ "$existing_run" == "202608050001,202608050002,202608050003,202608060001,202608060002,202608060003,202608060004,202608070001,202608070002,202608070003,202608070004,202608070005,202608070006,202608080001,202608080003,202608090001,202608090002,202608100001,202608100002,202608110001,202608120001,202608120002,202608120003,202608130001,202608140001,202608140002,202608140003,202608160001,202608160002,202608160003,202608160004,202608170001,202608170002,202608170003" ]] || {
+[[ "$existing_run" == "202608050001,202608050002,202608050003,202608060001,202608060002,202608060003,202608060004,202608070001,202608070002,202608070003,202608070004,202608070005,202608070006,202608080001,202608080003,202608090001,202608090002,202608100001,202608100002,202608110001,202608120001,202608120002,202608120003,202608130001,202608140001,202608140002,202608140003,202608160001,202608160002,202608160003,202608160004,202608170001,202608170002,202608170003,202608170004" ]] || {
   echo "An existing PHP database did not apply only the pending feature migrations." >&2
   exit 1
 }

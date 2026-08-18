@@ -277,12 +277,15 @@ CREATE TABLE task_log_images (
     image_url TEXT NOT NULL DEFAULT '',
     image_file VARCHAR(52) NOT NULL DEFAULT '',
     usage_count INTEGER NOT NULL DEFAULT 0,
+    active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TEXT NOT NULL DEFAULT '',
     updated_at TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX idx_task_log_images_task_usage
     ON task_log_images (task, usage_count DESC, updated_at DESC);
+CREATE INDEX idx_task_log_images_task_active_usage
+    ON task_log_images (task, active, usage_count DESC, updated_at DESC);
 
 CREATE TABLE interval_templates (
     id TEXT PRIMARY KEY NOT NULL DEFAULT ('r' || lower(hex(randomblob(7)))),

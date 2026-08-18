@@ -1,9 +1,14 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { formatIntervalDuration } from '@/services/intervals'
 import { goalState } from '@/services/schedule'
 import { TASK_TYPE_PRESENTATION } from '@/services/taskTypes'
-import type { ProgramStepRequirementListItem, TaskProgress, TrackingTaskTracker } from '@/types/domain'
+import type {
+  ProgramStepRequirementListItem,
+  TaskLogImage,
+  TaskProgress,
+  TrackingTaskTracker,
+} from '@/types/domain'
 
 const MIN_STEP_SYNC_INDICATOR_MS = 1000
 
@@ -20,6 +25,7 @@ const props = defineProps<{
   stepCountError?: string
   scheduleStatus?: 'not-scheduled' | 'paused' | 'skipped'
   timeLabel?: string
+  taskLogImages?: TaskLogImage[]
 }>()
 const emit = defineEmits<{
   actions: [progress: TaskProgress]
@@ -81,8 +87,50 @@ const currentGoalState = computed(() => isCheck.value
   || (isFlashcards.value && !isSessionDuration.value)
   || isTracking.value
   || isJournal.value
-    ? 'neutral'
-    : goalState(props.progress.value, target.value, targetOperator.value))
+  ? 'neutral'
+  : goalState(props.progress.value, target.value, targetOperator.value))
+const taskLogImageDeck = computed(() => props.taskLogImages || [])
+const taskImageDeckRef = ref<HTMLElement | null>(null)
+const taskImageDeckDefaultGapPx = 4
+const taskImageDeckGap = ref(`${taskImageDeckDefaultGapPx}px`)
+const taskImageDeckMinOverlapRatio = 0.72
+let taskImageDeckResizeObserver: ResizeObserver | undefined
+
+function updateTaskImageDeckGap() {
+  const container = taskImageDeckRef.value
+  if (!container) return
+
+  const imageElements = Array.from(container.querySelectorAll('.task-image-deck__item')) as HTMLElement[]
+  if (!imageElements.length) {
+    taskImageDeckGap.value = `${taskImageDeckDefaultGapPx}px`
+    return
+  }
+
+  const firstImage = imageElements[0]
+  const imageSize = firstImage.offsetWidth || 0
+  if (imageSize <= 0) return
+
+  const imageCount = imageElements.length
+  if (imageCount === 1) {
+    taskImageDeckGap.value = `${taskImageDeckDefaultGapPx}px`
+    return
+  }
+
+  const fullSpan = imageSize * imageCount + taskImageDeckDefaultGapPx * (imageCount - 1)
+  if (fullSpan <= container.clientWidth) {
+    taskImageDeckGap.value = `${taskImageDeckDefaultGapPx}px`
+    return
+  }
+
+  const neededGap = (container.clientWidth - imageCount * imageSize) / (imageCount - 1)
+  const minimumGap = -imageSize * taskImageDeckMinOverlapRatio
+  taskImageDeckGap.value = `${Math.max(neededGap, minimumGap)}px`
+}
+
+async function scheduleTaskImageDeckGapUpdate() {
+  await nextTick()
+  updateTaskImageDeckGap()
+}
 
 function formatValue(value: number) {
   if (hasMultipleStepCompletions.value) {
@@ -239,7 +287,22 @@ watch(() => props.syncing, (syncing) => {
   }, remaining)
 })
 
-onBeforeUnmount(() => clearTimeout(stepSyncHideTimer))
+onMounted(() => {
+  scheduleTaskImageDeckGapUpdate()
+  window.addEventListener('resize', scheduleTaskImageDeckGapUpdate)
+  taskImageDeckResizeObserver = new ResizeObserver(scheduleTaskImageDeckGapUpdate)
+  if (taskImageDeckRef.value) taskImageDeckResizeObserver.observe(taskImageDeckRef.value)
+})
+
+watch(taskLogImageDeck, () => {
+  scheduleTaskImageDeckGapUpdate()
+}, { deep: true, flush: 'post' })
+
+onBeforeUnmount(() => {
+  clearTimeout(stepSyncHideTimer)
+  window.removeEventListener('resize', scheduleTaskImageDeckGapUpdate)
+  taskImageDeckResizeObserver?.disconnect()
+})
 </script>
 
 <template>
@@ -453,6 +516,27 @@ onBeforeUnmount(() => clearTimeout(stepSyncHideTimer))
         <v-icon icon="mdi-alert-circle-outline" size="1rem" /> Missed
       </div>
     </div>
+    <div
+      v-if="taskLogImageDeck.length"
+      ref="taskImageDeckRef"
+      class="task-image-deck mt-3"
+      :style="{ '--task-image-deck-gap': taskImageDeckGap }"
+    >
+      <div
+        v-for="(image, index) in taskLogImageDeck"
+        :key="`${image.id}-${index}`"
+        class="task-image-deck__item"
+        :style="{ zIndex: taskLogImageDeck.length - index }"
+      >
+        <v-img
+          class="task-image-deck__item-image"
+          :src="image.image"
+          :alt="image.label || 'Task log image'"
+          aspect-ratio="1"
+          cover
+        />
+      </div>
+    </div>
   </v-card>
 </template>
 
@@ -543,6 +627,41 @@ onBeforeUnmount(() => clearTimeout(stepSyncHideTimer))
 }
 .tracking-duration-actions { display: grid; margin-top: -.2rem; padding: .2rem .4rem .5rem; gap: .5rem; }
 .tracking-duration-actions .v-btn { min-height: 2.75rem; }
+
+.task-image-deck {
+  display: flex;
+  flex-wrap: nowrap;
+  overflow: hidden;
+  align-items: center;
+  --task-image-deck-gap: 4px;
+}
+
+.task-image-deck__item {
+  flex: 0 0 auto;
+  width: 1.6rem;
+  height: 1.6rem;
+  min-width: 1.6rem;
+  min-height: 1.6rem;
+  border-radius: .35rem;
+  background: rgb(var(--v-theme-surface-variant));
+  border: .0625rem solid rgb(var(--v-theme-on-surface) / .12);
+  overflow: hidden;
+}
+
+.task-image-deck__item-image {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.task-image-deck__item-image :deep(.v-img__img) {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover;
+}
+
+.task-image-deck__item:not(:first-child) {
+  margin-inline-start: var(--task-image-deck-gap);
+}
 
 .step-source-message {
   display: flex;

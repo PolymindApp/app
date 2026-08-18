@@ -9,7 +9,7 @@ use PDOException;
 
 final class Database
 {
-    public const EXPECTED_SCHEMA_VERSION = '202608170003';
+    public const EXPECTED_SCHEMA_VERSION = '202608170004';
 
     public readonly PDO $pdo;
 
@@ -104,7 +104,7 @@ final class Database
             ],
             'task_log_images' => [
                 'id', 'owner', 'task', 'label', 'amount', 'unit', 'image_url',
-                'image_file', 'usage_count', 'created_at', 'updated_at',
+                'image_file', 'usage_count', 'active', 'created_at', 'updated_at',
             ],
             'interval_templates' => [
                 'id', 'owner', 'name', 'description', 'color', 'definition',

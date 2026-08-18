@@ -155,7 +155,7 @@ function localCreateDefaults(resource: string, body: Record<string, unknown>) {
   }
   if (resource === 'task_log_images') {
     return {
-      image_url: '', image_file: '', usage_count: 0,
+      image_url: '', image_file: '', usage_count: 0, active: true,
       created_at: now, updated_at: now, ...body,
     }
   }

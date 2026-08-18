@@ -1047,7 +1047,7 @@ describe('quantitative task completion', () => {
     const images = await store.loadTaskLogImages(task.id)
 
     expect(apiMocks.getTaskLogImages).toHaveBeenCalledWith({
-      filter: `task = "${task.id}"`,
+      filter: `task = "${task.id}" && active = true`,
       sort: '-usage_count,-updated_at',
     })
     expect(images.map(image => [image.label, image.usageCount])).toEqual([
@@ -1067,6 +1067,7 @@ describe('quantitative task completion', () => {
       unit: 'hours',
       image: '/task-log-images/example.jpg',
       usageCount: 4,
+      active: true,
       createdAt: '2026-07-28T10:00:00.000Z',
       updatedAt: '2026-07-29T10:00:00.000Z',
     }
@@ -1099,6 +1100,54 @@ describe('quantitative task completion', () => {
       expect.objectContaining({ usage_count: 5 }),
     )
     expect(imageLog.usageCount).toBe(5)
+  })
+
+  it('updates image log details optimistically and replaces its image when provided', async () => {
+    const store = useTaskStore()
+    const imageLog: TaskLogImage = {
+      id: 'image-log-1', task: task.id, label: 'Small bowl', amount: 1, unit: 'hours',
+      image: '/task-log-images/old.jpg', usageCount: 3, active: true,
+      createdAt: '2026-07-28T10:00:00.000Z', updatedAt: '2026-07-29T10:00:00.000Z',
+    }
+    const replacement = new Blob(['replacement'], { type: 'image/jpeg' })
+    apiMocks.updateTaskLogImageRecord.mockImplementation(async (_id, payload) => ({
+      id: imageLog.id, task: task.id, label: payload.label, amount: payload.amount, unit: 'hours',
+      image_file: 'old.jpg', image_url: '', usage_count: 3, active: true,
+      created_at: imageLog.createdAt, updated_at: payload.updated_at,
+    }))
+    apiMocks.uploadTaskLogImage.mockResolvedValue({
+      id: imageLog.id, task: task.id, label: 'Large bowl', amount: 2, unit: 'hours',
+      image_file: 'new.jpg', image_url: '', usage_count: 3, active: true,
+      created_at: imageLog.createdAt, updated_at: '2026-07-29T12:00:00.000Z',
+    })
+
+    const persistence = store.updateTaskLogImage(imageLog, {
+      label: 'Large bowl', amount: 2, image: replacement,
+    })
+
+    expect(imageLog).toMatchObject({ label: 'Large bowl', amount: 2 })
+    await persistence
+    expect(apiMocks.uploadTaskLogImage).toHaveBeenCalledWith(imageLog.id, replacement)
+    expect(imageLog.image).toBe('/task-log-images/new.jpg')
+  })
+
+  it('archives an image log optimistically and restores it when persistence fails', async () => {
+    const store = useTaskStore()
+    const imageLog: TaskLogImage = {
+      id: 'image-log-1', task: task.id, label: 'Small bowl', amount: 1, unit: 'hours',
+      image: '/task-log-images/old.jpg', usageCount: 3, active: true,
+      createdAt: '2026-07-28T10:00:00.000Z', updatedAt: '2026-07-29T10:00:00.000Z',
+    }
+    let rejectUpdate: (cause: Error) => void = () => undefined
+    apiMocks.updateTaskLogImageRecord.mockReturnValue(new Promise((_resolve, reject) => {
+      rejectUpdate = reject
+    }))
+
+    const persistence = store.archiveTaskLogImage(imageLog)
+    expect(imageLog.active).toBe(false)
+    rejectUpdate(new Error('offline'))
+    await expect(persistence).rejects.toThrow('offline')
+    expect(imageLog.active).toBe(true)
   })
 
   it('updates a log entry and reopens progress when its value falls below the target', async () => {

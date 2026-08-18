@@ -212,12 +212,13 @@ final class Schema
                     'image_url' => self::text(700000),
                     'image_file' => self::text(52),
                     'usage_count' => self::integer(0),
+                    'active' => self::boolean(),
                     'created_at' => self::timestamp(false, true),
                     'updated_at' => self::timestamp(false, true),
                 ],
                 'required' => ['task', 'label', 'amount'],
                 'sort' => ['label', 'usage_count', 'created_at', 'updated_at'],
-                'filter' => ['task'],
+                'filter' => ['task', 'active'],
             ],
             'interval_templates' => [
                 'fields' => [

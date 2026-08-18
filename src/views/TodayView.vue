@@ -39,6 +39,7 @@ import { useTaskStore } from '@/stores/tasks'
 import { useTrackingStore } from '@/stores/tracking'
 import type {
   Entry,
+  TaskLogImage,
   ProgramStepCompletionProgress,
   ProgramStepRequirementListItem,
   TaskProgress,
@@ -393,6 +394,46 @@ const progressByVisibilityKey = computed(() => new Map(
 const reviewItems = computed(() => store.reviewProgressForDate(selectedDate.value))
 const scoredProgress = computed(() => selectedProgress.value.filter(item => item.status !== 'skipped'))
 const doneCount = computed(() => scoredProgress.value.filter((item) => item.complete).length)
+const taskLogImageDeckByTask = computed(() => {
+  const imageById = new Map(store.taskLogImages.map(item => [item.id, item]))
+  const decks = new Map<string, TaskLogImage[]>()
+  for (const progress of selectedProgress.value) {
+    const deck = store.entriesFor(progress.task, selectedDate.value, progress.programStep)
+      .map(item => item.taskLogImage)
+      .filter((id): id is string => Boolean(id))
+      .map(id => imageById.get(id))
+      .filter((image): image is TaskLogImage => Boolean(image))
+    if (deck.length) decks.set(visibilityKey(progress), deck)
+  }
+  return decks
+})
+const tasksWithImageLogEntries = computed(() => Array.from(new Set(selectedProgress.value.flatMap((progress) => {
+  const hasImageEntry = store.entriesFor(
+    progress.task,
+    selectedDate.value,
+    progress.programStep,
+  ).some(entry => Boolean(entry.taskLogImage))
+  return hasImageEntry ? [progress.task.id] : []
+}))))
+const loadedTaskLogImageTasks = new Set<string>()
+const loadingTaskLogImageTasks = new Set<string>()
+
+watch(tasksWithImageLogEntries, (taskIds) => {
+  const pendingTaskIds = taskIds.filter((taskId) => (
+    !loadedTaskLogImageTasks.has(taskId)
+    && !loadingTaskLogImageTasks.has(taskId)
+  ))
+  if (!pendingTaskIds.length) return
+  for (const taskId of pendingTaskIds) loadingTaskLogImageTasks.add(taskId)
+  void Promise.all(pendingTaskIds.map(async (taskId) => {
+    try {
+      await store.loadTaskLogImages(taskId)
+      loadedTaskLogImageTasks.add(taskId)
+    } finally {
+      loadingTaskLogImageTasks.delete(taskId)
+    }
+  }))
+}, { immediate: true })
 let appStateListener: Awaited<ReturnType<typeof App.addListener>> | undefined
 let stepCountResumeTimer: ReturnType<typeof setTimeout> | undefined
 let nextTaskFrame = 0
@@ -1273,6 +1314,7 @@ async function saveTaskLogEntry() {
                     :program-step-requirements="programStepRequirementItems(item)"
                     :trackers="trackingMeta(item)"
                     :can-log-tracking="trackingCanLog(item)"
+                    :task-log-images="taskLogImageDeckByTask.get(visibilityKey(item)) || []"
                     @log-tracking="openTrackingLogger"
                     @log-tracking-time="openTrackingTimeLogger"
                     @run-program-step-requirement="runProgramStepRequirement"
@@ -1319,6 +1361,7 @@ async function saveTaskLogEntry() {
                 :program-step-requirements="programStepRequirementItems(item)"
                 :trackers="trackingMeta(item)"
                 :can-log-tracking="trackingCanLog(item)"
+                :task-log-images="taskLogImageDeckByTask.get(visibilityKey(item)) || []"
                 @log-tracking="openTrackingLogger"
                 @log-tracking-time="openTrackingTimeLogger"
                 @run-program-step-requirement="runProgramStepRequirement"
