@@ -6,7 +6,7 @@ The card importer shows an example with the required `front,back,note,tags` head
 
 ## Runner settings
 
-The Apply to menu in active Interval and Review set settings offers Current session, the saved Interval or Review set, and Both. Choosing Both updates the saved source and the active session snapshot so the current run reflects the new settings immediately.
+The three-dot menu in an active Interval includes Review set settings whenever the interval has a Review set attached. The Apply to menu in active Interval and Review set settings offers Current session, the saved Interval or Review set, and Both. Choosing Both updates the saved source and the active session snapshot so the current run reflects the new settings immediately.
 
 ## Review card ejection
 

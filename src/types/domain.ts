@@ -351,7 +351,14 @@ export type FlashcardContextAction =
   | 'settings'
 export type FlashcardSettingsApplyTarget = 'session' | 'review-set' | 'both'
 export type IntervalSettingsApplyTarget = 'session' | 'interval' | 'both'
-export type RunnerSessionAction = 'options' | 'settings' | 'amplification' | 'eject' | 'restart' | 'end'
+export type RunnerSessionAction =
+  | 'options'
+  | 'settings'
+  | 'review_settings'
+  | 'amplification'
+  | 'eject'
+  | 'restart'
+  | 'end'
 
 export interface RunnerSessionMenuItem {
   action: RunnerSessionAction

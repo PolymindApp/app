@@ -256,6 +256,7 @@ const sessionActionItems = computed(() => intervalRunnerSessionMenuItems({
   amplified: speechOverAmplified.value,
   busy: syncing.value || starting.value || speechOverAmplificationBusy.value,
   preview: isTemplatePreview.value,
+  hasReviewSet: Boolean(session.value?.flashcardReview?.reviewSet),
 }))
 const sessionActionsDisabled = computed(() => sessionActionItems.value.every(item => item.disabled))
 const intervalSettingsSourceTemplate = computed(() => store.templates.find(
@@ -625,6 +626,7 @@ async function toggleSpeechOverAmplification() {
 function handleRunnerSessionAction(action: RunnerSessionAction) {
   if (action === 'amplification') void toggleSpeechOverAmplification()
   else if (action === 'settings') void openIntervalSettings()
+  else if (action === 'review_settings') void openFlashcardSettings()
   else if (action === 'restart') void restart()
   else if (action === 'end') endDialog.value = true
 }

@@ -1,13 +1,17 @@
 import type { RunnerSessionMenuItem } from '@/types/domain'
 
-interface IntervalRunnerSessionMenuState {
+interface RunnerSessionMenuState {
   speechAvailable: boolean
   amplified: boolean
   busy: boolean
   preview: boolean
 }
 
-interface ReviewRunnerSessionMenuState extends IntervalRunnerSessionMenuState {
+interface IntervalRunnerSessionMenuState extends RunnerSessionMenuState {
+  hasReviewSet: boolean
+}
+
+interface ReviewRunnerSessionMenuState extends RunnerSessionMenuState {
   finished: boolean
   canRestart: boolean
 }
@@ -35,6 +39,12 @@ export function intervalRunnerSessionMenuItems(
       disabled: state.preview || state.busy,
       divider: state.speechAvailable,
     },
+    ...(state.hasReviewSet ? [{
+      action: 'review_settings' as const,
+      title: 'Review set settings',
+      icon: 'mdi-cards-outline',
+      disabled: state.preview || state.busy,
+    }] : []),
     {
       action: 'restart' as const,
       title: 'Restart interval',
