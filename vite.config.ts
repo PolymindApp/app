@@ -1,13 +1,30 @@
 import { fileURLToPath, URL } from 'node:url'
-import { defineConfig } from 'vite'
+import { defineConfig, type Plugin } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import vuetify from 'vite-plugin-vuetify'
 import { VitePWA } from 'vite-plugin-pwa'
 
-export default defineConfig({
+function developmentRobotsPlugin(mode: string): Plugin {
+  return {
+    name: 'development-robots',
+    apply: 'build',
+    generateBundle() {
+      if (mode !== 'dev') return
+
+      this.emitFile({
+        type: 'asset',
+        fileName: 'robots.txt',
+        source: 'User-agent: *\nDisallow: /\n',
+      })
+    },
+  }
+}
+
+export default defineConfig(({ mode }) => ({
   plugins: [
     vue(),
     vuetify({ autoImport: true }),
+    developmentRobotsPlugin(mode),
     VitePWA({
       strategies: 'injectManifest',
       srcDir: 'src',
@@ -43,4 +60,4 @@ export default defineConfig({
       },
     },
   },
-})
+}))
