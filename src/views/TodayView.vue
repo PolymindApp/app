@@ -55,7 +55,7 @@ const flashcardStore = useFlashcardStore()
 const journalStore = useJournalStore()
 const trackingStore = useTrackingStore()
 const router = useRouter()
-const { smAndUp } = useDisplay()
+const { mdAndUp, smAndUp } = useDisplay()
 const {
   selectedDate,
   selectedProgress,
@@ -1446,7 +1446,7 @@ async function saveTaskLogEntry() {
       @after-leave="scheduleNextIncompleteTask"
     >
       <StickyActionBanner
-        v-if="nextIncompleteProgress"
+        v-if="!mdAndUp && nextIncompleteProgress"
         class="next-incomplete-task-banner page-action-area--route-slide"
         label="Next incomplete"
         :title="nextIncompleteProgress.programStep?.name || nextIncompleteProgress.task.name"
