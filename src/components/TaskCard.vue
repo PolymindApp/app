@@ -547,7 +547,7 @@ onBeforeUnmount(() => {
   position: relative;
   overflow: hidden;
   cursor: pointer;
-  transition: opacity .18s ease;
+  transition: filter .18s ease, opacity .18s ease;
 }
 
 .task-card:focus-visible {
@@ -556,6 +556,7 @@ onBeforeUnmount(() => {
 }
 
 .task-card--done {
+  filter: grayscale(1);
   opacity: .55;
 }
 
