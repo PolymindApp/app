@@ -6,4 +6,6 @@ Both device factors are quantitative. Insights load one value per local calendar
 
 When Android Usage Access is enabled, the main Tracking page also loads screen time for the visible week and shows it as a duration series in the weekly chart. Future dates are not requested. Like tracker series, screen time can be hidden or restored from the chart legend.
 
+The main Tracking page keeps tracker cards focused on starting a new log and managing the tracker. Entries for the selected date appear together in a chronological **Log** section below the factor and outcome tracker groups. Selecting a log opens it for editing, and days without entries show an explicit empty state.
+
 The weekly chart uses the full SVG width without a horizontal plot inset. It keeps its grid, day labels, and chart-series multi-select visible while a week is loading instead of replacing the chart with a skeleton. The compact selector has no entrance transition, shows series colors in its dense list and x-small tonal selected chips, displays at most two selected series, and summarizes the remainder as an overflow count. When loading finishes, bars animate up from the baseline; devices that request reduced motion receive the final state immediately.
