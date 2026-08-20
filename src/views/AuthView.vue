@@ -196,7 +196,8 @@ async function signInWithPasskey() {
           </p>
         </section>
 
-        <v-card class="auth-card pa-5 pa-sm-7" color="surface">
+        <div class="auth-panel">
+          <v-card class="auth-card pa-5 pa-sm-7" color="surface">
           <div v-if="pageFlow === 'auth' && !reauthenticating && !registrationEmail" class="d-flex ga-2 mb-6">
             <v-btn
               class="flex-grow-1"
@@ -334,6 +335,11 @@ async function signInWithPasskey() {
             >
               {{ pageFlow === 'forgot' ? 'Send reset link' : pageFlow === 'reset' ? 'Reset password' : mode === 'login' ? 'Open your day' : 'Create account' }}
             </v-btn>
+            <p v-if="pageFlow === 'auth' && mode === 'register'" class="auth-consent mt-3">
+              By creating an account, you agree to the
+              <router-link to="/terms">terms and conditions</router-link>
+              and acknowledge the <router-link to="/privacy">privacy policy</router-link>.
+            </p>
             <v-btn
               v-if="pageFlow === 'forgot' || pageFlow === 'reset'"
               block
@@ -364,7 +370,15 @@ async function signInWithPasskey() {
               Sign in with biometrics
             </v-btn>
           </template>
-        </v-card>
+
+          </v-card>
+
+          <nav class="auth-legal mt-2" aria-label="Legal">
+            <router-link to="/privacy">Privacy</router-link>
+            <span aria-hidden="true">·</span>
+            <router-link to="/terms">Terms</router-link>
+          </nav>
+        </div>
       </v-container>
     </v-main>
   </v-app>
@@ -448,6 +462,10 @@ async function signInWithPasskey() {
   box-shadow: 0 28px 80px rgba(0,0,0,.36) !important;
 }
 
+.auth-panel {
+  min-width: 0;
+}
+
 .auth-fields {
   display: grid;
   gap: 1rem;
@@ -466,6 +484,42 @@ async function signInWithPasskey() {
   font-size: .75rem;
   font-weight: 700;
   text-transform: uppercase;
+}
+
+.auth-consent {
+  color: rgb(var(--v-theme-on-surface) / .58);
+  font-size: .72rem;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.auth-consent a {
+  color: rgb(var(--v-theme-on-surface) / .78);
+  font-weight: 800;
+  text-underline-offset: .16rem;
+}
+
+.auth-legal {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: .55rem;
+  color: rgba(255, 255, 255, .38);
+  font-size: .72rem;
+}
+
+.auth-legal a {
+  min-height: 2.75rem;
+  display: inline-flex;
+  align-items: center;
+  color: rgba(255, 255, 255, .68);
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.auth-legal a:hover,
+.auth-legal a:focus-visible {
+  color: rgb(var(--v-theme-secondary));
 }
 
 @media (min-width: 800px) {

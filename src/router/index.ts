@@ -23,6 +23,30 @@ const router = createRouter({
       },
     },
     {
+      path: '/privacy',
+      name: 'privacy',
+      component: () => import('@/views/LegalView.vue'),
+      meta: {
+        title: 'Privacy policy',
+        seo: {
+          title: 'Privacy policy | BackOnTrack',
+          description: 'Learn how BackOnTrack collects, uses, stores, shares, and protects account, app, Health Connect, and device data.',
+        },
+      },
+    },
+    {
+      path: '/terms',
+      name: 'terms',
+      component: () => import('@/views/LegalView.vue'),
+      meta: {
+        title: 'Terms and conditions',
+        seo: {
+          title: 'Terms and conditions | BackOnTrack',
+          description: 'Review the terms that govern access to and use of the BackOnTrack website, web app, and mobile apps.',
+        },
+      },
+    },
+    {
       path: '/auth',
       name: 'auth',
       component: () => import('@/views/AuthView.vue'),

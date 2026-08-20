@@ -193,8 +193,14 @@ function scrollToFeatures() {
       </main>
 
       <footer class="landing-footer px-6 px-lg-10">
-        <img src="/brand/backontrack-wordmark.png" alt="BackOnTrack" />
-        <span>Build your way forward.</span>
+        <div class="landing-footer__brand">
+          <img src="/brand/backontrack-wordmark.png" alt="BackOnTrack" />
+          <span>Build your way forward.</span>
+        </div>
+        <nav class="landing-footer__links" aria-label="Legal">
+          <router-link to="/privacy">Privacy</router-link>
+          <router-link to="/terms">Terms</router-link>
+        </nav>
       </footer>
     </v-main>
   </v-app>
@@ -524,6 +530,26 @@ function scrollToFeatures() {
   font-weight: 700;
 }
 
+.landing-footer__brand,
+.landing-footer__links {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+}
+
+.landing-footer__links a {
+  min-height: 2.75rem;
+  display: inline-flex;
+  align-items: center;
+  color: inherit;
+  text-decoration: none;
+}
+
+.landing-footer__links a:hover,
+.landing-footer__links a:focus-visible {
+  color: rgb(var(--v-theme-secondary));
+}
+
 @media (max-width: 79.998rem) {
   .phone-gallery {
     min-height: 32rem;
@@ -669,7 +695,16 @@ function scrollToFeatures() {
   }
 
   .landing-footer {
-      min-height: 5rem;
+    min-height: 5rem;
+    align-items: flex-start;
+    flex-direction: column;
+    gap: .5rem;
+    padding-block: 1.25rem;
+  }
+
+  .landing-footer__brand {
+    width: 100%;
+    justify-content: space-between;
   }
 
 }

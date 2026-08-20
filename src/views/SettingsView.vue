@@ -470,6 +470,25 @@ async function previewIntervalTypeSound(kind: IntervalStepKind, sound: IntervalC
       />
     </v-card>
 
+    <v-card class="surface-card pa-5 pa-sm-6">
+      <div class="settings-section-heading">
+        <div>
+          <h2>Legal</h2>
+          <p>Review how BackOnTrack handles your information and the terms for using the service.</p>
+        </div>
+        <v-icon icon="mdi-shield-check-outline" />
+      </div>
+
+      <div class="settings-legal-actions mt-5">
+        <v-btn to="/privacy" variant="outlined" prepend-icon="mdi-shield-lock-outline">
+          Privacy policy
+        </v-btn>
+        <v-btn to="/terms" variant="outlined" prepend-icon="mdi-file-document-check-outline">
+          Terms and conditions
+        </v-btn>
+      </div>
+    </v-card>
+
     <v-snackbar v-model="notice" color="success" location="bottom" :timeout="4000">
       {{ noticeMessage }}
     </v-snackbar>
@@ -510,6 +529,12 @@ async function previewIntervalTypeSound(kind: IntervalStepKind, sound: IntervalC
   display: grid;
   gap: .65rem;
   margin-top: 1.25rem;
+}
+
+.settings-legal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .75rem;
 }
 
 .menu-order-item {
