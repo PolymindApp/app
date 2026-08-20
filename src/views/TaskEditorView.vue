@@ -14,7 +14,7 @@ import type { LongPressDragResult } from '@/directives/longPressDrag'
 import { reviewSetCardCount } from '@/services/flashcards'
 import { formatIntervalDuration, intervalDuration, intervalStepCount } from '@/services/intervals'
 import { createProgramStepCompletion } from '@/services/programStepCompletions'
-import { requestTaskReminderPermission, taskRemindersAvailable } from '@/services/taskReminders'
+import { requestTaskReminderPermission, taskReminderSettingsAvailable } from '@/services/taskReminders'
 import { TASK_TYPE_OPTIONS, TASK_TYPE_PRESENTATION } from '@/services/taskTypes'
 import { useFlashcardStore } from '@/stores/flashcards'
 import { useIntervalStore } from '@/stores/intervals'
@@ -41,7 +41,7 @@ const deleting = ref(false)
 const deleteDialog = ref(false)
 const openStep = ref<number>()
 const error = ref('')
-const reminderAvailable = taskRemindersAvailable()
+const reminderAvailable = taskReminderSettingsAvailable()
 const stepDragIds = new WeakMap<ProgramStepDraft, string>()
 let nextStepDragId = 0
 const typeLocked = computed(() => Boolean(route.params.id))

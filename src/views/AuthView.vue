@@ -3,6 +3,7 @@ import { Capacitor } from '@capacitor/core'
 import { computed, nextTick, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppForm from '@/components/AppForm.vue'
+import { ApiError } from '@/lib/api'
 import { isAndroidPasskeyAvailable } from '@/services/passkeys'
 import { useAuthStore } from '@/stores/auth'
 
@@ -25,6 +26,8 @@ const nameField = ref<{ focus: () => void }>()
 const passkeyAvailable = ref(false)
 const success = ref('')
 const pageError = ref('')
+const pageWarning = ref('')
+const feedbackType = ref<'success' | 'warning'>('success')
 const registrationEmail = ref('')
 const handledVerificationToken = ref('')
 
@@ -71,6 +74,7 @@ async function focusCurrentField() {
 watch(mode, async (nextMode) => {
   auth.clearError()
   pageError.value = ''
+  pageWarning.value = ''
   success.value = ''
   password.value = ''
   passwordConfirm.value = ''
@@ -83,6 +87,7 @@ watch(
   async () => {
     auth.clearError()
     pageError.value = ''
+    pageWarning.value = ''
     success.value = ''
     backendOffline.value = false
     registrationEmail.value = ''
@@ -101,15 +106,18 @@ async function submit() {
   if (!result?.valid) return
   backendOffline.value = false
   pageError.value = ''
+  pageWarning.value = ''
   try {
     if (pageFlow.value === 'forgot') {
       const response = await auth.requestPasswordReset(email.value)
       success.value = response.message
+      feedbackType.value = response.action === 'email_verification' ? 'warning' : 'success'
       return
     }
     if (pageFlow.value === 'reset') {
       const response = await auth.resetPassword(resetToken.value, password.value)
       success.value = response.message
+      feedbackType.value = 'success'
       password.value = ''
       passwordConfirm.value = ''
       return
@@ -122,10 +130,19 @@ async function submit() {
     const response = await auth.register(name.value, email.value, password.value)
     registrationEmail.value = response.email || email.value
     success.value = response.message
+    feedbackType.value = 'success'
     password.value = ''
     passwordConfirm.value = ''
   } catch (error) {
     backendOffline.value = error instanceof TypeError || (error instanceof Error && /fetch|network/i.test(error.message))
+    if (
+      error instanceof ApiError
+      && error.details.emailVerificationRequired === true
+    ) {
+      auth.clearError()
+      pageWarning.value = error.message
+      password.value = ''
+    }
   }
 }
 
@@ -158,6 +175,7 @@ async function resendConfirmation() {
 async function returnToSignIn() {
   auth.clearError()
   pageError.value = ''
+  pageWarning.value = ''
   success.value = ''
   backendOffline.value = false
   registrationEmail.value = ''
@@ -230,6 +248,9 @@ async function signInWithPasskey() {
           <v-alert v-else-if="pageError || auth.error" type="error" variant="tonal" class="mb-4" density="compact">
             {{ pageError || auth.error }}
           </v-alert>
+          <v-alert v-else-if="pageWarning" type="warning" variant="tonal" class="mb-4" density="compact">
+            {{ pageWarning }}
+          </v-alert>
 
           <div v-if="registrationEmail" class="text-center">
             <v-icon icon="mdi-email-check-outline" color="secondary" size="3rem" class="mb-4" />
@@ -262,8 +283,13 @@ async function signInWithPasskey() {
           </div>
 
           <div v-else-if="success" class="text-center" aria-live="polite">
-            <v-icon icon="mdi-email-check-outline" color="success" size="3rem" class="mb-4" />
-            <v-alert type="success" variant="tonal" class="mb-5 text-left" density="compact">
+            <v-icon
+              :icon="feedbackType === 'warning' ? 'mdi-email-alert-outline' : 'mdi-email-check-outline'"
+              :color="feedbackType"
+              size="3rem"
+              class="mb-4"
+            />
+            <v-alert :type="feedbackType" variant="tonal" class="mb-5 text-left" density="compact">
               {{ success }}
             </v-alert>
             <v-btn block color="secondary" size="large" @click="returnToSignIn">

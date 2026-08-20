@@ -102,7 +102,7 @@ function removeTime(index: number) {
     </div>
 
     <v-alert v-if="!available" type="info" variant="tonal" density="compact" class="mt-4">
-      Reminders are available in the Android app.
+      Reminders are available in the Android app and supported desktop browsers.
     </v-alert>
 
     <v-expand-transition>

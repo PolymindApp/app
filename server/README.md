@@ -12,12 +12,13 @@ php -r 'var_export([
     "php" => PHP_VERSION,
     "curl" => extension_loaded("curl"),
     "gd" => extension_loaded("gd"),
+    "mbstring" => extension_loaded("mbstring"),
     "pdo_sqlite" => extension_loaded("pdo_sqlite"),
     "openssl" => extension_loaded("openssl"),
 ]); echo PHP_EOL;'
 ```
 
-cURL, GD, PDO_SQLITE, OpenSSL, and SQLite FTS5 must be enabled. If the host has no Composer executable, run Composer locally and upload the generated root `vendor` directory with `server`. The seed-builder command additionally requires PHP's Zip extension.
+cURL, GD, Mbstring, PDO_SQLITE, OpenSSL, and SQLite FTS5 must be enabled. BCMath or GMP is recommended for faster Web Push encryption. If the host has no Composer executable, run Composer locally and upload the generated root `vendor` directory with `server`. The seed-builder command additionally requires PHP's Zip extension.
 
 ## Configuration
 
@@ -41,6 +42,9 @@ Configuration may be supplied through the root `.env`, process environment varia
 | `BACKONTRACK_MAIL_ENCRYPTION` | `tls`, `ssl`, or `none` for trusted local development | `tls` |
 | `BACKONTRACK_MAIL_FROM_ADDRESS` | Sender email address | Required for account email |
 | `BACKONTRACK_MAIL_FROM_NAME` | Sender display name | BackOnTrack |
+| `BACKONTRACK_WEB_PUSH_VAPID_SUBJECT` | Web Push sender identity as `mailto:` or HTTPS URL | Disabled |
+| `BACKONTRACK_WEB_PUSH_VAPID_PUBLIC_KEY` | Stable base64url P-256 public VAPID key | Disabled |
+| `BACKONTRACK_WEB_PUSH_VAPID_PRIVATE_KEY` | Stable base64url private VAPID key | Disabled |
 | `BACKONTRACK_PASSKEY_RP_ID` | Android passkey relying-party domain | Disabled |
 | `BACKONTRACK_PASSKEY_ANDROID_PACKAGE` | Trusted Android application ID | Disabled |
 | `BACKONTRACK_PASSKEY_ANDROID_KEY_HASHES` | Comma-separated base64url SHA-256 signing-certificate hashes | Disabled |
@@ -52,6 +56,14 @@ php -r 'echo bin2hex(random_bytes(32)), PHP_EOL;'
 ```
 
 Generate separate values for `BACKONTRACK_API_SECRET` and `BACKONTRACK_MIGRATION_KEY`. Never commit either secret.
+
+Generate the Web Push VAPID pair once and retain it across deployments:
+
+```bash
+pnpm web-push:keys
+```
+
+Copy both generated values into the server environment and set `BACKONTRACK_WEB_PUSH_VAPID_SUBJECT`. Never expose or commit the private key. Replacing the pair invalidates existing browser subscriptions, which are repaired the next time an authenticated user opens the desktop app.
 
 Only `VITE_API_URL` is exposed to the browser build. Variables beginning with `BACKONTRACK_` remain PHP-only.
 
@@ -117,6 +129,7 @@ The reconstructed PHP-era history is:
 | `202608160004` | Counted passive-review batches, compact immutable clocks, and v2-only retention cursors |
 | `202608170001` | Retired flashcard images, compacted sync versions, and added targeted indexes |
 | `202608200001` | Deduplicated client-side JavaScript and network error reporting |
+| `202608200002` | Desktop Web Push subscriptions and idempotent task-reminder delivery records |
 
 Existing PHP databases are advanced without recreating application data. The schema is validated after migration, including required columns.
 
@@ -137,6 +150,20 @@ Sync protocol v2 bounds that bookkeeping. The client persists `receiptWatermark`
 Owned collection records carry server revisions and per-field hybrid logical clocks. The exchange applies last-writer-wins only to fields changed by both clients; deletes are terminal for the same record ID. Immutable flashcard review events use one wildcard clock, and passive background catch-ups store one event per card with a `view_count` instead of one row per elapsed view. Reviewer statistics still advance by the complete counted batch exactly once. Unique tag names and task occurrences return replacement IDs so clients can rewrite queued relationships rather than dropping work. Review-set access, shared-card projections, preferences, shares, account settings, avatars, and journal images use the same exchange contract.
 
 The initial bootstrap is the only network-dependent preparation step. After it completes, token expiry does not remove the cached account. The client must reauthenticate before it can exchange again, and sign-out should flush before erasing local account data.
+
+## Desktop task reminders
+
+Authenticated desktop browsers can enable the same daily reminders as Android. The client requests notification permission, creates a Push API subscription using the configured public VAPID key, and registers the endpoint through `POST /web-push/subscriptions`. Subscription encryption keys are stored per account; the private VAPID key never leaves PHP. Expired browser endpoints are removed automatically.
+
+Run the CLI-only dispatcher every minute. For example:
+
+```cron
+* * * * * cd /absolute/path/to/backontrack && /usr/bin/php server/push-reminders.php >/dev/null 2>&1
+```
+
+The dispatcher evaluates reminder times in each account's IANA timezone, applies task recurrence and program-cycle rules, skips completed occurrences, and accepts a five-minute scheduler delay. A unique delivery reservation prevents overlapping cron processes from sending the same task/time to the same browser twice. Successful pushes expire after five minutes and open `/tasks` when clicked.
+
+Web Push requires HTTPS, a production service worker, all three VAPID settings, and a host scheduler. Notification permission that has been blocked must be restored through the browser's site settings.
 
 Recommended deployment order:
 

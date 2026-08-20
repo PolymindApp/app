@@ -2,6 +2,7 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import IntervalReviewCardsField from '@/components/IntervalReviewCardsField.vue'
 import IntervalNodeEditor from '@/components/IntervalNodeEditor.vue'
 import LabeledSlider from '@/components/LabeledSlider.vue'
 import type { LongPressDragResult } from '@/directives/longPressDrag'
@@ -20,16 +21,20 @@ import {
 import type {
   IntervalCueSettings,
   IntervalDefinition,
+  FlashcardReviewSet,
   IntervalGroupNode,
   IntervalNode,
 } from '@/types/domain'
 
 defineProps<{
   reviewSetSpeechEnabled?: boolean
+  reviewSets?: FlashcardReviewSet[]
+  allowReviewSetCreate?: boolean
 }>()
 
 const definition = defineModel<IntervalDefinition>('definition', { required: true })
 const cues = defineModel<IntervalCueSettings>('cues', { required: true })
+const reviewSet = defineModel<string | undefined>('reviewSet', { default: undefined })
 const root = ref<HTMLElement>()
 const pendingNodeDelete = ref<{ id: string; name: string; type: IntervalNode['type'] }>()
 const selectedNodeId = ref<string>()
@@ -233,6 +238,13 @@ function confirmNodeDelete() {
 <template>
   <div ref="root" class="interval-settings-fields">
     <div class="interval-settings-fields__cards">
+      <IntervalReviewCardsField
+        v-if="reviewSets"
+        v-model="reviewSet"
+        :review-sets="reviewSets"
+        :allow-create="allowReviewSetCreate"
+      />
+
       <v-card class="surface-card pa-5">
         <div class="setting-row">
           <div><strong>Sound cues</strong><p>Count down the final three seconds and signal each interval</p></div>

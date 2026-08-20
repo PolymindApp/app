@@ -10,7 +10,7 @@ const props = withDefaults(defineProps<{
   modelValue: number | string
   maxMinutes?: number
   active?: boolean
-  mode?: 'duration' | 'time'
+  mode?: 'duration' | 'time' | 'hours-minutes'
 }>(), {
   maxMinutes: 59,
   active: true,
@@ -42,7 +42,9 @@ let selectionEndTimer: number | undefined
 let syncFrame: number | undefined
 let syncVersion = 0
 const timeMode = computed(() => props.mode === 'time')
-const primaryMaximum = computed(() => timeMode.value ? 23 : props.maxMinutes)
+const hoursMinutesMode = computed(() => props.mode === 'hours-minutes')
+const hoursMode = computed(() => timeMode.value || hoursMinutesMode.value)
+const primaryMaximum = computed(() => hoursMode.value ? 23 : props.maxMinutes)
 
 function activateWheel() {
   if (wheelFocused.value) return
@@ -112,6 +114,13 @@ function normalizedParts(value: number | string) {
       seconds: Math.min(59, Math.max(0, Number(match?.[2]) || 0)),
     }
   }
+  if (hoursMinutesMode.value) {
+    const total = Math.max(0, Math.round(Number(value) || 0))
+    return {
+      minutes: Math.min(23, Math.floor(total / 3600)),
+      seconds: Math.min(59, Math.floor(total % 3600 / 60)),
+    }
+  }
   const total = Math.max(0, Math.round(Number(value) || 0))
   return {
     minutes: Math.min(primaryMaximum.value, Math.floor(total / 60)),
@@ -120,9 +129,12 @@ function normalizedParts(value: number | string) {
 }
 
 function emitValue() {
-  emit('update:modelValue', timeMode.value
+  const value = timeMode.value
     ? `${String(minutes.value).padStart(2, '0')}:${String(seconds.value).padStart(2, '0')}`
-    : minutes.value * 60 + seconds.value)
+    : hoursMinutesMode.value
+      ? minutes.value * 3600 + seconds.value * 60
+      : minutes.value * 60 + seconds.value
+  emit('update:modelValue', value)
 }
 
 function setLocalValue(value: number | string) {
@@ -350,7 +362,7 @@ onBeforeUnmount(() => {
     <div class="timer-wheel__inputs">
       <v-number-input
         :model-value="minutes"
-        :label="timeMode ? 'Hours' : 'Minutes'"
+        :label="hoursMode ? 'Hours' : 'Minutes'"
         :min="0"
         :max="primaryMaximum"
         :step="1"
@@ -362,7 +374,7 @@ onBeforeUnmount(() => {
       />
       <v-number-input
         :model-value="seconds"
-        :label="timeMode ? 'Minutes' : 'Seconds'"
+        :label="hoursMode ? 'Minutes' : 'Seconds'"
         :min="0"
         :max="59"
         :step="1"
@@ -379,7 +391,7 @@ onBeforeUnmount(() => {
       class="timer-wheel"
       :class="{ 'timer-wheel--focused': wheelFocused }"
       role="group"
-      :aria-label="timeMode ? 'Time wheel' : 'Duration wheel'"
+      :aria-label="timeMode ? 'Time wheel' : hoursMinutesMode ? 'Time limit wheel' : 'Duration wheel'"
       tabindex="0"
       @focusin="activateWheel"
       @focusout="handleWheelFocusOut"
@@ -388,7 +400,11 @@ onBeforeUnmount(() => {
       <div
         v-if="!wheelFocused"
         class="timer-wheel__focus-guard"
-        :aria-label="timeMode ? 'Focus time wheel to adjust' : 'Focus duration wheel to adjust'"
+        :aria-label="timeMode
+          ? 'Focus time wheel to adjust'
+          : hoursMinutesMode
+            ? 'Focus time limit wheel to adjust'
+            : 'Focus duration wheel to adjust'"
         @click="focusWheel"
       >
         <span>Tap to adjust</span>
@@ -399,7 +415,7 @@ onBeforeUnmount(() => {
         class="timer-wheel__column"
         :class="{ 'timer-wheel__column--interacting': minuteInteracting }"
         role="listbox"
-        :aria-label="timeMode ? 'Hours' : 'Minutes'"
+        :aria-label="hoursMode ? 'Hours' : 'Minutes'"
         :aria-activedescendant="`${pickerId}-minutes-${minutes}`"
         @scroll.passive="handleScroll('minutes')"
         @scrollend.passive="settleScroller('minutes')"
@@ -420,7 +436,7 @@ onBeforeUnmount(() => {
           @click="updateValue('minutes', value - 1)"
         >
           <span>{{ String(value - 1).padStart(2, '0') }}</span>
-          <small aria-hidden="true">{{ timeMode ? 'h' : 'm' }}</small>
+          <small aria-hidden="true">{{ hoursMode ? 'h' : 'm' }}</small>
         </button>
         <div class="timer-wheel__spacer" aria-hidden="true" />
       </div>
@@ -432,7 +448,7 @@ onBeforeUnmount(() => {
         class="timer-wheel__column"
         :class="{ 'timer-wheel__column--interacting': secondInteracting }"
         role="listbox"
-        :aria-label="timeMode ? 'Minutes' : 'Seconds'"
+        :aria-label="hoursMode ? 'Minutes' : 'Seconds'"
         :aria-activedescendant="`${pickerId}-seconds-${seconds}`"
         @scroll.passive="handleScroll('seconds')"
         @scrollend.passive="settleScroller('seconds')"
@@ -453,7 +469,7 @@ onBeforeUnmount(() => {
           @click="updateValue('seconds', value - 1)"
         >
           <span>{{ String(value - 1).padStart(2, '0') }}</span>
-          <small aria-hidden="true">{{ timeMode ? 'm' : 's' }}</small>
+          <small aria-hidden="true">{{ hoursMode ? 'm' : 's' }}</small>
         </button>
         <div class="timer-wheel__spacer" aria-hidden="true" />
       </div>

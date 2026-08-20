@@ -6,6 +6,7 @@ import {
 } from '@capacitor/local-notifications'
 import { addDays, startOfDay } from 'date-fns'
 import type { Router } from 'vue-router'
+import { api } from '@/lib/api'
 import { isTaskScheduled, toDateKey } from '@/services/schedule'
 import type { Task } from '@/types/domain'
 
@@ -56,7 +57,91 @@ export function taskRemindersAvailable() {
   return Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android'
 }
 
+export function desktopTaskRemindersAvailable() {
+  return !Capacitor.isNativePlatform()
+    && Capacitor.getPlatform() === 'web'
+    && typeof window !== 'undefined'
+    && 'Notification' in window
+    && 'PushManager' in window
+    && 'serviceWorker' in navigator
+    && window.matchMedia('(min-width: 960px)').matches
+}
+
+export function taskReminderSettingsAvailable() {
+  return taskRemindersAvailable() || desktopTaskRemindersAvailable()
+}
+
+export async function requestDesktopTaskReminderPermission(tasks: Task[]) {
+  if (
+    !desktopTaskRemindersAvailable()
+    || !tasks.some(task => task.active && task.reminderEnabled)
+  ) return false
+
+  return requestDesktopTaskPushPermission()
+}
+
+async function requestDesktopTaskPushPermission() {
+  if (!desktopTaskRemindersAvailable()) return false
+
+  try {
+    if (window.Notification.permission === 'default') {
+      await window.Notification.requestPermission()
+    }
+    if (window.Notification.permission !== 'granted') return false
+    void synchronizeDesktopTaskPushSubscription().catch(() => undefined)
+    return true
+  } catch {
+    // Browser notification support and permission policies vary by browser.
+    return window.Notification.permission === 'granted'
+  }
+}
+
+async function synchronizeDesktopTaskPushSubscription() {
+  const configuration = await api.getWebPushConfiguration()
+  if (!configuration.available || !configuration.publicKey) return false
+
+  const registration = await navigator.serviceWorker.getRegistration()
+    ?? await navigator.serviceWorker.register('/sw.js')
+  let subscription = await registration.pushManager.getSubscription()
+  const applicationServerKey = base64UrlBytes(configuration.publicKey)
+  const subscribedKey = subscription?.options.applicationServerKey
+  if (subscription && (!subscribedKey || !sameBytes(subscribedKey, applicationServerKey))) {
+    const previousEndpoint = subscription.endpoint
+    await subscription.unsubscribe()
+    subscription = null
+    await api.removeWebPushSubscription(previousEndpoint).catch(() => undefined)
+  }
+  subscription ??= await registration.pushManager.subscribe({
+    userVisibleOnly: true,
+    applicationServerKey,
+  })
+  const serialized = subscription.toJSON()
+  const p256dh = serialized.keys?.p256dh
+  const auth = serialized.keys?.auth
+  if (!serialized.endpoint || !p256dh || !auth) return false
+  await api.registerWebPushSubscription({
+    endpoint: serialized.endpoint,
+    expirationTime: serialized.expirationTime ?? null,
+    keys: { p256dh, auth },
+    contentEncoding: 'aes128gcm',
+  })
+  return true
+}
+
+function base64UrlBytes(value: string) {
+  const normalized = value.replace(/-/g, '+').replace(/_/g, '/')
+  const decoded = window.atob(normalized + '='.repeat((4 - normalized.length % 4) % 4))
+  return Uint8Array.from(decoded, character => character.charCodeAt(0))
+}
+
+function sameBytes(left: ArrayBuffer, right: Uint8Array) {
+  const leftBytes = new Uint8Array(left)
+  return leftBytes.length === right.length
+    && leftBytes.every((value, index) => value === right[index])
+}
+
 export async function requestTaskReminderPermission() {
+  if (desktopTaskRemindersAvailable()) return requestDesktopTaskPushPermission()
   if (!taskRemindersAvailable()) return false
   let status = await LocalNotifications.checkPermissions()
   if (status.display === 'prompt' || status.display === 'prompt-with-rationale') {
@@ -66,6 +151,16 @@ export async function requestTaskReminderPermission() {
 }
 
 export async function checkTaskReminderCapabilities(): Promise<TaskReminderCapabilityIssue[]> {
+  if (desktopTaskRemindersAvailable()) {
+    if (window.Notification.permission === 'granted') return []
+    return [{
+      code: 'notifications',
+      message: window.Notification.permission === 'denied'
+        ? 'Your browser is blocking task notifications.'
+        : 'Allow browser notifications to receive task reminders.',
+      action: 'Allow notifications',
+    }]
+  }
   if (!taskRemindersAvailable()) return []
   await LocalNotifications.createChannel(CHANNEL)
   const [permission, enabled, exactAlarm, nativeStatus] = await Promise.all([
@@ -99,6 +194,10 @@ export async function checkTaskReminderCapabilities(): Promise<TaskReminderCapab
 }
 
 export async function openTaskReminderCapabilitySettings(capability: TaskReminderCapability) {
+  if (desktopTaskRemindersAvailable()) {
+    if (capability === 'notifications') await requestDesktopTaskPushPermission()
+    return
+  }
   if (!taskRemindersAvailable()) return
   if (capability === 'exact_alarms') {
     await LocalNotifications.changeExactNotificationSetting()

@@ -55,6 +55,7 @@ public class BackgroundFlashcardService extends Service {
     private boolean running;
     private boolean finished;
     private boolean indefinite;
+    private long timeLimitMs;
     private String sessionId = "";
     private String sessionName = "Review";
     private String cardSides = "both";
@@ -81,6 +82,10 @@ public class BackgroundFlashcardService extends Service {
         public void run() {
             if (!running) return;
             long now = SystemClock.elapsedRealtime();
+            if (timeLimitMs > 0L && currentElapsedMs(now) >= timeLimitMs) {
+                finishReview(now);
+                return;
+            }
             // The foreground runner already spoke the current side. Preserve its remaining
             // duration during handoff and speak only when advance() reaches the next side.
             advance(now);
@@ -184,6 +189,7 @@ public class BackgroundFlashcardService extends Service {
         sessionName = config.optString("sessionName", "Review").trim();
         if (sessionName.isEmpty()) sessionName = "Review";
         indefinite = config.optBoolean("indefinite", false);
+        timeLimitMs = Math.max(0L, config.optLong("timeLimitSeconds", 0L) * 1000L);
         String configuredCardSides = config.optString("cardSides", "both");
         cardSides = "front".equals(configuredCardSides) || "back".equals(configuredCardSides)
             ? configuredCardSides
@@ -345,7 +351,18 @@ public class BackgroundFlashcardService extends Service {
         }
     }
 
+    private long currentElapsedMs(long now) {
+        long elapsed = baseElapsedMs + Math.max(0L, now - configuredElapsedMs);
+        return timeLimitMs > 0L ? Math.min(timeLimitMs, elapsed) : elapsed;
+    }
+
     private void finishReview() {
+        finishReview(SystemClock.elapsedRealtime());
+    }
+
+    private void finishReview(long now) {
+        baseElapsedMs = currentElapsedMs(now);
+        configuredElapsedMs = now;
         running = false;
         releaseReviewSetAudioFocus();
         finished = true;
@@ -385,7 +402,7 @@ public class BackgroundFlashcardService extends Service {
             state.put("completedCards", completedCards);
             state.put("side", side);
             state.put("remainingMs", running ? Math.max(0L, deadlineElapsedMs - now) : 0L);
-            state.put("elapsedMs", baseElapsedMs + Math.max(0L, now - configuredElapsedMs));
+            state.put("elapsedMs", running ? currentElapsedMs(now) : baseElapsedMs);
         } catch (JSONException ignored) {
             // All values are JSON primitives.
         }

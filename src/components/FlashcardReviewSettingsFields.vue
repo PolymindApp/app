@@ -1,11 +1,16 @@
 <script setup lang="ts">
-import { computed, watch } from 'vue'
+import { computed, inject, useId, watch } from 'vue'
 import LabeledSlider from '@/components/LabeledSlider.vue'
+import TimerWheelPicker from '@/components/TimerWheelPicker.vue'
 import {
+  DEFAULT_FLASHCARD_REVIEW_TIME_LIMIT_SECONDS,
   FLASHCARD_REVIEW_CARD_SIDE_OPTIONS,
+  FLASHCARD_REVIEW_EJECT_BEHAVIOR_OPTIONS,
   FLASHCARD_REVIEW_SORT_OPTIONS,
   MAX_FLASHCARD_BACK_SPEECH_REPEATS,
+  MAX_FLASHCARD_REVIEW_TIME_LIMIT_SECONDS,
   MAX_FLASHCARD_SESSION_CARDS,
+  MIN_FLASHCARD_REVIEW_TIME_LIMIT_SECONDS,
   MIN_FLASHCARD_BACK_SPEECH_REPEATS,
 } from '@/services/flashcards'
 import {
@@ -23,6 +28,7 @@ const props = withDefaults(defineProps<{
   availableCards?: number
   session?: boolean
   interval?: boolean
+  elapsedSeconds?: number
 }>(), {
   speechLoading: false,
   minCards: 1,
@@ -30,10 +36,13 @@ const props = withDefaults(defineProps<{
   availableCards: 0,
   session: false,
   interval: false,
+  elapsedSeconds: 0,
 })
 
 const CUSTOM_MAX_CARDS_THRESHOLD = 50
 const settings = computed(() => props.modelValue)
+const vuetifyDefaultsAvailable = Boolean(inject(Symbol.for('vuetify:defaults'), null))
+const ejectBehaviorName = useId()
 const cardLimit = computed(() => {
   const minimum = Math.min(
     MAX_FLASHCARD_SESSION_CARDS,
@@ -68,6 +77,30 @@ const customMaxCardsVisible = computed(() => (
 ))
 const selectedCardSides = computed(() => FLASHCARD_REVIEW_CARD_SIDE_OPTIONS
   .find(option => option.value === settings.value.cardSides)!)
+const timeLimitEnabled = computed({
+  get: () => (settings.value.timeLimitSeconds || 0) > 0,
+  set: (enabled: boolean) => {
+    settings.value.timeLimitSeconds = enabled
+      ? Math.max(
+          settings.value.timeLimitSeconds || DEFAULT_FLASHCARD_REVIEW_TIME_LIMIT_SECONDS,
+          minimumTimeLimitSeconds.value,
+        )
+      : 0
+  },
+})
+const minimumTimeLimitSeconds = computed(() => Math.min(
+  MAX_FLASHCARD_REVIEW_TIME_LIMIT_SECONDS,
+  Math.max(
+    MIN_FLASHCARD_REVIEW_TIME_LIMIT_SECONDS,
+    Math.ceil((props.session ? props.elapsedSeconds + 60 : 60) / 60) * 60,
+  ),
+))
+const timeLimitSeconds = computed({
+  get: () => settings.value.timeLimitSeconds || DEFAULT_FLASHCARD_REVIEW_TIME_LIMIT_SECONDS,
+  set: (value: number | string) => {
+    settings.value.timeLimitSeconds = Math.max(minimumTimeLimitSeconds.value, Number(value))
+  },
+})
 const speechLanguages = computed(() => speechLanguageOptions([
   ...props.speechSupport.languages.map(language => language.tag),
   settings.value.frontLanguage,
@@ -143,6 +176,35 @@ function updateSpeechEnabled(enabled: boolean | null) {
             </div>
           </div>
         </v-expand-transition>
+        <template v-if="!interval">
+          <v-divider class="my-5" />
+          <div class="setting-row">
+            <div>
+              <strong>Time limit</strong>
+              <p>Finish the review automatically after this much active time</p>
+            </div>
+            <v-switch
+              v-model="timeLimitEnabled"
+              color="secondary"
+              hide-details="auto"
+              inset
+              aria-label="Set a Review set time limit"
+            />
+          </div>
+          <v-expand-transition>
+            <div v-if="timeLimitEnabled" class="time-limit-picker mt-4">
+              <TimerWheelPicker
+                v-model="timeLimitSeconds"
+                mode="hours-minutes"
+                :active="timeLimitEnabled"
+              />
+              <p class="mode-hint mt-3">
+                <v-icon icon="mdi-timer-outline" size="18" />
+                Only active review time counts toward the limit.
+              </p>
+            </div>
+          </v-expand-transition>
+        </template>
         <v-divider class="my-5" />
       </template>
       <label class="field-label">Faces to show <span class="required-mark">*</span></label>
@@ -349,6 +411,49 @@ function updateSpeechEnabled(enabled: boolean | null) {
         <span v-if="session">The limit and order are applied to the cards remaining in this session.</span>
         <span v-else>Cards are filtered and ordered first, then up to {{ settings.maxCards }} are included in each session.</span>
       </p>
+      <v-divider class="my-5" />
+      <template v-if="settings.ejectBehavior">
+        <label class="field-label">Eject button behavior <span class="required-mark">*</span></label>
+        <v-radio-group
+          v-if="vuetifyDefaultsAvailable"
+          v-model="settings.ejectBehavior"
+          class="eject-behavior-options mt-2"
+          color="secondary"
+          hide-details="auto"
+        >
+          <v-radio
+            v-for="option in FLASHCARD_REVIEW_EJECT_BEHAVIOR_OPTIONS"
+            :key="option.value"
+            :value="option.value"
+            hide-details="auto"
+          >
+            <template #label>
+              <span class="eject-behavior-option py-2">
+                <strong>{{ option.title }}</strong>
+                <small>{{ option.subtitle }}</small>
+              </span>
+            </template>
+          </v-radio>
+        </v-radio-group>
+        <div v-else class="eject-behavior-options" role="radiogroup">
+          <label
+            v-for="option in FLASHCARD_REVIEW_EJECT_BEHAVIOR_OPTIONS"
+            :key="option.value"
+            class="eject-behavior-native-option"
+          >
+            <input
+              v-model="settings.ejectBehavior"
+              type="radio"
+              :name="ejectBehaviorName"
+              :value="option.value"
+            >
+            <span class="eject-behavior-option py-2">
+              <strong>{{ option.title }}</strong>
+              <small>{{ option.subtitle }}</small>
+            </span>
+          </label>
+        </div>
+      </template>
     </v-card>
   </div>
 </template>
@@ -363,6 +468,10 @@ function updateSpeechEnabled(enabled: boolean | null) {
 .faces-toggle :deep(.v-btn) { width: 100%; min-height: 3rem; }
 .sort-direction-toggle { display: grid; width: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
 .sort-direction-toggle :deep(.v-btn) { width: 100%; }
+.eject-behavior-options :deep(.v-selection-control) { min-height: 3rem; }
+.eject-behavior-native-option { display: flex; align-items: center; gap: .75rem; min-height: 3rem; }
+.eject-behavior-option { display: grid; }
+.eject-behavior-option small { color: rgba(var(--v-theme-on-surface), .5); font-size: .7rem; line-height: 1.45; }
 .mode-hint { display: flex; align-items: flex-start; gap: .5rem; color: rgba(var(--v-theme-on-surface), .58); font-size: .72rem; line-height: 1.5; }
 .mode-hint .v-icon { flex: 0 0 auto; }
 .passive-settings { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }

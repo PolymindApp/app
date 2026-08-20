@@ -305,6 +305,10 @@ async function reorderReviewSets(result: LongPressDragResult) {
                   <v-icon icon="mdi-infinity" size="small" />
                   <span>Indefinite</span>
                 </span>
+                <span v-if="reviewSet.timeLimitSeconds" class="review-set__meta-item review-set__meta-item--active">
+                  <v-icon icon="mdi-timer-outline" size="small" />
+                  <span>{{ formatReviewDuration(reviewSet.timeLimitSeconds) }} limit</span>
+                </span>
                 <span class="review-set__meta-item">
                   <v-icon icon="mdi-sort-variant" size="small" />
                   <span>{{ reviewSortTitle(reviewSet.sortMode) }}</span>
@@ -389,6 +393,10 @@ async function reorderReviewSets(result: LongPressDragResult) {
                 <span class="review-set__meta-item">
                   <v-icon :icon="reviewSet.mode === 'passive' ? 'mdi-play-speed' : 'mdi-gesture-tap'" size="small" />
                   <span>{{ reviewSet.mode === 'passive' ? 'Passive' : 'Manual' }}</span>
+                </span>
+                <span v-if="reviewSet.timeLimitSeconds" class="review-set__meta-item review-set__meta-item--active">
+                  <v-icon icon="mdi-timer-outline" size="small" />
+                  <span>{{ formatReviewDuration(reviewSet.timeLimitSeconds) }} limit</span>
                 </span>
                 <span class="review-set__meta-item">
                   <v-icon icon="mdi-card-multiple-outline" size="small" />

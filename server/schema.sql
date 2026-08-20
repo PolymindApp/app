@@ -71,7 +71,9 @@ CREATE TABLE flashcard_review_sets (
     mode TEXT NOT NULL DEFAULT 'manual',
     card_sides TEXT NOT NULL DEFAULT 'both',
     indefinite BOOLEAN NOT NULL DEFAULT FALSE,
+    time_limit_seconds INTEGER NOT NULL DEFAULT 0,
     max_cards INTEGER NOT NULL DEFAULT 20,
+    eject_behavior TEXT NOT NULL DEFAULT 'remove',
     front_seconds INTEGER NOT NULL DEFAULT 5,
     back_seconds INTEGER NOT NULL DEFAULT 5,
     back_speech_repeat_count INTEGER NOT NULL DEFAULT 1,
@@ -113,7 +115,9 @@ CREATE TABLE flashcard_review_set_preferences (
     mode TEXT NOT NULL DEFAULT 'manual',
     card_sides TEXT NOT NULL DEFAULT 'both',
     indefinite BOOLEAN NOT NULL DEFAULT FALSE,
+    time_limit_seconds INTEGER NOT NULL DEFAULT 0,
     max_cards INTEGER NOT NULL DEFAULT 20,
+    eject_behavior TEXT NOT NULL DEFAULT 'remove',
     front_seconds INTEGER NOT NULL DEFAULT 5,
     back_seconds INTEGER NOT NULL DEFAULT 5,
     back_speech_repeat_count INTEGER NOT NULL DEFAULT 1,
@@ -353,7 +357,9 @@ CREATE TABLE flashcard_review_sessions (
     mode_snapshot TEXT NOT NULL DEFAULT 'manual',
     card_sides_snapshot TEXT NOT NULL DEFAULT 'both',
     indefinite_snapshot BOOLEAN NOT NULL DEFAULT FALSE,
+    time_limit_seconds_snapshot INTEGER NOT NULL DEFAULT 0,
     max_cards_snapshot INTEGER NOT NULL DEFAULT 20,
+    eject_behavior_snapshot TEXT NOT NULL DEFAULT 'remove',
     sort_snapshot TEXT NOT NULL DEFAULT 'difficult',
     sort_direction_snapshot TEXT NOT NULL DEFAULT 'asc',
     tags_snapshot JSON NOT NULL DEFAULT '[]',
@@ -365,6 +371,7 @@ CREATE TABLE flashcard_review_sessions (
     front_language_snapshot VARCHAR(35) NOT NULL DEFAULT '',
     back_language_snapshot VARCHAR(35) NOT NULL DEFAULT '',
     queue_state JSON NOT NULL DEFAULT '[]',
+    reserve_card_ids JSON NOT NULL DEFAULT '[]',
     started_at TEXT NOT NULL DEFAULT '',
     ended_at TEXT NOT NULL DEFAULT '',
     updated_at TEXT NOT NULL DEFAULT '',
@@ -505,6 +512,38 @@ CREATE INDEX idx_client_errors_last_received
     ON client_errors (last_received_at DESC);
 CREATE INDEX idx_client_errors_type_count
     ON client_errors (type, occurrence_count DESC);
+
+CREATE TABLE web_push_subscriptions (
+    id TEXT PRIMARY KEY NOT NULL,
+    account_id TEXT NOT NULL,
+    endpoint TEXT NOT NULL UNIQUE,
+    public_key TEXT NOT NULL,
+    auth_token TEXT NOT NULL,
+    content_encoding TEXT NOT NULL DEFAULT 'aes128gcm'
+        CHECK (content_encoding IN ('aes128gcm', 'aesgcm')),
+    expiration_time INTEGER,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (account_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_web_push_subscriptions_account
+    ON web_push_subscriptions (account_id);
+
+CREATE TABLE task_web_push_deliveries (
+    subscription_id TEXT NOT NULL,
+    task_id TEXT NOT NULL,
+    scheduled_date TEXT NOT NULL,
+    reminder_time TEXT NOT NULL,
+    reserved_at TEXT NOT NULL,
+    sent_at TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (subscription_id, task_id, scheduled_date, reminder_time),
+    FOREIGN KEY (subscription_id) REFERENCES web_push_subscriptions(id) ON DELETE CASCADE,
+    FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+) WITHOUT ROWID;
+
+CREATE INDEX idx_task_web_push_deliveries_date
+    ON task_web_push_deliveries (scheduled_date);
 
 CREATE TABLE backontrack_auth_tokens (
     token_hash TEXT PRIMARY KEY NOT NULL,

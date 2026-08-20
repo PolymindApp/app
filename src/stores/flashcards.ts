@@ -8,7 +8,8 @@ import {
   DEFAULT_FLASHCARD_BACK_SPEECH_REPEATS,
   DEFAULT_FLASHCARD_REVIEW_CARD_SIDES,
   DEFAULT_FLASHCARD_SESSION_CARDS,
-  flashcardReviewQueue,
+  flashcardReviewQueueState,
+  updateFlashcardReviewExclusions,
 } from '@/services/flashcards'
 import { useSnackbarStore } from '@/stores/snackbar'
 import { useTaskStore } from '@/stores/tasks'
@@ -19,6 +20,7 @@ import type {
   FlashcardDraft,
   FlashcardImportRow,
   FlashcardReviewAction,
+  FlashcardReviewEjectBehavior,
   FlashcardReviewEvent,
   FlashcardReviewSession,
   FlashcardReviewSet,
@@ -27,6 +29,10 @@ import type {
   FlashcardReviewSettings,
   FlashcardTag,
 } from '@/types/domain'
+
+function mapEjectBehavior(value: unknown): FlashcardReviewEjectBehavior {
+  return value === 'replace' || value === 'exclude' ? value : 'remove'
+}
 
 function mapTag(record: Record<string, any>): FlashcardTag {
   return { id: record.id, name: record.name }
@@ -75,7 +81,9 @@ function mapReviewSet(record: Record<string, any>): FlashcardReviewSet {
     mode: record.mode,
     cardSides: record.card_sides || DEFAULT_FLASHCARD_REVIEW_CARD_SIDES,
     indefinite: Boolean(record.indefinite),
+    timeLimitSeconds: Number(record.time_limit_seconds || 0),
     maxCards: Number(record.max_cards || DEFAULT_FLASHCARD_SESSION_CARDS),
+    ejectBehavior: mapEjectBehavior(record.eject_behavior),
     frontSeconds: Number(record.front_seconds || 5),
     backSeconds: Number(record.back_seconds || 5),
     backSpeechRepeatCount: Number(
@@ -113,12 +121,17 @@ function mapSession(record: Record<string, any>): FlashcardReviewSession {
     mode: record.mode_snapshot,
     cardSides: record.card_sides_snapshot || DEFAULT_FLASHCARD_REVIEW_CARD_SIDES,
     indefinite: Boolean(record.indefinite_snapshot),
+    timeLimitSeconds: Number(record.time_limit_seconds_snapshot || 0),
     maxCards: Number(record.max_cards_snapshot || DEFAULT_FLASHCARD_SESSION_CARDS),
+    ejectBehavior: mapEjectBehavior(record.eject_behavior_snapshot),
     sortMode: record.sort_snapshot,
     sortDirection: record.sort_direction_snapshot || 'asc',
     tags: Array.isArray(record.tags_snapshot) ? record.tags_snapshot : [],
     excludedCards: Array.isArray(record.excluded_cards_snapshot)
       ? record.excluded_cards_snapshot
+      : [],
+    reserveCardIds: Array.isArray(record.reserve_card_ids)
+      ? record.reserve_card_ids.filter((id: unknown): id is string => typeof id === 'string')
       : [],
     frontSeconds: Number(record.front_seconds_snapshot || 5),
     backSeconds: Number(record.back_seconds_snapshot || 5),
@@ -484,7 +497,9 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       mode: draft.mode,
       card_sides: draft.cardSides,
       indefinite: draft.mode === 'passive' && draft.indefinite,
+      time_limit_seconds: draft.timeLimitSeconds || 0,
       max_cards: draft.maxCards,
+      eject_behavior: draft.ejectBehavior,
       front_seconds: draft.frontSeconds,
       back_seconds: draft.backSeconds,
       back_speech_repeat_count: draft.backSpeechRepeatCount,
@@ -536,6 +551,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     Object.assign(reviewSet, {
       ...settings,
       indefinite: settings.mode === 'passive' && settings.indefinite,
+      timeLimitSeconds: settings.timeLimitSeconds || 0,
       excludedCards: [...(settings.excludedCards || [])],
     })
     try {
@@ -899,7 +915,9 @@ export const useFlashcardStore = defineStore('flashcards', () => {
         mode_snapshot: preview.mode,
         card_sides_snapshot: preview.cardSides,
         indefinite_snapshot: preview.indefinite,
+        time_limit_seconds_snapshot: preview.timeLimitSeconds || 0,
         max_cards_snapshot: preview.maxCards,
+        eject_behavior_snapshot: preview.ejectBehavior,
         sort_snapshot: preview.sortMode,
         sort_direction_snapshot: preview.sortDirection,
         tags_snapshot: preview.tags,
@@ -912,6 +930,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
         front_language_snapshot: preview.frontLanguage,
         back_language_snapshot: preview.backLanguage,
         queue_state: preview.queue,
+        reserve_card_ids: preview.reserveCardIds,
         started_at: now,
         ended_at: '',
         updated_at: now,
@@ -962,6 +981,24 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     if (index >= 0) sessions.value.splice(index, 1, session)
     else sessions.value.unshift(session)
 
+    if (
+      session.ejectBehavior === 'exclude'
+      && (action === 'eject' || action === 'undo_eject')
+      && session.reviewSet
+    ) {
+      const reviewSet = reviewSets.value.find(item => item.id === session.reviewSet)
+      if (reviewSet) {
+        if (usingLocalDatabase) {
+          await saveReviewSetPreferences(reviewSet.id, {
+            ...reviewSet,
+            excludedCards: [...(session.excludedCards || [])],
+          })
+        } else {
+          reviewSet.excludedCards = [...(session.excludedCards || [])]
+        }
+      }
+    }
+
     if (['success', 'error', 'view'].includes(action)) {
       reviewedCards.forEach((reviewedCard) => {
         const card = cards.value.find(item => item.id === reviewedCard.id)
@@ -1000,21 +1037,63 @@ export const useFlashcardStore = defineStore('flashcards', () => {
 
   async function updateSessionSettings(sessionId: string, settings: FlashcardReviewSettings) {
     const current = sessions.value.find(item => item.id === sessionId)
-    const previous = current ? { ...current } : undefined
-    if (current) {
-      Object.assign(current, {
-        ...settings,
-        indefinite: settings.mode === 'passive' && settings.indefinite,
-      })
-    }
+    const previous = current
+      ? { ...current, reserveCardIds: [...(current.reserveCardIds || [])] }
+      : undefined
     try {
       const accountId = api.authStore.record?.id || ''
-      const record = accountId && await hasLocalBootstrap(accountId)
+      const usingLocalDatabase = Boolean(accountId && await hasLocalBootstrap(accountId))
+      let reserveCardIds = [...(current?.reserveCardIds || [])]
+      if (current && settings.ejectBehavior !== 'replace') {
+        reserveCardIds = []
+      } else if (
+        current
+        && usingLocalDatabase
+        && settings.ejectBehavior === 'replace'
+        && current.ejectBehavior !== 'replace'
+      ) {
+        const reviewSet = reviewSets.value.find(item => item.id === current.reviewSet)
+        if (!reviewSet) throw new Error('The Review set for this session is no longer available.')
+        let availableCards = reviewSet.accessRole === 'owner'
+          ? cards.value
+          : reviewSetCards.value[reviewSet.id]
+        if (!availableCards) availableCards = await loadReviewSetCards(reviewSet.id)
+        const queueState = flashcardReviewQueueState({
+          ...reviewSet,
+          ...settings,
+          ejectBehavior: 'replace',
+          tags: [...current.tags],
+          excludedCards: [...(current.excludedCards || [])],
+        }, availableCards)
+        const events = await api.collection('flashcard_review_events').getFullList({
+          filter: `session = "${sessionId}"`,
+        })
+        const unavailableIds = new Set(current.queue.map(card => card.id))
+        events.forEach((event) => {
+          if (!settings.indefinite || event.outcome === 'ejected' || event.outcome === 'eject') {
+            unavailableIds.add(event.card)
+          }
+        })
+        reserveCardIds = [
+          ...queueState.queue.map(card => card.id),
+          ...queueState.reserveCardIds,
+        ].filter(id => !unavailableIds.has(id))
+      }
+      if (current) {
+        Object.assign(current, {
+          ...settings,
+          indefinite: settings.mode === 'passive' && settings.indefinite,
+          reserveCardIds,
+        })
+      }
+      const record = usingLocalDatabase
         ? await api.collection('flashcard_review_sessions').update(sessionId, {
           mode_snapshot: settings.mode,
           card_sides_snapshot: settings.cardSides,
           indefinite_snapshot: settings.mode === 'passive' && settings.indefinite,
+          time_limit_seconds_snapshot: settings.timeLimitSeconds || 0,
           max_cards_snapshot: settings.maxCards,
+          eject_behavior_snapshot: settings.ejectBehavior,
           front_seconds_snapshot: settings.frontSeconds,
           back_seconds_snapshot: settings.backSeconds,
           back_speech_repeat_count_snapshot: settings.backSpeechRepeatCount,
@@ -1024,6 +1103,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
           back_language_snapshot: settings.backLanguage,
           sort_snapshot: settings.sortMode,
           sort_direction_snapshot: settings.sortDirection,
+          reserve_card_ids: reserveCardIds,
           updated_at: new Date().toISOString(),
           })
         : await api.updateFlashcardReviewSessionSettings(sessionId, settings)
@@ -1051,6 +1131,8 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     }
 
     let queue = current.queue.map(card => ({ ...card, tags: [...card.tags] }))
+    let reserveCardIds = [...(current.reserveCardIds || [])]
+    let excludedCards = [...(current.excludedCards || [])]
     const now = new Date().toISOString()
     let status = current.status
     let endedAt = current.endedAt || ''
@@ -1069,14 +1151,17 @@ export const useFlashcardStore = defineStore('flashcards', () => {
         ? cards.value
         : reviewSetCards.value[reviewSet.id]
       if (!availableCards) availableCards = await loadReviewSetCards(reviewSet.id)
-      queue = flashcardReviewQueue({
+      const queueState = flashcardReviewQueueState({
         ...reviewSet,
         tags: [...current.tags],
         excludedCards: [...(current.excludedCards || [])],
         sortMode: current.sortMode,
         sortDirection: current.sortDirection,
         maxCards: current.maxCards,
+        ejectBehavior: current.ejectBehavior,
       }, availableCards)
+      queue = queueState.queue
+      reserveCardIds = queueState.reserveCardIds
       if (!queue.length) throw new Error('No flashcards match this Review set.')
       endedAt = ''
       viewedCount = 0
@@ -1089,7 +1174,13 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     } else if (action === 'resume') {
       status = 'running'
     } else if (action === 'end') {
-      status = current.indefinite && viewedCount + ejectedCount > 0 ? 'completed' : 'ended'
+      const reachedTimeLimit = Boolean(
+        current.timeLimitSeconds
+        && elapsedSeconds >= current.timeLimitSeconds,
+      )
+      status = reachedTimeLimit || (current.indefinite && viewedCount + ejectedCount > 0)
+        ? 'completed'
+        : 'ended'
       endedAt = now
     } else {
       if (status !== 'running') throw new Error('Resume this flashcard review before continuing.')
@@ -1121,6 +1212,9 @@ export const useFlashcardStore = defineStore('flashcards', () => {
           tags: [...card.tags],
         })
         ejectedCount -= 1
+        if (current.ejectBehavior === 'exclude') {
+          excludedCards = updateFlashcardReviewExclusions(excludedCards, 'include', [card.id])
+        }
         undoneEjectEventId = lastEject.id
       } else if (!queue.length) {
         throw new Error('This flashcard review has no remaining cards.')
@@ -1133,7 +1227,37 @@ export const useFlashcardStore = defineStore('flashcards', () => {
         for (let index = 0; index < iterations && queue.length; index += 1) {
           const card = queue.shift()!
           const outcome = action === 'view' ? 'passive' : action === 'eject' ? 'ejected' : action
-          if (action === 'eject') ejectedCount += 1
+          if (action === 'eject') {
+            ejectedCount += 1
+            if (current.ejectBehavior === 'exclude') {
+              excludedCards = updateFlashcardReviewExclusions(excludedCards, 'exclude', [card.id])
+            }
+            if (current.ejectBehavior === 'replace' && reserveCardIds.length) {
+              const reviewSet = reviewSets.value.find(item => item.id === current.reviewSet)
+              if (!reviewSet) {
+                throw new Error('The Review set for this session is no longer available.')
+              }
+              let availableCards = reviewSet.accessRole === 'owner'
+                ? cards.value
+                : reviewSetCards.value[reviewSet.id]
+              if (!availableCards) availableCards = await loadReviewSetCards(reviewSet.id)
+              while (reserveCardIds.length && queue.length < current.maxCards) {
+                const replacementId = reserveCardIds.shift()!
+                const replacement = availableCards.find(item => item.id === replacementId)
+                if (!replacement) continue
+                queue.push({
+                  id: replacement.id,
+                  front: replacement.front,
+                  back: replacement.back,
+                  note: replacement.note,
+                  frontAudio: replacement.frontAudio,
+                  backAudio: replacement.backAudio,
+                  tags: [...replacement.tags],
+                })
+                totalCards += 1
+              }
+            }
+          }
           else {
             viewedCount += 1
             if (action === 'success') successCount += 1
@@ -1165,18 +1289,28 @@ export const useFlashcardStore = defineStore('flashcards', () => {
         }
       }
     }
-    if (current.indefinite) totalCards = queue.length
+    if (current.indefinite && current.ejectBehavior !== 'replace') totalCards = queue.length
 
     const previous = {
       ...current,
       queue: current.queue.map(card => ({ ...card, tags: [...card.tags] })),
+      reserveCardIds: [...(current.reserveCardIds || [])],
+      excludedCards: [...(current.excludedCards || [])],
     }
     const nextElapsedSeconds = action === 'restart'
         ? 0
-        : Math.max(current.elapsedSeconds, Math.round(elapsedSeconds))
+        : Math.max(
+            current.elapsedSeconds,
+            Math.min(
+              current.timeLimitSeconds || Number.POSITIVE_INFINITY,
+              Math.round(elapsedSeconds),
+            ),
+          )
     Object.assign(current, {
       status,
       queue,
+      reserveCardIds,
+      excludedCards,
       updatedAt: now,
       endedAt: endedAt || undefined,
       elapsedSeconds: nextElapsedSeconds,
@@ -1195,6 +1329,8 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       const session = await api.collection('flashcard_review_sessions').update(sessionId, {
         status,
         queue_state: queue,
+        reserve_card_ids: reserveCardIds,
+        excluded_cards_snapshot: excludedCards,
         updated_at: now,
         ended_at: endedAt,
         elapsed_seconds: nextElapsedSeconds,

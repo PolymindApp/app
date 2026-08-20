@@ -40,6 +40,7 @@ import {
   flashcardReviewSettingsSignature,
   FLASHCARD_SETTINGS_APPLY_MENU_ITEMS,
   INTERVAL_FLASHCARD_QUICK_TAGS,
+  updateFlashcardReviewExclusions,
 } from '@/services/flashcards'
 import { createIntervalCueHandoff } from '@/services/intervalCueHandoff'
 import {
@@ -152,6 +153,7 @@ const flashcardSettingsDraft = reactive<FlashcardReviewSettings>({
   cardSides: 'both',
   indefinite: true,
   maxCards: 1,
+  ejectBehavior: 'remove',
   frontSeconds: 5,
   backSeconds: 5,
   backSpeechRepeatCount: 1,
@@ -191,6 +193,7 @@ const cueHandoff = createIntervalCueHandoff(document.visibilityState)
 
 const previewSession = ref<IntervalSession>()
 const intervalSettingsDraft = reactive({
+  flashcardReviewSet: undefined as string | undefined,
   definition: {
     version: 1 as const,
     children: [],
@@ -256,15 +259,21 @@ const sessionActionItems = computed(() => intervalRunnerSessionMenuItems({
   amplified: speechOverAmplified.value,
   busy: syncing.value || starting.value || speechOverAmplificationBusy.value,
   preview: isTemplatePreview.value,
-  hasReviewSet: Boolean(session.value?.flashcardReview?.reviewSet),
 }))
 const sessionActionsDisabled = computed(() => sessionActionItems.value.every(item => item.disabled))
 const intervalSettingsSourceTemplate = computed(() => store.templates.find(
   template => template.id === session.value?.template,
 ))
+const intervalSettingsReviewSet = computed(() => flashcardStore.reviewSets.find(
+  reviewSet => reviewSet.id === intervalSettingsDraft.flashcardReviewSet,
+))
 const intervalSettingsChanged = computed(() => intervalSettingsDialog.value
   && JSON.stringify(intervalSettingsDraft) !== intervalSettingsOriginal.value)
+const intervalSettingsReviewSetIsValid = computed(() => !intervalSettingsDraft.flashcardReviewSet
+  || intervalSettingsDraft.flashcardReviewSet === session.value?.flashcardReview?.reviewSet
+  || Boolean(intervalSettingsReviewSet.value?.matchingCardCount))
 const canSaveIntervalSettings = computed(() => intervalSettingsChanged.value
+  && intervalSettingsReviewSetIsValid.value
   && validateIntervalDefinition(intervalSettingsDraft.definition).length === 0)
 const intervalSettingsSaving = computed(() => Boolean(intervalSettingsSaveTarget.value))
 const intervalSettingsApplyItems = computed(() => [
@@ -626,7 +635,6 @@ async function toggleSpeechOverAmplification() {
 function handleRunnerSessionAction(action: RunnerSessionAction) {
   if (action === 'amplification') void toggleSpeechOverAmplification()
   else if (action === 'settings') void openIntervalSettings()
-  else if (action === 'review_settings') void openFlashcardSettings()
   else if (action === 'restart') void restart()
   else if (action === 'end') endDialog.value = true
 }
@@ -649,6 +657,7 @@ async function openIntervalSettings() {
     }
     intervalSettingsDraft.definition = cloneIntervalSettings(currentSession.definition)
     intervalSettingsDraft.cues = cloneIntervalSettings(currentSession.cues)
+    intervalSettingsDraft.flashcardReviewSet = currentSession.flashcardReview?.reviewSet
     intervalSettingsOriginal.value = JSON.stringify(intervalSettingsDraft)
     intervalSettingsDialog.value = true
   } catch (cause) {
@@ -685,17 +694,41 @@ async function saveIntervalSettings(target: IntervalSettingsApplyTarget) {
   try {
     const definition = cloneIntervalSettings(intervalSettingsDraft.definition)
     const cues = cloneIntervalSettings(intervalSettingsDraft.cues)
+    const flashcardReviewSet = intervalSettingsDraft.flashcardReviewSet
     if (target === 'interval' || target === 'both') {
       const template = intervalSettingsSourceTemplate.value
       if (!template) throw new Error('This session is not linked to a saved interval.')
       await store.saveTemplate({
         ...cloneIntervalTemplateDraft(template),
+        flashcardReviewSet,
         definition,
         cues,
       })
     }
 
     if (target === 'session' || target === 'both') {
+      const currentReviewSet = item.flashcardReview?.reviewSet
+      let flashcardReview = item.flashcardReview
+      if (flashcardReviewSet !== currentReviewSet) {
+        if (!flashcardReviewSet) {
+          flashcardReview = undefined
+        } else {
+          const reviewSet = intervalSettingsReviewSet.value
+          if (!reviewSet) throw new Error('The selected Review set could not be found.')
+          const cards = reviewSet.accessRole === 'owner'
+            ? flashcardStore.cards
+            : await flashcardStore.loadReviewSetCards(reviewSet.id)
+          flashcardReview = createIntervalFlashcardReviewSnapshot(reviewSet, cards)
+          if (!flashcardReview) throw new Error('The selected Review set has no matching cards.')
+          flashcardReview.playbackOffsetMs = -intervalFlashcardReviewPlaybackElapsedMs(
+            flashcardReview,
+            item.definition,
+            item.runtime,
+            displayRemainingMs.value,
+            sessionElapsedMs.value,
+          )
+        }
+      }
       const runtime = rebaseIntervalRuntimeForDefinition(
         item.definition,
         definition,
@@ -708,6 +741,9 @@ async function saveIntervalSettings(target: IntervalSettingsApplyTarget) {
         plannedSeconds: intervalDuration(definition),
         elapsedSeconds: Math.round(runtime.accumulatedMs / 1000),
       })
+      if (flashcardReviewSet !== currentReviewSet) {
+        await store.updateSessionFlashcardReview(item.id, flashcardReview)
+      }
       displayRemainingMs.value = updated.runtime.remainingMs
       lastCountCue = ''
       lastSpokenFlashcardKey = ''
@@ -1556,11 +1592,44 @@ async function ejectIntervalFlashcard() {
   if (!review || !cardId || flashcardEjecting.value) return
   flashcardEjecting.value = true
   void prepareFlashcardEjectCue()
+  const reviewSet = flashcardReviewSet.value
+  const previousExcludedCards = [...(reviewSet?.excludedCards || [])]
   try {
     const cards = review.cards.filter(card => card.id !== cardId)
+    const reserveCardIds = [...(review.reserveCardIds || [])]
+    const maxCards = review.maxCards || review.cards.length
+    if (review.ejectBehavior === 'replace' && reserveCardIds.length) {
+      await ensureIntervalFlashcardSource()
+      while (reserveCardIds.length && cards.length < maxCards) {
+        const replacementId = reserveCardIds.shift()!
+        const replacement = intervalFlashcardSource.value.find(card => card.id === replacementId)
+        if (!replacement) continue
+        cards.push({
+          id: replacement.id,
+          front: replacement.front,
+          back: replacement.back,
+          note: replacement.note,
+          frontAudio: replacement.frontAudio,
+          backAudio: replacement.backAudio,
+          tags: [...replacement.tags],
+        })
+      }
+    }
+    if (review.ejectBehavior === 'exclude') {
+      if (!reviewSet) throw new Error('The Review set for this session is no longer available.')
+      await flashcardStore.saveReviewSetPreferences(reviewSet.id, {
+        ...reviewSet,
+        excludedCards: updateFlashcardReviewExclusions(
+          previousExcludedCards,
+          'exclude',
+          [cardId],
+        ),
+      })
+    }
     await updateFlashcardSnapshot({
       ...review,
       cards,
+      reserveCardIds,
       playbackOffsetMs: intervalFlashcardEjectionOffsetMs(
         review,
         flashcardReviewElapsedMs.value,
@@ -1569,6 +1638,16 @@ async function ejectIntervalFlashcard() {
     })
     playFlashcardEjectCue()
   } catch (cause) {
+    if (review.ejectBehavior === 'exclude' && reviewSet) {
+      try {
+        await flashcardStore.saveReviewSetPreferences(reviewSet.id, {
+          ...reviewSet,
+          excludedCards: previousExcludedCards,
+        })
+      } catch {
+        // Preserve the eject failure; synchronization can retry the preference update.
+      }
+    }
     error.value = cause instanceof Error ? cause.message : 'Could not eject this flashcard.'
   } finally {
     flashcardEjecting.value = false
@@ -1610,7 +1689,8 @@ async function openFlashcardSettings() {
     mode: 'passive',
     cardSides: review.cardSides,
     indefinite: true,
-    maxCards: review.cards.length,
+    maxCards: review.maxCards || review.cards.length,
+    ejectBehavior: review.ejectBehavior || 'remove',
     frontSeconds: review.frontSeconds,
     backSeconds: review.backSeconds,
     backSpeechRepeatCount: review.backSpeechRepeatCount,
@@ -1659,6 +1739,7 @@ async function saveFlashcardSettings(target: FlashcardSettingsApplyTarget = 'ses
         ...context.reviewSet,
         cardSides: flashcardSettingsDraft.cardSides,
         maxCards: flashcardSettingsDraft.maxCards,
+        ejectBehavior: flashcardSettingsDraft.ejectBehavior,
         frontSeconds: flashcardSettingsDraft.frontSeconds,
         backSeconds: flashcardSettingsDraft.backSeconds,
         backSpeechRepeatCount: flashcardSettingsDraft.backSpeechRepeatCount,
@@ -2205,7 +2286,9 @@ async function runAgain(repetitions?: number) {
             <IntervalSettingsFields
               v-model:definition="intervalSettingsDraft.definition"
               v-model:cues="intervalSettingsDraft.cues"
-              :review-set-speech-enabled="session?.flashcardReview?.speechEnabled === true"
+              v-model:review-set="intervalSettingsDraft.flashcardReviewSet"
+              :review-sets="flashcardStore.reviewSets"
+              :review-set-speech-enabled="intervalSettingsReviewSet?.speechEnabled === true"
             />
           </AppForm>
         </v-card-text>

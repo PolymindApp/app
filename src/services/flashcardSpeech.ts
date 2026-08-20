@@ -37,6 +37,7 @@ interface FlashcardSpeechPlugin {
       backAudio: string
     }>
     indefinite: boolean
+    timeLimitSeconds: number
     cardSides: FlashcardReviewCardSides
     side: FlashcardReviewSide
     remainingMs: number
@@ -384,6 +385,7 @@ export async function syncBackgroundFlashcardReview(
         backAudio: resolveFlashcardAudioPlaybackUrl(card.backAudio || ''),
       })),
       indefinite: session.indefinite,
+      timeLimitSeconds: session.timeLimitSeconds || 0,
       cardSides: session.cardSides,
       side,
       remainingMs: Math.max(1, Math.round(remainingMs)),

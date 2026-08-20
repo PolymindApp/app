@@ -73,6 +73,28 @@ self.addEventListener('sync', (event: Event) => {
   if (syncEvent.tag === 'backontrack-sync') syncEvent.waitUntil(runBackgroundSync())
 })
 
+self.addEventListener('push', event => {
+  let payload: Record<string, unknown> = {}
+  try {
+    payload = event.data?.json() as Record<string, unknown> || {}
+  } catch {
+    payload = {}
+  }
+  const title = typeof payload.title === 'string' ? payload.title : 'Task reminder'
+  const body = typeof payload.body === 'string' ? payload.body : 'You have a task due.'
+  const url = typeof payload.url === 'string' && payload.url.startsWith('/')
+    ? payload.url
+    : '/tasks'
+  const tag = typeof payload.tag === 'string' ? payload.tag : 'backontrack-task-reminder'
+  event.waitUntil(self.registration.showNotification(title, {
+    body,
+    icon: '/brand/backontrack-mark.png',
+    badge: '/brand/backontrack-mark.png',
+    tag,
+    data: { url },
+  }))
+})
+
 async function runBackgroundSync() {
   const database = new Dexie('backontrack-offline')
   database.version(1).stores({
@@ -126,10 +148,18 @@ async function runBackgroundSync() {
 
 self.addEventListener('notificationclick', event => {
   event.notification.close()
+  const route = typeof event.notification.data?.url === 'string'
+    && event.notification.data.url.startsWith('/')
+    ? event.notification.data.url
+    : '/intervals'
+  const targetUrl = new URL(route, self.location.origin).href
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clients => {
       const existing = clients.find(client => 'focus' in client)
-      return existing ? existing.focus() : self.clients.openWindow('/intervals')
+      if (existing && 'navigate' in existing) {
+        return existing.navigate(targetUrl).then(client => client?.focus())
+      }
+      return self.clients.openWindow(targetUrl)
     }),
   )
 })

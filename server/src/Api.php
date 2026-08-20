@@ -41,13 +41,13 @@ final class Api
         'none',
     ];
     private const FLASHCARD_REVIEW_SETTING_FIELDS = [
-        'mode', 'card_sides', 'indefinite', 'max_cards', 'front_seconds', 'back_seconds',
+        'mode', 'card_sides', 'indefinite', 'time_limit_seconds', 'max_cards', 'eject_behavior', 'front_seconds', 'back_seconds',
         'back_speech_repeat_count', 'note_before_back',
         'speech_enabled', 'front_language', 'back_language',
         'sort_mode', 'sort_direction',
     ];
     private const FLASHCARD_REVIEW_PREFERENCE_FIELDS = [
-        'mode', 'card_sides', 'indefinite', 'max_cards', 'front_seconds', 'back_seconds',
+        'mode', 'card_sides', 'indefinite', 'time_limit_seconds', 'max_cards', 'eject_behavior', 'front_seconds', 'back_seconds',
         'back_speech_repeat_count', 'note_before_back',
         'speech_enabled', 'front_language', 'back_language',
         'sort_mode', 'sort_direction', 'excluded_cards',
@@ -201,6 +201,15 @@ final class Api
             }
             if ($method === 'POST' && $path === '/client-errors') {
                 $this->storeClientErrors($this->authenticate());
+            }
+            if ($method === 'GET' && $path === '/web-push/config') {
+                $this->webPushConfiguration($this->authenticate());
+            }
+            if (
+                ($method === 'POST' || $method === 'DELETE')
+                && $path === '/web-push/subscriptions'
+            ) {
+                $this->webPushSubscription($method, $this->authenticate());
             }
             if ($method === 'POST' && $path === '/task-session-progress/reconcile') {
                 $this->reconcileSessionTaskProgress($this->authenticate());
@@ -557,7 +566,17 @@ final class Api
             throw new ApiException(401, 'The email or password is incorrect.');
         }
         if (!(bool) $user['verified']) {
-            throw new ApiException(403, 'Confirm your email before signing in.');
+            $verificationSent = $this->resendEmailVerificationIfExpired($user);
+            throw new ApiException(
+                403,
+                $verificationSent
+                    ? 'Your email is not confirmed. The previous confirmation link expired, so we sent you a new one.'
+                    : 'Your email is not confirmed. Use the confirmation link already in your inbox.',
+                [
+                    'emailVerificationRequired' => true,
+                    'verificationEmailSent' => $verificationSent,
+                ],
+            );
         }
 
         if (password_needs_rehash((string) $user['password'], PASSWORD_DEFAULT)) {
@@ -735,10 +754,19 @@ final class Api
         $this->rateLimit('password-forgot:' . hash('sha256', $email), 3, 3600);
 
         $statement = $this->database->pdo->prepare(
-            'SELECT id, email FROM users WHERE email = :email COLLATE NOCASE LIMIT 1',
+            'SELECT id, email, verified FROM users WHERE email = :email COLLATE NOCASE LIMIT 1',
         );
         $statement->execute(['email' => $email]);
         $user = $statement->fetch();
+        if (is_array($user) && !(bool) $user['verified']) {
+            $verificationSent = $this->resendEmailVerificationIfExpired($user);
+            $this->respond([
+                'message' => $verificationSent
+                    ? 'Your email is not confirmed, so we sent a new confirmation link instead of a password reset.'
+                    : 'Your email is not confirmed. Use the confirmation link already in your inbox before resetting your password.',
+                'action' => 'email_verification',
+            ], 202);
+        }
         if (is_array($user)) {
             $token = $this->issueAuthToken(
                 (string) $user['id'],
@@ -2457,6 +2485,158 @@ final class Api
         $this->respond(['stored' => count($errors)], 202);
     }
 
+    private function webPushConfiguration(array $user): never
+    {
+        $this->respond([
+            'available' => $this->config->webPushConfigured(),
+            'publicKey' => $this->config->webPushConfigured()
+                ? $this->config->webPushVapidPublicKey
+                : '',
+        ]);
+    }
+
+    private function webPushSubscription(string $method, array $user): never
+    {
+        $body = $this->jsonBody();
+        $endpoint = $this->validateText($body['endpoint'] ?? null, 'endpoint', 4096, true);
+        $endpointParts = parse_url($endpoint);
+        if (
+            !is_array($endpointParts)
+            || strtolower((string) ($endpointParts['scheme'] ?? '')) !== 'https'
+            || ($endpointParts['host'] ?? '') === ''
+            || isset($endpointParts['user'])
+            || isset($endpointParts['pass'])
+            || (isset($endpointParts['port']) && (int) $endpointParts['port'] !== 443)
+            || !$this->publicWebPushEndpointHost((string) ($endpointParts['host'] ?? ''))
+        ) {
+            throw new ApiException(422, 'The Web Push endpoint is invalid.', [
+                'endpoint' => 'Use the HTTPS endpoint supplied by the browser.',
+            ]);
+        }
+
+        if ($method === 'DELETE') {
+            $statement = $this->database->pdo->prepare(
+                'DELETE FROM web_push_subscriptions
+                 WHERE endpoint = :endpoint AND account_id = :account_id',
+            );
+            $statement->execute([
+                'endpoint' => $endpoint,
+                'account_id' => $user['id'],
+            ]);
+            $this->respond(null, 204);
+        }
+        if (!$this->config->webPushConfigured()) {
+            throw new ApiException(503, 'Desktop notifications are not configured on the server.');
+        }
+
+        $keys = $body['keys'] ?? null;
+        if (!is_array($keys) || array_is_list($keys)) {
+            throw new ApiException(422, 'The Web Push encryption keys are required.');
+        }
+        $publicKey = $this->validateText($keys['p256dh'] ?? null, 'keys.p256dh', 200, true);
+        $authToken = $this->validateText($keys['auth'] ?? null, 'keys.auth', 100, true);
+        if (
+            preg_match('/^[A-Za-z0-9_-]{40,200}$/', $publicKey) !== 1
+            || preg_match('/^[A-Za-z0-9_-]{10,100}$/', $authToken) !== 1
+        ) {
+            throw new ApiException(422, 'The Web Push encryption keys are invalid.');
+        }
+        $contentEncoding = $this->validateText(
+            $body['contentEncoding'] ?? 'aes128gcm',
+            'contentEncoding',
+            20,
+            true,
+        );
+        if (!in_array($contentEncoding, ['aes128gcm', 'aesgcm'], true)) {
+            throw new ApiException(422, 'The Web Push content encoding is invalid.');
+        }
+        $expirationTime = $body['expirationTime'] ?? null;
+        if (
+            $expirationTime !== null
+            && (!is_int($expirationTime) && !is_float($expirationTime))
+        ) {
+            throw new ApiException(422, 'The Web Push expiration time is invalid.');
+        }
+
+        $id = hash('sha256', $endpoint);
+        $accountId = (string) $user['id'];
+        $now = $this->now();
+        $pdo = $this->database->pdo;
+        $pdo->beginTransaction();
+        try {
+            $existing = $pdo->prepare(
+                'SELECT account_id FROM web_push_subscriptions WHERE id = :id LIMIT 1',
+            );
+            $existing->execute(['id' => $id]);
+            $existingAccount = $existing->fetchColumn();
+            if (is_string($existingAccount) && !hash_equals($accountId, $existingAccount)) {
+                $clearDeliveries = $pdo->prepare(
+                    'DELETE FROM task_web_push_deliveries WHERE subscription_id = :id',
+                );
+                $clearDeliveries->execute(['id' => $id]);
+            }
+            $statement = $pdo->prepare(
+                'INSERT INTO web_push_subscriptions (
+                    id, account_id, endpoint, public_key, auth_token, content_encoding,
+                    expiration_time, created_at, updated_at
+                 ) VALUES (
+                    :id, :account_id, :endpoint, :public_key, :auth_token, :content_encoding,
+                    :expiration_time, :created_at, :updated_at
+                 ) ON CONFLICT(endpoint) DO UPDATE SET
+                    account_id = excluded.account_id,
+                    public_key = excluded.public_key,
+                    auth_token = excluded.auth_token,
+                    content_encoding = excluded.content_encoding,
+                    expiration_time = excluded.expiration_time,
+                    updated_at = excluded.updated_at',
+            );
+            $statement->execute([
+                'id' => $id,
+                'account_id' => $accountId,
+                'endpoint' => $endpoint,
+                'public_key' => $publicKey,
+                'auth_token' => $authToken,
+                'content_encoding' => $contentEncoding,
+                'expiration_time' => $expirationTime === null ? null : (int) $expirationTime,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+            $pdo->commit();
+        } catch (Throwable $exception) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            throw $exception;
+        }
+
+        $this->respond(['registered' => true], 201);
+    }
+
+    private function publicWebPushEndpointHost(string $host): bool
+    {
+        $host = strtolower(rtrim($host, '.'));
+        if ($host === '' || $host === 'localhost' || str_ends_with($host, '.local')) return false;
+        if (filter_var($host, FILTER_VALIDATE_IP) !== false) {
+            return filter_var(
+                $host,
+                FILTER_VALIDATE_IP,
+                FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE,
+            ) !== false;
+        }
+        $records = dns_get_record($host, DNS_A | DNS_AAAA);
+        if (!is_array($records) || $records === []) return false;
+        foreach ($records as $record) {
+            $address = $record['ip'] ?? $record['ipv6'] ?? null;
+            if (
+                !is_string($address)
+                || filter_var(
+                    $address,
+                    FILTER_VALIDATE_IP,
+                    FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE,
+                ) === false
+            ) return false;
+        }
+        return true;
+    }
+
     private function claimPendingFlashcardReviewSetShares(array $user): void
     {
         $account = (string) ($user['id'] ?? '');
@@ -2769,7 +2949,7 @@ final class Api
         if ($collection['name'] === 'flashcard_review_sets') {
             $this->allowOnlyFields($body, [
                 'name', 'tags', 'mode', 'card_sides', 'indefinite',
-                'max_cards', 'front_seconds', 'back_seconds',
+                'time_limit_seconds', 'max_cards', 'eject_behavior', 'front_seconds', 'back_seconds',
                 'back_speech_repeat_count',
                 'note_before_back',
                 'speech_enabled', 'front_language', 'back_language',
@@ -2870,6 +3050,12 @@ final class Api
 
     private function validateFlashcardSpeechSettings(array $values): void
     {
+        $timeLimitSeconds = (int) ($values['time_limit_seconds'] ?? 0);
+        if ($timeLimitSeconds % 60 !== 0) {
+            throw new ApiException(422, 'Set the Review set time limit in whole minutes.', [
+                'time_limit_seconds' => 'step:60',
+            ]);
+        }
         if ((bool) ($values['indefinite'] ?? false) && ($values['mode'] ?? '') !== 'passive') {
             throw new ApiException(422, 'Only Passive Review sets can run indefinitely.', [
                 'indefinite' => 'passive-only',
@@ -3565,13 +3751,13 @@ final class Api
 
             $setStatement = $pdo->prepare(
                 'INSERT INTO flashcard_review_sets (
-                    id, owner, name, tags, mode, card_sides, indefinite, max_cards,
+                    id, owner, name, tags, mode, card_sides, indefinite, time_limit_seconds, max_cards, eject_behavior,
                     front_seconds, back_seconds, back_speech_repeat_count,
                     note_before_back,
                     speech_enabled, front_language, back_language, sort_mode, sort_direction, excluded_cards,
                     sort_order, created_at, updated_at
                  ) VALUES (
-                    :id, :owner, :name, :tags, :mode, :card_sides, :indefinite, :max_cards,
+                    :id, :owner, :name, :tags, :mode, :card_sides, :indefinite, :time_limit_seconds, :max_cards, :eject_behavior,
                     :front_seconds, :back_seconds, :back_speech_repeat_count,
                     :note_before_back,
                     :speech_enabled, :front_language, :back_language, :sort_mode, :sort_direction, :excluded_cards,
@@ -3981,6 +4167,7 @@ final class Api
         $sortMode = $selection['sortMode'];
         $sortDirection = $selection['sortDirection'];
         $queue = $selection['queue'];
+        $reserveCardIds = $selection['reserveCardIds'];
 
         $now = (new DateTimeImmutable('now'))->format('Y-m-d\TH:i:s.v\Z');
         $sessionId = $this->newId();
@@ -3988,22 +4175,24 @@ final class Api
             $statement = $this->database->pdo->prepare(
                 'INSERT INTO flashcard_review_sessions (
                     id, owner, source_owner, review_set, status, snapshot_name, mode_snapshot, card_sides_snapshot,
-                    sort_snapshot, sort_direction_snapshot, indefinite_snapshot, max_cards_snapshot, tags_snapshot,
+                    sort_snapshot, sort_direction_snapshot, indefinite_snapshot, time_limit_seconds_snapshot,
+                    max_cards_snapshot, eject_behavior_snapshot, tags_snapshot,
                     excluded_cards_snapshot,
                     front_seconds_snapshot, back_seconds_snapshot,
                     back_speech_repeat_count_snapshot,
                     note_before_back_snapshot,
-                    speech_enabled_snapshot, front_language_snapshot, back_language_snapshot, queue_state,
+                    speech_enabled_snapshot, front_language_snapshot, back_language_snapshot, queue_state, reserve_card_ids,
                     started_at, ended_at, updated_at, elapsed_seconds, total_cards, viewed_count,
                     success_count, error_count, ejected_count, task, program_step,
                     program_step_completion, task_date
                  ) VALUES (
                     :id, :owner, :source_owner, :review_set, :status, :snapshot_name, :mode_snapshot,
-                    :card_sides_snapshot, :sort_snapshot, :sort_direction_snapshot, :indefinite_snapshot, :max_cards_snapshot,
+                    :card_sides_snapshot, :sort_snapshot, :sort_direction_snapshot, :indefinite_snapshot,
+                    :time_limit_seconds_snapshot, :max_cards_snapshot, :eject_behavior_snapshot,
                     :tags_snapshot, :excluded_cards_snapshot, :front_seconds_snapshot, :back_seconds_snapshot,
                     :back_speech_repeat_count_snapshot,
                     :note_before_back_snapshot,
-                    :speech_enabled_snapshot, :front_language_snapshot, :back_language_snapshot, :queue_state,
+                    :speech_enabled_snapshot, :front_language_snapshot, :back_language_snapshot, :queue_state, :reserve_card_ids,
                     :started_at, :ended_at, :updated_at, 0, :total_cards, 0, 0, 0, 0,
                     :task, :program_step, :program_step_completion, :task_date
                  )',
@@ -4020,7 +4209,9 @@ final class Api
                 'sort_snapshot' => $sortMode,
                 'sort_direction_snapshot' => $sortDirection,
                 'indefinite_snapshot' => (bool) $reviewSet['indefinite'],
+                'time_limit_seconds_snapshot' => (int) $reviewSet['time_limit_seconds'],
                 'max_cards_snapshot' => (int) $reviewSet['max_cards'],
+                'eject_behavior_snapshot' => (string) $reviewSet['eject_behavior'],
                 'tags_snapshot' => json_encode(array_values($selectedTags), JSON_THROW_ON_ERROR),
                 'excluded_cards_snapshot' => json_encode(
                     array_values($reviewSet['excluded_cards'] ?? []),
@@ -4037,6 +4228,7 @@ final class Api
                 'front_language_snapshot' => (string) $reviewSet['front_language'],
                 'back_language_snapshot' => (string) $reviewSet['back_language'],
                 'queue_state' => json_encode($queue, JSON_THROW_ON_ERROR),
+                'reserve_card_ids' => json_encode($reserveCardIds, JSON_THROW_ON_ERROR),
                 'started_at' => $now,
                 'ended_at' => '',
                 'updated_at' => $now,
@@ -4113,6 +4305,16 @@ final class Api
             if (!is_array($queue) || !array_is_list($queue)) {
                 throw new ApiException(500, 'The review queue is invalid.');
             }
+            $reserveCardIds = $this->decodeJsonColumn($session['reserve_card_ids'] ?? '[]');
+            if (!is_array($reserveCardIds) || !array_is_list($reserveCardIds)) {
+                throw new ApiException(500, 'The reserve review queue is invalid.');
+            }
+            $excludedCardsSnapshot = $this->decodeJsonColumn(
+                $session['excluded_cards_snapshot'] ?? '[]',
+            );
+            if (!is_array($excludedCardsSnapshot) || !array_is_list($excludedCardsSnapshot)) {
+                throw new ApiException(500, 'The Review set exclusion snapshot is invalid.');
+            }
             $now = (new DateTimeImmutable('now'))->format('Y-m-d\TH:i:s.v\Z');
             $endedAt = '';
             $viewedCount = (int) $session['viewed_count'];
@@ -4132,8 +4334,10 @@ final class Api
                     'sort_mode' => $session['sort_snapshot'],
                     'sort_direction' => $session['sort_direction_snapshot'] ?? 'asc',
                     'max_cards' => $session['max_cards_snapshot'],
+                    'eject_behavior' => $session['eject_behavior_snapshot'] ?? 'remove',
                 ], (string) ($session['source_owner'] ?: $owner), $owner);
                 $queue = $selection['queue'];
+                $reserveCardIds = $selection['reserveCardIds'];
                 $endedAt = '';
                 $elapsedSeconds = 0;
                 $viewedCount = 0;
@@ -4155,7 +4359,12 @@ final class Api
                 // A looping review has no natural end-of-queue. Once at least one card has
                 // been processed, stopping it is the successful way to finish the session
                 // and any task or program step that launched it.
-                $status = $indefinite && ($viewedCount + $ejectedCount) > 0
+                $timeLimitSeconds = (int) ($session['time_limit_seconds_snapshot'] ?? 0);
+                $reachedTimeLimit = $timeLimitSeconds > 0 && $elapsedSeconds >= $timeLimitSeconds;
+                if ($reachedTimeLimit) {
+                    $elapsedSeconds = $timeLimitSeconds;
+                }
+                $status = $reachedTimeLimit || ($indefinite && ($viewedCount + $ejectedCount) > 0)
                     ? 'completed'
                     : 'ended';
                 $endedAt = $now;
@@ -4191,6 +4400,14 @@ final class Api
                         'tags' => is_array($tags) ? array_values($tags) : [],
                     ]);
                     $ejectedCount--;
+                    if ((string) ($session['eject_behavior_snapshot'] ?? 'remove') === 'exclude') {
+                        $excludedCardsSnapshot = $this->setFlashcardReviewEjectExclusion(
+                            $session,
+                            $owner,
+                            (string) $card['id'],
+                            false,
+                        );
+                    }
                     $deleteEvent = $pdo->prepare(
                         "DELETE FROM flashcard_review_events
                          WHERE id = :id AND owner = :owner AND session = :session
@@ -4229,6 +4446,58 @@ final class Api
                                 $now,
                                 $owner,
                             );
+                            if (
+                                (string) ($session['eject_behavior_snapshot'] ?? 'remove') === 'exclude'
+                            ) {
+                                $excludedCardsSnapshot = $this->setFlashcardReviewEjectExclusion(
+                                    $session,
+                                    $owner,
+                                    (string) ($current['id'] ?? ''),
+                                    true,
+                                );
+                            }
+                            if (
+                                (string) ($session['eject_behavior_snapshot'] ?? 'remove') === 'replace'
+                                && $reserveCardIds !== []
+                            ) {
+                                $sourceOwner = (string) ($session['source_owner'] ?: $owner);
+                                while (
+                                    $reserveCardIds !== []
+                                    && count($queue) < (int) $session['max_cards_snapshot']
+                                ) {
+                                    $replacementId = array_shift($reserveCardIds);
+                                    if (!is_string($replacementId) || $replacementId === '') {
+                                        continue;
+                                    }
+                                    try {
+                                        $replacement = $this->ownedRecord(
+                                            'flashcards',
+                                            $replacementId,
+                                            $sourceOwner,
+                                        );
+                                    } catch (ApiException $exception) {
+                                        if ($exception->status !== 404) {
+                                            throw $exception;
+                                        }
+                                        continue;
+                                    }
+                                    $replacementTags = $this->decodeJsonColumn(
+                                        $replacement['tags'] ?? '[]',
+                                    );
+                                    $queue[] = [
+                                        'id' => (string) $replacement['id'],
+                                        'front' => (string) $replacement['front'],
+                                        'back' => (string) $replacement['back'],
+                                        'note' => (string) ($replacement['note'] ?? ''),
+                                        'frontAudio' => $this->flashcardAudioPath($replacement, 'front'),
+                                        'backAudio' => $this->flashcardAudioPath($replacement, 'back'),
+                                        'tags' => is_array($replacementTags)
+                                            ? array_values($replacementTags)
+                                            : [],
+                                    ];
+                                    $totalCards++;
+                                }
+                            }
                         } else {
                             $viewedCount++;
                             if ($action === 'success') {
@@ -4278,7 +4547,10 @@ final class Api
                 );
             }
 
-            if ($indefinite) {
+            if (
+                $indefinite
+                && (string) ($session['eject_behavior_snapshot'] ?? 'remove') !== 'replace'
+            ) {
                 // Ejected cards permanently leave a looping queue, so its cycle size must
                 // follow the live queue rather than the original session snapshot.
                 $totalCards = count($queue);
@@ -4288,6 +4560,8 @@ final class Api
                 'UPDATE flashcard_review_sessions SET
                     status = :status,
                     queue_state = :queue_state,
+                    reserve_card_ids = :reserve_card_ids,
+                    excluded_cards_snapshot = :excluded_cards_snapshot,
                     updated_at = :updated_at,
                     ended_at = :ended_at,
                     elapsed_seconds = :elapsed_seconds,
@@ -4301,6 +4575,11 @@ final class Api
             $statement->execute([
                 'status' => $status,
                 'queue_state' => json_encode(array_values($queue), JSON_THROW_ON_ERROR),
+                'reserve_card_ids' => json_encode(array_values($reserveCardIds), JSON_THROW_ON_ERROR),
+                'excluded_cards_snapshot' => json_encode(
+                    array_values($excludedCardsSnapshot),
+                    JSON_THROW_ON_ERROR,
+                ),
                 'updated_at' => $now,
                 'ended_at' => $endedAt,
                 'elapsed_seconds' => $elapsedSeconds,
@@ -4344,11 +4623,60 @@ final class Api
         ]);
     }
 
+    /** @return list<string> */
+    private function setFlashcardReviewEjectExclusion(
+        array $session,
+        string $owner,
+        string $cardId,
+        bool $excluded,
+    ): array {
+        if ($cardId === '') {
+            throw new ApiException(500, 'The ejected flashcard is invalid.');
+        }
+        $reviewSetId = (string) ($session['review_set'] ?? '');
+        if ($reviewSetId === '') {
+            return [];
+        }
+        $reviewSet = $this->accessibleFlashcardReviewSet($reviewSetId, $owner);
+        $settings = $this->effectiveFlashcardReviewSettings($reviewSet, $owner);
+        $excludedCards = array_values(array_unique(array_filter(
+            $settings['excluded_cards'] ?? [],
+            'is_string',
+        )));
+        if ($excluded) {
+            if (!in_array($cardId, $excludedCards, true)) {
+                $excludedCards[] = $cardId;
+            }
+        } else {
+            $excludedCards = array_values(array_filter(
+                $excludedCards,
+                static fn (string $excludedCardId): bool => $excludedCardId !== $cardId,
+            ));
+        }
+        $settings['excluded_cards'] = $excludedCards;
+        $this->saveFlashcardReviewSetPreferences($reviewSetId, $owner, $settings);
+
+        if ((string) $reviewSet['owner'] === $owner) {
+            $statement = $this->database->pdo->prepare(
+                'UPDATE flashcard_review_sets
+                 SET excluded_cards = :excluded_cards, updated_at = :updated_at
+                 WHERE id = :id AND owner = :owner',
+            );
+            $statement->execute([
+                'excluded_cards' => json_encode($excludedCards, JSON_THROW_ON_ERROR),
+                'updated_at' => $this->now(),
+                'id' => $reviewSetId,
+                'owner' => $owner,
+            ]);
+        }
+        return $excludedCards;
+    }
+
     private function updateFlashcardReviewSessionSettings(string $id, array $user): never
     {
         $body = $this->jsonBody();
         $fields = [
-            'mode', 'card_sides', 'indefinite', 'max_cards', 'front_seconds', 'back_seconds',
+            'mode', 'card_sides', 'indefinite', 'time_limit_seconds', 'max_cards', 'eject_behavior', 'front_seconds', 'back_seconds',
             'back_speech_repeat_count', 'note_before_back',
             'speech_enabled', 'front_language', 'back_language',
             'sort_mode', 'sort_direction',
@@ -4356,8 +4684,8 @@ final class Api
         $this->allowOnlyFields($body, $fields);
         foreach ($fields as $field) {
             if (!array_key_exists($field, $body)) {
-                if ($field === 'sort_direction') {
-                    $body[$field] = 'asc';
+                if (in_array($field, ['sort_direction', 'eject_behavior'], true)) {
+                    $body[$field] = $field === 'sort_direction' ? 'asc' : 'remove';
                     continue;
                 }
                 throw new ApiException(422, 'Every session setting is required.', [
@@ -4394,13 +4722,24 @@ final class Api
                     ['max_cards' => 'min:' . ($processed + 1)],
                 );
             }
+            if (
+                (int) $settings['time_limit_seconds'] > 0
+                && (int) $settings['time_limit_seconds'] <= (int) $session['elapsed_seconds']
+            ) {
+                throw new ApiException(
+                    422,
+                    'The time limit must be greater than the active time already recorded.',
+                    ['time_limit_seconds' => 'min:' . ((int) $session['elapsed_seconds'] + 1)],
+                );
+            }
 
             $selection = $this->flashcardReviewSelection([
                 'tags' => $session['tags_snapshot'],
                 'excluded_cards' => $session['excluded_cards_snapshot'],
                 'sort_mode' => $settings['sort_mode'],
                 'sort_direction' => $settings['sort_direction'],
-                'max_cards' => 100,
+                'max_cards' => $settings['max_cards'],
+                'eject_behavior' => $settings['eject_behavior'],
             ], (string) ($session['source_owner'] ?: $owner), $owner);
             $eventStatement = $pdo->prepare(
                 'SELECT card, outcome FROM flashcard_review_events
@@ -4413,14 +4752,20 @@ final class Api
                     $excluded[(string) $event['card']] = true;
                 }
             }
-            $queue = array_values(array_filter(
-                $selection['queue'],
+            $eligibleQueue = array_values(array_filter(
+                $selection['allQueue'],
                 static fn (array $card): bool => !isset($excluded[(string) $card['id']]),
             ));
             $remainingLimit = $indefinite
                 ? (int) $settings['max_cards']
                 : (int) $settings['max_cards'] - $processed;
-            $queue = array_slice($queue, 0, $remainingLimit);
+            $queue = array_slice($eligibleQueue, 0, $remainingLimit);
+            $reserveCardIds = $settings['eject_behavior'] === 'replace'
+                ? array_values(array_map(
+                    static fn (array $card): string => (string) $card['id'],
+                    array_slice($eligibleQueue, $remainingLimit),
+                ))
+                : [];
             if ($queue === []) {
                 throw new ApiException(409, 'No eligible cards remain for these session settings.');
             }
@@ -4432,7 +4777,9 @@ final class Api
                     mode_snapshot = :mode_snapshot,
                     card_sides_snapshot = :card_sides_snapshot,
                     indefinite_snapshot = :indefinite_snapshot,
+                    time_limit_seconds_snapshot = :time_limit_seconds_snapshot,
                     max_cards_snapshot = :max_cards_snapshot,
+                    eject_behavior_snapshot = :eject_behavior_snapshot,
                     sort_snapshot = :sort_snapshot,
                     sort_direction_snapshot = :sort_direction_snapshot,
                     front_seconds_snapshot = :front_seconds_snapshot,
@@ -4443,6 +4790,7 @@ final class Api
                     front_language_snapshot = :front_language_snapshot,
                     back_language_snapshot = :back_language_snapshot,
                     queue_state = :queue_state,
+                    reserve_card_ids = :reserve_card_ids,
                     total_cards = :total_cards,
                     updated_at = :updated_at
                  WHERE id = :id AND owner = :owner',
@@ -4451,7 +4799,9 @@ final class Api
                 'mode_snapshot' => $settings['mode'],
                 'card_sides_snapshot' => $settings['card_sides'],
                 'indefinite_snapshot' => $indefinite,
+                'time_limit_seconds_snapshot' => $settings['time_limit_seconds'],
                 'max_cards_snapshot' => $settings['max_cards'],
+                'eject_behavior_snapshot' => $settings['eject_behavior'],
                 'sort_snapshot' => $settings['sort_mode'],
                 'sort_direction_snapshot' => $settings['sort_direction'],
                 'front_seconds_snapshot' => $settings['front_seconds'],
@@ -4462,6 +4812,7 @@ final class Api
                 'front_language_snapshot' => $settings['front_language'],
                 'back_language_snapshot' => $settings['back_language'],
                 'queue_state' => json_encode($queue, JSON_THROW_ON_ERROR),
+                'reserve_card_ids' => json_encode($reserveCardIds, JSON_THROW_ON_ERROR),
                 'total_cards' => $totalCards,
                 'updated_at' => $now,
                 'id' => $id,
@@ -4675,8 +5026,7 @@ final class Api
         $sortMode = (string) $reviewSet['sort_mode'];
         $sortDirection = (string) ($reviewSet['sort_direction'] ?? 'asc');
         $this->sortFlashcardsForReview($cards, $sortMode, $sortDirection);
-        $cards = array_slice($cards, 0, (int) $reviewSet['max_cards']);
-        $queue = array_map(function (array $card): array {
+        $allQueue = array_map(function (array $card): array {
             $tags = $this->decodeJsonColumn($card['tags'] ?? '[]');
             return [
                 'id' => (string) $card['id'],
@@ -4688,12 +5038,21 @@ final class Api
                 'tags' => is_array($tags) ? array_values($tags) : [],
             ];
         }, $cards);
+        $queue = array_slice($allQueue, 0, (int) $reviewSet['max_cards']);
+        $reserveCardIds = (string) ($reviewSet['eject_behavior'] ?? 'remove') === 'replace'
+            ? array_values(array_map(
+                static fn (array $card): string => (string) $card['id'],
+                array_slice($allQueue, count($queue)),
+            ))
+            : [];
 
         return [
             'tags' => array_values($selectedTags),
             'sortMode' => $sortMode,
             'sortDirection' => $sortDirection,
             'queue' => $queue,
+            'allQueue' => $allQueue,
+            'reserveCardIds' => $reserveCardIds,
         ];
     }
 
@@ -4725,6 +5084,8 @@ final class Api
             'tags' => $selection['tags'],
             'sortMode' => $selection['sortMode'],
             'sortDirection' => $selection['sortDirection'],
+            'ejectBehavior' => (string) $reviewSet['eject_behavior'],
+            'maxCards' => (int) $reviewSet['max_cards'],
             'cardSides' => (string) $reviewSet['card_sides'],
             'frontSeconds' => $isPassive ? (int) $reviewSet['front_seconds'] : 5,
             'backSeconds' => $isPassive ? (int) $reviewSet['back_seconds'] : 5,
@@ -4736,6 +5097,7 @@ final class Api
             'frontLanguage' => (string) $reviewSet['front_language'],
             'backLanguage' => (string) $reviewSet['back_language'],
             'cards' => $selection['queue'],
+            'reserveCardIds' => $selection['reserveCardIds'],
         ];
     }
 
@@ -4954,16 +5316,15 @@ final class Api
             throw new ApiException(409, 'Only an active interval can change its flashcards.');
         }
 
-        $existing = $this->decodeJsonColumn($session['flashcard_snapshot'] ?? '{}');
-        if (!is_array($existing) || (string) ($existing['reviewSet'] ?? '') === '') {
-            throw new ApiException(409, 'This interval does not have a flashcard context.');
-        }
-        if (
-            !is_array($snapshot)
-            || (string) ($snapshot['reviewSet'] ?? '') !== (string) $existing['reviewSet']
+        $reviewSetId = is_array($snapshot) ? (string) ($snapshot['reviewSet'] ?? '') : '';
+        if ($reviewSetId === '') {
+            $snapshot = [];
+        } elseif (
+            !$this->flashcardReviewSetIsAccessible($reviewSetId, $owner)
             || !isset($snapshot['cards'])
             || !is_array($snapshot['cards'])
             || !array_is_list($snapshot['cards'])
+            || $snapshot['cards'] === []
         ) {
             throw new ApiException(422, 'The flashcard snapshot is invalid.', [
                 'flashcard_snapshot' => 'invalid',
@@ -7073,8 +7434,8 @@ final class Api
         $settings = [];
         foreach (self::FLASHCARD_REVIEW_SETTING_FIELDS as $field) {
             if (!array_key_exists($field, $body)) {
-                if ($field === 'sort_direction') {
-                    $body[$field] = 'asc';
+                if (in_array($field, ['sort_direction', 'eject_behavior'], true)) {
+                    $body[$field] = $field === 'sort_direction' ? 'asc' : 'remove';
                 } else {
                     throw new ApiException(422, 'Every Review set preference is required.', [
                         $field => 'required',
@@ -7109,7 +7470,7 @@ final class Api
             $settings[$field] = match ($field) {
                 'indefinite', 'note_before_back', 'speech_enabled'
                     => (bool) ($source[$field] ?? false),
-                'max_cards', 'front_seconds', 'back_seconds', 'back_speech_repeat_count'
+                'time_limit_seconds', 'max_cards', 'front_seconds', 'back_seconds', 'back_speech_repeat_count'
                     => (int) ($source[$field] ?? 0),
                 'sort_direction' => (string) ($source[$field] ?? 'asc'),
                 default => (string) ($source[$field] ?? ''),
@@ -7129,13 +7490,13 @@ final class Api
     ): void {
         $statement = $this->database->pdo->prepare(
             'INSERT INTO flashcard_review_set_preferences (
-                review_set, account, mode, card_sides, indefinite, max_cards,
+                review_set, account, mode, card_sides, indefinite, time_limit_seconds, max_cards, eject_behavior,
                 front_seconds, back_seconds, back_speech_repeat_count,
                 note_before_back,
                 speech_enabled, front_language, back_language, sort_mode, sort_direction,
                 excluded_cards, updated_at
              ) VALUES (
-                :review_set, :account, :mode, :card_sides, :indefinite, :max_cards,
+                :review_set, :account, :mode, :card_sides, :indefinite, :time_limit_seconds, :max_cards, :eject_behavior,
                 :front_seconds, :back_seconds, :back_speech_repeat_count,
                 :note_before_back,
                 :speech_enabled, :front_language, :back_language, :sort_mode, :sort_direction, :excluded_cards, :updated_at
@@ -7144,7 +7505,9 @@ final class Api
                 mode = excluded.mode,
                 card_sides = excluded.card_sides,
                 indefinite = excluded.indefinite,
+                time_limit_seconds = excluded.time_limit_seconds,
                 max_cards = excluded.max_cards,
+                eject_behavior = excluded.eject_behavior,
                 front_seconds = excluded.front_seconds,
                 back_seconds = excluded.back_seconds,
                 back_speech_repeat_count = excluded.back_speech_repeat_count,
@@ -7649,6 +8012,46 @@ final class Api
             'created_at' => $now,
         ]);
         return $token;
+    }
+
+    private function resendEmailVerificationIfExpired(array $user): bool
+    {
+        $pdo = $this->database->pdo;
+        $transactionOpen = false;
+        try {
+            $pdo->exec('BEGIN IMMEDIATE');
+            $transactionOpen = true;
+            $statement = $pdo->prepare(
+                'SELECT 1 FROM backontrack_auth_tokens
+                 WHERE user_id = :user_id
+                   AND purpose = :purpose
+                   AND expires_at >= :now
+                 LIMIT 1',
+            );
+            $statement->execute([
+                'user_id' => $user['id'],
+                'purpose' => 'email_verification',
+                'now' => time(),
+            ]);
+            if ($statement->fetchColumn() !== false) {
+                $pdo->exec('COMMIT');
+                return false;
+            }
+
+            $token = $this->issueAuthToken(
+                (string) $user['id'],
+                'email_verification',
+                self::EMAIL_VERIFICATION_TTL,
+            );
+            $this->mailer->sendEmailConfirmation((string) $user['email'], $token);
+            $pdo->exec('COMMIT');
+            return true;
+        } catch (Throwable $exception) {
+            if ($transactionOpen) {
+                $pdo->exec('ROLLBACK');
+            }
+            throw $exception;
+        }
     }
 
     private function validateAuthToken(mixed $value): string

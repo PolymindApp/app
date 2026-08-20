@@ -25,6 +25,7 @@ import {
   RUNNING_SESSION_TITLE_INTERVAL_MS,
 } from '@/services/runningSessionTitle'
 import { mobileKeyboardVisible } from '@/services/mobileKeyboardViewport'
+import { requestDesktopTaskReminderPermission } from '@/services/taskReminders'
 import { UnsyncedChangesError, useAuthStore } from '@/stores/auth'
 import { useFlashcardStore } from '@/stores/flashcards'
 import { useIntervalStore } from '@/stores/intervals'
@@ -334,6 +335,27 @@ function scheduleLocalRefresh() {
   }, 250)
 }
 
+function waitForTaskLoad() {
+  if (!taskStore.loading) return Promise.resolve()
+  return new Promise<void>((resolve) => {
+    const stop = watch(() => taskStore.loading, (loading) => {
+      if (loading) return
+      stop()
+      resolve()
+    })
+  })
+}
+
+async function checkDesktopTaskNotificationPermission() {
+  try {
+    if (taskStore.loading) await waitForTaskLoad()
+    else await taskStore.load()
+    await requestDesktopTaskReminderPermission(taskStore.tasks)
+  } catch {
+    // Task loading already exposes its error state; permission checks are best-effort.
+  }
+}
+
 watch(immersive, (active) => {
   setForegroundSyncDeferred(active)
   if (!active && localRefreshPending) scheduleLocalRefresh()
@@ -349,6 +371,7 @@ onMounted(() => {
     !intervalStore.loading ? intervalStore.load() : Promise.resolve(),
     !flashcardStore.loading ? flashcardStore.load() : Promise.resolve(),
   ])
+  if (isBrowser && mdAndUp.value) void checkDesktopTaskNotificationPermission()
   if (isAndroid) {
     mainNavigationPreloadTimer = window.setTimeout(() => {
       mainNavigationPreloadTimer = undefined

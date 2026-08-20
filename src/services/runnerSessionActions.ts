@@ -7,10 +7,6 @@ interface RunnerSessionMenuState {
   preview: boolean
 }
 
-interface IntervalRunnerSessionMenuState extends RunnerSessionMenuState {
-  hasReviewSet: boolean
-}
-
 interface ReviewRunnerSessionMenuState extends RunnerSessionMenuState {
   finished: boolean
   canRestart: boolean
@@ -28,7 +24,7 @@ function amplificationItem(amplified: boolean, disabled: boolean): RunnerSession
 }
 
 export function intervalRunnerSessionMenuItems(
-  state: IntervalRunnerSessionMenuState,
+  state: RunnerSessionMenuState,
 ): RunnerSessionMenuItem[] {
   return [
     ...(state.speechAvailable ? [amplificationItem(state.amplified, state.busy)] : []),
@@ -39,12 +35,6 @@ export function intervalRunnerSessionMenuItems(
       disabled: state.preview || state.busy,
       divider: state.speechAvailable,
     },
-    ...(state.hasReviewSet ? [{
-      action: 'review_settings' as const,
-      title: 'Review set settings',
-      icon: 'mdi-cards-outline',
-      disabled: state.preview || state.busy,
-    }] : []),
     {
       action: 'restart' as const,
       title: 'Restart interval',

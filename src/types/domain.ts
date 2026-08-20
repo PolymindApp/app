@@ -252,6 +252,8 @@ export interface IntervalFlashcardReviewSnapshot {
   tags: string[]
   sortMode: FlashcardReviewSort
   sortDirection: FlashcardReviewSortDirection
+  ejectBehavior: FlashcardReviewEjectBehavior
+  maxCards: number
   cardSides: FlashcardReviewCardSides
   frontSeconds: number
   backSeconds: number
@@ -264,6 +266,7 @@ export interface IntervalFlashcardReviewSnapshot {
   frontLanguage: string
   backLanguage: string
   cards: FlashcardReviewQueueCard[]
+  reserveCardIds: string[]
 }
 
 export interface IntervalTemplate {
@@ -338,6 +341,7 @@ export type FlashcardReviewSide = 'front' | 'back'
 export type FlashcardReviewCardSides = 'both' | FlashcardReviewSide
 export type FlashcardReviewSort = 'difficult' | 'never_reviewed' | 'least_recent' | 'recently_added' | 'random'
 export type FlashcardReviewSortDirection = 'asc' | 'desc'
+export type FlashcardReviewEjectBehavior = 'remove' | 'replace' | 'exclude'
 export type FlashcardReviewStatus = 'running' | 'paused' | 'completed' | 'ended'
 export type FlashcardReviewOutcome = 'success' | 'error' | 'passive' | 'ejected'
 export type FlashcardReviewAction = 'success' | 'error' | 'view' | 'previous' | 'next' | 'push' | 'eject' | 'undo_eject' | 'pause' | 'resume' | 'restart' | 'end'
@@ -354,7 +358,6 @@ export type IntervalSettingsApplyTarget = 'session' | 'interval' | 'both'
 export type RunnerSessionAction =
   | 'options'
   | 'settings'
-  | 'review_settings'
   | 'amplification'
   | 'eject'
   | 'restart'
@@ -451,7 +454,9 @@ export interface FlashcardReviewSettings {
   mode: FlashcardReviewMode
   cardSides: FlashcardReviewCardSides
   indefinite: boolean
+  timeLimitSeconds?: number
   maxCards: number
+  ejectBehavior: FlashcardReviewEjectBehavior
   frontSeconds: number
   backSeconds: number
   backSpeechRepeatCount: number
@@ -540,6 +545,7 @@ export interface FlashcardReviewSession extends FlashcardReviewSettings {
   tags: string[]
   excludedCards?: string[]
   queue: FlashcardReviewQueueCard[]
+  reserveCardIds: string[]
   startedAt: string
   endedAt?: string
   updatedAt: string

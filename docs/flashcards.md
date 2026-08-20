@@ -6,11 +6,21 @@ The card importer shows an example with the required `front,back,note,tags` head
 
 ## Runner settings
 
-The three-dot menu in an active Interval includes Review set settings whenever the interval has a Review set attached. The Apply to menu in active Interval and Review set settings offers Current session, the saved Interval or Review set, and Both. Choosing Both updates the saved source and the active session snapshot so the current run reflects the new settings immediately.
+Active Interval settings include the same Review cards section as the Interval form, so a Review set can be attached, replaced, or removed during a run. The Apply to menu in active Interval and Review set settings offers Current session, the saved Interval or Review set, and Both. Choosing Both updates the saved source and the active session snapshot so the current run reflects the new settings immediately.
+
+## Standalone review time limits
+
+Standalone Review sets can optionally finish after a configured amount of active review time. The Review set and active-session settings use an hours-and-minutes wheel, with limits from one minute through 23 hours 59 minutes. Paused time does not count. Reaching the limit completes the session even when cards remain, including looping Passive reviews, and Android background Passive playback stops at the same limit. Mini Review sets inside Interval sessions continue to follow the Interval step duration instead.
 
 ## Review card ejection
 
-Ejecting the current card advances both standalone and mini interval Review set sessions to the next available card. The replacement card always starts at the beginning of its first configured face instead of inheriting the ejected card's face or playback progress.
+Each Review set defines how the eject button affects its session. The default **Remove from session** behavior permanently removes the current card from the active list and completes a standalone review after its last active card is ejected.
+
+The optional **Load the next card** behavior keeps the active list filled up to the configured maximum by injecting the next ordered, matching card whenever one is ejected. For example, a 50-card Review set with a 10-card session limit keeps 10 cards active while reserve cards remain, then drains the final 10 and completes after all 50 cards have been ejected. The ordered reserve is snapshotted when standalone and mini interval sessions start, so the behavior remains deterministic and available offline.
+
+The optional **Eject and exclude** behavior removes the current card from the session and adds it to the Review set's excluded cards, preventing it from appearing in future sessions. Undoing the last eject in a standalone review restores the card to the active queue and removes that exclusion.
+
+Ejecting the current card advances both standalone and mini interval Review set sessions to the next available card. An injected replacement always starts at the beginning of its first configured face instead of inheriting the ejected card's face or playback progress.
 
 ## Standalone review motion
 

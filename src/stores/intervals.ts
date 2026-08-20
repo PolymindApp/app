@@ -53,6 +53,17 @@ function mapSession(record: Record<string, any>): IntervalSession {
           ...flashcardSnapshot,
           cardSides: flashcardSnapshot.cardSides || 'both',
           sortDirection: flashcardSnapshot.sortDirection || 'asc',
+          ...(flashcardSnapshot.ejectBehavior !== undefined
+            ? {
+                ejectBehavior: flashcardSnapshot.ejectBehavior === 'replace'
+                  || flashcardSnapshot.ejectBehavior === 'exclude'
+                  ? flashcardSnapshot.ejectBehavior
+                  : 'remove',
+              }
+            : {}),
+          ...(flashcardSnapshot.maxCards !== undefined
+            ? { maxCards: Number(flashcardSnapshot.maxCards || flashcardSnapshot.cards.length) }
+            : {}),
           backSpeechRepeatCount: Number(flashcardSnapshot.backSpeechRepeatCount || 1),
           noteBeforeBack: Boolean(flashcardSnapshot.noteBeforeBack),
           cards: flashcardSnapshot.cards.map((card: Record<string, any>) => ({
@@ -64,6 +75,15 @@ function mapSession(record: Record<string, any>): IntervalSession {
               ? { backAudio: apiAssetUrl(card.backAudio) }
               : {}),
           })),
+          ...(flashcardSnapshot.reserveCardIds !== undefined
+            ? {
+                reserveCardIds: Array.isArray(flashcardSnapshot.reserveCardIds)
+                  ? flashcardSnapshot.reserveCardIds.filter(
+                      (id: unknown): id is string => typeof id === 'string',
+                    )
+                  : [],
+              }
+            : {}),
         } as IntervalFlashcardReviewSnapshot
       : undefined
   return {
@@ -391,26 +411,26 @@ export const useIntervalStore = defineStore('intervals', () => {
 
   async function updateSessionFlashcardReview(
     sessionId: string,
-    flashcardReview: IntervalFlashcardReviewSnapshot,
+    flashcardReview: IntervalFlashcardReviewSnapshot | undefined,
   ) {
     const index = sessions.value.findIndex((session) => session.id === sessionId)
     if (index < 0) {
-      const record = await api.updateIntervalSessionFlashcards(sessionId, flashcardReview)
+      const record = await api.updateIntervalSessionFlashcards(sessionId, flashcardReview || {})
       return mapSessionWithSpeechPause(
         record,
-        flashcardReview.speechPaused,
-        flashcardReview.speechPausedElapsedMs,
+        flashcardReview?.speechPaused,
+        flashcardReview?.speechPausedElapsedMs,
       )
     }
     const session = sessions.value[index]!
     const previous = session.flashcardReview
     session.flashcardReview = flashcardReview
     try {
-      const record = await api.updateIntervalSessionFlashcards(sessionId, flashcardReview)
+      const record = await api.updateIntervalSessionFlashcards(sessionId, flashcardReview || {})
       const updated = mapSessionWithSpeechPause(
         record,
-        flashcardReview.speechPaused,
-        flashcardReview.speechPausedElapsedMs,
+        flashcardReview?.speechPaused,
+        flashcardReview?.speechPausedElapsedMs,
       )
       Object.assign(session, updated)
       if (session.status === 'running' || session.status === 'paused') saveRecovery(session.id, session.runtime)

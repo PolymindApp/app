@@ -9,7 +9,7 @@ use PDOException;
 
 final class Database
 {
-    public const EXPECTED_SCHEMA_VERSION = '202608200001';
+    public const EXPECTED_SCHEMA_VERSION = '202608200004';
 
     public readonly PDO $pdo;
 
@@ -154,6 +154,14 @@ final class Database
                 'method', 'status', 'stack', 'occurrence_count', 'first_occurred_at',
                 'last_occurred_at', 'first_received_at', 'last_received_at',
                 'platform', 'app_version', 'user_agent',
+            ],
+            'web_push_subscriptions' => [
+                'id', 'account_id', 'endpoint', 'public_key', 'auth_token',
+                'content_encoding', 'expiration_time', 'created_at', 'updated_at',
+            ],
+            'task_web_push_deliveries' => [
+                'subscription_id', 'task_id', 'scheduled_date', 'reminder_time',
+                'reserved_at', 'sent_at',
             ],
             'sync_operation_receipts' => [
                 'receipt_sequence', 'account_id', 'client_id', 'operation_id', 'response', 'applied_at',

@@ -24,6 +24,9 @@ final class Config
         public readonly string $mailEncryption,
         public readonly string $mailFromAddress,
         public readonly string $mailFromName,
+        public readonly string $webPushVapidSubject,
+        public readonly string $webPushVapidPublicKey,
+        public readonly string $webPushVapidPrivateKey,
         public readonly bool $debug,
     ) {
     }
@@ -87,6 +90,9 @@ final class Config
         }
         $mailFromAddress = strtolower(trim((string) $value('BACKONTRACK_MAIL_FROM_ADDRESS', '')));
         $mailFromName = trim((string) $value('BACKONTRACK_MAIL_FROM_NAME', 'BackOnTrack'));
+        $webPushVapidSubject = trim((string) $value('BACKONTRACK_WEB_PUSH_VAPID_SUBJECT', ''));
+        $webPushVapidPublicKey = trim((string) $value('BACKONTRACK_WEB_PUSH_VAPID_PUBLIC_KEY', ''));
+        $webPushVapidPrivateKey = trim((string) $value('BACKONTRACK_WEB_PUSH_VAPID_PRIVATE_KEY', ''));
         $debug = strtolower(trim((string) $value('DEBUG', ''))) === 'dev';
 
         if ($secret === '' || strlen($secret) < 32) {
@@ -184,6 +190,35 @@ final class Config
         if (strlen($mailFromName) > 160) {
             throw new ApiException(500, 'BACKONTRACK_MAIL_FROM_NAME is too long.');
         }
+        $configuredWebPushValues = [
+            $webPushVapidSubject !== '',
+            $webPushVapidPublicKey !== '',
+            $webPushVapidPrivateKey !== '',
+        ];
+        if (count(array_unique($configuredWebPushValues, SORT_REGULAR)) !== 1) {
+            throw new ApiException(
+                500,
+                'All Web Push VAPID settings must be configured together.',
+            );
+        }
+        if ($webPushVapidSubject !== '') {
+            $validMailSubject = str_starts_with($webPushVapidSubject, 'mailto:')
+                && filter_var(substr($webPushVapidSubject, 7), FILTER_VALIDATE_EMAIL) !== false;
+            $validUrlSubject = str_starts_with($webPushVapidSubject, 'https://')
+                && filter_var($webPushVapidSubject, FILTER_VALIDATE_URL) !== false;
+            if (!$validMailSubject && !$validUrlSubject) {
+                throw new ApiException(
+                    500,
+                    'BACKONTRACK_WEB_PUSH_VAPID_SUBJECT must be a mailto address or HTTPS URL.',
+                );
+            }
+            if (preg_match('/^[A-Za-z0-9_-]{80,100}$/', $webPushVapidPublicKey) !== 1) {
+                throw new ApiException(500, 'BACKONTRACK_WEB_PUSH_VAPID_PUBLIC_KEY is invalid.');
+            }
+            if (preg_match('/^[A-Za-z0-9_-]{43}$/', $webPushVapidPrivateKey) !== 1) {
+                throw new ApiException(500, 'BACKONTRACK_WEB_PUSH_VAPID_PRIVATE_KEY is invalid.');
+            }
+        }
 
         return new self(
             $databasePath,
@@ -203,6 +238,9 @@ final class Config
             $mailEncryption,
             $mailFromAddress,
             $mailFromName,
+            $webPushVapidSubject,
+            $webPushVapidPublicKey,
+            $webPushVapidPrivateKey,
             $debug,
         );
     }
@@ -218,6 +256,13 @@ final class Config
         $dotenv = self::readDotenv($projectRoot . '/.env');
 
         return strtolower(trim((string) ($dotenv['DEBUG'] ?? ''))) === 'dev';
+    }
+
+    public function webPushConfigured(): bool
+    {
+        return $this->webPushVapidSubject !== ''
+            && $this->webPushVapidPublicKey !== ''
+            && $this->webPushVapidPrivateKey !== '';
     }
 
     private static function readDotenv(string $path): array

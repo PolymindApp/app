@@ -18,8 +18,8 @@ final class SyncService
     private const SYNC_RETENTION_DAYS = 30;
     private const SYNC_COMPACTION_INTERVAL_SECONDS = 3600;
     private const FLASHCARD_REVIEW_PREFERENCE_FIELDS = [
-        'mode', 'card_sides', 'indefinite', 'max_cards', 'front_seconds',
-        'back_seconds', 'back_speech_repeat_count', 'note_before_back',
+        'mode', 'card_sides', 'indefinite', 'time_limit_seconds', 'max_cards', 'front_seconds',
+        'eject_behavior', 'back_seconds', 'back_speech_repeat_count', 'note_before_back',
         'speech_enabled', 'front_language', 'back_language', 'sort_mode',
         'excluded_cards',
     ];
@@ -589,13 +589,18 @@ final class SyncService
             $fields = self::FLASHCARD_REVIEW_PREFERENCE_FIELDS;
             $requiredFields = array_values(array_filter(
                 $fields,
-                static fn (string $field): bool => $field !== 'excluded_cards',
+                static fn (string $field): bool => !in_array(
+                    $field,
+                    ['excluded_cards', 'eject_behavior'],
+                    true,
+                ),
             ));
             $settingsPayload = array_intersect_key($payload, array_flip($fields));
             if (count(array_intersect_key($settingsPayload, array_flip($requiredFields))) !== count($requiredFields)) {
                 throw new ApiException(422, 'Every Review set preference is required.');
             }
             $settingsPayload['excluded_cards'] ??= [];
+            $settingsPayload['eject_behavior'] ??= 'remove';
             $config = Schema::collection('flashcard_review_sets');
             if ($config === null) {
                 throw new ApiException(500, 'Review set schema is unavailable.');
@@ -608,6 +613,9 @@ final class SyncService
             );
             if ($settings['mode'] !== 'passive') {
                 $settings['indefinite'] = false;
+            }
+            if ((int) $settings['time_limit_seconds'] % 60 !== 0) {
+                throw new ApiException(422, 'Set the Review set time limit in whole minutes.');
             }
             $this->saveReviewSetPreferences($reviewSetId, $account, $config, $settings);
             if ((string) $reviewSet['owner'] === $account) {
@@ -2092,8 +2100,8 @@ final class SyncService
         $settings = $this->reviewSetPreferencesByAccount[$account][(string) $record['id']] ?? null;
         if (is_array($settings)) {
             foreach ([
-                'mode', 'card_sides', 'indefinite', 'max_cards', 'front_seconds',
-                'back_seconds', 'back_speech_repeat_count', 'note_before_back',
+                'mode', 'card_sides', 'indefinite', 'time_limit_seconds', 'max_cards', 'front_seconds',
+                'eject_behavior', 'back_seconds', 'back_speech_repeat_count', 'note_before_back',
                 'speech_enabled', 'front_language', 'back_language', 'sort_mode',
                 'excluded_cards',
             ] as $field) {
@@ -2129,16 +2137,19 @@ final class SyncService
         $values['excluded_cards'] = $this->stringArray($values['excluded_cards'] ?? []);
         $statement = $this->database->pdo->prepare(
             'INSERT INTO flashcard_review_set_preferences (
-                review_set, account, mode, card_sides, indefinite, max_cards,
+                review_set, account, mode, card_sides, indefinite, time_limit_seconds, max_cards, eject_behavior,
                 front_seconds, back_seconds, back_speech_repeat_count, note_before_back,
                 speech_enabled, front_language, back_language, sort_mode, excluded_cards, updated_at
              ) VALUES (
-                :review_set, :account, :mode, :card_sides, :indefinite, :max_cards,
+                :review_set, :account, :mode, :card_sides, :indefinite, :time_limit_seconds, :max_cards, :eject_behavior,
                 :front_seconds, :back_seconds, :back_speech_repeat_count, :note_before_back,
                 :speech_enabled, :front_language, :back_language, :sort_mode, :excluded_cards, :updated_at
              ) ON CONFLICT(review_set, account) DO UPDATE SET
                 mode = excluded.mode, card_sides = excluded.card_sides,
-                indefinite = excluded.indefinite, max_cards = excluded.max_cards,
+                indefinite = excluded.indefinite,
+                time_limit_seconds = excluded.time_limit_seconds,
+                max_cards = excluded.max_cards,
+                eject_behavior = excluded.eject_behavior,
                 front_seconds = excluded.front_seconds, back_seconds = excluded.back_seconds,
                 back_speech_repeat_count = excluded.back_speech_repeat_count,
                 note_before_back = excluded.note_before_back,

@@ -15,6 +15,9 @@ import type {
 export const MIN_FLASHCARD_SESSION_CARDS = 1
 export const MAX_FLASHCARD_SESSION_CARDS = 100
 export const DEFAULT_FLASHCARD_SESSION_CARDS = 20
+export const DEFAULT_FLASHCARD_REVIEW_TIME_LIMIT_SECONDS = 30 * 60
+export const MIN_FLASHCARD_REVIEW_TIME_LIMIT_SECONDS = 60
+export const MAX_FLASHCARD_REVIEW_TIME_LIMIT_SECONDS = 23 * 3600 + 59 * 60
 export const MIN_FLASHCARD_BACK_SPEECH_REPEATS = 1
 export const MAX_FLASHCARD_BACK_SPEECH_REPEATS = 5
 export const DEFAULT_FLASHCARD_BACK_SPEECH_REPEATS = 1
@@ -133,6 +136,24 @@ export const FLASHCARD_REVIEW_SELECTION_MENU_ITEMS = [
   },
 ] as const
 
+export const FLASHCARD_REVIEW_EJECT_BEHAVIOR_OPTIONS = [
+  {
+    title: 'Remove from session',
+    value: 'remove',
+    subtitle: 'Ejected cards leave the active list without loading more cards.',
+  },
+  {
+    title: 'Load the next card',
+    value: 'replace',
+    subtitle: 'Keep the active list filled from the rest of the Review set until every card has appeared.',
+  },
+  {
+    title: 'Eject and exclude',
+    value: 'exclude',
+    subtitle: 'Remove the card now and exclude it from future sessions in this Review set.',
+  },
+] as const
+
 export function updateFlashcardReviewExclusions(
   excludedCards: readonly string[],
   action: FlashcardSelectionAction,
@@ -148,7 +169,9 @@ export function flashcardReviewSettingsSignature(settings: FlashcardReviewSettin
     mode: settings.mode,
     cardSides: settings.cardSides,
     indefinite: settings.indefinite,
+    timeLimitSeconds: settings.timeLimitSeconds || 0,
     maxCards: settings.maxCards,
+    ejectBehavior: settings.ejectBehavior || 'remove',
     frontSeconds: settings.frontSeconds,
     backSeconds: settings.backSeconds,
     backSpeechRepeatCount: settings.backSpeechRepeatCount,
@@ -171,6 +194,10 @@ export function flashcardReviewSettingsAreValid(
     && Number.isInteger(settings.backSpeechRepeatCount)
     && settings.backSpeechRepeatCount >= MIN_FLASHCARD_BACK_SPEECH_REPEATS
     && settings.backSpeechRepeatCount <= MAX_FLASHCARD_BACK_SPEECH_REPEATS
+    && Number.isInteger(settings.timeLimitSeconds || 0)
+    && (settings.timeLimitSeconds || 0) >= 0
+    && (settings.timeLimitSeconds || 0) <= MAX_FLASHCARD_REVIEW_TIME_LIMIT_SECONDS
+    && (settings.timeLimitSeconds || 0) % 60 === 0
     && (!settings.speechEnabled || Boolean(
       (settings.cardSides === 'back' || settings.frontLanguage)
       && (settings.cardSides === 'front' || settings.backLanguage),
@@ -389,7 +416,15 @@ export function flashcardReviewQueue(
   cards: Flashcard[],
   random = Math.random,
 ) {
-  return sortFlashcardsForReview(
+  return flashcardReviewQueueState(reviewSet, cards, random).queue
+}
+
+export function flashcardReviewQueueState(
+  reviewSet: FlashcardReviewSet,
+  cards: Flashcard[],
+  random = Math.random,
+) {
+  const candidates = sortFlashcardsForReview(
     cards.filter(card => (
       cardMatchesTags(card, reviewSet.tags)
       && !(reviewSet.excludedCards || []).includes(card.id)
@@ -398,7 +433,6 @@ export function flashcardReviewQueue(
     reviewSet.sortDirection,
     random,
   )
-    .slice(0, reviewSet.maxCards)
     .map(card => ({
       id: card.id,
       front: card.front,
@@ -408,6 +442,13 @@ export function flashcardReviewQueue(
       backAudio: card.backAudio,
       tags: [...card.tags],
     }))
+  const queue = candidates.slice(0, reviewSet.maxCards)
+  return {
+    queue,
+    reserveCardIds: reviewSet.ejectBehavior === 'replace'
+      ? candidates.slice(queue.length).map(card => card.id)
+      : [],
+  }
 }
 
 export function createFlashcardReviewPreviewSession(
@@ -416,7 +457,7 @@ export function createFlashcardReviewPreviewSession(
   random = Math.random,
   startedAt = new Date(),
 ): FlashcardReviewSession | undefined {
-  const queue = flashcardReviewQueue(reviewSet, cards, random)
+  const { queue, reserveCardIds } = flashcardReviewQueueState(reviewSet, cards, random)
   if (!queue.length) return undefined
 
   const timestamp = startedAt.toISOString()
@@ -428,7 +469,9 @@ export function createFlashcardReviewPreviewSession(
     mode: reviewSet.mode,
     cardSides: reviewSet.cardSides,
     indefinite: reviewSet.mode === 'passive' && reviewSet.indefinite,
+    timeLimitSeconds: reviewSet.timeLimitSeconds || 0,
     maxCards: reviewSet.maxCards,
+    ejectBehavior: reviewSet.ejectBehavior || 'remove',
     sortMode: reviewSet.sortMode,
     sortDirection: reviewSet.sortDirection,
     tags: [...reviewSet.tags],
@@ -443,6 +486,7 @@ export function createFlashcardReviewPreviewSession(
     frontLanguage: reviewSet.frontLanguage,
     backLanguage: reviewSet.backLanguage,
     queue,
+    reserveCardIds,
     startedAt: timestamp,
     updatedAt: timestamp,
     elapsedSeconds: 0,
@@ -459,7 +503,7 @@ export function createIntervalFlashcardReviewSnapshot(
   cards: Flashcard[],
   random = Math.random,
 ): IntervalFlashcardReviewSnapshot | undefined {
-  const queue = flashcardReviewQueue(reviewSet, cards, random)
+  const { queue, reserveCardIds } = flashcardReviewQueueState(reviewSet, cards, random)
   if (!queue.length) return undefined
   const effectiveSeconds = reviewSet.mode === 'passive'
     ? { front: reviewSet.frontSeconds, back: reviewSet.backSeconds }
@@ -471,6 +515,8 @@ export function createIntervalFlashcardReviewSnapshot(
     tags: [...reviewSet.tags],
     sortMode: reviewSet.sortMode,
     sortDirection: reviewSet.sortDirection,
+    ejectBehavior: reviewSet.ejectBehavior || 'remove',
+    maxCards: reviewSet.maxCards,
     cardSides: reviewSet.cardSides,
     frontSeconds: effectiveSeconds.front,
     backSeconds: effectiveSeconds.back,
@@ -482,6 +528,7 @@ export function createIntervalFlashcardReviewSnapshot(
     frontLanguage: reviewSet.frontLanguage,
     backLanguage: reviewSet.backLanguage,
     cards: queue,
+    reserveCardIds,
   }
 }
 

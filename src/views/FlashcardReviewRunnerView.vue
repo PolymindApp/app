@@ -92,7 +92,9 @@ const sessionSettingsDraft = reactive<FlashcardReviewSettings>({
   mode: 'manual',
   cardSides: 'both',
   indefinite: false,
+  timeLimitSeconds: 0,
   maxCards: 20,
+  ejectBehavior: 'remove',
   frontSeconds: 5,
   backSeconds: 5,
   backSpeechRepeatCount: 1,
@@ -118,6 +120,7 @@ let lastTickAt = 0
 let mounted = true
 let skipLeavePause = false
 let passiveAdvancing = false
+let completingTimeLimit = false
 let continuePassiveTickWhileBusy = false
 let visibilityWork: Promise<void> = Promise.resolve()
 let lastSpokenKey = ''
@@ -183,8 +186,20 @@ const shouldKeepScreenAwake = computed(() => Boolean(
 ))
 const elapsedSeconds = computed(() => {
   tickVersion.value
-  return Math.max(session.value?.elapsedSeconds || 0, Math.floor(localElapsedMs.value / 1000))
+  const elapsed = Math.max(
+    session.value?.elapsedSeconds || 0,
+    Math.floor(localElapsedMs.value / 1000),
+  )
+  const limit = session.value?.timeLimitSeconds || 0
+  return limit > 0 ? Math.min(limit, elapsed) : elapsed
 })
+const timeLimitProgress = computed(() => session.value?.timeLimitSeconds
+  ? Math.min(100, elapsedSeconds.value / session.value.timeLimitSeconds * 100)
+  : 0)
+const timeLimitReached = computed(() => Boolean(
+  session.value?.timeLimitSeconds
+  && elapsedSeconds.value >= session.value.timeLimitSeconds,
+))
 const completedCards = computed(() => session.value
   ? session.value.totalCards - session.value.queue.length
   : 0)
@@ -197,9 +212,12 @@ const progressCards = computed(() => {
 const currentCardPosition = computed(() => session.value?.totalCards
   ? Math.min(progressCards.value + 1, session.value.totalCards)
   : 0)
-const progress = computed(() => session.value?.totalCards
-  ? Math.round(progressCards.value / session.value.totalCards * 100)
-  : 0)
+const progress = computed(() => {
+  const cardProgress = session.value?.totalCards
+    ? Math.round(progressCards.value / session.value.totalCards * 100)
+    : 0
+  return Math.max(cardProgress, timeLimitProgress.value)
+})
 const firstReviewSide = computed(() => firstFlashcardReviewSide(session.value?.cardSides || 'both'))
 const manualShowingBack = computed(() => session.value?.cardSides === 'back'
   || (session.value?.cardSides === 'both' && revealed.value))
@@ -234,6 +252,14 @@ const passiveProgress = computed(() => {
 const accuracy = computed(() => session.value ? sessionAccuracy(session.value) : undefined)
 const exitDestination = computed(() => route.query.from === 'tasks' ? '/tasks' : '/flashcards')
 const speechWarning = computed(() => speechPlaybackWarning.value || backgroundSpeechWarning.value)
+const previewSummary = computed(() => {
+  if (!session.value) return ''
+  const cards = `${session.value.totalCards} ${session.value.totalCards === 1 ? 'card' : 'cards'}`
+  const limit = session.value.timeLimitSeconds
+    ? ` · ${formatReviewDuration(session.value.timeLimitSeconds)} limit`
+    : ''
+  return `${cards}${limit}${session.value.indefinite ? ' · looping' : ''}`
+})
 const currentSpeechSide = computed<FlashcardReviewSide>(() => session.value?.mode === 'manual'
   ? (manualShowingBack.value ? 'back' : 'front')
   : passiveSide.value)
@@ -262,7 +288,9 @@ const sessionSettingsAvailableCards = computed(() => store.reviewSets
 const sessionSettingsChanged = computed(() => sessionSettingsDialog.value
   && flashcardReviewSettingsSignature(sessionSettingsDraft) !== sessionSettingsOriginal.value)
 const canSaveSessionSettings = computed(() => sessionSettingsChanged.value
-  && flashcardReviewSettingsAreValid(sessionSettingsDraft, sessionSettingsMinimumCards.value))
+  && flashcardReviewSettingsAreValid(sessionSettingsDraft, sessionSettingsMinimumCards.value)
+  && (!sessionSettingsDraft.timeLimitSeconds
+    || sessionSettingsDraft.timeLimitSeconds > elapsedSeconds.value))
 const sessionActionItems = computed(() => reviewRunnerSessionMenuItems({
   speechAvailable: Boolean(session.value?.speechEnabled && currentCard.value),
   amplified: speechOverAmplified.value,
@@ -466,11 +494,25 @@ function tick() {
     || (busy.value && !continuePassiveTickWhileBusy)
   ) return
   localElapsedMs.value += delta
+  if (timeLimitReached.value && !completingTimeLimit) {
+    completingTimeLimit = true
+    void completeTimeLimit()
+    tickVersion.value++
+    return
+  }
   if (session.value?.mode === 'passive' && currentCard.value) {
     passiveRemainingMs.value = Math.max(0, passiveRemainingMs.value - delta)
     if (passiveRemainingMs.value === 0 && !passiveAdvancing) void advancePassive()
   }
   tickVersion.value++
+}
+
+async function completeTimeLimit() {
+  try {
+    await performAction('end')
+  } finally {
+    completingTimeLimit = false
+  }
 }
 
 function updateProgressFrame() {
@@ -930,7 +972,14 @@ async function reconcileBackgroundReview(
   const reconciledAllViews = replayedAll
     && (session.value?.viewedCount || 0) >= previousViewedCount + completed
 
-  if (reconciledAllViews && session.value?.status === 'running' && currentCard.value) {
+  if (
+    reconciledAllViews
+    && state.finished
+    && session.value?.status === 'running'
+    && timeLimitReached.value
+  ) {
+    await performAction('end', { syncNative: false, playCompletionCue: false })
+  } else if (reconciledAllViews && session.value?.status === 'running' && currentCard.value) {
     passiveSide.value = state.side
     passiveRemainingMs.value = Math.max(1, state.remainingMs)
     savePassiveState()
@@ -951,7 +1000,9 @@ function copySessionSettings(value: FlashcardReviewSession) {
     mode: value.mode,
     cardSides: value.cardSides,
     indefinite: value.indefinite,
+    timeLimitSeconds: value.timeLimitSeconds || 0,
     maxCards: value.maxCards,
+    ejectBehavior: value.ejectBehavior,
     frontSeconds: value.frontSeconds,
     backSeconds: value.backSeconds,
     backSpeechRepeatCount: value.backSpeechRepeatCount,
@@ -1245,7 +1296,7 @@ async function leaveRunner() {
         :bg-opacity="0.14"
         height="5"
         :aria-label="session.indefinite
-          ? `${progress}% through the current loop`
+          ? `${progress}% through the current loop or time limit`
           : `${progress}% of review complete`"
       />
 
@@ -1269,7 +1320,7 @@ async function leaveRunner() {
         v-if="isReviewSetPreview"
         class="px-4"
         :title="session.name"
-        :summary="`${session.totalCards} ${session.totalCards === 1 ? 'card' : 'cards'}${session.indefinite ? ' · looping' : ''}`"
+        :summary="previewSummary"
         icon="mdi-cards-playing-outline"
         primary-label="Start review"
         cancel-label="Cancel review"
@@ -1285,7 +1336,9 @@ async function leaveRunner() {
         <h1 class="display-title">{{ session.status === 'completed' ? 'Review complete' : 'Review ended' }}</h1>
         <p class="muted">
           {{ session.status === 'completed'
-            ? session.indefinite
+            ? timeLimitReached && session.queue.length
+              ? 'You reached the time limit.'
+              : session.indefinite
               ? 'Your looping review has been completed.'
               : 'You reached the end of the queue.'
             : 'Your partial progress has been saved.' }}
@@ -1308,7 +1361,11 @@ async function leaveRunner() {
             <span>{{ session.mode === 'passive' ? 'Passive' : 'Manual' }}</span>
           </div>
           <span class="runner-meta__card-count">{{ currentCardPosition }} of {{ session.totalCards }}</span>
-          <span class="runner-meta__elapsed">{{ formatReviewDuration(elapsedSeconds) }}</span>
+          <span class="runner-meta__elapsed">
+            {{ formatReviewDuration(elapsedSeconds) }}<template v-if="session.timeLimitSeconds">
+              / {{ formatReviewDuration(session.timeLimitSeconds) }}
+            </template>
+          </span>
         </div>
 
         <div
@@ -1673,6 +1730,7 @@ async function leaveRunner() {
               :speech-loading="sessionSpeechLoading"
               :min-cards="sessionSettingsMinimumCards"
               :available-cards="sessionSettingsAvailableCards"
+              :elapsed-seconds="elapsedSeconds"
               session
             />
           </AppForm>
