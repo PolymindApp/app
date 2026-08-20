@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Capacitor } from '@capacitor/core'
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { format, isToday, isValid, parseISO } from 'date-fns'
 import { useRoute, useRouter } from 'vue-router'
 import AppForm from '@/components/AppForm.vue'
@@ -10,6 +10,7 @@ import DateTimePickerField from '@/components/DateTimePickerField.vue'
 import FormActionBar from '@/components/FormActionBar.vue'
 import JournalImageField from '@/components/JournalImageField.vue'
 import { squareImageSourceSignature } from '@/services/avatarImage'
+import { mobileKeyboardVisible } from '@/services/mobileKeyboardViewport'
 import { useJournalStore } from '@/stores/journal'
 import { useTaskStore } from '@/stores/tasks'
 import { useTrackingStore } from '@/stores/tracking'
@@ -22,8 +23,14 @@ const taskStore = useTaskStore()
 const trackingStore = useTrackingStore()
 const entryId = computed(() => typeof route.params.id === 'string' ? route.params.id : '')
 const isEditing = computed(() => Boolean(entryId.value))
-const allowAutomaticFocus = Capacitor.getPlatform() !== 'android'
+const platform = Capacitor.getPlatform()
+const allowAutomaticFocus = platform !== 'android'
+const supportsFullscreenReflection = platform === 'android' || platform === 'ios'
 const form = ref()
+const reflectionSlot = ref<HTMLElement>()
+const reflectionEditor = ref<HTMLElement>()
+const reflectionFullscreen = ref(false)
+const reflectionExpanded = ref(false)
 const title = ref('')
 const body = ref('')
 const color = ref('#C7F464')
@@ -37,6 +44,8 @@ const deleting = ref(false)
 const deleteDialog = ref(false)
 const error = ref('')
 const original = ref('')
+let reflectionAnimationFrame: number | undefined
+let reflectionTransitionTimer: number | undefined
 
 const taskItems = computed(() => [...taskStore.tasks]
   .sort((left, right) => Number(right.active) - Number(left.active) || left.name.localeCompare(right.name))
@@ -160,6 +169,93 @@ onMounted(() => {
   if (isEditing.value && loading.value) void loadEntry()
 })
 
+function clearReflectionAnimation() {
+  if (reflectionAnimationFrame !== undefined) {
+    window.cancelAnimationFrame(reflectionAnimationFrame)
+    reflectionAnimationFrame = undefined
+  }
+  if (reflectionTransitionTimer !== undefined) {
+    window.clearTimeout(reflectionTransitionTimer)
+    reflectionTransitionTimer = undefined
+  }
+}
+
+function setReflectionClipBounds(bounds: DOMRect) {
+  const editor = reflectionEditor.value
+  if (!editor) return
+  const viewport = window.visualViewport
+  const viewportLeft = viewport?.offsetLeft ?? 0
+  const viewportTop = viewport?.offsetTop ?? 0
+  const viewportWidth = viewport?.width ?? window.innerWidth
+  const viewportHeight = viewport?.height ?? window.innerHeight
+  const top = Math.max(0, Math.min(viewportHeight, bounds.top - viewportTop))
+  const right = Math.max(0, Math.min(viewportWidth, viewportLeft + viewportWidth - bounds.right))
+  const bottom = Math.max(0, Math.min(viewportHeight, viewportTop + viewportHeight - bounds.bottom))
+  const left = Math.max(0, Math.min(viewportWidth, bounds.left - viewportLeft))
+
+  editor.style.setProperty('--reflection-clip-top', `${top}px`)
+  editor.style.setProperty('--reflection-clip-right', `${right}px`)
+  editor.style.setProperty('--reflection-clip-bottom', `${bottom}px`)
+  editor.style.setProperty('--reflection-clip-left', `${left}px`)
+}
+
+function finishReflectionCollapse() {
+  reflectionFullscreen.value = false
+  reflectionExpanded.value = false
+  reflectionSlot.value?.style.removeProperty('min-height')
+  document.documentElement.classList.remove('journal-reflection-fullscreen')
+}
+
+function expandReflection() {
+  if (!supportsFullscreenReflection || reflectionFullscreen.value) return
+  const editor = reflectionEditor.value
+  const slot = reflectionSlot.value
+  if (!editor || !slot) return
+
+  clearReflectionAnimation()
+  const bounds = editor.getBoundingClientRect()
+  slot.style.minHeight = `${bounds.height}px`
+  setReflectionClipBounds(bounds)
+  reflectionFullscreen.value = true
+  document.documentElement.classList.add('journal-reflection-fullscreen')
+
+  void nextTick(() => {
+    reflectionAnimationFrame = window.requestAnimationFrame(() => {
+      reflectionAnimationFrame = window.requestAnimationFrame(() => {
+        reflectionAnimationFrame = undefined
+        reflectionExpanded.value = true
+      })
+    })
+  })
+}
+
+function collapseReflection() {
+  if (!reflectionFullscreen.value) return
+  clearReflectionAnimation()
+  const targetBounds = reflectionSlot.value?.getBoundingClientRect()
+  if (targetBounds) setReflectionClipBounds(targetBounds)
+  reflectionExpanded.value = false
+
+  const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
+  if (reduceMotion) {
+    finishReflectionCollapse()
+    return
+  }
+  reflectionTransitionTimer = window.setTimeout(finishReflectionCollapse, 220)
+}
+
+watch(mobileKeyboardVisible, (visible, wasVisible) => {
+  if (visible || !wasVisible || !reflectionFullscreen.value) return
+  const textarea = reflectionEditor.value?.querySelector('textarea')
+  if (document.activeElement === textarea) textarea.blur()
+  else collapseReflection()
+})
+
+onBeforeUnmount(() => {
+  clearReflectionAnimation()
+  document.documentElement.classList.remove('journal-reflection-fullscreen')
+})
+
 async function save() {
   const validation = await form.value?.validate()
   if (!validation?.valid || !canSave.value) return
@@ -215,21 +311,33 @@ async function removeEntry() {
     <AppForm v-else ref="form" validate-on="lazy" @submit.prevent="save">
       <v-card class="surface-card pa-5 mb-4">
         <div class="journal-editor-fields">
-          <div class="journal-editor-reflection">
-            <p class="journal-editor-privacy mb-2">All posts remain 100% private.</p>
-            <v-textarea
-              v-model="body"
-              rows="10"
-              auto-grow
-              maxlength="20000"
-              counter
-              :autofocus="allowAutomaticFocus"
-              :rules="[value => Boolean(value?.trim()) || 'Reflection is required']"
+          <div ref="reflectionSlot" class="journal-editor-reflection-slot">
+            <div
+              ref="reflectionEditor"
+              class="journal-editor-reflection"
+              :class="{
+                'journal-editor-reflection--fullscreen': reflectionFullscreen,
+                'journal-editor-reflection--expanded': reflectionExpanded,
+              }"
+              :data-keyboard-viewport-fill="reflectionFullscreen || undefined"
             >
-              <template #label>
-                Reflection <span class="required-mark">*</span>
-              </template>
-            </v-textarea>
+              <p class="journal-editor-privacy mb-2">All posts remain 100% private.</p>
+              <v-textarea
+                v-model="body"
+                rows="10"
+                :auto-grow="!reflectionFullscreen"
+                maxlength="20000"
+                counter
+                :autofocus="allowAutomaticFocus"
+                :rules="[value => Boolean(value?.trim()) || 'Reflection is required']"
+                @focus="expandReflection"
+                @blur="collapseReflection"
+              >
+                <template #label>
+                  Reflection <span class="required-mark">*</span>
+                </template>
+              </v-textarea>
+            </div>
           </div>
           <v-text-field
             v-model="title"
@@ -316,9 +424,62 @@ async function removeEntry() {
 .journal-editor-page { padding-bottom: 5rem; }
 .journal-editor-fields,
 .journal-editor-context { display: grid; gap: 1rem; }
+.journal-editor-reflection-slot { min-width: 0; }
 .journal-editor-reflection { display: grid; gap: .25rem; }
 .journal-editor-privacy { color: rgba(var(--v-theme-on-surface), .58); font-size: .72rem; font-style: italic; line-height: 1.4; }
 .required-mark { color: rgb(var(--v-theme-error)); }
+.journal-editor-reflection--fullscreen {
+  position: fixed;
+  z-index: 2000;
+  top: 0;
+  left: 0;
+  box-sizing: border-box;
+  width: 100vw;
+  height: var(--app-viewport-height, 100dvh);
+  min-height: 0;
+  padding-top: max(env(safe-area-inset-top, 0rem), var(--safe-area-inset-top, 0rem));
+  padding-bottom: max(env(safe-area-inset-bottom, 0rem), var(--safe-area-inset-bottom, 0rem));
+  background: rgb(var(--v-theme-background));
+  clip-path: inset(
+    var(--reflection-clip-top, 0rem)
+    var(--reflection-clip-right, 0rem)
+    var(--reflection-clip-bottom, 0rem)
+    var(--reflection-clip-left, 0rem)
+    round .75rem
+  );
+  transition: clip-path 220ms cubic-bezier(.22, 1, .36, 1);
+  will-change: clip-path;
+}
+.journal-editor-reflection--fullscreen.journal-editor-reflection--expanded { clip-path: inset(0 round 0); }
+.journal-editor-reflection--fullscreen .journal-editor-privacy { display: none; }
+.journal-editor-reflection--fullscreen :deep(.v-input) {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr);
+}
+.journal-editor-reflection--fullscreen :deep(.v-input__control),
+.journal-editor-reflection--fullscreen :deep(.v-field),
+.journal-editor-reflection--fullscreen :deep(.v-field__field) {
+  height: 100%;
+  min-height: 0;
+}
+.journal-editor-reflection--fullscreen :deep(.v-field) { border-radius: 0; }
+.journal-editor-reflection--fullscreen :deep(.v-field__input) {
+  height: 100% !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;
+  resize: none;
+  -webkit-user-select: text;
+  user-select: text;
+}
+.journal-editor-reflection--fullscreen :deep(.v-input__details) { display: none; }
+:global(html.keyboard-open .journal-editor-reflection--fullscreen) { padding-bottom: 0; }
+:global(html.journal-reflection-fullscreen),
+:global(html.journal-reflection-fullscreen body) { overflow: hidden; }
+@media (prefers-reduced-motion: reduce) {
+  .journal-editor-reflection--fullscreen { transition-duration: 0s; }
+}
 @media (min-width: 48rem) {
   .journal-editor-context { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
