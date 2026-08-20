@@ -475,6 +475,8 @@ async function removeEntry() {
 }
 .journal-editor-reflection--fullscreen :deep(.v-input__details) { display: none; }
 :global(html.keyboard-open .journal-editor-reflection--fullscreen) { padding-bottom: 0; }
+:global(html.journal-reflection-fullscreen .app-bar),
+:global(html.journal-reflection-fullscreen .bottom-nav) { display: none !important; }
 :global(html.journal-reflection-fullscreen),
 :global(html.journal-reflection-fullscreen body) { overflow: hidden; }
 @media (prefers-reduced-motion: reduce) {
