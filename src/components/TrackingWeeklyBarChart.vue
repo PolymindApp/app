@@ -10,10 +10,29 @@ import type { TrackingEntry, TrackingTracker } from '@/types/domain'
 const props = defineProps<{
   trackers: TrackingTracker[]
   entries: TrackingEntry[]
+  screenTimeValues?: Record<string, number>
   weekStart: Date
   selectedDate: Date
   loading?: boolean
 }>()
+
+const screenTimeTracker: TrackingTracker = {
+  id: 'health_connect:screen_time',
+  name: 'Screen time',
+  description: '',
+  role: 'factor',
+  kind: 'duration',
+  category: 'other',
+  unit: '',
+  scaleMin: 0,
+  scaleMax: 0,
+  favorableDirection: 'neutral',
+  dailyAggregation: 'sum',
+  active: true,
+  sortOrder: Number.MAX_SAFE_INTEGER,
+  color: 'rgb(var(--v-theme-info))',
+  icon: 'mdi-cellphone-clock',
+}
 
 const selectedDayIndex = ref<number>()
 const inactiveTrackerIds = ref(new Set(readInactiveTrackingChartTrackerIds()))
@@ -43,7 +62,7 @@ const weekEntries = computed(() => {
   return props.entries.filter((entry) => entry.localDate >= start && entry.localDate <= end)
 })
 
-const series = computed(() => props.trackers
+const trackerSeries = computed(() => props.trackers
   .map((tracker) => {
     const start = days.value[0]?.key || ''
     const end = days.value.at(-1)?.key || ''
@@ -63,7 +82,22 @@ const series = computed(() => props.trackers
       hasValues: observed.length > 0,
     }
   })
-  .filter((item) => item.hasValues)
+  .filter((item) => item.hasValues))
+const screenTimeSeries = computed(() => {
+  if (!props.screenTimeValues) return []
+  const values = days.value.map((day) => {
+    const minutes = props.screenTimeValues?.[day.key]
+    return minutes === undefined ? null : minutes * 60
+  })
+  const observed = values.filter((value): value is number => value !== null)
+  return observed.length ? [{
+    tracker: screenTimeTracker,
+    values,
+    max: Math.max(...observed, 1),
+    hasValues: true,
+  }] : []
+})
+const series = computed(() => [...trackerSeries.value, ...screenTimeSeries.value]
   .sort((a, b) => a.tracker.sortOrder - b.tracker.sortOrder || a.tracker.name.localeCompare(b.tracker.name)))
 const activeSeries = computed(() => series.value.filter(item => !inactiveTrackerIds.value.has(item.tracker.id)))
 const lastSelectableDayIndex = computed(() => {

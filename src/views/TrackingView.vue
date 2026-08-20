@@ -8,6 +8,7 @@ import TrackingLogBottomSheet from '@/components/TrackingLogBottomSheet.vue'
 import TrackingTrackerCard from '@/components/TrackingTrackerCard.vue'
 import TrackingWeeklyBarChart from '@/components/TrackingWeeklyBarChart.vue'
 import WeekDateNavigator from '@/components/WeekDateNavigator.vue'
+import { getScreenTimeStatus, isNativeHealthConnectSupported, readScreenTimeForDates } from '@/services/healthConnect'
 import { TRACKING_PRESETS, trackerDraftFromPreset } from '@/services/tracking'
 import { useTrackingStore } from '@/stores/tracking'
 import { useTaskStore } from '@/stores/tasks'
@@ -31,6 +32,8 @@ const addingPreset = ref('')
 const error = ref('')
 const weeklyChartError = ref('')
 const weeklyChartLoading = ref(true)
+const screenTimeEnabled = ref(false)
+const screenTimeValues = ref<Record<string, number>>({})
 let weeklyLoadRequest = 0
 
 const dateKey = computed(() => format(selectedDate.value, 'yyyy-MM-dd'))
@@ -204,16 +207,20 @@ function openRequestedTracker() {
 
 watch(() => [route.query.log, route.query.task, route.query.tracker, route.query.date], () => nextTick(openRequestedTracker))
 watch(visibleWeekStart, () => {
-  if (store.loaded) void loadVisibleWeekEntries()
+  if (store.loaded || screenTimeEnabled.value) void loadVisibleWeekEntries()
 })
 
 onMounted(async () => {
   applyRequestedDate()
-  await Promise.all([
+  const [, , screenTimeStatus] = await Promise.all([
     store.load().catch(() => undefined),
     taskStore.tasks.length ? Promise.resolve() : taskStore.load().catch(() => undefined),
+    isNativeHealthConnectSupported()
+      ? getScreenTimeStatus().catch(() => ({ authorized: false }))
+      : Promise.resolve({ authorized: false }),
   ])
-  if (store.loaded) await loadVisibleWeekEntries()
+  screenTimeEnabled.value = screenTimeStatus.authorized
+  if (store.loaded || screenTimeEnabled.value) await loadVisibleWeekEntries()
   else weeklyChartLoading.value = false
   openRequestedTracker()
 })
@@ -222,11 +229,25 @@ async function loadVisibleWeekEntries() {
   const request = ++weeklyLoadRequest
   weeklyChartError.value = ''
   weeklyChartLoading.value = true
+  const start = format(visibleWeekStart.value, 'yyyy-MM-dd')
+  const end = format(addDays(visibleWeekStart.value, 6), 'yyyy-MM-dd')
+  const screenTimeDates = Array.from({ length: 7 }, (_, index) => format(addDays(visibleWeekStart.value, index), 'yyyy-MM-dd'))
+    .filter(date => date <= format(new Date(), 'yyyy-MM-dd'))
   try {
-    await store.loadRange(
-      format(visibleWeekStart.value, 'yyyy-MM-dd'),
-      format(addDays(visibleWeekStart.value, 6), 'yyyy-MM-dd'),
-    )
+    const [trackingResult, screenTimeResult] = await Promise.allSettled([
+      store.loaded ? store.loadRange(start, end) : Promise.resolve(),
+      screenTimeEnabled.value && screenTimeDates.length
+        ? readScreenTimeForDates(screenTimeDates)
+        : Promise.resolve({}),
+    ])
+    if (request !== weeklyLoadRequest) return
+    if (screenTimeResult.status === 'fulfilled') screenTimeValues.value = screenTimeResult.value
+    const failure = trackingResult.status === 'rejected'
+      ? trackingResult.reason
+      : screenTimeResult.status === 'rejected'
+        ? screenTimeResult.reason
+        : undefined
+    if (failure) throw failure
   } catch (cause) {
     if (request === weeklyLoadRequest) {
       weeklyChartError.value = cause instanceof Error ? cause.message : 'Could not load this week’s entries.'
@@ -250,13 +271,14 @@ async function loadVisibleWeekEntries() {
       class="mb-5"
     />
 
-    <v-card v-if="weeklyChartLoading || store.trackers.length" class="weekly-chart-card surface-card pa-5 mb-5">
+    <v-card v-if="weeklyChartLoading || store.trackers.length || screenTimeEnabled" class="weekly-chart-card surface-card pa-5 mb-5">
       <v-alert v-if="weeklyChartError" type="error" variant="tonal" class="mb-4">
         {{ weeklyChartError }}
       </v-alert>
       <TrackingWeeklyBarChart
         :trackers="store.trackers"
         :entries="store.entries"
+        :screen-time-values="screenTimeEnabled ? screenTimeValues : undefined"
         :week-start="visibleWeekStart"
         :selected-date="selectedDate"
         :loading="weeklyChartLoading"
