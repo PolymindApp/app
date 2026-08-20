@@ -1,4 +1,4 @@
-# BackOnTrack — Make life programmable.
+# BackOnTrack — Build your way forward.
 
 A mobile-first personal management app for tasks, plans, habits, workouts, and programmable intervals. The client uses Vue 3, Vuetify, and TypeScript. A PHP API provides password/passkey authentication and secure SQLite access.
 

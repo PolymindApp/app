@@ -65,7 +65,7 @@ const reducedMotion = ref(
   && window.matchMedia('(prefers-reduced-motion: reduce)').matches,
 )
 const documentTitle = typeof document === 'undefined'
-  ? 'BackOnTrack — Make life programmable.'
+  ? 'BackOnTrack — Build your way forward.'
   : document.title
 let documentTitleFrame = 0
 let documentTitleTimer: number | undefined
