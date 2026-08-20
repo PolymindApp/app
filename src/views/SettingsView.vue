@@ -240,6 +240,73 @@ async function previewIntervalTypeSound(kind: IntervalStepKind, sound: IntervalC
     <v-card class="surface-card pa-5 pa-sm-6">
       <div class="settings-section-heading">
         <div>
+          <h2>Steps</h2>
+          <p>Used by step-counter tasks to update progress automatically.</p>
+        </div>
+        <v-icon icon="mdi-shoe-print" />
+      </div>
+
+      <v-progress-linear
+        v-if="loading"
+        color="secondary"
+        indeterminate
+        rounded
+        class="mt-5"
+      />
+
+      <template v-else>
+        <v-select
+          v-model="stepSource"
+          class="mt-5"
+          label="Steps source"
+          :items="stepSources"
+          hide-details
+        >
+          <template v-if="healthConnected" #append-inner>
+            <v-icon
+              icon="mdi-check-circle-outline"
+              color="success"
+              title="Connected"
+            />
+          </template>
+        </v-select>
+
+        <v-alert
+          v-if="!healthConnected"
+          :type="connectionColor"
+          variant="tonal"
+          :icon="connectionIcon"
+          class="mt-4"
+        >
+          <strong>{{ connectionTitle }}</strong>
+          <p class="mt-1">{{ connectionCopy }}</p>
+        </v-alert>
+
+        <div v-if="isAndroidApp" class="settings-actions mt-4">
+          <v-btn
+            v-if="healthStatus.availability === 'available' && !healthStatus.authorized"
+            color="secondary"
+            prepend-icon="mdi-link-variant"
+            :loading="connecting"
+            @click="connectHealthConnect"
+          >
+            Connect Health Connect
+          </v-btn>
+          <v-btn
+            v-else
+            variant="outlined"
+            prepend-icon="mdi-open-in-new"
+            @click="openHealthConnectSettings"
+          >
+            Open Health Connect
+          </v-btn>
+        </div>
+      </template>
+    </v-card>
+
+    <v-card class="surface-card pa-5 pa-sm-6">
+      <div class="settings-section-heading">
+        <div>
           <h2>Main menu</h2>
           <p>Press and hold to reorder items, or turn them off to hide them from the menu.</p>
         </div>
@@ -334,73 +401,6 @@ async function previewIntervalTypeSound(kind: IntervalStepKind, sound: IntervalC
         @change="setIntervalTypeSound"
         @preview="previewIntervalTypeSound"
       />
-    </v-card>
-
-    <v-card class="surface-card pa-5 pa-sm-6">
-      <div class="settings-section-heading">
-        <div>
-          <h2>Steps</h2>
-          <p>Used by step-counter tasks to update progress automatically.</p>
-        </div>
-        <v-icon icon="mdi-shoe-print" />
-      </div>
-
-      <v-progress-linear
-        v-if="loading"
-        color="secondary"
-        indeterminate
-        rounded
-        class="mt-5"
-      />
-
-      <template v-else>
-        <v-select
-          v-model="stepSource"
-          class="mt-5"
-          label="Steps source"
-          :items="stepSources"
-          hide-details
-        >
-          <template v-if="healthConnected" #append-inner>
-            <v-icon
-              icon="mdi-check-circle-outline"
-              color="success"
-              title="Connected"
-            />
-          </template>
-        </v-select>
-
-        <v-alert
-          v-if="!healthConnected"
-          :type="connectionColor"
-          variant="tonal"
-          :icon="connectionIcon"
-          class="mt-4"
-        >
-          <strong>{{ connectionTitle }}</strong>
-          <p class="mt-1">{{ connectionCopy }}</p>
-        </v-alert>
-
-        <div v-if="isAndroidApp" class="settings-actions mt-4">
-          <v-btn
-            v-if="healthStatus.availability === 'available' && !healthStatus.authorized"
-            color="secondary"
-            prepend-icon="mdi-link-variant"
-            :loading="connecting"
-            @click="connectHealthConnect"
-          >
-            Connect Health Connect
-          </v-btn>
-          <v-btn
-            v-else
-            variant="outlined"
-            prepend-icon="mdi-open-in-new"
-            @click="openHealthConnectSettings"
-          >
-            Open Health Connect
-          </v-btn>
-        </div>
-      </template>
     </v-card>
 
     <v-snackbar v-model="notice" color="success" location="bottom" :timeout="4000">
