@@ -116,8 +116,15 @@ The reconstructed PHP-era history is:
 | `202608160003` | Bounded sync receipts, client-confirmed receipt watermarks, and change-log retention cursors |
 | `202608160004` | Counted passive-review batches, compact immutable clocks, and v2-only retention cursors |
 | `202608170001` | Retired flashcard images, compacted sync versions, and added targeted indexes |
+| `202608200001` | Deduplicated client-side JavaScript and network error reporting |
 
 Existing PHP databases are advanced without recreating application data. The schema is validated after migration, including required columns.
+
+## Client error reporting
+
+The authenticated client captures failed HTTP requests, failed resource loads, uncaught JavaScript errors, unhandled promise rejections, and Vue application errors. Diagnostics are kept locally and sent to `POST /client-errors` every 15 minutes or when the app moves to the background or the page closes. Request bodies and URL query strings are never included.
+
+Similar errors are counted locally before upload and upserted by account and fingerprint into `client_errors`, so repeated failures update one row instead of producing an event row for every occurrence. Failed uploads remain queued for a later lifecycle or interval flush.
 
 Migration files in `server/migrations` are immutable after deployment. Any later schema or data change must be a new file named with the next 12-digit version and a descriptive suffix. Editing or removing an applied migration causes startup to fail instead of silently accepting schema drift. A fully reversed historical migration pair may be retired only by recording its exact version, name hash, and file checksum in `MigrationRunner`; new databases then skip the pair while existing histories remain verifiable.
 

@@ -15,12 +15,22 @@ import { closeTopOverlay } from './services/overlayStack'
 import { installTaskNotificationRouting } from './services/taskReminders'
 import { startOfflineSync } from './services/offlineSync'
 import {
+  flushClientErrors,
+  installClientErrorReporting,
+  recordJavaScriptError,
+} from './services/clientErrorReporting'
+import {
   readAndroidRoute,
   rememberAndroidRoute,
 } from './services/androidRoutePersistence'
 import './styles/main.scss'
 
 const nativePlatform = Capacitor.getPlatform()
+
+installClientErrorReporting({
+  getAuthToken: () => api.authStore.token,
+  platform: nativePlatform,
+})
 
 void preloadIntervalCueAudio().catch(() => {
   // Cue audio is best-effort and can retry when an interval starts.
@@ -39,6 +49,11 @@ const app = createApp(App)
   .directive('long-press-drag', longPressDrag)
   .directive('long-press-drop', longPressDrop)
 
+app.config.errorHandler = (cause, _instance, info) => {
+  recordJavaScriptError(cause, `vue:${info}`)
+  console.error(cause)
+}
+
 if (
   nativePlatform === 'android'
   && api.authStore.hasLocalSession
@@ -54,6 +69,9 @@ void startOfflineSync()
 if (nativePlatform === 'android' || nativePlatform === 'ios') {
   const removeMobileKeyboardViewport = installMobileKeyboardViewport()
   window.addEventListener('pagehide', removeMobileKeyboardViewport, { once: true })
+  void NativeApp.addListener('appStateChange', ({ isActive }) => {
+    if (!isActive) void flushClientErrors()
+  })
 }
 
 if (nativePlatform === 'android') {

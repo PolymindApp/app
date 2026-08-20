@@ -196,6 +196,9 @@ final class Api
                     $this->jsonBody(),
                 ));
             }
+            if ($method === 'POST' && $path === '/client-errors') {
+                $this->storeClientErrors($this->authenticate());
+            }
             if ($method === 'POST' && $path === '/task-session-progress/reconcile') {
                 $this->reconcileSessionTaskProgress($this->authenticate());
             }
@@ -2260,6 +2263,126 @@ final class Api
 
         $this->claimPendingFlashcardReviewSetShares($user);
         return $user;
+    }
+
+    private function storeClientErrors(array $user): never
+    {
+        $body = $this->jsonBody();
+        $errors = $body['errors'] ?? null;
+        if (!is_array($errors) || !array_is_list($errors) || $errors === [] || count($errors) > 25) {
+            throw new ApiException(422, 'Provide between 1 and 25 client errors.');
+        }
+        $platform = $this->validateText($body['platform'] ?? '', 'platform', 20);
+        $appVersion = $this->validateText($body['appVersion'] ?? '', 'appVersion', 40);
+        $userAgent = $this->validateText(
+            substr((string) ($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 500),
+            'userAgent',
+            500,
+        );
+        $receivedAt = (new DateTimeImmutable('now'))->format('Y-m-d\TH:i:s.v\Z');
+        $statement = $this->database->pdo->prepare(
+            'INSERT INTO client_errors (
+                id, account_id, fingerprint, type, message, source, method, status, stack,
+                occurrence_count, first_occurred_at, last_occurred_at,
+                first_received_at, last_received_at, platform, app_version, user_agent
+             ) VALUES (
+                :id, :account_id, :fingerprint, :type, :message, :source, :method, :status, :stack,
+                :occurrence_count, :first_occurred_at, :last_occurred_at,
+                :first_received_at, :last_received_at, :platform, :app_version, :user_agent
+             ) ON CONFLICT(account_id, fingerprint) DO UPDATE SET
+                occurrence_count = client_errors.occurrence_count + excluded.occurrence_count,
+                first_occurred_at = MIN(client_errors.first_occurred_at, excluded.first_occurred_at),
+                last_occurred_at = MAX(client_errors.last_occurred_at, excluded.last_occurred_at),
+                last_received_at = excluded.last_received_at,
+                message = excluded.message,
+                source = excluded.source,
+                method = excluded.method,
+                status = excluded.status,
+                stack = excluded.stack,
+                platform = excluded.platform,
+                app_version = excluded.app_version,
+                user_agent = excluded.user_agent',
+        );
+
+        $pdo = $this->database->pdo;
+        $pdo->beginTransaction();
+        try {
+            foreach ($errors as $index => $error) {
+                if (!is_array($error) || array_is_list($error)) {
+                    throw new ApiException(422, "Client error {$index} must be an object.");
+                }
+                $type = $this->validateText($error['type'] ?? null, "errors.{$index}.type", 20, true);
+                if (!in_array($type, ['javascript', 'network'], true)) {
+                    throw new ApiException(422, "Client error {$index} has an invalid type.");
+                }
+                $message = $this->validateText(
+                    $error['message'] ?? null,
+                    "errors.{$index}.message",
+                    1000,
+                    true,
+                );
+                $source = $this->validateText($error['source'] ?? '', "errors.{$index}.source", 1000);
+                $method = $this->validateText($error['method'] ?? '', "errors.{$index}.method", 12);
+                $stack = $this->validateText($error['stack'] ?? '', "errors.{$index}.stack", 4000);
+                $status = $error['status'] ?? null;
+                if ($status !== null && (!is_int($status) || $status < 100 || $status > 599)) {
+                    throw new ApiException(422, "Client error {$index} has an invalid status.");
+                }
+                $count = $this->validateInteger(
+                    $error['count'] ?? null,
+                    "errors.{$index}.count",
+                    ['min' => 1, 'max' => 1000000],
+                );
+                $firstTimestampField = "errors.{$index}.firstOccurredAt";
+                $lastTimestampField = "errors.{$index}.lastOccurredAt";
+                $firstOccurredAt = $this->validateTimestamp($this->validateText(
+                    $error['firstOccurredAt'] ?? null,
+                    $firstTimestampField,
+                    40,
+                    true,
+                ), $firstTimestampField);
+                $lastOccurredAt = $this->validateTimestamp($this->validateText(
+                    $error['lastOccurredAt'] ?? null,
+                    $lastTimestampField,
+                    40,
+                    true,
+                ), $lastTimestampField);
+                if ($firstOccurredAt > $lastOccurredAt) {
+                    throw new ApiException(422, "Client error {$index} has invalid occurrence timestamps.");
+                }
+                $fingerprint = hash('sha256', implode("\0", [
+                    $type,
+                    $message,
+                    $source,
+                    $method,
+                    (string) ($status ?? ''),
+                ]));
+                $statement->execute([
+                    'id' => $this->newId(),
+                    'account_id' => $user['id'],
+                    'fingerprint' => $fingerprint,
+                    'type' => $type,
+                    'message' => $message,
+                    'source' => $source,
+                    'method' => $method,
+                    'status' => $status,
+                    'stack' => $stack,
+                    'occurrence_count' => $count,
+                    'first_occurred_at' => $firstOccurredAt,
+                    'last_occurred_at' => $lastOccurredAt,
+                    'first_received_at' => $receivedAt,
+                    'last_received_at' => $receivedAt,
+                    'platform' => $platform,
+                    'app_version' => $appVersion,
+                    'user_agent' => $userAgent,
+                ]);
+            }
+            $pdo->commit();
+        } catch (Throwable $exception) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            throw $exception;
+        }
+        $this->respond(['stored' => count($errors)], 202);
     }
 
     private function claimPendingFlashcardReviewSetShares(array $user): void
