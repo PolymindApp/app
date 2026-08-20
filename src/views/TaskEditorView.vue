@@ -111,8 +111,8 @@ const completionStyleItems = computed<ProgramStepCompletionStyleItem[]>(() => [
 ])
 
 const weekdays = [
-  { value: 1, label: 'M' }, { value: 2, label: 'T' }, { value: 3, label: 'W' },
-  { value: 4, label: 'T' }, { value: 5, label: 'F' }, { value: 6, label: 'S' }, { value: 0, label: 'S' },
+  { value: 1, label: 'Monday' }, { value: 2, label: 'Tuesday' }, { value: 3, label: 'Wednesday' },
+  { value: 4, label: 'Thursday' }, { value: 5, label: 'Friday' }, { value: 6, label: 'Saturday' }, { value: 0, label: 'Sunday' },
 ]
 const units = [
   { title: 'Hours', value: 'hours' },
@@ -1124,7 +1124,7 @@ async function setTaskArchived() {
 .field-label { color: rgb(var(--v-theme-on-surface) / .68); font-size: .75rem; font-weight: 750; }
 .scheduled-days, .weekday-wrap { width: 100%; min-width: 0; max-width: 100%; }
 .weekday-picker { display: flex; width: 100%; min-width: 0; max-width: 100%; flex-wrap: wrap; justify-content: flex-start; gap: .5rem; height: auto }
-.weekday-picker :deep(.v-btn) { width: auto; min-width: 2.75rem; flex: 1 1 calc(25% - .5rem); height: 2rem !important; }
+.weekday-picker :deep(.v-btn) { width: auto; min-width: 2.75rem; flex: 1 1 calc(50% - .5rem); min-height: 2.75rem; }
 .weekday-picker :deep(.day-picker--selected) {
   background: rgb(var(--v-theme-secondary)) !important;
   color: rgb(var(--v-theme-on-secondary)) !important;
