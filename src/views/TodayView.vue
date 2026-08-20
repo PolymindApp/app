@@ -477,26 +477,34 @@ function updateNextIncompleteTask() {
   const atPageBottom = scrollingElement.scrollTop + scrollingElement.clientHeight
     >= scrollingElement.scrollHeight - 1
   const rootFontSize = Number.parseFloat(getComputedStyle(document.documentElement).fontSize)
-  const key = nextIncompleteTaskKey(
-    taskElements.flatMap((element) => {
-      const progressKey = element.dataset.taskProgressKey
-      const progress = progressKey ? progressByVisibilityKey.value.get(progressKey) : undefined
-      if (!progressKey || !progress) return []
-      const bounds = element.getBoundingClientRect()
-      return [{
-        key: progressKey,
-        incomplete: !progress.complete && progress.status !== 'skipped',
-        top: bounds.top,
-        left: bounds.left,
-        bottom: bounds.bottom,
-      }]
-    }),
-    appBarBottom,
-    visibleBottom,
-    window.scrollY <= 1,
-    NEXT_TASK_SCROLL_GAP_REM * rootFontSize,
-    atPageBottom,
-  )
+  const taskCandidates = taskElements.flatMap((element) => {
+    const progressKey = element.dataset.taskProgressKey
+    const progress = progressKey ? progressByVisibilityKey.value.get(progressKey) : undefined
+    if (!progressKey || !progress) return []
+    const bounds = element.getBoundingClientRect()
+    return [{
+      key: progressKey,
+      incomplete: !progress.complete && progress.status !== 'skipped',
+      top: bounds.top,
+      left: bounds.left,
+      bottom: bounds.bottom,
+    }]
+  })
+  const incompleteTaskIsVisible = taskCandidates.some(candidate => (
+    candidate.incomplete
+    && candidate.bottom > appBarBottom
+    && candidate.top < bottomNavigationTop
+  ))
+  const key = incompleteTaskIsVisible
+    ? undefined
+    : nextIncompleteTaskKey(
+        taskCandidates,
+        appBarBottom,
+        visibleBottom,
+        window.scrollY <= 1,
+        NEXT_TASK_SCROLL_GAP_REM * rootFontSize,
+        atPageBottom,
+      )
   const nextProgress = key ? progressByVisibilityKey.value.get(key) : undefined
 
   if (nextProgress === nextIncompleteProgress.value) return
