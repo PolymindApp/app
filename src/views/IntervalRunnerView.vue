@@ -273,6 +273,12 @@ const intervalSettingsApplyItems = computed(() => [
     icon: 'mdi-timer-cog-outline',
     disabled: !intervalSettingsSourceTemplate.value,
   },
+  {
+    target: 'both' as const,
+    title: 'Both',
+    icon: 'mdi-check-all',
+    disabled: !intervalSettingsSourceTemplate.value,
+  },
 ])
 const intervalFlashcardSource = computed(() => {
   const reviewSet = flashcardReviewSet.value
@@ -676,7 +682,7 @@ async function saveIntervalSettings(target: IntervalSettingsApplyTarget) {
   try {
     const definition = cloneIntervalSettings(intervalSettingsDraft.definition)
     const cues = cloneIntervalSettings(intervalSettingsDraft.cues)
-    if (target === 'interval') {
+    if (target === 'interval' || target === 'both') {
       const template = intervalSettingsSourceTemplate.value
       if (!template) throw new Error('This session is not linked to a saved interval.')
       await store.saveTemplate({
@@ -684,25 +690,25 @@ async function saveIntervalSettings(target: IntervalSettingsApplyTarget) {
         definition,
         cues,
       })
-      await closeIntervalSettings()
-      return
     }
 
-    const runtime = rebaseIntervalRuntimeForDefinition(
-      item.definition,
-      definition,
-      item.runtime,
-    )
-    const updated = await store.updateSession(item.id, {
-      definition,
-      cues,
-      runtime,
-      plannedSeconds: intervalDuration(definition),
-      elapsedSeconds: Math.round(runtime.accumulatedMs / 1000),
-    })
-    displayRemainingMs.value = updated.runtime.remainingMs
-    lastCountCue = ''
-    lastSpokenFlashcardKey = ''
+    if (target === 'session' || target === 'both') {
+      const runtime = rebaseIntervalRuntimeForDefinition(
+        item.definition,
+        definition,
+        item.runtime,
+      )
+      const updated = await store.updateSession(item.id, {
+        definition,
+        cues,
+        runtime,
+        plannedSeconds: intervalDuration(definition),
+        elapsedSeconds: Math.round(runtime.accumulatedMs / 1000),
+      })
+      displayRemainingMs.value = updated.runtime.remainingMs
+      lastCountCue = ''
+      lastSpokenFlashcardKey = ''
+    }
     await closeIntervalSettings()
   } catch (cause) {
     intervalSettingsError.value = cause instanceof Error
@@ -1632,7 +1638,7 @@ async function saveFlashcardSettings(target: FlashcardSettingsApplyTarget = 'ses
   flashcardSettingsSaveTarget.value = target
   flashcardSettingsError.value = ''
   try {
-    if (target === 'review-set') {
+    if (target === 'review-set' || target === 'both') {
       const settings = {
         ...context.reviewSet,
         cardSides: flashcardSettingsDraft.cardSides,
@@ -1652,24 +1658,24 @@ async function saveFlashcardSettings(target: FlashcardSettingsApplyTarget = 'ses
       } else {
         await flashcardStore.saveReviewSetPreferences(context.reviewSet.id, settings)
       }
-      await closeFlashcardSettings()
-      return
     }
 
-    const snapshot = createIntervalFlashcardReviewSnapshot(
-      { ...context.reviewSet, ...flashcardSettingsDraft },
-      intervalFlashcardSource.value,
-    )
-    if (!snapshot) throw new Error('These settings do not match any available cards.')
-    await updateFlashcardSnapshot({
-      ...snapshot,
-      ...(context.review.speechPaused
-        ? {
-            speechPaused: true,
-            speechPausedElapsedMs: context.review.speechPausedElapsedMs,
-          }
-        : {}),
-    })
+    if (target === 'session' || target === 'both') {
+      const snapshot = createIntervalFlashcardReviewSnapshot(
+        { ...context.reviewSet, ...flashcardSettingsDraft },
+        intervalFlashcardSource.value,
+      )
+      if (!snapshot) throw new Error('These settings do not match any available cards.')
+      await updateFlashcardSnapshot({
+        ...snapshot,
+        ...(context.review.speechPaused
+          ? {
+              speechPaused: true,
+              speechPausedElapsedMs: context.review.speechPausedElapsedMs,
+            }
+          : {}),
+      })
+    }
     await closeFlashcardSettings()
   } catch (cause) {
     flashcardSettingsError.value = cause instanceof Error

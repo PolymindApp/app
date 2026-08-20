@@ -974,7 +974,7 @@ async function saveSessionSettings(target: FlashcardSettingsApplyTarget = 'sessi
   sessionSettingsSaving.value = true
   sessionSettingsError.value = ''
   try {
-    if (target === 'review-set') {
+    if (target === 'review-set' || target === 'both') {
       const reviewSet = currentReviewSet.value
       if (!reviewSet) throw new Error('This review session is not linked to a Review set.')
       const settings = { ...reviewSet, ...sessionSettingsDraft }
@@ -983,16 +983,16 @@ async function saveSessionSettings(target: FlashcardSettingsApplyTarget = 'sessi
       } else {
         await store.saveReviewSetPreferences(reviewSet.id, settings)
       }
-      await closeSessionSettings()
-      return
     }
 
-    const updated = await store.updateSessionSettings(session.value.id, sessionSettingsDraft)
-    localElapsedMs.value = updated.elapsedSeconds * 1000
-    lastTickAt = Date.now()
-    lastSpokenKey = ''
-    speechPlaybackWarning.value = ''
-    resetCurrentCardPhase()
+    if (target === 'session' || target === 'both') {
+      const updated = await store.updateSessionSettings(session.value.id, sessionSettingsDraft)
+      localElapsedMs.value = updated.elapsedSeconds * 1000
+      lastTickAt = Date.now()
+      lastSpokenKey = ''
+      speechPlaybackWarning.value = ''
+      resetCurrentCardPhase()
+    }
     await closeSessionSettings()
   } catch (cause) {
     sessionSettingsError.value = cause instanceof Error

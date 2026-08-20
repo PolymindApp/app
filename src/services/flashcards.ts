@@ -115,6 +115,7 @@ export const FLASHCARD_SETTINGS_APPLY_MENU_ITEMS: Array<{
 }> = [
   { target: 'session', title: 'Current session', icon: 'mdi-timer-outline' },
   { target: 'review-set', title: 'Review set', icon: 'mdi-cards-outline' },
+  { target: 'both', title: 'Both', icon: 'mdi-check-all' },
 ]
 
 export const FLASHCARD_REVIEW_SELECTION_MENU_ITEMS = [

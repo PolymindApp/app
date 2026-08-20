@@ -349,8 +349,8 @@ export type FlashcardContextAction =
   | 'remove'
   | 'toggle_tts'
   | 'settings'
-export type FlashcardSettingsApplyTarget = 'session' | 'review-set'
-export type IntervalSettingsApplyTarget = 'session' | 'interval'
+export type FlashcardSettingsApplyTarget = 'session' | 'review-set' | 'both'
+export type IntervalSettingsApplyTarget = 'session' | 'interval' | 'both'
 export type RunnerSessionAction = 'options' | 'settings' | 'amplification' | 'eject' | 'restart' | 'end'
 
 export interface RunnerSessionMenuItem {
