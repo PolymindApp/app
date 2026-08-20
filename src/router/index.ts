@@ -131,6 +131,8 @@ const router = createRouter({
         { path: 'tasks/manage', redirect: '/tasks' },
         { path: 'account', name: 'account', component: () => import('@/views/AccountView.vue'), meta: { title: 'Account', pageDepth: 1, pageOrder: 2, backTo: '/tasks' } },
         { path: 'settings', name: 'settings', component: () => import('@/views/SettingsView.vue'), meta: { title: 'Settings', pageDepth: 1, pageOrder: 2, backTo: '/tasks' } },
+        { path: 'settings/privacy', name: 'settings-privacy', component: () => import('@/views/SettingsLegalView.vue'), meta: { title: 'Privacy policy', pageDepth: 2, pageOrder: 2, backTo: '/settings' } },
+        { path: 'settings/terms', name: 'settings-terms', component: () => import('@/views/SettingsLegalView.vue'), meta: { title: 'Terms and conditions', pageDepth: 2, pageOrder: 2, backTo: '/settings' } },
         { path: 'intervals/quick', name: 'interval-quick', component: () => import('@/views/QuickIntervalView.vue'), meta: { title: 'Quick interval', pageDepth: 1, pageOrder: 1, backTo: '/intervals' } },
         { path: 'intervals/new', name: 'interval-new', component: () => import('@/views/IntervalEditorView.vue'), meta: { title: 'New interval', pageDepth: 1, pageOrder: 1, backTo: '/intervals' } },
         { path: 'intervals/:id/edit', name: 'interval-edit', component: () => import('@/views/IntervalEditorView.vue'), meta: { title: 'Edit interval', pageDepth: 1, pageOrder: 1, backTo: '/intervals' } },
