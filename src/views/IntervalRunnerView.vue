@@ -31,6 +31,7 @@ import {
   cardMatchesTags,
   createIntervalFlashcardReviewSnapshot,
   flashcardReviewActionFromSwipe,
+  intervalFlashcardEjectionOffsetMs,
   intervalFlashcardNavigationOffsetMs,
   intervalFlashcardPhase,
   intervalFlashcardSideOffsetMs,
@@ -1547,9 +1548,15 @@ async function ejectIntervalFlashcard() {
   flashcardEjecting.value = true
   void prepareFlashcardEjectCue()
   try {
+    const cards = review.cards.filter(card => card.id !== cardId)
     await updateFlashcardSnapshot({
       ...review,
-      cards: review.cards.filter(card => card.id !== cardId),
+      cards,
+      playbackOffsetMs: intervalFlashcardEjectionOffsetMs(
+        review,
+        flashcardReviewElapsedMs.value,
+        cardId,
+      ),
     })
     playFlashcardEjectCue()
   } catch (cause) {

@@ -556,6 +556,22 @@ export function intervalFlashcardNavigationOffsetMs(
   return targetAbsoluteCardIndex * cardDurationMs - elapsedMs
 }
 
+export function intervalFlashcardEjectionOffsetMs(
+  review: IntervalFlashcardReviewSnapshot,
+  elapsedMs: number,
+  ejectedCardId: string,
+) {
+  const currentPhase = intervalFlashcardPhase(review, elapsedMs)
+  const remainingCards = review.cards.filter(card => card.id !== ejectedCardId)
+  if (!currentPhase || !remainingCards.length) {
+    return Number.isFinite(review.playbackOffsetMs) ? review.playbackOffsetMs! : 0
+  }
+
+  const nextCardIndex = currentPhase.cardIndex % remainingCards.length
+  const remainingReview = { ...review, cards: remainingCards }
+  return nextCardIndex * intervalFlashcardCardDurationMs(remainingReview) - elapsedMs
+}
+
 export function intervalFlashcardSideOffsetMs(
   review: IntervalFlashcardReviewSnapshot,
   elapsedMs: number,
