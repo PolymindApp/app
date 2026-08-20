@@ -613,6 +613,7 @@ final class SyncService
             );
             if ($settings['mode'] !== 'passive') {
                 $settings['indefinite'] = false;
+                $settings['time_limit_seconds'] = 0;
             }
             if ((int) $settings['time_limit_seconds'] % 60 !== 0) {
                 throw new ApiException(422, 'Set the Review set time limit in whole minutes.');

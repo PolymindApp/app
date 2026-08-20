@@ -134,6 +134,9 @@ watch(cardLimit, ({ minimum, maximum }) => {
 function updateMode(mode: 'manual' | 'passive') {
   settings.value.mode = mode
   settings.value.indefinite = mode === 'passive'
+  settings.value.timeLimitSeconds = mode === 'passive'
+    ? settings.value.timeLimitSeconds || DEFAULT_FLASHCARD_REVIEW_TIME_LIMIT_SECONDS
+    : 0
 }
 
 function updateSpeechEnabled(enabled: boolean | null) {
@@ -182,7 +185,7 @@ function updateSpeechEnabled(enabled: boolean | null) {
               <div class="setting-row pt-3">
                 <div>
                   <strong>Run indefinitely</strong>
-                  <p>Loop through these cards until you end the review; it will not finish on its own</p>
+                  <p>Loop through these cards until the time limit is reached or you end the review</p>
                 </div>
                 <v-switch
                   v-model="settings.indefinite"
@@ -193,37 +196,35 @@ function updateSpeechEnabled(enabled: boolean | null) {
                 />
               </div>
             </div>
+            <v-divider class="my-5" />
+            <div class="setting-row">
+              <div>
+                <strong>Time limit</strong>
+                <p>Finish the review automatically after this much active time</p>
+              </div>
+              <v-switch
+                v-model="timeLimitEnabled"
+                color="secondary"
+                hide-details="auto"
+                inset
+                aria-label="Set a Review set time limit"
+              />
+            </div>
+            <v-expand-transition>
+              <div v-if="timeLimitEnabled" class="time-limit-picker mt-4">
+                <TimerWheelPicker
+                  v-model="timeLimitSeconds"
+                  mode="hours-minutes"
+                  :active="timeLimitEnabled"
+                />
+                <p class="mode-hint mt-3">
+                  <v-icon icon="mdi-timer-outline" size="18" />
+                  Only active review time counts toward the limit.
+                </p>
+              </div>
+            </v-expand-transition>
           </div>
         </v-expand-transition>
-        <template v-if="!interval">
-          <v-divider class="my-5" />
-          <div class="setting-row">
-            <div>
-              <strong>Time limit</strong>
-              <p>Finish the review automatically after this much active time</p>
-            </div>
-            <v-switch
-              v-model="timeLimitEnabled"
-              color="secondary"
-              hide-details="auto"
-              inset
-              aria-label="Set a Review set time limit"
-            />
-          </div>
-          <v-expand-transition>
-            <div v-if="timeLimitEnabled" class="time-limit-picker mt-4">
-              <TimerWheelPicker
-                v-model="timeLimitSeconds"
-                mode="hours-minutes"
-                :active="timeLimitEnabled"
-              />
-              <p class="mode-hint mt-3">
-                <v-icon icon="mdi-timer-outline" size="18" />
-                Only active review time counts toward the limit.
-              </p>
-            </div>
-          </v-expand-transition>
-        </template>
         <v-divider class="my-5" />
       </template>
       <label class="field-label">Faces to show <span class="required-mark">*</span></label>

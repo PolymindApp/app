@@ -4104,7 +4104,9 @@ final class Api
                 'sort_snapshot' => $sortMode,
                 'sort_direction_snapshot' => $sortDirection,
                 'indefinite_snapshot' => (bool) $reviewSet['indefinite'],
-                'time_limit_seconds_snapshot' => (int) $reviewSet['time_limit_seconds'],
+                'time_limit_seconds_snapshot' => (string) $reviewSet['mode'] === 'passive'
+                    ? (int) $reviewSet['time_limit_seconds']
+                    : 0,
                 'max_cards_snapshot' => (int) $reviewSet['max_cards'],
                 'eject_behavior_snapshot' => (string) $reviewSet['eject_behavior'],
                 'tags_snapshot' => json_encode(array_values($selectedTags), JSON_THROW_ON_ERROR),
@@ -4612,6 +4614,7 @@ final class Api
         }
         if ($settings['mode'] !== 'passive') {
             $settings['indefinite'] = false;
+            $settings['time_limit_seconds'] = 0;
         }
         $this->validateFlashcardSpeechSettings($settings);
 
@@ -7387,6 +7390,7 @@ final class Api
         );
         if ($settings['mode'] !== 'passive') {
             $settings['indefinite'] = false;
+            $settings['time_limit_seconds'] = 0;
         }
         $this->validateFlashcardSpeechSettings($settings);
         return $settings;

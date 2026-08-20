@@ -89,7 +89,7 @@ function mapReviewSet(record: Record<string, any>): FlashcardReviewSet {
     mode: record.mode,
     cardSides: record.card_sides || DEFAULT_FLASHCARD_REVIEW_CARD_SIDES,
     indefinite: Boolean(record.indefinite),
-    timeLimitSeconds: Number(record.time_limit_seconds || 0),
+    timeLimitSeconds: record.mode === 'passive' ? Number(record.time_limit_seconds || 0) : 0,
     maxCards: Number(record.max_cards || DEFAULT_FLASHCARD_SESSION_CARDS),
     ejectBehavior: mapEjectBehavior(record.eject_behavior),
     frontSeconds: Number(record.front_seconds || 5),
@@ -129,7 +129,9 @@ function mapSession(record: Record<string, any>): FlashcardReviewSession {
     mode: record.mode_snapshot,
     cardSides: record.card_sides_snapshot || DEFAULT_FLASHCARD_REVIEW_CARD_SIDES,
     indefinite: Boolean(record.indefinite_snapshot),
-    timeLimitSeconds: Number(record.time_limit_seconds_snapshot || 0),
+    timeLimitSeconds: record.mode_snapshot === 'passive'
+      ? Number(record.time_limit_seconds_snapshot || 0)
+      : 0,
     maxCards: Number(record.max_cards_snapshot || DEFAULT_FLASHCARD_SESSION_CARDS),
     ejectBehavior: mapEjectBehavior(record.eject_behavior_snapshot),
     sortMode: record.sort_snapshot,
@@ -554,7 +556,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       mode: draft.mode,
       card_sides: draft.cardSides,
       indefinite: draft.mode === 'passive' && draft.indefinite,
-      time_limit_seconds: draft.timeLimitSeconds || 0,
+      time_limit_seconds: draft.mode === 'passive' ? draft.timeLimitSeconds || 0 : 0,
       max_cards: draft.maxCards,
       eject_behavior: draft.ejectBehavior,
       front_seconds: draft.frontSeconds,
@@ -608,7 +610,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     Object.assign(reviewSet, {
       ...settings,
       indefinite: settings.mode === 'passive' && settings.indefinite,
-      timeLimitSeconds: settings.timeLimitSeconds || 0,
+      timeLimitSeconds: settings.mode === 'passive' ? settings.timeLimitSeconds || 0 : 0,
       excludedCards: [...(settings.excludedCards || [])],
     })
     try {

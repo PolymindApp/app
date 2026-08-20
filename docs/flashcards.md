@@ -20,7 +20,7 @@ Active Interval settings include the same Review cards section as the Interval f
 
 ## Standalone review time limits
 
-Standalone Review sets can optionally finish after a configured amount of active review time. The Review set and active-session settings use an hours-and-minutes wheel, with limits from one minute through 23 hours 59 minutes. Paused time does not count. Reaching the limit completes the session even when cards remain, including looping Passive reviews, and Android background Passive playback stops at the same limit. Mini Review sets inside Interval sessions continue to follow the Interval step duration instead.
+Passive Review sets finish after a configured amount of active review time. The limit is enabled at one hour by default when Passive mode is selected and can be disabled. The Review set and active-session settings use an hours-and-minutes wheel, with limits from one minute through 23 hours 59 minutes. Paused time does not count. Reaching the limit completes the session even when cards remain, including looping reviews, and Android background playback stops at the same limit. Manual Review sets do not use a time limit. Mini Review sets inside Interval sessions continue to follow the Interval step duration instead.
 
 ## Review card ejection
 

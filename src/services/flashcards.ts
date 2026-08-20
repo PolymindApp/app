@@ -17,7 +17,7 @@ import type {
 export const MIN_FLASHCARD_SESSION_CARDS = 1
 export const MAX_FLASHCARD_SESSION_CARDS = 100
 export const DEFAULT_FLASHCARD_SESSION_CARDS = 20
-export const DEFAULT_FLASHCARD_REVIEW_TIME_LIMIT_SECONDS = 30 * 60
+export const DEFAULT_FLASHCARD_REVIEW_TIME_LIMIT_SECONDS = 60 * 60
 export const MIN_FLASHCARD_REVIEW_TIME_LIMIT_SECONDS = 60
 export const MAX_FLASHCARD_REVIEW_TIME_LIMIT_SECONDS = 23 * 3600 + 59 * 60
 export const MIN_FLASHCARD_BACK_SPEECH_REPEATS = 1
@@ -171,7 +171,7 @@ export function flashcardReviewSettingsSignature(settings: FlashcardReviewSettin
     mode: settings.mode,
     cardSides: settings.cardSides,
     indefinite: settings.indefinite,
-    timeLimitSeconds: settings.timeLimitSeconds || 0,
+    timeLimitSeconds: settings.mode === 'passive' ? settings.timeLimitSeconds || 0 : 0,
     maxCards: settings.maxCards,
     ejectBehavior: settings.ejectBehavior || 'remove',
     frontSeconds: settings.frontSeconds,
@@ -537,7 +537,7 @@ export function createFlashcardReviewPreviewSession(
     mode: reviewSet.mode,
     cardSides: reviewSet.cardSides,
     indefinite: reviewSet.mode === 'passive' && reviewSet.indefinite,
-    timeLimitSeconds: reviewSet.timeLimitSeconds || 0,
+    timeLimitSeconds: reviewSet.mode === 'passive' ? reviewSet.timeLimitSeconds || 0 : 0,
     maxCards: reviewSet.maxCards,
     ejectBehavior: reviewSet.ejectBehavior || 'remove',
     sortMode: reviewSet.sortMode,
