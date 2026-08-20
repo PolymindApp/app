@@ -556,8 +556,6 @@ onBeforeUnmount(() => {
 }
 
 .task-card--done {
-  background: transparent;
-  filter: grayscale(1);
   opacity: .55;
 }
 
