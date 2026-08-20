@@ -13,12 +13,68 @@ const router = createRouter({
       path: '/',
       name: 'landing',
       component: () => import('@/views/LandingView.vue'),
-      meta: { webOnly: true, title: 'BackOnTrack — Make life programmable.' },
+      meta: {
+        webOnly: true,
+        title: 'BackOnTrack — Build your way forward',
+        seo: {
+          title: 'BackOnTrack — Build your way forward',
+          description: 'Turn tasks, intervals, flashcards, tracking, and reflection into one flexible personal system built around the way you move forward.',
+        },
+      },
     },
-    { path: '/auth', name: 'auth', component: () => import('@/views/AuthView.vue'), meta: { guest: true } },
-    { path: '/forgot-password', name: 'forgot-password', component: () => import('@/views/AuthView.vue'), meta: { guest: true, title: 'Forgot password' } },
-    { path: '/reset-password', name: 'reset-password', component: () => import('@/views/AuthView.vue'), meta: { title: 'Reset password' } },
-    { path: '/verify-email', name: 'verify-email', component: () => import('@/views/AuthView.vue'), meta: { title: 'Confirm email' } },
+    {
+      path: '/auth',
+      name: 'auth',
+      component: () => import('@/views/AuthView.vue'),
+      meta: {
+        guest: true,
+        seo: {
+          title: 'Sign in or create an account | BackOnTrack',
+          description: 'Sign in to BackOnTrack or create an account to build your personal system for tasks, intervals, learning, tracking, and reflection.',
+          robots: 'noindex, nofollow',
+        },
+      },
+    },
+    {
+      path: '/forgot-password',
+      name: 'forgot-password',
+      component: () => import('@/views/AuthView.vue'),
+      meta: {
+        guest: true,
+        title: 'Forgot password',
+        seo: {
+          title: 'Reset your password | BackOnTrack',
+          description: 'Request a secure password reset link for your BackOnTrack account.',
+          robots: 'noindex, nofollow',
+        },
+      },
+    },
+    {
+      path: '/reset-password',
+      name: 'reset-password',
+      component: () => import('@/views/AuthView.vue'),
+      meta: {
+        title: 'Reset password',
+        seo: {
+          title: 'Choose a new password | BackOnTrack',
+          description: 'Choose a new password and securely regain access to your BackOnTrack account.',
+          robots: 'noindex, nofollow',
+        },
+      },
+    },
+    {
+      path: '/verify-email',
+      name: 'verify-email',
+      component: () => import('@/views/AuthView.vue'),
+      meta: {
+        title: 'Confirm email',
+        seo: {
+          title: 'Confirm your email | BackOnTrack',
+          description: 'Confirm your email address to finish setting up your BackOnTrack account.',
+          robots: 'noindex, nofollow',
+        },
+      },
+    },
     {
       path: '/',
       component: () => import('@/layouts/AppShell.vue'),

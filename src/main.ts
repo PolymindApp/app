@@ -12,6 +12,7 @@ import { installFlashcardNotificationRouting } from './services/flashcardNotific
 import { installIntervalNotificationRouting } from './services/intervalNotificationRouting'
 import { installMobileKeyboardViewport } from './services/mobileKeyboardViewport'
 import { closeTopOverlay } from './services/overlayStack'
+import { installSeoMetadata } from './services/seo'
 import { installTaskNotificationRouting } from './services/taskReminders'
 import { startOfflineSync } from './services/offlineSync'
 import {
@@ -26,6 +27,8 @@ import {
 import './styles/main.scss'
 
 const nativePlatform = Capacitor.getPlatform()
+
+installSeoMetadata(router)
 
 installClientErrorReporting({
   getAuthToken: () => api.authStore.token,
