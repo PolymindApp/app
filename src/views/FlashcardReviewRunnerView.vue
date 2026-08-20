@@ -194,6 +194,9 @@ const progressCards = computed(() => {
     ? session.value.viewedCount % session.value.totalCards
     : completedCards.value
 })
+const currentCardPosition = computed(() => session.value?.totalCards
+  ? Math.min(progressCards.value + 1, session.value.totalCards)
+  : 0)
 const progress = computed(() => session.value?.totalCards
   ? Math.round(progressCards.value / session.value.totalCards * 100)
   : 0)
@@ -1304,7 +1307,8 @@ async function leaveRunner() {
             <v-icon :icon="session.mode === 'passive' ? 'mdi-play-speed' : 'mdi-gesture-tap'" size="18" />
             <span>{{ session.mode === 'passive' ? 'Passive' : 'Manual' }}</span>
           </div>
-          <span>{{ formatReviewDuration(elapsedSeconds) }}</span>
+          <span class="runner-meta__card-count">{{ currentCardPosition }} of {{ session.totalCards }}</span>
+          <span class="runner-meta__elapsed">{{ formatReviewDuration(elapsedSeconds) }}</span>
         </div>
 
         <div
@@ -1753,8 +1757,10 @@ async function leaveRunner() {
 .runner-alert--speech :deep(.v-alert__append) { align-self: center; margin-inline-start: .5rem; }
 .runner-speech-snackbar { z-index: 1004 !important; }
 .runner-body { display: flex; width: 100%; max-width: 44rem; min-height: 0; margin: 0 auto; padding: 1rem 1rem .5rem; flex: 1 1 auto; flex-direction: column; gap: .875rem; overflow-y: auto; overscroll-behavior: contain; }
-.runner-meta { display: flex; align-items: center; justify-content: space-between; gap: 1rem; color: rgba(var(--v-theme-on-surface), .68); font-size: .75rem; font-weight: 850; }
+.runner-meta { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: center; gap: 1rem; color: rgba(var(--v-theme-on-surface), .68); font-size: .75rem; font-weight: 850; }
 .runner-meta > div { display: flex; align-items: center; gap: .4rem; }
+.runner-meta__card-count { justify-self: center; }
+.runner-meta__elapsed { justify-self: end; }
 .review-card-stack { position: relative; display: flex; width: 100%; min-height: min(38dvh, 22rem); flex: 1 1 auto; flex-direction: column; touch-action: none; }
 .review-card-window { display: grid; width: 100%; min-height: min(38dvh, 22rem); flex: 1 1 auto; overflow: hidden; border-radius: 1.5rem; }
 .review-card-window,
