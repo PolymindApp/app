@@ -1034,6 +1034,12 @@ final class SyncService
     private function deleteOwnedRecord(string $resource, array $config, string $recordId, string $account): array
     {
         $current = $this->ownedRecord($resource, $recordId, $account);
+        if (
+            $resource === 'flashcard_review_sessions'
+            && in_array((string) ($current['status'] ?? ''), ['running', 'paused'], true)
+        ) {
+            throw new ApiException(409, 'An active review cannot be deleted. End it first.');
+        }
         $taskLogImageFiles = [];
         if ($resource === 'tasks') {
             $statement = $this->database->pdo->prepare(
@@ -1299,6 +1305,10 @@ final class SyncService
                 ->execute(['id' => $recordId]);
             $pdo->prepare('DELETE FROM flashcard_review_card_stats WHERE card = :id')
                 ->execute(['id' => $recordId]);
+        } elseif ($resource === 'flashcard_review_sessions') {
+            $pdo->prepare(
+                'DELETE FROM flashcard_review_events WHERE session = :id AND owner = :owner',
+            )->execute(['id' => $recordId, 'owner' => $account]);
         }
         $pdo->prepare("DELETE FROM {$resource} WHERE id = :id AND owner = :owner")
             ->execute(['id' => $recordId, 'owner' => $account]);

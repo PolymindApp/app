@@ -435,6 +435,25 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     useSnackbarStore().showDeletion('Card')
   }
 
+  async function deleteSession(sessionId: string) {
+    error.value = ''
+    const index = sessions.value.findIndex(session => session.id === sessionId)
+    if (index < 0) throw new Error('Review session not found.')
+    const session = sessions.value[index]!
+    const previousEvents = events.value
+    sessions.value.splice(index, 1)
+    events.value = events.value.filter(event => event.session !== sessionId)
+    try {
+      await api.collection('flashcard_review_sessions').delete(sessionId)
+      useSnackbarStore().showDeletion('Review')
+    } catch (cause) {
+      if (!sessions.value.includes(session)) sessions.value.splice(index, 0, session)
+      events.value = previousEvents
+      error.value = cause instanceof Error ? cause.message : 'Could not delete this review.'
+      throw cause
+    }
+  }
+
   async function importCards(rows: FlashcardImportRow[]) {
     const response = await api.importFlashcards(rows)
     const importedTags = response.tags.map(mapTag)
@@ -1409,6 +1428,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     deleteTag,
     saveCard,
     deleteCard,
+    deleteSession,
     importCards,
     bulkUpdateCards,
     saveReviewSet,

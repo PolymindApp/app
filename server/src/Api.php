@@ -5939,8 +5939,14 @@ final class Api
     {
         $owner = (string) $user['id'];
         $existing = $this->ownedRecord($collection['name'], $id, $owner);
-        if (in_array($collection['name'], ['flashcard_review_sessions', 'flashcard_review_events'], true)) {
-            throw new ApiException(405, 'Flashcard review history cannot be deleted directly.');
+        if ($collection['name'] === 'flashcard_review_events') {
+            throw new ApiException(405, 'Flashcard review events cannot be deleted directly.');
+        }
+        if (
+            $collection['name'] === 'flashcard_review_sessions'
+            && in_array((string) ($existing['status'] ?? ''), ['running', 'paused'], true)
+        ) {
+            throw new ApiException(409, 'An active review cannot be deleted. End it first.');
         }
         $taskLogImageFiles = [];
         if ($collection['name'] === 'tasks') {
@@ -5961,6 +5967,7 @@ final class Api
                 'flashcard_tags' => $this->deleteFlashcardTag($id, $owner),
                 'flashcards' => $this->deleteFlashcard($id, $owner),
                 'flashcard_review_sets' => $this->deleteFlashcardReviewSet($id, $owner),
+                'flashcard_review_sessions' => $this->deleteFlashcardReviewSession($id, $owner),
                 'interval_templates' => $this->deleteIntervalTemplate($id, $owner),
                 'tracking_trackers' => $this->deleteTrackingTracker($id, $owner),
                 default => $this->deleteOwnedRow($collection['name'], $id, $owner),
@@ -6247,6 +6254,15 @@ final class Api
         );
         $statement->execute(['id' => $id, 'owner' => $owner]);
         $this->deleteOwnedRow('interval_templates', $id, $owner);
+    }
+
+    private function deleteFlashcardReviewSession(string $id, string $owner): void
+    {
+        $statement = $this->database->pdo->prepare(
+            'DELETE FROM flashcard_review_events WHERE session = :id AND owner = :owner',
+        );
+        $statement->execute(['id' => $id, 'owner' => $owner]);
+        $this->deleteOwnedRow('flashcard_review_sessions', $id, $owner);
     }
 
     private function deleteTrackingTracker(string $id, string $owner): void

@@ -262,6 +262,22 @@ export const useIntervalStore = defineStore('intervals', () => {
     }
   }
 
+  async function deleteSession(sessionId: string) {
+    error.value = ''
+    const index = sessions.value.findIndex(session => session.id === sessionId)
+    if (index < 0) throw new Error('Interval session not found.')
+    const session = sessions.value[index]!
+    sessions.value.splice(index, 1)
+    try {
+      await api.collection('interval_sessions').delete(sessionId)
+      useSnackbarStore().showDeletion('Run')
+    } catch (cause) {
+      if (!sessions.value.includes(session)) sessions.value.splice(index, 0, session)
+      error.value = cause instanceof Error ? cause.message : 'Could not delete this run.'
+      throw cause
+    }
+  }
+
   async function reorderTemplates(ordered: IntervalTemplate[]) {
     const previousTemplates = templates.value.map((template) => ({ ...template }))
     const previousSortOrders = new Map(
@@ -644,6 +660,7 @@ export const useIntervalStore = defineStore('intervals', () => {
     load,
     saveTemplate,
     deleteTemplate,
+    deleteSession,
     reorderTemplates,
     startSession,
     updateSession,

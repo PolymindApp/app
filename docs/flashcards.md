@@ -1,5 +1,9 @@
 # Flashcards
 
+## Recent session history
+
+Selecting a recent Review opens its action menu. **See details** reopens the saved completion summary; **Delete** asks for confirmation and removes the history item immediately. Reviews recorded inside an Interval open that Interval's details, and deleting one removes the shared Interval run from both histories. Deleting session history does not reverse task progress already recorded by the completed session.
+
 ## CSV import
 
 Cards include an optional transliteration alongside the front, back, note, and tags. The transliteration is editable on card forms, searchable, and shown as its own column in the card manager and Review set card table.

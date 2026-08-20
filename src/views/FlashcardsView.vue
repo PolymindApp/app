@@ -9,6 +9,7 @@ import type { LongPressDragResult } from '@/directives/longPressDrag'
 import { flashcardReviewHistoryItems } from '@/services/flashcardHistory'
 import { formatReviewDuration, reviewSetCardCount, reviewSortTitle } from '@/services/flashcards'
 import { FLASHCARD_REVIEW_SET_ACTIONS } from '@/services/flashcardReviewSetActions'
+import { RECENT_SESSION_ACTIONS, type RecentSessionAction } from '@/services/recentSessionActions'
 import { groupSessionsByDate } from '@/services/sessionHistory'
 import { useFlashcardStore } from '@/stores/flashcards'
 import { useIntervalStore } from '@/stores/intervals'
@@ -31,6 +32,10 @@ const reorderingReviewSets = ref(false)
 const notice = ref('')
 const recentWeekStart = ref(startOfWeek(new Date(), { weekStartsOn: 1 }))
 const expandedRecentReviewDays = ref(new Set([format(new Date(), 'yyyy-MM-dd')]))
+const selectedRecentReview = ref<FlashcardReviewHistoryItem>()
+const recentReviewActionsOpen = ref(false)
+const deleteRecentReviewDialog = ref(false)
+const recentReviewWorking = ref(false)
 const ownedReviewSets = computed(() => store.reviewSets.filter(set => set.accessRole === 'owner'))
 const sharedReviewSets = computed(() => store.reviewSets.filter(set => set.accessRole !== 'owner'))
 const selectedActions = computed(() => selectedReviewSet.value
@@ -73,6 +78,47 @@ function toggleRecentReviewDay(dayKey: string) {
   if (nextExpandedDays.has(dayKey)) nextExpandedDays.delete(dayKey)
   else nextExpandedDays.add(dayKey)
   expandedRecentReviewDays.value = nextExpandedDays
+}
+
+function recentReviewSessionId(session: FlashcardReviewHistoryItem) {
+  return session.id.slice(session.source === 'flashcards' ? 'flashcards-'.length : 'interval-'.length)
+}
+
+function openRecentReviewActions(session: FlashcardReviewHistoryItem) {
+  selectedRecentReview.value = session
+  recentReviewActionsOpen.value = true
+}
+
+async function runRecentReviewAction(action: RecentSessionAction) {
+  const session = selectedRecentReview.value
+  if (!session) return
+  recentReviewActionsOpen.value = false
+  if (action === 'details') {
+    await router.push({
+      name: session.source === 'flashcards' ? 'flashcard-review-runner' : 'interval-runner',
+      params: { sessionId: recentReviewSessionId(session) },
+    })
+    return
+  }
+  deleteRecentReviewDialog.value = true
+}
+
+async function deleteRecentReview() {
+  const session = selectedRecentReview.value
+  if (!session || recentReviewWorking.value) return
+  recentReviewWorking.value = true
+  startError.value = ''
+  try {
+    const sessionId = recentReviewSessionId(session)
+    if (session.source === 'flashcards') await store.deleteSession(sessionId)
+    else await intervalStore.deleteSession(sessionId)
+    deleteRecentReviewDialog.value = false
+    selectedRecentReview.value = undefined
+  } catch (cause) {
+    startError.value = cause instanceof Error ? cause.message : 'Could not delete this review.'
+  } finally {
+    recentReviewWorking.value = false
+  }
 }
 
 function openReviewSetActions(reviewSet: FlashcardReviewSet) {
@@ -473,6 +519,8 @@ async function reorderReviewSets(result: LongPressDragResult) {
                     :key="session.id"
                     class="recent-review-item"
                     :title="session.name"
+                    :aria-label="`Actions for ${session.name}`"
+                    @click="openRecentReviewActions(session)"
                   >
                     <template #prepend>
                       <v-icon
@@ -523,6 +571,35 @@ async function reorderReviewSets(result: LongPressDragResult) {
         </v-card>
       </transition>
     </section>
+
+    <ActionBottomSheet
+      v-model="recentReviewActionsOpen"
+      :title="selectedRecentReview?.name || 'Recent review'"
+      :aria-label="selectedRecentReview ? `${selectedRecentReview.name} actions` : 'Recent review actions'"
+    >
+      <template v-for="item in RECENT_SESSION_ACTIONS" :key="item.action">
+        <v-divider v-if="item.divider" class="my-1" />
+        <v-list-item
+          :prepend-icon="item.icon"
+          :title="item.title"
+          :base-color="item.color"
+          rounded="lg"
+          :disabled="recentReviewWorking"
+          @click="runRecentReviewAction(item.action)"
+        />
+      </template>
+    </ActionBottomSheet>
+
+    <ConfirmDialog
+      v-model="deleteRecentReviewDialog"
+      title="Delete this review?"
+      :message="selectedRecentReview?.source === 'interval'
+        ? 'This review belongs to an interval run. Deleting it also removes that run from interval history, while recorded task progress stays.'
+        : 'The saved review will be removed from your history. Any task progress it recorded will stay.'"
+      confirm-text="Delete review"
+      :loading="recentReviewWorking"
+      @confirm="deleteRecentReview"
+    />
 
     <ActionBottomSheet
       v-model="reviewSetActionsOpen"

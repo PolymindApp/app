@@ -1,17 +1,26 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { format, isSameWeek, startOfWeek } from 'date-fns'
+import { useRouter } from 'vue-router'
+import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
+import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import IntervalPlanList from '@/components/IntervalPlanList.vue'
 import StickyActionBanner from '@/components/StickyActionBanner.vue'
 import WeekNavigator from '@/components/WeekNavigator.vue'
 import { groupIntervalSessionsByDate, intervalRunProgressPercent } from '@/services/intervalHistory'
 import { formatIntervalDuration } from '@/services/intervals'
+import { RECENT_SESSION_ACTIONS, type RecentSessionAction } from '@/services/recentSessionActions'
 import { useIntervalStore } from '@/stores/intervals'
 import type { IntervalSession } from '@/types/domain'
 
 const store = useIntervalStore()
+const router = useRouter()
 const recentWeekStart = ref(startOfWeek(new Date(), { weekStartsOn: 1 }))
 const expandedRecentRunDays = ref(new Set([format(new Date(), 'yyyy-MM-dd')]))
+const selectedRecentRun = ref<IntervalSession>()
+const recentRunActionsOpen = ref(false)
+const deleteRecentRunDialog = ref(false)
+const recentRunWorking = ref(false)
 const intervalColors = computed(() =>
   new Map(store.templates.map((template) => [template.id, template.color])),
 )
@@ -43,6 +52,37 @@ function recentRunColor(session: IntervalSession) {
   return session.template
     ? intervalColors.value.get(session.template) || 'success'
     : 'success'
+}
+
+function openRecentRunActions(session: IntervalSession) {
+  selectedRecentRun.value = session
+  recentRunActionsOpen.value = true
+}
+
+async function runRecentSessionAction(action: RecentSessionAction) {
+  const session = selectedRecentRun.value
+  if (!session) return
+  recentRunActionsOpen.value = false
+  if (action === 'details') {
+    await router.push({ name: 'interval-runner', params: { sessionId: session.id } })
+    return
+  }
+  deleteRecentRunDialog.value = true
+}
+
+async function deleteRecentRun() {
+  const session = selectedRecentRun.value
+  if (!session || recentRunWorking.value) return
+  recentRunWorking.value = true
+  try {
+    await store.deleteSession(session.id)
+    deleteRecentRunDialog.value = false
+    selectedRecentRun.value = undefined
+  } catch {
+    // The store restores the item and exposes the persistence error.
+  } finally {
+    recentRunWorking.value = false
+  }
 }
 
 async function reconcileWhenVisible() {
@@ -130,6 +170,8 @@ onBeforeUnmount(() => {
                 :key="session.id"
                 class="recent-run-item"
                 :title="session.name"
+                :aria-label="`Actions for ${session.name}`"
+                @click="openRecentRunActions(session)"
               >
                 <template #prepend>
                   <v-icon
@@ -171,6 +213,33 @@ onBeforeUnmount(() => {
         </p>
       </v-card>
     </transition>
+
+    <ActionBottomSheet
+      v-model="recentRunActionsOpen"
+      :title="selectedRecentRun?.name || 'Recent run'"
+      :aria-label="selectedRecentRun ? `${selectedRecentRun.name} actions` : 'Recent run actions'"
+    >
+      <template v-for="item in RECENT_SESSION_ACTIONS" :key="item.action">
+        <v-divider v-if="item.divider" class="my-1" />
+        <v-list-item
+          :prepend-icon="item.icon"
+          :title="item.title"
+          :base-color="item.color"
+          rounded="lg"
+          :disabled="recentRunWorking"
+          @click="runRecentSessionAction(item.action)"
+        />
+      </template>
+    </ActionBottomSheet>
+
+    <ConfirmDialog
+      v-model="deleteRecentRunDialog"
+      title="Delete this run?"
+      message="The saved run will be removed from your history. Any task progress it recorded will stay."
+      confirm-text="Delete run"
+      :loading="recentRunWorking"
+      @confirm="deleteRecentRun"
+    />
 
     <StickyActionBanner
       v-if="store.activeSession"
