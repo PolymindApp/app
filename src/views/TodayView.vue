@@ -1322,17 +1322,19 @@ async function saveTaskLogEntry() {
         </v-progress-circular>
       </div>
       <v-expand-transition>
-        <v-btn
-          v-if="reviewItems.length"
-          size="small"
-          variant="tonal"
-          color="secondary"
-          class="mt-5"
-          prepend-icon="mdi-clipboard-check-outline"
-          @click="reviewSheet = true"
-        >
-          Review {{ reviewItems.length }} open
-        </v-btn>
+        <div v-if="reviewItems.length">
+          <div class="pt-5">
+            <v-btn
+              size="small"
+              variant="tonal"
+              color="secondary"
+              prepend-icon="mdi-clipboard-check-outline"
+              @click="reviewSheet = true"
+            >
+              Review {{ reviewItems.length }} open
+            </v-btn>
+          </div>
+        </div>
       </v-expand-transition>
     </v-card>
 
