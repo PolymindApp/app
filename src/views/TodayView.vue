@@ -1308,17 +1308,19 @@ async function saveTaskLogEntry() {
           <v-icon :icon="completionRate === 100 ? 'mdi-trophy' : 'mdi-arrow-top-right-thick'" color="secondary" size="30" />
         </v-progress-circular>
       </div>
-      <v-btn
-        v-if="reviewItems.length"
-        size="small"
-        variant="tonal"
-        color="secondary"
-        class="mt-5"
-        prepend-icon="mdi-clipboard-check-outline"
-        @click="reviewSheet = true"
-      >
-        Review {{ reviewItems.length }} open
-      </v-btn>
+      <v-expand-transition>
+        <v-btn
+          v-if="reviewItems.length"
+          size="small"
+          variant="tonal"
+          color="secondary"
+          class="mt-5"
+          prepend-icon="mdi-clipboard-check-outline"
+          @click="reviewSheet = true"
+        >
+          Review {{ reviewItems.length }} open
+        </v-btn>
+      </v-expand-transition>
     </v-card>
 
     <v-alert v-if="error" type="error" variant="tonal" class="mt-4">
