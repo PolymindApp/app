@@ -7,23 +7,9 @@ import { copyTextToClipboard } from '@/services/clipboard'
 import { parseFlashcardCsv } from '@/services/flashcardCsv'
 import { useFlashcardStore } from '@/stores/flashcards'
 
-const AI_PROMPT = `Generate exactly 50 English-to-Spanish flashcards about woodworking.
-
-Return ONLY raw CSV text that can be pasted directly into an importer. Do not use Markdown, code fences, a Markdown table, a title, an introduction, explanations, or any text before or after the CSV.
-
-The first line must be exactly:
-front,back,note,tags
-
-After the header, output exactly 50 data rows with exactly four comma-separated fields per row. Front and back are required. Note is an optional short learning hint; leave it empty when unused. Separate multiple tags with | inside the tags field. Every row must include the language-direction tag english-to-spanish; if the requested languages change, replace it with a lowercase source-language-to-target-language tag, such as french-to-german. Other tags are optional. Quote fields containing commas or double quotes according to CSV rules, and do not put line breaks inside fields.
-
-Your entire response must start with the header front,back,note,tags and end with the final CSV data row.`
 const CSV_EXAMPLE = `front,back,note,tags
 chisel,formón,Hand tool for carving wood,woodworking|tools
 wood grain,veta de la madera,,woodworking|materials`
-const REVIEW_SET_AI_PROMPT = AI_PROMPT.replace(
-  'Separate multiple tags with | inside the tags field. Every row must include the language-direction tag english-to-spanish; if the requested languages change, replace it with a lowercase source-language-to-target-language tag, such as french-to-german. Other tags are optional.',
-  'Leave the tags field empty on every row because the destination Review set applies its own tags.',
-)
 
 const router = useRouter()
 const route = useRoute()
@@ -32,8 +18,8 @@ const form = ref()
 const csv = ref('')
 const importing = ref(false)
 const error = ref('')
-const promptCopied = ref(false)
-const promptCopyError = ref('')
+const exampleCopied = ref(false)
+const exampleCopyError = ref('')
 const reviewSetId = computed(() => typeof route.query.reviewSetId === 'string' ? route.query.reviewSetId : '')
 const reviewSet = computed(() => store.reviewSets.find(item => item.id === reviewSetId.value))
 const isReviewSetImport = computed(() => Boolean(reviewSetId.value))
@@ -42,12 +28,11 @@ const returnTo = computed(() => typeof route.query.returnTo === 'string'
   && !route.query.returnTo.startsWith('//')
   ? route.query.returnTo
   : '')
-const activeAiPrompt = computed(() => isReviewSetImport.value ? REVIEW_SET_AI_PROMPT : AI_PROMPT)
 const canManageReviewSet = computed(() => (
   !isReviewSetImport.value
   || Boolean(reviewSet.value && reviewSet.value.accessRole !== 'readonly')
 ))
-let promptCopiedTimer: number | undefined
+let exampleCopiedTimer: number | undefined
 const parsed = computed(() => parseFlashcardCsv(csv.value))
 const previewRows = computed(() => parsed.value.rows.slice(0, 5))
 const canImport = computed(() => (
@@ -72,23 +57,23 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
-  if (promptCopiedTimer !== undefined) window.clearTimeout(promptCopiedTimer)
+  if (exampleCopiedTimer !== undefined) window.clearTimeout(exampleCopiedTimer)
 })
 
-async function copyAiPrompt() {
-  promptCopied.value = false
-  promptCopyError.value = ''
-  if (promptCopiedTimer !== undefined) window.clearTimeout(promptCopiedTimer)
+async function copyFormatExample() {
+  exampleCopied.value = false
+  exampleCopyError.value = ''
+  if (exampleCopiedTimer !== undefined) window.clearTimeout(exampleCopiedTimer)
 
-  if (!await copyTextToClipboard(activeAiPrompt.value)) {
-    promptCopyError.value = 'Could not copy the prompt. Try again or copy it manually.'
+  if (!await copyTextToClipboard(CSV_EXAMPLE)) {
+    exampleCopyError.value = 'Could not copy the format example. Try again.'
     return
   }
 
-  promptCopied.value = true
-  promptCopiedTimer = window.setTimeout(() => {
-    promptCopied.value = false
-    promptCopiedTimer = undefined
+  exampleCopied.value = true
+  exampleCopiedTimer = window.setTimeout(() => {
+    exampleCopied.value = false
+    exampleCopiedTimer = undefined
   }, 2000)
 }
 
@@ -147,7 +132,24 @@ async function importCards() {
         </v-textarea>
 
         <p class="text-caption muted mt-4 mb-2">Use this format, keeping the header row first:</p>
-        <pre class="flashcard-import-example">{{ CSV_EXAMPLE }}</pre>
+        <div class="flashcard-import-example">
+          <pre class="flashcard-import-example__content">{{ CSV_EXAMPLE }}</pre>
+          <div class="flashcard-import-example__actions">
+            <v-btn
+              type="button"
+              size="small"
+              variant="tonal"
+              :color="exampleCopied ? 'success' : undefined"
+              :prepend-icon="exampleCopied ? 'mdi-check' : 'mdi-content-copy'"
+              @click="copyFormatExample"
+            >
+              {{ exampleCopied ? 'Copied' : 'Copy example' }}
+            </v-btn>
+          </div>
+        </div>
+        <p v-if="exampleCopyError" class="text-caption text-error mt-2" role="alert">
+          {{ exampleCopyError }}
+        </p>
 
         <v-alert
           v-if="parsed.errors.length"
@@ -209,32 +211,6 @@ async function importCards() {
       </v-card>
     </AppForm>
 
-    <v-alert
-      type="info"
-      variant="tonal"
-      icon="mdi-creation-outline"
-      class="mt-4"
-    >
-      <strong>Ask an AI to prepare the CSV</strong>
-      <p class="text-body-2 mt-2">
-        Copy a ready-to-use prompt, paste it into your preferred AI, then adjust the topic, languages, or number of cards.
-      </p>
-      <div class="flashcard-import-prompt-actions mt-3">
-        <v-btn
-          size="small"
-          variant="tonal"
-          :color="promptCopied ? 'success' : 'info'"
-          :prepend-icon="promptCopied ? 'mdi-check' : 'mdi-content-copy'"
-          @click="copyAiPrompt"
-        >
-          {{ promptCopied ? 'Copied' : 'Copy prompt' }}
-        </v-btn>
-      </div>
-      <p v-if="promptCopyError" class="text-caption text-error mt-2" role="alert">
-        {{ promptCopyError }}
-      </p>
-    </v-alert>
-
     <FormActionBar
       :primary-text="parsed.rows.length ? `Import ${parsed.rows.length}` : 'Import'"
       :loading="importing"
@@ -246,9 +222,10 @@ async function importCards() {
 </template>
 
 <style scoped>
-.flashcard-import-prompt-actions { display: flex; justify-content: flex-end; }
-.flashcard-import-prompt-actions :deep(.v-btn) { min-height: 2.75rem; }
-.flashcard-import-example { padding: .875rem; overflow-x: auto; border: .0625rem solid rgba(var(--v-theme-on-surface), .1); border-radius: .75rem; background: rgba(var(--v-theme-on-surface), .045); color: rgba(var(--v-theme-on-surface), .72); font-size: .72rem; line-height: 1.6; white-space: pre; }
+.flashcard-import-example { overflow: hidden; border: .0625rem solid rgba(var(--v-theme-on-surface), .1); border-radius: .75rem; background: rgba(var(--v-theme-on-surface), .045); }
+.flashcard-import-example__content { margin: 0; padding: .875rem; overflow-x: auto; color: rgba(var(--v-theme-on-surface), .72); font-size: .72rem; line-height: 1.6; white-space: pre; }
+.flashcard-import-example__actions { display: flex; justify-content: flex-end; padding: 0 .875rem .875rem; }
+.flashcard-import-example__actions :deep(.v-btn) { min-height: 2.75rem; }
 .flashcard-import-errors { padding-left: 1.25rem; }
 .flashcard-import-summary { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem .75rem; }
 .flashcard-import-preview { max-width: 100%; overflow-x: auto; overscroll-behavior-inline: contain; border: .0625rem solid rgba(var(--v-theme-on-surface), .08); border-radius: 1rem; }
