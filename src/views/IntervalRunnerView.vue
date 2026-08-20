@@ -1985,6 +1985,9 @@ async function runAgain(repetitions?: number) {
                   <span class="interval-review-card__set">
                     <v-icon icon="mdi-cards-outline" size="17" />
                     <span class="text-truncate">{{ session.flashcardReview.name }}</span>
+                    <span class="interval-review-card__count">
+                      ({{ flashcardPhase.cardIndex + 1 }} of {{ session.flashcardReview.cards.length }})
+                    </span>
                   </span>
                   <div class="interval-review-card__meta">
                     <small>
@@ -2564,7 +2567,8 @@ async function runAgain(repetitions?: number) {
 .interval-review-card__meta { display: flex; flex: 0 0 auto; align-items: center; justify-content: flex-end; gap: .75rem; color: rgba(var(--v-theme-on-surface), .58); font-size: .62rem; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
 .interval-review-card__meta small { display: inline-flex; align-items: center; gap: .25rem; }
 .interval-review-card__set { display: flex; min-width: 0; max-width: 75%; align-items: center; gap: .4rem; color: rgba(var(--v-theme-on-surface), .58); font-size: .62rem; font-weight: 900; letter-spacing: .1em; text-align: left; text-transform: uppercase; }
-.interval-review-card__set > .text-truncate { min-width: 0; }
+.interval-review-card__set > .text-truncate { min-width: 0; flex: 1 1 auto; }
+.interval-review-card__count { flex: 0 0 auto; }
 .interval-review-card__content small { color: rgba(var(--v-theme-on-surface), .58); font-size: .62rem; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
 .interval-review-card__face-window { display: grid; width: 100%; min-height: 0; overflow: hidden; flex: 1 1 auto; }
 .interval-review-card__faces { display: grid; width: 100%; min-height: 0; grid-area: 1 / 1; place-items: center; }

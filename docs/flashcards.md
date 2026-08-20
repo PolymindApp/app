@@ -17,3 +17,5 @@ Ejecting the current card advances both standalone and mini interval Review set 
 Automatic and manual standalone Review set changes use the same directional model: previous and next cards move down and up, while front and back faces move right and left. Motion is limited to the card value, answer, and note; the face label, replay or reveal hint, card surface, and passive progress remain stationary. Reduced-motion preferences replace the content without directional movement.
 
 Standalone Review set sessions show the current card position centered above the card, between the review mode and elapsed time. Finite sessions advance from 1 through the session total, while indefinite sessions wrap the position at the start of each loop.
+
+Mini Review set cards in an active Interval append the current card position to the Review set title as `(X of Y)`.
