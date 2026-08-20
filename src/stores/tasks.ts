@@ -179,13 +179,41 @@ export const useTaskStore = defineStore('tasks', () => {
   let reminderSyncPromise: Promise<void> | undefined
   let reminderSyncRequested = false
   let optimisticOccurrenceRevision = 0
+  let entryMutationRevision = 0
   const loadedProgressRanges = new Set<string>()
   const pendingOccurrenceCreates = new Map<string, Promise<Occurrence>>()
+  const pendingOccurrenceValues = new Map<string, Occurrence>()
+  const pendingEntryUpserts = new Set<Entry>()
+  const pendingEntryDeletes = new Set<string>()
 
   const activeTasks = computed(() => tasks.value.filter((task) => task.active))
 
   function occurrenceStatusKey(taskId: string, scheduledDate: string, programStepId = '') {
     return `${scheduledDate}:${taskId}:${programStepId}`
+  }
+
+  function mergePendingOccurrences(loaded: Occurrence[]) {
+    const merged = [...loaded]
+    for (const [key, pending] of pendingOccurrenceValues) {
+      const index = merged.findIndex(item => occurrenceStatusKey(
+        item.task,
+        item.scheduledDate,
+        item.programStep,
+      ) === key)
+      if (index >= 0) merged.splice(index, 1, pending)
+      else merged.push(pending)
+    }
+    return merged
+  }
+
+  function mergePendingEntries(loaded: Entry[]) {
+    const merged = loaded.filter(entry => !pendingEntryDeletes.has(entry.id))
+    for (const pending of pendingEntryUpserts) {
+      const index = merged.findIndex(entry => entry.id === pending.id)
+      if (index >= 0) merged.splice(index, 1, pending)
+      else merged.unshift(pending)
+    }
+    return merged
   }
 
   const taskById = computed(() => new Map(tasks.value.map(task => [task.id, task])))
@@ -521,6 +549,7 @@ export const useTaskStore = defineStore('tasks', () => {
 
   async function load() {
     if (!api.authStore.record) return
+    const startedAtEntryMutationRevision = entryMutationRevision
     loading.value = true
     error.value = ''
     try {
@@ -534,8 +563,10 @@ export const useTaskStore = defineStore('tasks', () => {
       ])
       tasks.value = taskRecords.map(mapTask)
       steps.value = stepRecords.map(mapStep)
-      occurrences.value = occurrenceRecords.map(mapOccurrence)
-      entries.value = entryRecords.map(mapEntry)
+      if (startedAtEntryMutationRevision === entryMutationRevision) {
+        occurrences.value = mergePendingOccurrences(occurrenceRecords.map(mapOccurrence))
+        entries.value = mergePendingEntries(entryRecords.map(mapEntry))
+      }
       const reconciliationKey = `${api.authStore.record.id}:${since}`
       if (reconciledSessionProgressKey !== reconciliationKey) {
         const reconciled = await api.reconcileSessionTaskProgress?.(since)
@@ -560,6 +591,7 @@ export const useTaskStore = defineStore('tasks', () => {
     const rangeKey = `${start}:${end}`
     if (loadedProgressRanges.has(rangeKey)) return true
     const request = ++progressRangeRequest
+    const startedAtEntryMutationRevision = entryMutationRevision
     try {
       const [occurrenceRecords, entryRecords] = await Promise.all([
         api.collection('occurrences').getFullList({
@@ -572,12 +604,14 @@ export const useTaskStore = defineStore('tasks', () => {
         }),
       ])
       if (request !== progressRangeRequest) return false
-      const mergedOccurrences = new Map(occurrences.value.map((item) => [item.id, item]))
-      occurrenceRecords.map(mapOccurrence).forEach((item) => mergedOccurrences.set(item.id, item))
-      occurrences.value = [...mergedOccurrences.values()]
-      const mergedEntries = new Map(entries.value.map((item) => [item.id, item]))
-      entryRecords.map(mapEntry).forEach((item) => mergedEntries.set(item.id, item))
-      entries.value = [...mergedEntries.values()]
+      if (startedAtEntryMutationRevision === entryMutationRevision) {
+        const mergedOccurrences = new Map(occurrences.value.map((item) => [item.id, item]))
+        occurrenceRecords.map(mapOccurrence).forEach((item) => mergedOccurrences.set(item.id, item))
+        occurrences.value = mergePendingOccurrences([...mergedOccurrences.values()])
+        const mergedEntries = new Map(entries.value.map((item) => [item.id, item]))
+        entryRecords.map(mapEntry).forEach((item) => mergedEntries.set(item.id, item))
+        entries.value = mergePendingEntries([...mergedEntries.values()])
+      }
       loadedProgressRanges.add(rangeKey)
       await syncTaskReminders()
       return true
@@ -692,6 +726,7 @@ export const useTaskStore = defineStore('tasks', () => {
       completionState: {},
     }
     occurrences.value.push(occurrence)
+    pendingOccurrenceValues.set(key, occurrence)
 
     const persistence = (async () => {
       try {
@@ -714,6 +749,7 @@ export const useTaskStore = defineStore('tasks', () => {
         throw cause
       } finally {
         pendingOccurrenceCreates.delete(key)
+        pendingOccurrenceValues.delete(key)
       }
     })()
     pendingOccurrenceCreates.set(key, persistence)
@@ -990,6 +1026,7 @@ export const useTaskStore = defineStore('tasks', () => {
   ) {
     if (progress.sealed) return
     if (amount === 0) throw new Error('Task log entries cannot have a value of zero.')
+    entryMutationRevision += 1
     const progressDate = parseISO(progress.scheduledDate)
     const occurrencePromise = ensureOccurrence(progress.task, progressDate, progress.programStep)
     const occurrence = occurrenceFor(progress.task, progressDate, progress.programStep)!
@@ -1018,6 +1055,7 @@ export const useTaskStore = defineStore('tasks', () => {
       taskLogImage: imageLog?.id,
     }
     entries.value.unshift(entry)
+    pendingEntryUpserts.add(entry)
     const persistence = (async () => {
       const persistedOccurrence = await occurrencePromise
       entry.occurrence = persistedOccurrence.id
@@ -1044,6 +1082,9 @@ export const useTaskStore = defineStore('tasks', () => {
     } catch (cause) {
       entries.value = entries.value.filter(item => item !== entry)
       throw cause
+    } finally {
+      pendingEntryUpserts.delete(entry)
+      entryMutationRevision += 1
     }
   }
 
@@ -1069,8 +1110,10 @@ export const useTaskStore = defineStore('tasks', () => {
             || progress.task.unit
             || '',
         } satisfies Entry
+    entryMutationRevision += 1
     entry.value = amount
     if (index < 0) entries.value.unshift(entry)
+    pendingEntryUpserts.add(entry)
     const persistence = api.collection('entries').update(entryId, {
       value: amount,
     }).then((record) => {
@@ -1085,6 +1128,9 @@ export const useTaskStore = defineStore('tasks', () => {
       if (previous) Object.assign(entry, previous)
       else entries.value = entries.value.filter(item => item !== entry)
       throw cause
+    } finally {
+      pendingEntryUpserts.delete(entry)
+      entryMutationRevision += 1
     }
   }
 
@@ -1092,6 +1138,8 @@ export const useTaskStore = defineStore('tasks', () => {
     if (progress.sealed) return false
     const index = entries.value.findIndex(entry => entry.id === entryId)
     const entry = index >= 0 ? entries.value[index] : undefined
+    entryMutationRevision += 1
+    pendingEntryDeletes.add(entryId)
     if (index >= 0) entries.value.splice(index, 1)
     const persistence = api.collection('entries').delete(entryId)
     const progressSync = syncEntryProgress(progress, persistence)
@@ -1100,6 +1148,9 @@ export const useTaskStore = defineStore('tasks', () => {
     } catch (cause) {
       if (entry && !entries.value.includes(entry)) entries.value.splice(index, 0, entry)
       throw cause
+    } finally {
+      pendingEntryDeletes.delete(entryId)
+      entryMutationRevision += 1
     }
     useSnackbarStore().showDeletion('Log')
     return true
