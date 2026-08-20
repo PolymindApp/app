@@ -22,7 +22,7 @@ Standalone Review sets can optionally finish after a configured amount of active
 
 Each Review set has two independent eject-button settings. With both settings cleared, eject permanently removes the current card from the active list and completes a standalone review after its last active card is ejected.
 
-The optional **Load the next card** behavior keeps the active list filled up to the configured maximum by injecting the next ordered, matching card whenever one is ejected. For example, a 50-card Review set with a 10-card session limit keeps 10 cards active while reserve cards remain, then drains the final 10 and completes after all 50 cards have been ejected. The ordered reserve is snapshotted when standalone and mini interval sessions start, so the behavior remains deterministic and available offline.
+The **Load the next card** behavior is enabled by default for new Review sets. It keeps the active list filled up to the configured maximum by injecting the next ordered, matching card whenever one is ejected. For example, a 50-card Review set with a 10-card session limit keeps 10 cards active while reserve cards remain, then drains the final 10 and completes after all 50 cards have been ejected. The ordered reserve is snapshotted when standalone and mini interval sessions start, so the behavior remains deterministic and available offline.
 
 The optional **Exclude card** behavior also adds the ejected card to the Review set's excluded cards, preventing it from appearing in future sessions. Undoing the last eject in a standalone review restores the card to the active queue and removes that exclusion.
 
