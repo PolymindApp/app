@@ -11,8 +11,8 @@ import android.media.AudioManager;
  */
 final class TransientAudioFocus {
 
-    // Keep per-sound focus wired in while it remains disabled. Interval speech explicitly owns
-    // focus for its entire step through acquireStepSpeech().
+    // Keep per-sound focus wired in while it remains disabled. Review set sessions explicitly own
+    // focus for their active playback scope through acquireReviewSet().
     private static final boolean PER_SOUND_AUDIO_FOCUS_ENABLED = false;
 
     static final class Lease {
@@ -50,7 +50,7 @@ final class TransientAudioFocus {
         return get(context).acquireLease(audioAttributes);
     }
 
-    static Lease acquireStepSpeech(Context context, AudioAttributes audioAttributes) {
+    static Lease acquireReviewSet(Context context, AudioAttributes audioAttributes) {
         return get(context).acquireLease(audioAttributes);
     }
 

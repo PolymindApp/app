@@ -9,7 +9,6 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.ServiceInfo;
-import android.media.AudioAttributes;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
@@ -50,6 +49,7 @@ public class BackgroundFlashcardService extends Service {
     private TextToSpeech speech;
     private TtsVolumeBoost volumeBoost;
     private FlashcardRecordingPlayer recordingPlayer;
+    private ReviewSetAudioFocus reviewSetAudioFocus;
     private boolean speechReady;
     private boolean speechOverAmplified;
     private boolean running;
@@ -116,17 +116,13 @@ public class BackgroundFlashcardService extends Service {
         activeInstance = this;
         preferences = getSharedPreferences(PREFERENCES, MODE_PRIVATE);
         createNotificationChannel();
+        reviewSetAudioFocus = new ReviewSetAudioFocus(this);
         volumeBoost = new TtsVolumeBoost(this);
         recordingPlayer = new FlashcardRecordingPlayer(this);
         speech = new TextToSpeech(this, status -> {
             speechReady = status == TextToSpeech.SUCCESS;
             if (speechReady) {
-                speech.setAudioAttributes(
-                    new AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_MEDIA)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                        .build()
-                );
+                speech.setAudioAttributes(ReviewSetAudioFocus.speechAudioAttributes());
                 speech.setOnUtteranceProgressListener(new UtteranceProgressListener() {
                     @Override
                     public void onStart(String utteranceId) {}
@@ -159,6 +155,7 @@ public class BackgroundFlashcardService extends Service {
             startAsForeground();
             acquireWakeLock();
             running = true;
+            updateReviewSetAudioFocus();
             finished = false;
             handler.removeCallbacks(ticker);
             handler.post(ticker);
@@ -326,6 +323,14 @@ public class BackgroundFlashcardService extends Service {
         if (volumeBoost != null) volumeBoost.stop();
     }
 
+    private void updateReviewSetAudioFocus() {
+        reviewSetAudioFocus.update(running, true, !cards.isEmpty());
+    }
+
+    private void releaseReviewSetAudioFocus() {
+        if (reviewSetAudioFocus != null) reviewSetAudioFocus.release();
+    }
+
     private void startAsForeground() {
         getSystemService(NotificationManager.class).cancel(NOTIFICATION_ID + 1);
         Notification notification = buildNotification(false);
@@ -342,6 +347,7 @@ public class BackgroundFlashcardService extends Service {
 
     private void finishReview() {
         running = false;
+        releaseReviewSetAudioFocus();
         finished = true;
         handler.removeCallbacks(ticker);
         stopSpeechPlayback();
@@ -358,6 +364,7 @@ public class BackgroundFlashcardService extends Service {
 
     private void stopReview(boolean clearState) {
         running = false;
+        releaseReviewSetAudioFocus();
         handler.removeCallbacks(ticker);
         stopSpeechPlayback();
         releaseWakeLock();
@@ -478,6 +485,7 @@ public class BackgroundFlashcardService extends Service {
     @Override
     public void onDestroy() {
         running = false;
+        releaseReviewSetAudioFocus();
         activeInstance = null;
         handler.removeCallbacksAndMessages(null);
         releaseWakeLock();

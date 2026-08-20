@@ -59,7 +59,7 @@ public class BackgroundIntervalService extends Service {
     private TextToSpeech speech;
     private TtsVolumeBoost volumeBoost;
     private FlashcardRecordingPlayer recordingPlayer;
-    private TransientAudioFocus.Lease reviewStepAudioFocus;
+    private ReviewSetAudioFocus reviewSetAudioFocus;
     private boolean speechReady;
     private String sessionId = "";
     private String sessionName = "Interval";
@@ -156,13 +156,14 @@ public class BackgroundIntervalService extends Service {
         super.onCreate();
         activeInstance = this;
         createNotificationChannel();
+        reviewSetAudioFocus = new ReviewSetAudioFocus(this);
         volumeBoost = new TtsVolumeBoost(this);
         recordingPlayer = new FlashcardRecordingPlayer(this);
         speech = new TextToSpeech(this, status -> {
             speechReady = status == TextToSpeech.SUCCESS;
             TextToSpeech currentSpeech = speech;
             if (speechReady && currentSpeech != null) {
-                currentSpeech.setAudioAttributes(reviewSpeechAudioAttributes());
+                currentSpeech.setAudioAttributes(ReviewSetAudioFocus.speechAudioAttributes());
                 currentSpeech.setOnUtteranceProgressListener(new UtteranceProgressListener() {
                     @Override
                     public void onStart(String utteranceId) {}
@@ -312,47 +313,28 @@ public class BackgroundIntervalService extends Service {
         boolean flashcardReviewEnabled,
         boolean hasReviewCards
     ) {
-        return running
-            && !requiresConfirmation
-            && flashcardReviewEnabled
-            && hasReviewCards;
-    }
-
-    private static AudioAttributes reviewSpeechAudioAttributes() {
-        return new AudioAttributes.Builder()
-            .setUsage(AudioAttributes.USAGE_MEDIA)
-            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-            .build();
-    }
-
-    private boolean currentStepShouldHoldReviewAudioFocus() {
-        if (steps.isEmpty() || stepIndex < 0 || stepIndex >= steps.size()) return false;
-        IntervalStep step = steps.get(stepIndex);
-        return stepShouldHoldReviewAudioFocus(
+        return ReviewSetAudioFocus.shouldHold(
             running,
-            step.requiresConfirmation,
-            step.flashcardReviewEnabled,
-            !reviewCards.isEmpty()
+            !requiresConfirmation && flashcardReviewEnabled,
+            hasReviewCards
         );
     }
 
     private void updateReviewStepAudioFocus() {
-        if (currentStepShouldHoldReviewAudioFocus()) {
-            if (reviewStepAudioFocus == null) {
-                reviewStepAudioFocus = TransientAudioFocus.acquireStepSpeech(
-                    this,
-                    reviewSpeechAudioAttributes()
-                );
-            }
+        if (steps.isEmpty() || stepIndex < 0 || stepIndex >= steps.size()) {
+            releaseReviewStepAudioFocus();
             return;
         }
-        releaseReviewStepAudioFocus();
+        IntervalStep step = steps.get(stepIndex);
+        reviewSetAudioFocus.update(
+            running,
+            !step.requiresConfirmation && step.flashcardReviewEnabled,
+            !reviewCards.isEmpty()
+        );
     }
 
     private void releaseReviewStepAudioFocus() {
-        if (reviewStepAudioFocus == null) return;
-        reviewStepAudioFocus.release();
-        reviewStepAudioFocus = null;
+        if (reviewSetAudioFocus != null) reviewSetAudioFocus.release();
     }
 
     static long reviewWindowElapsedMs(long durationMs, long remainingMs) {
