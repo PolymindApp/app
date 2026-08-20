@@ -220,6 +220,7 @@ async function removeTemplate() {
         v-model:definition="draft.definition"
         v-model:cues="draft.cues"
         :review-set-speech-enabled="selectedReviewSet?.speechEnabled === true"
+        class="mt-4"
       />
     </AppForm>
 
