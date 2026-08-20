@@ -2630,6 +2630,7 @@ final class Api
         }
         if ($collection['name'] === 'tasks') {
             $body += [
+                'archived' => false,
                 'log_with_images_enabled' => false,
                 'schedule_mode' => 'all_day',
                 'scheduled_time' => '',
@@ -3982,6 +3983,7 @@ final class Api
             $task = $this->ownedRecord('tasks', $taskId, $owner);
             if (
                 !(bool) $task['active']
+                || (bool) ($task['archived'] ?? false)
                 || !$this->intervalAttributionIsOpenOnDate($task, $programStepId, $taskDate, $owner)
             ) {
                 throw new ApiException(409, 'The selected task or program step is not open for this date.');
@@ -5260,7 +5262,7 @@ final class Api
         $sourceField = $sourceType === 'interval' ? 'interval_template' : 'flashcard_review_set';
         $statement = $this->database->pdo->prepare(
             "SELECT * FROM tasks
-             WHERE owner = :owner AND active = TRUE AND type = :type
+             WHERE owner = :owner AND active = TRUE AND archived = FALSE AND type = :type
                AND {$sourceField} = :source
                AND (id = :task OR session_count_mode = 'linked')
              ORDER BY sort_order, id",
@@ -7050,6 +7052,7 @@ final class Api
         if (
             !is_array($task)
             || !(bool) $task['active']
+            || (bool) ($task['archived'] ?? false)
             || !$this->intervalAttributionIsOpenOnDate(
                 $task,
                 $programStepId,

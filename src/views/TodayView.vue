@@ -112,6 +112,7 @@ const trackingSheetDate = ref(toDateKey(new Date()))
 const trackingSheetContext = ref('')
 const valuePulseVersions = ref<Record<string, number>>({})
 const notScheduledExpanded = ref(false)
+const archiveExpanded = ref(false)
 const reorderingTasks = ref(false)
 const exactAmount = computed(() => {
   if (!exactAmountInput.value || exactAmountInput.value === '.') return null
@@ -397,6 +398,10 @@ const notScheduledProgress = computed(() => tasksWithoutProgress(
   store.tasks,
   selectedProgress.value,
 ).map(task => store.makeProgress(task, selectedDate.value)))
+const archivedProgress = computed(() => store.tasks
+  .filter(task => task.archived)
+  .sort((left, right) => left.sortOrder - right.sortOrder)
+  .map(task => store.makeProgress(task, selectedDate.value)))
 const scheduleLayout = computed(() => groupTaskProgressBySchedule(selectedProgress.value))
 const allDayProgress = computed(() => scheduleLayout.value.allDay)
 const timedProgressGroups = computed(() => scheduleLayout.value.timed)
@@ -1485,6 +1490,64 @@ async function saveTaskLogEntry() {
                 </span>
                 <span
                   v-if="item.task.mandatory && !item.complete"
+                  class="not-scheduled-task__required"
+                  role="img"
+                  aria-label="Required task"
+                  title="Required"
+                />
+              </div>
+            </template>
+            <template #append>
+              <v-icon icon="mdi-chevron-right" size="small" color="medium-emphasis" />
+            </template>
+          </v-list-item>
+        </v-list>
+      </v-expand-transition>
+    </section>
+
+    <section
+      v-if="archivedProgress.length"
+      class="not-scheduled-section"
+      :class="notScheduledProgress.length ? 'mt-2' : 'mt-6'"
+    >
+      <v-btn
+        block
+        variant="text"
+        class="not-scheduled-section__heading px-4"
+        :aria-expanded="archiveExpanded"
+        aria-controls="archived-tasks"
+        @click="archiveExpanded = !archiveExpanded"
+      >
+        <h3>Archive</h3>
+        <span class="not-scheduled-section__count">{{ archivedProgress.length }}</span>
+        <v-icon :icon="archiveExpanded ? 'mdi-chevron-up' : 'mdi-chevron-down'" size="small" />
+      </v-btn>
+      <v-expand-transition>
+        <v-list
+          v-show="archiveExpanded"
+          id="archived-tasks"
+          bg-color="transparent"
+          class="pa-0"
+        >
+          <v-list-item
+            v-for="item in archivedProgress"
+            :key="item.task.id"
+            :title="item.task.name"
+            :subtitle="item.task.active ? 'Archived' : 'Archived · Paused'"
+            rounded="lg"
+            class="not-scheduled-task"
+            @click="router.push(`/tasks/${item.task.id}`)"
+          >
+            <template #prepend>
+              <div class="not-scheduled-task__icon-wrap mr-3">
+                <span
+                  class="not-scheduled-task__icon"
+                  :style="{ background: item.task.color || taskPresentation(item).color }"
+                >
+                  <v-icon icon="mdi-archive-outline" size="1rem" />
+                </span>
+                <span
+                  v-if="item.task.mandatory"
                   class="not-scheduled-task__required"
                   role="img"
                   aria-label="Required task"

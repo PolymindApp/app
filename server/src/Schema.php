@@ -105,6 +105,7 @@ final class Schema
                     'mandatory' => self::boolean(),
                     'review_when_missed' => self::boolean(),
                     'active' => self::boolean(),
+                    'archived' => self::boolean(),
                     'schedule_mode' => self::choice(['all_day', 'time_based']),
                     'scheduled_time' => self::timeKey(false, true),
                     'start_date' => self::dateKey(true),
@@ -135,7 +136,7 @@ final class Schema
                 ],
                 'required' => ['name', 'type', 'start_date', 'recurrence_type'],
                 'sort' => ['name', 'sort_order', 'start_date'],
-                'filter' => ['active', 'type', 'start_date'],
+                'filter' => ['active', 'archived', 'type', 'start_date'],
             ],
             'program_steps' => [
                 'fields' => [

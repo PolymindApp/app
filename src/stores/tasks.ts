@@ -50,6 +50,7 @@ function mapTask(record: Record<string, any>): Task {
     mandatory: record.mandatory,
     reviewWhenMissed: record.review_when_missed,
     active: record.active,
+    archived: record.archived === true,
     scheduleMode: record.schedule_mode === 'time_based' ? 'time_based' : 'all_day',
     scheduledTime: record.schedule_mode === 'time_based' ? record.scheduled_time || undefined : undefined,
     startDate: record.start_date,
@@ -186,7 +187,7 @@ export const useTaskStore = defineStore('tasks', () => {
   const pendingEntryUpserts = new Set<Entry>()
   const pendingEntryDeletes = new Set<string>()
 
-  const activeTasks = computed(() => tasks.value.filter((task) => task.active))
+  const activeTasks = computed(() => tasks.value.filter((task) => task.active && !task.archived))
 
   function occurrenceStatusKey(taskId: string, scheduledDate: string, programStepId = '') {
     return `${scheduledDate}:${taskId}:${programStepId}`
@@ -504,7 +505,7 @@ export const useTaskStore = defineStore('tasks', () => {
     const dateKey = toDateKey(date)
     const progress: TaskProgress[] = []
     const includedStatusKeys = new Set<string>()
-    if (task.active && isTaskScheduled(task, date)) {
+    if (task.active && !task.archived && isTaskScheduled(task, date)) {
       const scheduledSteps = task.type === 'program'
         ? stepsForDate(task, steps.value, date)
         : [undefined]
@@ -887,6 +888,7 @@ export const useTaskStore = defineStore('tasks', () => {
     const date = parseISO(taskDate)
     const candidates = tasks.value.filter(task => (
       task.active
+      && !task.archived
       && task.type === input.sourceType
       && (input.sourceType === 'interval'
         ? task.intervalTemplate === input.sourceId
@@ -1321,6 +1323,7 @@ export const useTaskStore = defineStore('tasks', () => {
       mandatory: draft.mandatory,
       review_when_missed: draft.reviewWhenMissed,
       active: draft.active,
+      archived: draft.archived === true,
       schedule_mode: draft.scheduleMode === 'time_based' ? 'time_based' : 'all_day',
       scheduled_time: draft.scheduleMode === 'time_based' ? draft.scheduledTime || '' : '',
       start_date: draft.startDate,
@@ -1456,6 +1459,20 @@ export const useTaskStore = defineStore('tasks', () => {
     task.active = !task.active
     try {
       const record = await api.collection('tasks').update(task.id, { active: task.active })
+      Object.assign(task, mapTask(record))
+    } catch (cause) {
+      Object.assign(task, previous)
+      throw cause
+    } finally {
+      void syncTaskReminders()
+    }
+  }
+
+  async function setTaskArchived(task: Task, archived: boolean) {
+    const previous = { ...task }
+    task.archived = archived
+    try {
+      const record = await api.collection('tasks').update(task.id, { archived })
       Object.assign(task, mapTask(record))
     } catch (cause) {
       Object.assign(task, previous)
@@ -1655,6 +1672,7 @@ export const useTaskStore = defineStore('tasks', () => {
     shiftProgram,
     saveTask,
     toggleTaskActive,
+    setTaskArchived,
     upsertOccurrenceRecord,
     upsertEntryRecord,
     reorderTasks,

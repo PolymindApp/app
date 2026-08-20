@@ -37,8 +37,8 @@ const flashcardStore = useFlashcardStore()
 const trackingStore = useTrackingStore()
 const form = ref()
 const saving = ref(false)
-const deleting = ref(false)
-const deleteDialog = ref(false)
+const archiving = ref(false)
+const archiveDialog = ref(false)
 const openStep = ref<number>()
 const error = ref('')
 const reminderAvailable = taskReminderSettingsAvailable()
@@ -130,6 +130,7 @@ const draft = reactive<TaskDraft>({
   mandatory: true,
   reviewWhenMissed: false,
   active: true,
+  archived: false,
   scheduleMode: 'time_based',
   scheduledTime: '09:00',
   startDate: format(new Date(), 'yyyy-MM-dd'),
@@ -551,19 +552,23 @@ async function save() {
   }
 }
 
-async function removeTask() {
+async function setTaskArchived() {
   if (!draft.id) return
-  deleting.value = true
+  const task = store.tasks.find(item => item.id === draft.id)
+  if (!task) return
+  archiving.value = true
   error.value = ''
   try {
-    await store.deleteTask(draft.id)
-    deleteDialog.value = false
+    await store.setTaskArchived(task, !task.archived)
+    archiveDialog.value = false
     await router.replace('/tasks')
   } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : 'Could not delete the task.'
-    deleteDialog.value = false
+    error.value = cause instanceof Error
+      ? cause.message
+      : `Could not ${draft.archived ? 'restore' : 'archive'} the task.`
+    archiveDialog.value = false
   } finally {
-    deleting.value = false
+    archiving.value = false
   }
 }
 
@@ -1079,22 +1084,26 @@ async function removeTask() {
     <FormActionBar
       :primary-text="isEditing ? 'Save' : 'Create'"
       :loading="saving"
-      :show-delete="isEditing"
-      delete-label="Delete routine"
-      :delete-disabled="deleting"
+      :show-archive="isEditing"
+      :archived="draft.archived"
+      :archive-label="draft.archived ? 'Restore routine' : 'Archive routine'"
+      :archive-disabled="archiving"
       @submit="save"
       @cancel="router.back()"
-      @delete="deleteDialog = true"
+      @archive="archiveDialog = true"
     />
 
     <ConfirmDialog
-      v-model="deleteDialog"
-      title="Delete this routine?"
-      message="This permanently removes the routine, its program steps, logged entries, and history. This action cannot be undone."
-      confirm-text="Delete routine"
-      icon="mdi-delete-outline"
-      :loading="deleting"
-      @confirm="removeTask"
+      v-model="archiveDialog"
+      :title="draft.archived ? 'Restore this routine?' : 'Archive this routine?'"
+      :message="draft.archived
+        ? 'This routine will return to the Tasks view with its previous active or paused state.'
+        : 'This routine will leave your schedule, while its settings, logged entries, and history remain available.'"
+      :confirm-text="draft.archived ? 'Restore routine' : 'Archive routine'"
+      :confirm-color="draft.archived ? 'secondary' : 'warning'"
+      :icon="draft.archived ? 'mdi-archive-arrow-up-outline' : 'mdi-archive-arrow-down-outline'"
+      :loading="archiving"
+      @confirm="setTaskArchived"
     />
   </main>
 </template>

@@ -406,6 +406,7 @@ const eligibleTaskProgress = computed(() => {
       )))
       && !item.locked
       && item.task.active
+      && !item.task.archived
       && (Boolean(item.occurrence)
         || (item.programStep
           ? stepsForDate(item.task, taskStore.steps, today).some((step) => step.id === item.programStep?.id)

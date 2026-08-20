@@ -158,6 +158,7 @@ CREATE TABLE tasks (
     mandatory BOOLEAN NOT NULL DEFAULT FALSE,
     review_when_missed BOOLEAN NOT NULL DEFAULT FALSE,
     active BOOLEAN NOT NULL DEFAULT FALSE,
+    archived BOOLEAN NOT NULL DEFAULT FALSE,
     schedule_mode TEXT NOT NULL DEFAULT 'all_day',
     scheduled_time TEXT NOT NULL DEFAULT '',
     start_date TEXT NOT NULL DEFAULT '',
@@ -188,6 +189,7 @@ CREATE TABLE tasks (
 );
 
 CREATE INDEX idx_tasks_owner_active ON tasks (owner, active);
+CREATE INDEX idx_tasks_owner_archived_order ON tasks (owner, archived, sort_order);
 CREATE INDEX idx_tasks_owner_interval_template
     ON tasks (owner, interval_template);
 CREATE INDEX idx_tasks_owner_flashcard_review_set

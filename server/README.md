@@ -118,6 +118,7 @@ The reconstructed PHP-era history is:
 | `202608170001` | Retired flashcard images, compacted sync versions, and added targeted indexes |
 | `202608200001` | Deduplicated client-side JavaScript and network error reporting |
 | `202608200005` | Removed server-side desktop notification storage |
+| `202608200007` | Added non-destructive task archiving |
 
 Existing PHP databases are advanced without recreating application data. The schema is validated after migration, including required columns.
 

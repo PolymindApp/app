@@ -9,7 +9,7 @@ use PDOException;
 
 final class Database
 {
-    public const EXPECTED_SCHEMA_VERSION = '202608200005';
+    public const EXPECTED_SCHEMA_VERSION = '202608200007';
 
     public readonly PDO $pdo;
 
@@ -73,7 +73,7 @@ final class Database
             ],
             'tasks' => [
                 'id', 'owner', 'name', 'description', 'type', 'tags', 'mandatory',
-                'review_when_missed', 'active', 'schedule_mode', 'scheduled_time',
+                'review_when_missed', 'active', 'archived', 'schedule_mode', 'scheduled_time',
                 'start_date', 'end_date',
                 'recurrence_type', 'weekdays', 'interval_weeks', 'target_value',
                 'target_operator', 'unit', 'custom_unit', 'goal_period',

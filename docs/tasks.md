@@ -2,6 +2,8 @@
 
 Opening the Tasks view selects the current day. Choosing another date remains in effect while working in that view, but returning to Tasks starts from today again.
 
+Saved tasks are archived instead of deleted from the task editor. Archiving removes a task from its schedule and reminders while preserving its settings, entries, and history. Archived tasks appear in the collapsible Archive section below Not scheduled, where selecting one opens the editor so it can be restored.
+
 On mobile, the next incomplete task banner appears only when no incomplete task card is visible between the app bar and bottom navigation. It links to the nearest incomplete task farther down the page.
 
 When a Daily Total log exactly fills the positive amount remaining to its target, the Tasks view asks whether to lock in the total. Locking finishes the task and prevents more changes for that day; skipping leaves it unlocked so more values can still be logged.

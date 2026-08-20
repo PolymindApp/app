@@ -29,7 +29,7 @@ watch(filter, (status, previousStatus) => {
 })
 
 const visibleTasks = computed(() => tasks.value.filter((task) =>
-  task.active === (filter.value === 'active'),
+  !task.archived && task.active === (filter.value === 'active'),
 ))
 
 onMounted(() => {

@@ -76,7 +76,7 @@ export function taskReminderSettingsAvailable() {
 export async function requestDesktopTaskReminderPermission(tasks: Task[]) {
   if (
     !desktopTaskRemindersAvailable()
-    || !tasks.some(task => task.active && task.reminderEnabled)
+    || !tasks.some(task => task.active && !task.archived && task.reminderEnabled)
   ) return false
 
   return requestDesktopTaskNotificationPermission()
@@ -185,7 +185,7 @@ export async function reconcileTaskReminders(
   if (!taskRemindersAvailable()) return
   const now = options.now ?? new Date()
   const lookaheadDays = Math.max(1, options.lookaheadDays ?? TASK_REMINDER_LOOKAHEAD_DAYS)
-  const enabledTasks = tasks.filter(task => task.active && task.reminderEnabled)
+  const enabledTasks = tasks.filter(task => task.active && !task.archived && task.reminderEnabled)
   const notifications: LocalNotificationSchema[] = enabledTasks
     .flatMap(task => {
       const times = [...new Set(task.reminderTimes)]
@@ -260,7 +260,7 @@ function reconcileDesktopTaskReminders(
   const now = options.now ?? new Date()
   const lookaheadDays = Math.max(1, options.lookaheadDays ?? TASK_REMINDER_LOOKAHEAD_DAYS)
   const reminder = tasks
-    .filter(task => task.active && task.reminderEnabled)
+    .filter(task => task.active && !task.archived && task.reminderEnabled)
     .flatMap(task => Array.from(
       { length: lookaheadDays },
       (_, offset) => addDays(startOfDay(now), offset),

@@ -30,6 +30,7 @@ export interface Task {
   mandatory: boolean
   reviewWhenMissed: boolean
   active: boolean
+  archived?: boolean
   scheduleMode?: TaskScheduleMode
   scheduledTime?: string
   startDate: string

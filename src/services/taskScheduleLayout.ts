@@ -67,6 +67,6 @@ export function groupTaskProgressBySchedule(progressItems: TaskProgress[]): Task
 export function tasksWithoutProgress(tasks: Task[], progressItems: TaskProgress[]) {
   const taskIdsWithProgress = new Set(progressItems.map(progress => progress.task.id))
   return tasks
-    .filter(task => !taskIdsWithProgress.has(task.id))
+    .filter(task => !task.archived && !taskIdsWithProgress.has(task.id))
     .sort((left, right) => left.sortOrder - right.sortOrder)
 }
