@@ -266,7 +266,7 @@ async function removeEntry() {
             v-model="task"
             label="Task (optional)"
             :items="taskItems"
-            :loading="taskStore.loading"
+            :loading="taskStore.loading && !taskItems.length"
             clearable
             variant="outlined"
             hide-details="auto"
@@ -275,7 +275,7 @@ async function removeEntry() {
             v-model="trackers"
             label="Trackers (optional)"
             :items="trackerItems"
-            :loading="trackingStore.loading"
+            :loading="trackingStore.loading && !trackerItems.length"
             clearable
             multiple
             chips
