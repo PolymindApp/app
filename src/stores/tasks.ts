@@ -819,6 +819,8 @@ export const useTaskStore = defineStore('tasks', () => {
     complete: boolean,
   ) {
     if (!progress.programStep?.completions?.some(item => item.id === completionId)) return
+    const currentCompletion = progress.completionItems?.find(item => item.id === completionId)
+    if (currentCompletion?.complete === complete) return
     const completionState = {
       ...(progress.occurrence?.completionState || {}),
       ...(optimisticOccurrencePatches.value[

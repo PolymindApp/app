@@ -6,6 +6,8 @@ When a Daily Total log exactly fills the positive amount remaining to its target
 
 Logged amounts update task progress immediately. Background persistence and synchronization refreshes preserve that optimistic value so totals do not temporarily revert while the save is in flight.
 
+Completed interval and flashcard sessions reconcile their attributed program-step requirement only when its effective completion state changes. Repeated local refreshes preserve the original completion instead of creating another occurrence update.
+
 ## Health Connect
 
 Step Counter tasks can load daily step totals from Android Health Connect after the user connects it in Settings. Health Connect does not expose screen-time or app-usage records, so Screen time is not offered as an automatically populated Duration-task unit. Supporting device screen time would require a separate Android `UsageStatsManager` integration and usage-access permission.
