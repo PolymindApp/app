@@ -1104,47 +1104,67 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     try {
       const accountId = api.authStore.record?.id || ''
       const usingLocalDatabase = Boolean(accountId && await hasLocalBootstrap(accountId))
+      let queue = current?.queue.map(card => ({ ...card, tags: [...card.tags] })) || []
+      let totalCards = current?.totalCards || 0
       let reserveCardIds = [...(current?.reserveCardIds || [])]
-      if (current && !flashcardEjectLoadsNext(settings.ejectBehavior)) {
-        reserveCardIds = []
-      } else if (
-        current
-        && usingLocalDatabase
-        && flashcardEjectLoadsNext(settings.ejectBehavior)
-        && !flashcardEjectLoadsNext(current.ejectBehavior)
-      ) {
+      if (current && usingLocalDatabase) {
+        const indefinite = settings.mode === 'passive' && settings.indefinite
         const reviewSet = reviewSets.value.find(item => item.id === current.reviewSet)
         if (!reviewSet) throw new Error('The Review set for this session is no longer available.')
         let availableCards = reviewSet.accessRole === 'owner'
           ? cards.value
           : reviewSetCards.value[reviewSet.id]
         if (!availableCards) availableCards = await loadReviewSetCards(reviewSet.id)
-        const queueState = flashcardReviewQueueState({
+        const selection = flashcardReviewQueueState({
           ...reviewSet,
           ...settings,
-          ejectBehavior: settings.ejectBehavior,
+          ejectBehavior: 'replace',
           tags: [...current.tags],
           excludedCards: [...(current.excludedCards || [])],
         }, availableCards)
         const events = await api.collection('flashcard_review_events').getFullList({
           filter: `session = "${sessionId}"`,
         })
-        const unavailableIds = new Set(current.queue.map(card => card.id))
+        const unavailableIds = new Set<string>()
         events.forEach((event) => {
-          if (!settings.indefinite || event.outcome === 'ejected' || event.outcome === 'eject') {
+          if (!indefinite || event.outcome === 'ejected' || event.outcome === 'eject') {
             unavailableIds.add(event.card)
           }
         })
-        reserveCardIds = [
-          ...queueState.queue.map(card => card.id),
-          ...queueState.reserveCardIds,
-        ].filter(id => !unavailableIds.has(id))
+        const eligibleCards = [...selection.queue, ...selection.reserveCardIds
+          .map(id => availableCards.find(card => card.id === id))
+          .filter((card): card is Flashcard => Boolean(card))]
+          .filter(card => !unavailableIds.has(card.id))
+        const processedCards = current.viewedCount + current.ejectedCount
+        const remainingLimit = indefinite
+          ? settings.maxCards
+          : settings.maxCards - processedCards
+        queue = eligibleCards.slice(0, remainingLimit).map(card => ({
+          id: card.id,
+          front: card.front,
+          back: card.back,
+          note: card.note,
+          frontAudio: card.frontAudio,
+          backAudio: card.backAudio,
+          tags: [...card.tags],
+        }))
+        if (!queue.length) throw new Error('No eligible cards remain for these session settings.')
+        reserveCardIds = flashcardEjectLoadsNext(settings.ejectBehavior)
+          ? eligibleCards.slice(remainingLimit).map(card => card.id)
+          : []
+        totalCards = indefinite
+          ? queue.length
+          : processedCards + queue.length
+      } else if (current && !flashcardEjectLoadsNext(settings.ejectBehavior)) {
+        reserveCardIds = []
       }
       if (current) {
         Object.assign(current, {
           ...settings,
           indefinite: settings.mode === 'passive' && settings.indefinite,
+          queue,
           reserveCardIds,
+          totalCards,
         })
       }
       const record = usingLocalDatabase
@@ -1164,7 +1184,9 @@ export const useFlashcardStore = defineStore('flashcards', () => {
           back_language_snapshot: settings.backLanguage,
           sort_snapshot: settings.sortMode,
           sort_direction_snapshot: settings.sortDirection,
+          queue_state: queue,
           reserve_card_ids: reserveCardIds,
+          total_cards: totalCards,
           updated_at: new Date().toISOString(),
           })
         : await api.updateFlashcardReviewSessionSettings(sessionId, settings)

@@ -109,6 +109,8 @@ const tickVersion = ref(0)
 const passiveSide = ref<'front' | 'back'>('front')
 const passiveRemainingMs = ref(0)
 const localElapsedMs = ref(0)
+const currentQueueIndex = ref(0)
+const ejectedQueueIndexes: number[] = []
 const visibilityPaused = ref(false)
 const nativeBackgroundReady = ref(false)
 const speechPlaybackWarning = ref('')
@@ -209,8 +211,8 @@ const progressCards = computed(() => {
     ? session.value.viewedCount % session.value.totalCards
     : completedCards.value
 })
-const currentCardPosition = computed(() => session.value?.totalCards
-  ? Math.min(progressCards.value + 1, session.value.totalCards)
+const currentCardPosition = computed(() => session.value?.queue.length
+  ? Math.min(currentQueueIndex.value, session.value.queue.length - 1) + 1
   : 0)
 const progress = computed(() => {
   const cardProgress = session.value?.totalCards
@@ -431,6 +433,8 @@ async function releaseWakeLock() {
 
 function initializeLocalState(value: FlashcardReviewSession) {
   localElapsedMs.value = value.elapsedSeconds * 1000
+  currentQueueIndex.value = 0
+  ejectedQueueIndexes.length = 0
   lastTickAt = Date.now()
   revealed.value = false
   restorePassiveState(value)
@@ -571,6 +575,8 @@ async function performAction(
 ) {
   if (!session.value || busy.value) return false
   const previousStatus = session.value.status
+  const previousQueueLength = session.value.queue.length
+  const previousQueueIndex = currentQueueIndex.value
   tick()
   busy.value = true
   error.value = ''
@@ -580,6 +586,33 @@ async function performAction(
     const updated = options.viewCount === undefined
       ? await store.act(session.value.id, action, elapsedSeconds.value)
       : await store.act(session.value.id, action, elapsedSeconds.value, options.viewCount)
+    if (action === 'previous' && updated.queue.length) {
+      currentQueueIndex.value = (previousQueueIndex - 1 + previousQueueLength) % previousQueueLength
+    } else if (action === 'next' || action === 'push') {
+      currentQueueIndex.value = updated.queue.length
+        ? (previousQueueIndex + 1) % previousQueueLength
+        : 0
+    } else if (action === 'view' && updated.indefinite && updated.queue.length) {
+      currentQueueIndex.value = (
+        previousQueueIndex + Math.max(1, Math.round(options.viewCount || 1))
+      ) % updated.queue.length
+    } else if (action === 'eject') {
+      ejectedQueueIndexes.push(previousQueueIndex)
+      currentQueueIndex.value = updated.queue.length
+        ? Math.min(previousQueueIndex, updated.queue.length - 1)
+        : 0
+    } else if (action === 'undo_eject') {
+      currentQueueIndex.value = updated.queue.length
+        ? Math.min(ejectedQueueIndexes.pop() ?? 0, updated.queue.length - 1)
+        : 0
+    } else if (action === 'restart') {
+      currentQueueIndex.value = 0
+      ejectedQueueIndexes.length = 0
+    } else if (updated.queue.length) {
+      currentQueueIndex.value = Math.min(previousQueueIndex, updated.queue.length - 1)
+    } else {
+      currentQueueIndex.value = 0
+    }
     localElapsedMs.value = updated.elapsedSeconds * 1000
     lastTickAt = Date.now()
     if (['success', 'error', 'view', 'previous', 'next', 'push', 'eject', 'undo_eject', 'restart'].includes(action)) resetCurrentCardPhase()
@@ -1063,6 +1096,8 @@ async function saveSessionSettings(target: FlashcardSettingsApplyTarget = 'sessi
 
     if (target === 'session' || target === 'both') {
       const updated = await store.updateSessionSettings(session.value.id, sessionSettingsDraft)
+      currentQueueIndex.value = 0
+      ejectedQueueIndexes.length = 0
       localElapsedMs.value = updated.elapsedSeconds * 1000
       lastTickAt = Date.now()
       lastSpokenKey = ''
@@ -1360,7 +1395,7 @@ async function leaveRunner() {
             <v-icon :icon="session.mode === 'passive' ? 'mdi-play-speed' : 'mdi-gesture-tap'" size="18" />
             <span>{{ session.mode === 'passive' ? 'Passive' : 'Manual' }}</span>
           </div>
-          <span class="runner-meta__card-count">{{ currentCardPosition }} of {{ session.totalCards }}</span>
+          <span class="runner-meta__card-count">{{ currentCardPosition }} of {{ session.queue.length }}</span>
           <span class="runner-meta__elapsed">
             {{ formatReviewDuration(elapsedSeconds) }}<template v-if="session.timeLimitSeconds">
               / {{ formatReviewDuration(session.timeLimitSeconds) }}

@@ -36,6 +36,8 @@ Both settings can be enabled together so the ejected card is excluded while the 
 
 Ejecting the current card advances both standalone and mini interval Review set sessions to the next available card. An injected replacement always starts at the beginning of its first configured face instead of inheriting the ejected card's face or playback progress.
 
+The standalone review header reports the current card's position within the live queue. Its position follows previous and next swipes, while its queue size immediately follows session-setting changes, grading, ejection, undo, card additions, and card removal.
+
 ## Standalone review motion
 
 Automatic and manual standalone Review set changes use the same directional model: previous and next cards move down and up, while front and back faces move right and left. Motion is limited to the card value, answer, and note; the face label, replay or reveal hint, card surface, and passive progress remain stationary. Reduced-motion preferences replace the content without directional movement.
