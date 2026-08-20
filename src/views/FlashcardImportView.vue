@@ -7,9 +7,9 @@ import { copyTextToClipboard } from '@/services/clipboard'
 import { parseFlashcardCsv } from '@/services/flashcardCsv'
 import { useFlashcardStore } from '@/stores/flashcards'
 
-const CSV_EXAMPLE = `front,back,note,tags
-chisel,formón,Hand tool for carving wood,woodworking|tools
-wood grain,veta de la madera,,woodworking|materials`
+const CSV_EXAMPLE = `front,back,transliteration,note,tags
+hello,こんにちは,konnichiwa,Common greeting,japanese|greetings
+thank you,ありがとう,arigatou,,japanese|greetings`
 
 const router = useRouter()
 const route = useRoute()
@@ -109,10 +109,10 @@ async function importCards() {
         <h2 class="text-h6 font-weight-black">Paste your CSV table</h2>
         <p class="text-body-2 muted mt-2 mb-4">
           <template v-if="isReviewSetImport">
-            Front and back are required. Imported cards inherit this Review set’s tags; CSV tags are ignored.
+            Front and back are required. Transliteration and note are optional. Imported cards inherit this Review set’s tags; CSV tags are ignored.
           </template>
           <template v-else>
-            Front and back are required. Note and tags are optional; separate multiple tags with a vertical bar (|).
+            Front and back are required. Transliteration, note, and tags are optional; separate multiple tags with a vertical bar (|).
           </template>
         </p>
         <v-textarea
@@ -122,7 +122,7 @@ async function importCards() {
           clearable
           autocomplete="off"
           spellcheck="false"
-          placeholder="front,back,note,tags"
+          placeholder="front,back,transliteration,note,tags"
           :rules="[
             value => Boolean(value?.trim()) || 'CSV is required',
             () => parsed.errors[0] || true,
@@ -183,6 +183,7 @@ async function importCards() {
                 <tr>
                   <th scope="col">Front</th>
                   <th scope="col">Back</th>
+                  <th scope="col">Transliteration</th>
                   <th scope="col">Note</th>
                   <th scope="col">Tags</th>
                 </tr>
@@ -191,6 +192,7 @@ async function importCards() {
                 <tr v-for="(row, index) in previewRows" :key="`${row.front}-${index}`">
                   <td>{{ row.front }}</td>
                   <td>{{ row.back }}</td>
+                  <td>{{ row.transliteration || '—' }}</td>
                   <td>{{ row.note || '—' }}</td>
                   <td>
                     <div class="flashcard-import-tags">
@@ -230,13 +232,10 @@ async function importCards() {
 .flashcard-import-summary { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem .75rem; }
 .flashcard-import-preview { max-width: 100%; overflow-x: auto; overscroll-behavior-inline: contain; border: .0625rem solid rgba(var(--v-theme-on-surface), .08); border-radius: 1rem; }
 .flashcard-import-preview:focus-visible { outline: .125rem solid rgba(var(--v-theme-secondary), .72); outline-offset: -.125rem; }
-.flashcard-import-preview__table { min-width: 40rem; background: transparent; }
+.flashcard-import-preview__table { min-width: 52rem; background: transparent; }
 .flashcard-import-preview__table :deep(.v-table__wrapper) { overflow: visible; }
 .flashcard-import-preview__table :deep(table) { table-layout: fixed; }
-.flashcard-import-preview th:nth-child(1),
-.flashcard-import-preview th:nth-child(2) { width: 28%; }
-.flashcard-import-preview th:nth-child(3) { width: 26%; }
-.flashcard-import-preview th:nth-child(4) { width: 18%; }
+.flashcard-import-preview th { width: 20%; }
 .flashcard-import-preview th { color: rgba(var(--v-theme-on-surface), .56); font-size: .66rem; font-weight: 900 !important; letter-spacing: .08em; text-transform: uppercase; }
 .flashcard-import-preview td { overflow-wrap: anywhere; font-size: .75rem; }
 .flashcard-import-tags { display: flex; min-width: 0; flex-wrap: wrap; gap: .25rem; }

@@ -24,7 +24,7 @@ const deleteDialog = ref(false)
 const error = ref('')
 const savedNotice = ref(false)
 const original = ref('')
-const draft = reactive<FlashcardDraft>({ front: '', back: '', note: '', tags: [] })
+const draft = reactive<FlashcardDraft>({ front: '', back: '', transliteration: '', note: '', tags: [] })
 const frontAudio = ref<FlashcardAudioValue>(emptyAudio())
 const backAudio = ref<FlashcardAudioValue>(emptyAudio())
 const frontAudioRecording = ref(false)
@@ -42,6 +42,7 @@ const returnTo = computed(() => typeof route.query.returnTo === 'string'
 const signature = computed(() => JSON.stringify({
   front: draft.front,
   back: draft.back,
+  transliteration: draft.transliteration,
   note: draft.note,
   tags: draft.tags,
   frontAudio: frontAudio.value.url,
@@ -95,6 +96,7 @@ onMounted(async () => {
         id: card.id,
         front: card.front,
         back: card.back,
+        transliteration: card.transliteration || '',
         note: card.note,
         tags: [...card.tags],
       })
@@ -134,6 +136,7 @@ async function save() {
       id: draft.id,
       front: draft.front,
       back: draft.back,
+      transliteration: draft.transliteration || '',
       note: draft.note,
       tags: draft.tags,
     }
@@ -157,7 +160,14 @@ async function save() {
     }
 
     const retainedTags = [...draft.tags]
-    Object.assign(draft, { id: undefined, front: '', back: '', note: '', tags: retainedTags })
+    Object.assign(draft, {
+      id: undefined,
+      front: '',
+      back: '',
+      transliteration: '',
+      note: '',
+      tags: retainedTags,
+    })
     frontAudio.value = emptyAudio()
     backAudio.value = emptyAudio()
     original.value = signature.value
@@ -243,6 +253,15 @@ async function remove() {
           >
             <template #label>Back <span class="required-mark">*</span></template>
           </v-textarea>
+          <v-textarea
+            v-model="draft.transliteration"
+            label="Transliteration"
+            rows="2"
+            auto-grow
+            maxlength="5000"
+            counter
+            autocomplete="off"
+          />
           <v-textarea
             v-model="draft.note"
             label="Note"

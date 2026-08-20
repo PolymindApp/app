@@ -1144,7 +1144,7 @@ final class SyncService
             throw new ApiException(500, 'Flashcard schema is unavailable.');
         }
         $payload = array_intersect_key($payload, array_flip([
-            'front', 'back', 'note', 'front_audio_url', 'back_audio_url',
+            'front', 'back', 'transliteration', 'note', 'front_audio_url', 'back_audio_url',
         ]));
         if ($kind === 'create') {
             $tags = $this->stringArray($reviewSet['tags'] ?? []);
@@ -1229,7 +1229,7 @@ final class SyncService
         }
         if ($resource === 'flashcards') {
             $values += [
-                'note' => '',
+                'transliteration' => '', 'note' => '',
                 'front_audio_url' => '', 'front_audio_file' => '',
                 'back_audio_url' => '', 'back_audio_file' => '',
                 'tags' => [], 'created_at' => $now, 'updated_at' => $now,

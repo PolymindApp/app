@@ -376,6 +376,7 @@ export interface RunnerSessionMenuItem {
 }
 
 export type FlashcardBulkAction =
+  | 'swap_columns'
   | 'swap_front_back'
   | 'swap_note_back'
   | 'add_tags'
@@ -385,6 +386,7 @@ export type FlashcardBulkAction =
   | 'export_clipboard'
   | 'delete'
 export type FlashcardBulkRecordAction = Exclude<FlashcardBulkAction, 'export_clipboard'>
+export type FlashcardBulkSwapColumn = 'front' | 'back' | 'transliteration' | 'note'
 export type FlashcardSelectionAction = 'exclude' | 'include'
 export interface FlashcardSelectionActionItem {
   action: FlashcardSelectionAction
@@ -418,6 +420,7 @@ export interface Flashcard {
   id: string
   front: string
   back: string
+  transliteration?: string
   note: string
   frontAudio?: string
   backAudio?: string
@@ -435,6 +438,7 @@ export interface FlashcardDraft {
   id?: string
   front: string
   back: string
+  transliteration?: string
   note: string
   tags: string[]
 }
@@ -442,6 +446,7 @@ export interface FlashcardDraft {
 export interface FlashcardImportRow {
   front: string
   back: string
+  transliteration?: string
   note: string
   tags: string[]
 }

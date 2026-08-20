@@ -188,6 +188,7 @@ function cardTagNames(card: Flashcard) {
             <slot name="action-column-heading">Card</slot>
           </div>
           <div class="card-library-header__cell" aria-hidden="true">Faces</div>
+          <div class="card-library-header__cell" aria-hidden="true">Transliteration</div>
           <div v-if="showLastColumn" class="card-library-header__cell" aria-hidden="true">
             <slot name="last-column-heading">Tags</slot>
           </div>
@@ -211,6 +212,7 @@ function cardTagNames(card: Flashcard) {
             <col v-if="selectable" class="card-library-table__select-column">
             <col class="card-library-table__action-column">
             <col class="card-library-table__faces-column">
+            <col class="card-library-table__transliteration-column">
             <col v-if="showLastColumn" class="card-library-table__tags-column">
             <col v-if="showLastColumn" class="card-library-table__notes-column">
           </colgroup>
@@ -221,6 +223,7 @@ function cardTagNames(card: Flashcard) {
                 <slot name="action-column-heading">Card</slot>
               </th>
               <th scope="col" class="card-library-table__faces-heading">Faces</th>
+              <th scope="col" class="card-library-table__transliteration-heading">Transliteration</th>
               <th v-if="showLastColumn" scope="col" class="card-library-table__tags-heading">
                 <slot name="last-column-heading">Tags</slot>
               </th>
@@ -276,6 +279,14 @@ function cardTagNames(card: Flashcard) {
                   <span class="flashcard-table__text flashcard-table__back">{{ card.back }}</span>
                 </div>
               </td>
+              <td class="card-library-table__transliteration-cell">
+                <span
+                  class="flashcard-table__text flashcard-table__transliteration"
+                  :title="card.transliteration || 'No transliteration'"
+                >
+                  {{ card.transliteration || '—' }}
+                </span>
+              </td>
               <td v-if="showLastColumn" class="card-library-table__tags-cell text-no-wrap">
                 <slot name="last-column" :card="card">
                   <span class="flashcard-table__text flashcard-table__tags" :title="cardTagNames(card)">
@@ -322,25 +333,28 @@ function cardTagNames(card: Flashcard) {
 <style scoped>
 .card-library { overflow: clip; }
 .card-library-header { position: sticky; z-index: 3; top: calc(3.75rem + max(env(safe-area-inset-top, 0rem), var(--safe-area-inset-top, 0rem))); width: 100%; height: 2.25rem; overflow: hidden; background: rgb(var(--v-theme-surface)); box-shadow: 0 .0625rem 0 rgba(var(--v-theme-on-surface), .1); }
-.card-library-header__track { display: grid; width: max(56rem, 100%); height: 100%; grid-template-columns: 3rem 3rem 40% 20% minmax(12rem, 1fr); will-change: transform; }
-.card-library-header__track--without-selection { grid-template-columns: 3rem 40% 20% minmax(12rem, 1fr); }
-.card-library-header__track--without-last-column { width: max(32rem, 100%); grid-template-columns: 3rem 3rem minmax(0, 1fr); }
-.card-library-header__track--without-selection.card-library-header__track--without-last-column { grid-template-columns: 3rem minmax(0, 1fr); }
+.card-library-header__track { display: grid; width: max(68rem, 100%); height: 100%; grid-template-columns: 3rem 3rem repeat(4, minmax(12rem, 1fr)); will-change: transform; }
+.card-library-header__track--without-selection { grid-template-columns: 3rem repeat(4, minmax(12rem, 1fr)); }
+.card-library-header__track--without-last-column { width: max(32rem, 100%); grid-template-columns: 3rem 3rem repeat(2, minmax(12rem, 1fr)); }
+.card-library-header__track--without-selection.card-library-header__track--without-last-column { grid-template-columns: 3rem repeat(2, minmax(12rem, 1fr)); }
 .card-library-header__cell { display: flex; min-width: 0; height: 2.25rem; padding: 0 .75rem; align-items: center; color: rgba(var(--v-theme-on-surface), .52); font-size: .64rem; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
 .card-library-header__select { justify-content: center; padding-right: .25rem; padding-left: .25rem; }
 .card-library-header__select :deep(.v-selection-control) { justify-content: center; }
 .card-library-scroll { max-width: 100%; overflow-x: auto; overscroll-behavior-inline: contain; }
 .card-library-scroll:focus-visible { outline: .125rem solid rgba(var(--v-theme-secondary), .72); outline-offset: -.125rem; }
-.card-library-table { max-width: none; background: transparent; }
+.card-library-table { min-width: 68rem; max-width: none; background: transparent; }
+.card-library-table--without-last-column { min-width: 32rem; }
 .card-library-table :deep(.v-table__wrapper) { overflow: visible; }
 
 .card-library-table__semantic-heading { position: absolute; width: .0625rem; height: .0625rem; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
 .card-library-table__select-column { width: 3rem; }
 .card-library-table__action-column { width: 3rem; }
-.card-library-table--without-last-column .card-library-table__faces-column { width: auto; }
-.card-library-table__faces-column { width: 40%; }
-.card-library-table__tags-column { width: 20%; }
-.card-library-table__notes-column { min-width: 12rem; }
+.card-library-table--without-last-column .card-library-table__faces-column,
+.card-library-table--without-last-column .card-library-table__transliteration-column { width: 50%; }
+.card-library-table__faces-column,
+.card-library-table__transliteration-column,
+.card-library-table__tags-column,
+.card-library-table__notes-column { width: 25%; }
 .card-library-table th.card-library-table__select,
 .card-library-table td.card-library-table__select { padding-right: .25rem !important; padding-left: .25rem !important; text-align: center; }
 .card-library-table th.card-library-table__action-heading,
@@ -369,6 +383,7 @@ function cardTagNames(card: Flashcard) {
 .flashcard-table__faces { display: grid; min-width: 0; gap: .2rem; }
 .flashcard-table__front { color: rgb(var(--v-theme-on-surface)); font-weight: 900; }
 .flashcard-table__back { color: rgba(var(--v-theme-on-surface), .72); }
+.flashcard-table__transliteration,
 .flashcard-table__tags,
 .flashcard-table__notes { color: rgba(var(--v-theme-on-surface), .56); font-size: .7rem; }
 
@@ -379,8 +394,7 @@ function cardTagNames(card: Flashcard) {
   .card-library-table td { padding-right: .5rem !important; padding-left: .5rem !important; }
   .card-library-table th.card-library-table__select,
   .card-library-table td.card-library-table__select { padding-right: .125rem !important; padding-left: .125rem !important; }
-  .card-library-header__track { grid-template-columns: 3rem 3rem 40% 20% minmax(12rem, 1fr); }
-  .card-library-header__track--without-selection { grid-template-columns: 3rem 40% 20% minmax(12rem, 1fr); }
-  .card-library-table__faces-column { width: 40%; }
+  .card-library-header__track { grid-template-columns: 3rem 3rem repeat(4, minmax(12rem, 1fr)); }
+  .card-library-header__track--without-selection { grid-template-columns: 3rem repeat(4, minmax(12rem, 1fr)); }
 }
 </style>

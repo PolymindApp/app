@@ -2,7 +2,13 @@
 
 ## CSV import
 
-The card importer shows an example with the required `front,back,note,tags` header and sample rows. Copy example places the displayed CSV directly on the clipboard so it can be used as a starting template. Front and back are required, while notes and tags are optional; imported Review set cards inherit the destination set's tags.
+Cards include an optional transliteration alongside the front, back, note, and tags. The transliteration is editable on card forms, searchable, and shown as its own column in the card manager and Review set card table.
+
+The card importer shows an example with the `front,back,transliteration,note,tags` header and sample rows. Copy example places the displayed CSV directly on the clipboard so it can be used as a starting template. Front and back are required, while transliteration, notes, and tags are optional; imported Review set cards inherit the destination set's tags.
+
+## Bulk column swaps
+
+The card manager and owned Review set card table expose one **Swap column content** bulk action. Its modal can swap any two of Front, Back, Transliteration, and Note across the selected cards. Apply stays disabled when the result would leave a required face empty or move content beyond the destination column's length limit. Repeating the same swap restores the original content.
 
 ## Runner settings
 

@@ -2784,7 +2784,7 @@ final class Api
             throw new ApiException(405, 'This collection is written through the review session endpoints.');
         }
         if ($collection['name'] === 'flashcards') {
-            $this->allowOnlyFields($body, ['front', 'back', 'note', 'tags']);
+            $this->allowOnlyFields($body, ['front', 'back', 'transliteration', 'note', 'tags']);
         }
         if ($collection['name'] === 'flashcard_review_sets') {
             $this->allowOnlyFields($body, [
@@ -3019,7 +3019,10 @@ final class Api
             if (!is_array($row) || array_is_list($row)) {
                 throw new ApiException(422, "Flashcard row {$rowNumber} is invalid.");
             }
-            $unknown = array_values(array_diff(array_keys($row), ['front', 'back', 'note', 'tags']));
+            $unknown = array_values(array_diff(
+                array_keys($row),
+                ['front', 'back', 'transliteration', 'note', 'tags'],
+            ));
             if ($unknown !== []) {
                 throw new ApiException(422, "Flashcard row {$rowNumber} contains unknown fields.", [
                     'fields' => $unknown,
@@ -3027,6 +3030,11 @@ final class Api
             }
             $front = $this->validateText($row['front'] ?? null, 'front', 5000, true);
             $back = $this->validateText($row['back'] ?? null, 'back', 5000, true);
+            $transliteration = $this->validateText(
+                $row['transliteration'] ?? '',
+                'transliteration',
+                5000,
+            );
             $note = $this->validateText($row['note'] ?? '', 'note', 2000);
             $rowTags = $row['tags'] ?? [];
             if (!is_array($rowTags) || !array_is_list($rowTags) || count($rowTags) > 50) {
@@ -3043,6 +3051,7 @@ final class Api
             $validatedRows[] = [
                 'front' => $front,
                 'back' => $back,
+                'transliteration' => $transliteration,
                 'note' => $note,
                 'tag_keys' => array_keys($normalizedTags),
             ];
@@ -3083,10 +3092,10 @@ final class Api
 
             $insertCard = $pdo->prepare(
                 'INSERT INTO flashcards (
-                    id, owner, front, back, note, tags, created_at, updated_at,
+                    id, owner, front, back, transliteration, note, tags, created_at, updated_at,
                     last_reviewed_at, passive_views, success_count, error_count
                  ) VALUES (
-                    :id, :owner, :front, :back, :note, :tags, :created_at, :updated_at,
+                    :id, :owner, :front, :back, :transliteration, :note, :tags, :created_at, :updated_at,
                     :last_reviewed_at, :passive_views, :success_count, :error_count
                  )',
             );
@@ -3101,6 +3110,7 @@ final class Api
                     'owner' => $owner,
                     'front' => $row['front'],
                     'back' => $row['back'],
+                    'transliteration' => $row['transliteration'],
                     'note' => $row['note'],
                     'tags' => json_encode($tagIds, JSON_THROW_ON_ERROR),
                     'created_at' => $now,
@@ -3139,10 +3149,10 @@ final class Api
     private function bulkUpdateFlashcards(array $user): never
     {
         $body = $this->jsonBody();
-        $this->allowOnlyFields($body, ['action', 'card_ids', 'tag_ids']);
+        $this->allowOnlyFields($body, ['action', 'card_ids', 'tag_ids', 'columns']);
         $action = $body['action'] ?? null;
         $allowedActions = [
-            'swap_front_back', 'swap_note_back',
+            'swap_columns', 'swap_front_back', 'swap_note_back',
             'add_tags', 'set_tags', 'remove_tags', 'clear_tags', 'delete',
         ];
         if (!is_string($action) || !in_array($action, $allowedActions, true)) {
@@ -3166,6 +3176,12 @@ final class Api
                 'tag_ids' => 'required',
             ]);
         }
+        $swapColumns = match ($action) {
+            'swap_columns' => $this->validateFlashcardBulkSwapColumns($body['columns'] ?? null),
+            'swap_front_back' => ['front', 'back'],
+            'swap_note_back' => ['note', 'back'],
+            default => [],
+        };
 
         $owner = (string) $user['id'];
         foreach ($cardIds as $cardId) {
@@ -3190,16 +3206,20 @@ final class Api
                     $this->deleteFlashcard($cardId, $owner);
                     $deletedIds[] = $cardId;
                 }
-            } elseif (in_array($action, ['swap_front_back', 'swap_note_back'], true)) {
+            } elseif ($swapColumns !== []) {
                 $update = $pdo->prepare(
                     'UPDATE flashcards
-                     SET front = :front, back = :back, note = :note, updated_at = :updated_at
+                     SET front = :front,
+                         back = :back,
+                         transliteration = :transliteration,
+                         note = :note,
+                         updated_at = :updated_at
                      WHERE id = :id AND owner = :owner',
                 );
                 $updatedAt = (new DateTimeImmutable('now'))->format('Y-m-d\TH:i:s.v\Z');
                 foreach ($cardIds as $cardId) {
                     $card = $this->ownedRecord('flashcards', $cardId, $owner);
-                    $values = $this->swappedFlashcardTextFields($card, $action);
+                    $values = $this->swappedFlashcardTextFields($card, $swapColumns);
                     $update->execute([
                         ...$values,
                         'updated_at' => $updatedAt,
@@ -3251,7 +3271,7 @@ final class Api
             throw $exception;
         }
 
-        if (in_array($action, ['swap_front_back', 'swap_note_back'], true)) {
+        if ($swapColumns !== []) {
             foreach ($updatedCards as $card) {
                 $this->syncFlashcardWithActiveReviewQueues($card, $owner, false);
             }
@@ -3266,21 +3286,39 @@ final class Api
         ]);
     }
 
-    private function swappedFlashcardTextFields(array $card, string $action): array
+    private function validateFlashcardBulkSwapColumns(mixed $value): array
     {
-        $values = match ($action) {
-            'swap_front_back' => [
-                'front' => $card['back'] ?? '',
-                'back' => $card['front'] ?? '',
-                'note' => $card['note'] ?? '',
-            ],
-            'swap_note_back' => [
-                'front' => $card['front'] ?? '',
-                'back' => $card['note'] ?? '',
-                'note' => $card['back'] ?? '',
-            ],
-            default => throw new ApiException(422, 'Select a valid flashcard swap action.'),
-        };
+        $allowed = ['front', 'back', 'transliteration', 'note'];
+        if (
+            !is_array($value)
+            || !array_is_list($value)
+            || count($value) !== 2
+            || !is_string($value[0] ?? null)
+            || !is_string($value[1] ?? null)
+            || $value[0] === $value[1]
+            || !in_array($value[0], $allowed, true)
+            || !in_array($value[1], $allowed, true)
+        ) {
+            throw new ApiException(422, 'Choose two different flashcard columns.', [
+                'columns' => 'choice',
+            ]);
+        }
+        return array_values($value);
+    }
+
+    private function swappedFlashcardTextFields(array $card, array $columns): array
+    {
+        [$firstColumn, $secondColumn] = $columns;
+        $values = [
+            'front' => $card['front'] ?? '',
+            'back' => $card['back'] ?? '',
+            'transliteration' => $card['transliteration'] ?? '',
+            'note' => $card['note'] ?? '',
+        ];
+        [$values[$firstColumn], $values[$secondColumn]] = [
+            $values[$secondColumn],
+            $values[$firstColumn],
+        ];
         $fields = $this->requireCollection('flashcards')['config']['fields'];
         foreach ($values as $field => $value) {
             $values[$field] = $this->validateField($field, $value, $fields[$field]);
@@ -3616,12 +3654,12 @@ final class Api
             ]);
             $cardStatement = $pdo->prepare(
                 'INSERT INTO flashcards (
-                    id, owner, front, back, note,
+                    id, owner, front, back, transliteration, note,
                     front_audio_url, front_audio_file, back_audio_url, back_audio_file,
                     tags, created_at, updated_at,
                     last_reviewed_at, passive_views, success_count, error_count
                  ) VALUES (
-                    :id, :owner, :front, :back, :note,
+                    :id, :owner, :front, :back, :transliteration, :note,
                     :front_audio_url, :front_audio_file, :back_audio_url, :back_audio_file,
                     :tags, :created_at, :updated_at,
                     :last_reviewed_at, 0, 0, 0
@@ -3641,6 +3679,7 @@ final class Api
                     'owner' => $account,
                     'front' => $card['front'],
                     'back' => $card['back'],
+                    'transliteration' => $card['transliteration'] ?? '',
                     'note' => $card['note'] ?? '',
                     'front_audio_url' => $card['front_audio_url'] ?? '',
                     'front_audio_file' => $card['front_audio_file'] ?? '',
@@ -3690,21 +3729,26 @@ final class Api
         }
         $this->requireFlashcardReviewSetEditor($reviewSet, $account);
         $body = $this->jsonBody();
-        $this->allowOnlyFields($body, ['front', 'back', 'note']);
+        $this->allowOnlyFields($body, ['front', 'back', 'transliteration', 'note']);
         $fields = $this->requireCollection('flashcards')['config']['fields'];
         $front = $this->validateField('front', $body['front'] ?? null, $fields['front']);
         $back = $this->validateField('back', $body['back'] ?? null, $fields['back']);
+        $transliteration = $this->validateField(
+            'transliteration',
+            $body['transliteration'] ?? '',
+            $fields['transliteration'],
+        );
         $note = $this->validateField('note', $body['note'] ?? '', $fields['note']);
         $tags = $this->reviewSetTagIds($reviewSet);
         $now = $this->now();
         $cardId = $this->newId();
         $statement = $this->database->pdo->prepare(
             "INSERT INTO flashcards (
-                id, owner, front, back, note,
+                id, owner, front, back, transliteration, note,
                 tags, created_at, updated_at,
                 last_reviewed_at, passive_views, success_count, error_count
              ) VALUES (
-                :id, :owner, :front, :back, :note,
+                :id, :owner, :front, :back, :transliteration, :note,
                 :tags, :created_at, :updated_at, '', 0, 0, 0
              )",
         );
@@ -3713,6 +3757,7 @@ final class Api
             'owner' => $reviewSet['owner'],
             'front' => $front,
             'back' => $back,
+            'transliteration' => $transliteration,
             'note' => $note,
             'tags' => json_encode($tags, JSON_THROW_ON_ERROR),
             'created_at' => $now,
@@ -3748,7 +3793,10 @@ final class Api
             if (!is_array($row) || array_is_list($row)) {
                 throw new ApiException(422, "Flashcard row {$rowNumber} is invalid.");
             }
-            $unknown = array_values(array_diff(array_keys($row), ['front', 'back', 'note', 'tags']));
+            $unknown = array_values(array_diff(
+                array_keys($row),
+                ['front', 'back', 'transliteration', 'note', 'tags'],
+            ));
             if ($unknown !== []) {
                 throw new ApiException(422, "Flashcard row {$rowNumber} contains unknown fields.", [
                     'fields' => $unknown,
@@ -3764,6 +3812,11 @@ final class Api
             $validatedRows[] = [
                 'front' => $this->validateText($row['front'] ?? null, 'front', 5000, true),
                 'back' => $this->validateText($row['back'] ?? null, 'back', 5000, true),
+                'transliteration' => $this->validateText(
+                    $row['transliteration'] ?? '',
+                    'transliteration',
+                    5000,
+                ),
                 'note' => $this->validateText($row['note'] ?? '', 'note', 2000),
             ];
         }
@@ -3774,11 +3827,11 @@ final class Api
         $createdCards = [];
         $statement = $this->database->pdo->prepare(
             "INSERT INTO flashcards (
-                id, owner, front, back, note,
+                id, owner, front, back, transliteration, note,
                 tags, created_at, updated_at,
                 last_reviewed_at, passive_views, success_count, error_count
              ) VALUES (
-                :id, :owner, :front, :back, :note,
+                :id, :owner, :front, :back, :transliteration, :note,
                 :tags, :created_at, :updated_at, '', 0, 0, 0
              )",
         );
@@ -3792,6 +3845,7 @@ final class Api
                     'owner' => $owner,
                     'front' => $row['front'],
                     'back' => $row['back'],
+                    'transliteration' => $row['transliteration'],
                     'note' => $row['note'],
                     'tags' => $tags,
                     'created_at' => $now,
@@ -3872,10 +3926,10 @@ final class Api
         }
 
         $body = $this->jsonBody();
-        $this->allowOnlyFields($body, ['front', 'back', 'note']);
+        $this->allowOnlyFields($body, ['front', 'back', 'transliteration', 'note']);
         $fields = $this->requireCollection('flashcards')['config']['fields'];
         $values = [];
-        foreach (['front', 'back', 'note'] as $field) {
+        foreach (['front', 'back', 'transliteration', 'note'] as $field) {
             if (array_key_exists($field, $body)) {
                 $values[$field] = $this->validateField($field, $body[$field], $fields[$field]);
             }

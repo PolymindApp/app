@@ -29,7 +29,7 @@ const frontField = ref()
 const saving = ref(false)
 const error = ref('')
 const original = ref('')
-const draft = reactive<FlashcardDraft>({ front: '', back: '', note: '', tags: [] })
+const draft = reactive<FlashcardDraft>({ front: '', back: '', transliteration: '', note: '', tags: [] })
 const frontAudio = ref<FlashcardAudioValue>(emptyAudio())
 const backAudio = ref<FlashcardAudioValue>(emptyAudio())
 const frontAudioRecording = ref(false)
@@ -39,6 +39,7 @@ const isReviewSetCard = computed(() => Boolean(props.reviewSetId))
 const signature = computed(() => JSON.stringify({
   front: draft.front,
   back: draft.back,
+  transliteration: draft.transliteration,
   note: draft.note,
   tags: draft.tags,
   frontAudio: frontAudio.value.url,
@@ -60,8 +61,22 @@ watch(() => props.modelValue, async (open) => {
   frontAudioRecording.value = false
   backAudioRecording.value = false
   Object.assign(draft, card
-    ? { id: card.id, front: card.front, back: card.back, note: card.note, tags: [...card.tags] }
-    : { id: undefined, front: '', back: '', note: '', tags: [...(props.initialTags || [])] })
+    ? {
+        id: card.id,
+        front: card.front,
+        back: card.back,
+        transliteration: card.transliteration || '',
+        note: card.note,
+        tags: [...card.tags],
+      }
+    : {
+        id: undefined,
+        front: '',
+        back: '',
+        transliteration: '',
+        note: '',
+        tags: [...(props.initialTags || [])],
+      })
   frontAudio.value = card ? existingAudio(card.frontAudio || '') : emptyAudio()
   backAudio.value = card ? existingAudio(card.backAudio || '') : emptyAudio()
   await nextTick()
@@ -93,6 +108,7 @@ async function save() {
       id: draft.id,
       front: draft.front,
       back: draft.back,
+      transliteration: draft.transliteration || '',
       note: draft.note,
       tags: draft.tags,
     }
@@ -158,6 +174,15 @@ async function save() {
             >
               <template #label>Back <span class="required-mark">*</span></template>
             </v-textarea>
+            <v-textarea
+              v-model="draft.transliteration"
+              label="Transliteration"
+              rows="2"
+              auto-grow
+              maxlength="5000"
+              counter
+              autocomplete="off"
+            />
             <v-textarea
               v-model="draft.note"
               label="Note"

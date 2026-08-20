@@ -1,25 +1,31 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
+import AppDialog from '@/components/AppDialog.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import FlashcardCardsTable from '@/components/FlashcardCardsTable.vue'
 import FlashcardTagCombobox from '@/components/FlashcardTagCombobox.vue'
 import TagSelectionChip from '@/components/TagSelectionChip.vue'
 import { copyTextToClipboard } from '@/services/clipboard'
 import { formatFlashcardsCsv } from '@/services/flashcardCsv'
-import { cardMatchesSearch, FLASHCARD_BULK_MENU_ITEMS } from '@/services/flashcards'
+import {
+  cardMatchesSearch,
+  FLASHCARD_BULK_MENU_ITEMS,
+  FLASHCARD_BULK_SWAP_COLUMN_OPTIONS,
+  flashcardSwapColumnsError,
+} from '@/services/flashcards'
 import { useFlashcardStore } from '@/stores/flashcards'
 import type {
   Flashcard,
   FlashcardBulkAction,
   FlashcardBulkRecordAction,
+  FlashcardBulkSwapColumn,
   FlashcardSelectionAction,
   FlashcardSelectionActionItem,
   FlashcardTag,
 } from '@/types/domain'
 
 type FlashcardBulkTagAction = Extract<FlashcardBulkAction, 'add_tags' | 'set_tags' | 'remove_tags'>
-type FlashcardBulkSwapAction = Extract<FlashcardBulkAction, 'swap_front_back' | 'swap_note_back'>
 
 const props = withDefaults(defineProps<{
   cards: Flashcard[]
@@ -86,8 +92,9 @@ const bulkSheetOpen = ref(false)
 const bulkTagSheetOpen = ref(false)
 const bulkTagAction = ref<FlashcardBulkTagAction>('add_tags')
 const bulkTagIds = ref<string[]>([])
-const bulkSwapAction = ref<FlashcardBulkSwapAction>('swap_front_back')
-const swapCardsDialog = ref(false)
+const swapColumnsDialog = ref(false)
+const firstSwapColumn = ref<FlashcardBulkSwapColumn>('front')
+const secondSwapColumn = ref<FlashcardBulkSwapColumn>('back')
 const clearTagsDialog = ref(false)
 const deleteCardsDialog = ref(false)
 
@@ -132,9 +139,13 @@ const selectedCards = computed(() => {
   return props.cards.filter(card => selected.has(card.id))
 })
 const selectedCardsHaveTags = computed(() => selectedCards.value.some(card => card.tags.length > 0))
-const selectedCardsCanSwapNoteBack = computed(() => selectedCards.value.every(card => (
-  Boolean(card.note.trim()) && [...card.back.trim()].length <= 2000
-)))
+const secondSwapColumnOptions = computed(() => (
+  FLASHCARD_BULK_SWAP_COLUMN_OPTIONS.filter(option => option.value !== firstSwapColumn.value)
+))
+const swapColumnsError = computed(() => flashcardSwapColumnsError(
+  selectedCards.value,
+  [firstSwapColumn.value, secondSwapColumn.value],
+))
 const bulkRemovableTags = computed(() => {
   const assigned = new Set(selectedCards.value.flatMap(card => card.tags))
   return props.tags.filter(tag => assigned.has(tag.id))
@@ -156,25 +167,18 @@ const bulkTagCopy = computed(() => ({
     confirm: 'Remove tags',
   },
 }[bulkTagAction.value]))
-const bulkSwapCopy = computed(() => ({
-  swap_front_back: {
-    title: `Swap front and back on ${selectedCardIds.value.length} ${selectedCardIds.value.length === 1 ? 'card' : 'cards'}?`,
-    message: 'Each front becomes its back, and each back becomes its front. Notes and review history stay unchanged. Run this action again to undo it.',
-    confirm: 'Swap front and back',
-  },
-  swap_note_back: {
-    title: `Swap note and back on ${selectedCardIds.value.length} ${selectedCardIds.value.length === 1 ? 'card' : 'cards'}?`,
-    message: 'Each note becomes its back, and each back becomes its note. Fronts and review history stay unchanged. Run this action again to undo it.',
-    confirm: 'Swap note and back',
-  },
-}[bulkSwapAction.value]))
-
 watch(filteredCards, cards => {
   emit('update:filteredCount', cards.length)
 }, { immediate: true })
 
 watch(searchQuery, () => {
   selectedCardIds.value = []
+})
+
+watch(firstSwapColumn, (column) => {
+  if (secondSwapColumn.value === column) {
+    secondSwapColumn.value = secondSwapColumnOptions.value[0]?.value || 'back'
+  }
 })
 
 watch(selectedCardIds, () => {
@@ -206,11 +210,11 @@ function chooseBulkAction(action: FlashcardBulkAction | FlashcardSelectionAction
     openBulkTagAction(action)
     return
   }
-  if (action === 'swap_front_back' || action === 'swap_note_back') {
-    if (action === 'swap_note_back' && !selectedCardsCanSwapNoteBack.value) return
-    bulkSwapAction.value = action
+  if (action === 'swap_columns') {
+    firstSwapColumn.value = 'front'
+    secondSwapColumn.value = 'back'
     bulkError.value = ''
-    swapCardsDialog.value = true
+    swapColumnsDialog.value = true
     return
   }
   if (action === 'clear_tags') clearTagsDialog.value = true
@@ -286,7 +290,10 @@ async function clearSelectedCardTags() {
 }
 
 async function swapSelectedCardFields() {
-  if (await runBulkAction(bulkSwapAction.value)) swapCardsDialog.value = false
+  if (swapColumnsError.value) return
+  if (await runBulkAction('swap_columns', [firstSwapColumn.value, secondSwapColumn.value])) {
+    swapColumnsDialog.value = false
+  }
 }
 
 async function deleteSelectedCards() {
@@ -415,13 +422,9 @@ async function deleteSelectedCards() {
           <v-list-item
             :prepend-icon="item.icon"
             :title="item.title"
-            :subtitle="item.action === 'swap_note_back' && !selectedCardsCanSwapNoteBack
-              ? 'Every selected card needs a note and a back under 2,000 characters'
-              : undefined"
             :base-color="item.color"
             :disabled="bulkSaving
-              || ('requiresTags' in item && item.requiresTags && !selectedCardsHaveTags)
-              || (item.action === 'swap_note_back' && !selectedCardsCanSwapNoteBack)"
+              || ('requiresTags' in item && item.requiresTags && !selectedCardsHaveTags)"
             @click="chooseBulkAction(item.action)"
           />
         </template>
@@ -477,16 +480,81 @@ async function deleteSelectedCards() {
         </template>
       </ActionBottomSheet>
 
-      <ConfirmDialog
-        v-model="swapCardsDialog"
-        :title="bulkSwapCopy.title"
-        :message="bulkSwapCopy.message"
-        :confirm-text="bulkSwapCopy.confirm"
-        confirm-color="warning"
-        icon="mdi-swap-horizontal"
-        :loading="bulkSaving"
-        @confirm="swapSelectedCardFields"
-      />
+      <AppDialog
+        v-model="swapColumnsDialog"
+        max-width="32rem"
+        :persistent="bulkSaving"
+      >
+        <v-card class="pa-5">
+          <div class="swap-columns-heading">
+            <div class="swap-columns-heading__icon">
+              <v-icon icon="mdi-swap-horizontal" size="24" />
+            </div>
+            <div>
+              <h2 class="text-h6 font-weight-black">Swap column content</h2>
+              <p class="text-body-2 muted mt-1">
+                Apply to {{ selectedCardIds.length }} selected {{ selectedCardIds.length === 1 ? 'card' : 'cards' }}.
+              </p>
+            </div>
+          </div>
+
+          <v-row class="mt-4">
+            <v-col cols="12" sm="6">
+              <v-select
+                v-model="firstSwapColumn"
+                :items="FLASHCARD_BULK_SWAP_COLUMN_OPTIONS"
+                item-title="title"
+                item-value="value"
+                label="First column"
+                :disabled="bulkSaving"
+              />
+            </v-col>
+            <v-col cols="12" sm="6">
+              <v-select
+                v-model="secondSwapColumn"
+                :items="secondSwapColumnOptions"
+                item-title="title"
+                item-value="value"
+                label="Second column"
+                :disabled="bulkSaving"
+              />
+            </v-col>
+          </v-row>
+
+          <v-alert
+            v-if="swapColumnsError"
+            type="warning"
+            variant="tonal"
+            density="compact"
+            class="mt-2"
+          >
+            {{ swapColumnsError }}
+          </v-alert>
+          <v-alert
+            v-if="bulkError"
+            type="error"
+            variant="tonal"
+            density="compact"
+            class="mt-2"
+          >
+            {{ bulkError }}
+          </v-alert>
+
+          <div class="swap-columns-actions mt-5">
+            <v-btn variant="text" :disabled="bulkSaving" @click="swapColumnsDialog = false">
+              Cancel
+            </v-btn>
+            <v-btn
+              color="secondary"
+              :loading="bulkSaving"
+              :disabled="Boolean(swapColumnsError)"
+              @click="swapSelectedCardFields"
+            >
+              Apply
+            </v-btn>
+          </div>
+        </v-card>
+      </AppDialog>
 
       <ConfirmDialog
         v-model="clearTagsDialog"
@@ -525,6 +593,10 @@ async function deleteSelectedCards() {
 .card-filter-action__label { margin-top: .25rem; overflow: hidden; max-width: 100%; font-size: .64rem; font-weight: 800; line-height: 1.15; text-overflow: ellipsis; white-space: nowrap; }
 .bulk-tag-actions { display: flex; justify-content: flex-end; gap: .5rem; }
 .bulk-tag-actions > .v-btn { min-width: 6rem; min-height: 2.75rem; }
+.swap-columns-heading { display: flex; align-items: center; gap: 1rem; }
+.swap-columns-heading__icon { display: grid; width: 3rem; height: 3rem; flex: 0 0 auto; place-items: center; border-radius: 1rem; background: rgba(var(--v-theme-secondary), .14); color: rgb(var(--v-theme-secondary)); }
+.swap-columns-actions { display: flex; justify-content: flex-end; gap: .5rem; }
+.swap-columns-actions > .v-btn { min-width: 6rem; min-height: 2.75rem; }
 
 @media (max-width: 31.25rem) {
   .card-filters { grid-template-columns: minmax(0, 1fr); }

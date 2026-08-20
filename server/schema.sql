@@ -43,6 +43,7 @@ CREATE TABLE flashcards (
     owner TEXT NOT NULL,
     front TEXT NOT NULL DEFAULT '',
     back TEXT NOT NULL DEFAULT '',
+    transliteration TEXT NOT NULL DEFAULT '',
     note VARCHAR(2000) NOT NULL DEFAULT '',
     front_audio_url VARCHAR(2048) NOT NULL DEFAULT '',
     front_audio_file VARCHAR(64) NOT NULL DEFAULT '',

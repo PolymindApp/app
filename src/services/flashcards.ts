@@ -1,6 +1,7 @@
 import type {
   Flashcard,
   FlashcardBulkAction,
+  FlashcardBulkSwapColumn,
   FlashcardReviewSession,
   FlashcardReviewSet,
   FlashcardReviewCardSides,
@@ -206,8 +207,7 @@ export function flashcardReviewSettingsAreValid(
 }
 
 export const FLASHCARD_BULK_MENU_ITEMS = [
-  { action: 'swap_front_back', title: 'Swap front and back', icon: 'mdi-swap-horizontal' },
-  { action: 'swap_note_back', title: 'Swap note and back', icon: 'mdi-swap-horizontal' },
+  { action: 'swap_columns', title: 'Swap column content', icon: 'mdi-swap-horizontal' },
   { action: 'add_tags', title: 'Add tags', icon: 'mdi-tag-plus-outline', divider: true },
   { action: 'set_tags', title: 'Set tags', icon: 'mdi-tag-check-outline' },
   { action: 'remove_tags', title: 'Remove tags', icon: 'mdi-tag-minus-outline', requiresTags: true },
@@ -227,6 +227,73 @@ export const FLASHCARD_BULK_MENU_ITEMS = [
   color?: 'error'
   divider?: boolean
 }>
+
+export const FLASHCARD_BULK_SWAP_COLUMN_OPTIONS: ReadonlyArray<{
+  title: string
+  value: FlashcardBulkSwapColumn
+}> = [
+  { title: 'Front', value: 'front' },
+  { title: 'Back', value: 'back' },
+  { title: 'Transliteration', value: 'transliteration' },
+  { title: 'Note', value: 'note' },
+]
+
+const FLASHCARD_BULK_SWAP_COLUMN_RULES: Record<FlashcardBulkSwapColumn, {
+  required: boolean
+  maxLength: number
+}> = {
+  front: { required: true, maxLength: 5000 },
+  back: { required: true, maxLength: 5000 },
+  transliteration: { required: false, maxLength: 5000 },
+  note: { required: false, maxLength: 2000 },
+}
+
+function flashcardBulkColumnLabel(column: FlashcardBulkSwapColumn) {
+  return FLASHCARD_BULK_SWAP_COLUMN_OPTIONS.find(option => option.value === column)?.title
+    || column
+}
+
+function flashcardBulkColumnValue(card: Flashcard, column: FlashcardBulkSwapColumn) {
+  return card[column] || ''
+}
+
+export function flashcardSwapColumnsError(
+  cards: readonly Flashcard[],
+  columns: readonly FlashcardBulkSwapColumn[],
+) {
+  const [firstColumn, secondColumn] = columns
+  if (!firstColumn || !secondColumn || firstColumn === secondColumn) {
+    return 'Choose two different columns.'
+  }
+  for (const [target, source] of [
+    [firstColumn, secondColumn],
+    [secondColumn, firstColumn],
+  ] as const) {
+    const rules = FLASHCARD_BULK_SWAP_COLUMN_RULES[target]
+    const invalidRequired = cards.some(card => !flashcardBulkColumnValue(card, source).trim())
+    if (rules.required && invalidRequired) {
+      return `Every selected card needs ${flashcardBulkColumnLabel(source).toLocaleLowerCase()} content because it will become the ${flashcardBulkColumnLabel(target).toLocaleLowerCase()}.`
+    }
+    const tooLong = cards.some(card => (
+      [...flashcardBulkColumnValue(card, source)].length > rules.maxLength
+    ))
+    if (tooLong) {
+      return `${flashcardBulkColumnLabel(source)} content must be ${rules.maxLength.toLocaleString()} characters or fewer to become the ${flashcardBulkColumnLabel(target).toLocaleLowerCase()}.`
+    }
+  }
+  return ''
+}
+
+export function swapFlashcardColumns(
+  card: Flashcard,
+  columns: readonly [FlashcardBulkSwapColumn, FlashcardBulkSwapColumn],
+) {
+  const [firstColumn, secondColumn] = columns
+  const firstValue = flashcardBulkColumnValue(card, firstColumn)
+  card[firstColumn] = flashcardBulkColumnValue(card, secondColumn)
+  card[secondColumn] = firstValue
+  return card
+}
 
 const MIN_FLASHCARD_SWIPE_DISTANCE = 56
 const FLASHCARD_SWIPE_AXIS_RATIO = 1.2
@@ -330,13 +397,13 @@ export function cardMatchesTags(card: Pick<Flashcard, 'tags'>, selectedTags: str
 }
 
 export function cardMatchesSearch(
-  card: Pick<Flashcard, 'front' | 'back' | 'note'>,
+  card: Pick<Flashcard, 'front' | 'back' | 'transliteration' | 'note'>,
   tagNames: readonly string[],
   query: string,
 ) {
   const terms = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean)
   if (!terms.length) return true
-  const searchableText = [card.front, card.back, card.note, ...tagNames]
+  const searchableText = [card.front, card.back, card.transliteration || '', card.note, ...tagNames]
     .join('\n')
     .toLocaleLowerCase()
   return terms.every(term => searchableText.includes(term))

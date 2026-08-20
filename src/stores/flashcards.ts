@@ -11,6 +11,8 @@ import {
   flashcardEjectExcludes,
   flashcardEjectLoadsNext,
   flashcardReviewQueueState,
+  flashcardSwapColumnsError,
+  swapFlashcardColumns,
   updateFlashcardReviewExclusions,
 } from '@/services/flashcards'
 import { useSnackbarStore } from '@/stores/snackbar'
@@ -19,6 +21,7 @@ import type {
   Flashcard,
   FlashcardAudioValue,
   FlashcardBulkRecordAction,
+  FlashcardBulkSwapColumn,
   FlashcardDraft,
   FlashcardImportRow,
   FlashcardReviewAction,
@@ -51,6 +54,7 @@ function mapCard(record: Record<string, any>): Flashcard {
     id: record.id,
     front: record.front,
     back: record.back,
+    transliteration: record.transliteration || '',
     note: record.note || '',
     frontAudio: frontAudioFile
       ? apiAssetUrl(`/flashcard-audio/${frontAudioFile}`)
@@ -362,6 +366,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       owner: api.authStore.record!.id,
       front: draft.front,
       back: draft.back,
+      transliteration: draft.transliteration || '',
       note: draft.note,
       tags: draft.tags,
     }
@@ -376,6 +381,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       id: draft.id || createLocalRecordId(),
       front: draft.front,
       back: draft.back,
+      transliteration: draft.transliteration || '',
       note: draft.note,
       frontAudio: audio?.front.recording
         ? existing?.frontAudio
@@ -446,11 +452,31 @@ export const useFlashcardStore = defineStore('flashcards', () => {
   async function bulkUpdateCards(
     action: FlashcardBulkRecordAction,
     cardIds: string[],
-    tagIds: string[] = [],
+    values: string[] = [],
   ) {
     const uniqueCardIds = [...new Set(cardIds)]
     if (!uniqueCardIds.length) return []
-    const uniqueTagIds = [...new Set(tagIds)]
+    const uniqueValues = [...new Set(values)]
+    const swapColumns = action === 'swap_columns'
+      ? uniqueValues as FlashcardBulkSwapColumn[]
+      : action === 'swap_front_back'
+        ? ['front', 'back'] as FlashcardBulkSwapColumn[]
+        : action === 'swap_note_back'
+          ? ['note', 'back'] as FlashcardBulkSwapColumn[]
+          : []
+    const allowedSwapColumns: FlashcardBulkSwapColumn[] = [
+      'front', 'back', 'transliteration', 'note',
+    ]
+    if (
+      action === 'swap_columns'
+      && (
+        swapColumns.length !== 2
+        || swapColumns[0] === swapColumns[1]
+        || swapColumns.some(column => !allowedSwapColumns.includes(column))
+      )
+    ) {
+      throw new ApiError(422, 'Choose two different flashcard columns.')
+    }
     const selectedIds = new Set(uniqueCardIds)
     const previousCards = cards.value.map(card => ({ ...card, tags: [...card.tags] }))
     const sessionSnapshots = sessions.value.map(session => ({
@@ -458,21 +484,29 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       queue: session.queue.map(card => ({ ...card, tags: [...card.tags] })),
       totalCards: session.totalCards,
     }))
+    if (swapColumns.length) {
+      const swapError = flashcardSwapColumnsError(
+        cards.value.filter(card => selectedIds.has(card.id)),
+        swapColumns,
+      )
+      if (swapError) throw new ApiError(422, swapError)
+    }
     if (action === 'delete') {
       cards.value = cards.value.filter(card => !selectedIds.has(card.id))
     } else {
       cards.value.filter(card => selectedIds.has(card.id)).forEach((card) => {
-        if (action === 'set_tags') card.tags = [...uniqueTagIds]
-        if (action === 'add_tags') card.tags = [...new Set([...card.tags, ...uniqueTagIds])]
-        if (action === 'remove_tags') card.tags = card.tags.filter(tag => !uniqueTagIds.includes(tag))
+        if (action === 'set_tags') card.tags = [...uniqueValues]
+        if (action === 'add_tags') card.tags = [...new Set([...card.tags, ...uniqueValues])]
+        if (action === 'remove_tags') card.tags = card.tags.filter(tag => !uniqueValues.includes(tag))
         if (action === 'clear_tags') card.tags = []
-        if (action === 'swap_front_back') [card.front, card.back] = [card.back, card.front]
-        if (action === 'swap_note_back') [card.note, card.back] = [card.back, card.note]
+        if (swapColumns.length === 2) {
+          swapFlashcardColumns(card, swapColumns as [FlashcardBulkSwapColumn, FlashcardBulkSwapColumn])
+        }
         cacheCard(card)
       })
     }
     try {
-      const response = await api.bulkUpdateFlashcards(action, uniqueCardIds, uniqueTagIds)
+      const response = await api.bulkUpdateFlashcards(action, uniqueCardIds, uniqueValues)
       if (action === 'delete') {
         const deleted = new Set(response.deleted_ids)
         cards.value = previousCards.filter(card => !deleted.has(card.id))
@@ -675,6 +709,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     const payload: Record<string, unknown> = {
       front: draft.front,
       back: draft.back,
+      transliteration: draft.transliteration || '',
       note: draft.note,
     }
     const previousReviewSetCards = reviewSetCards.value[reviewSetId] || []
@@ -693,6 +728,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
         ...existing,
         front: draft.front,
         back: draft.back,
+        transliteration: draft.transliteration || '',
         note: draft.note,
         frontAudio: audio?.front.recording
           ? existing.frontAudio
