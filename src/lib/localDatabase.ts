@@ -369,19 +369,30 @@ export async function putLocalPatch(
   const resolvedId = await resolveLocalAlias(accountId, resource, id)
   const key = resourceKey(accountId, resource, resolvedId)
   let result: Record<string, any> | undefined
+  let changed = false
   await localDatabase.transaction('rw', localDatabase.resources, localDatabase.outbox, async () => {
     const current = await localDatabase.resources.get(key)
     if (!current?.data || current.deleted) throw new Error('Local record not found.')
+    const changedPatch = Object.fromEntries(
+      Object.entries(plainPatch).filter(([field, value]) => (
+        JSON.stringify(current.data![field]) !== JSON.stringify(value)
+      )),
+    )
+    if (!Object.keys(changedPatch).length) {
+      result = current.data
+      return
+    }
+    changed = true
     const fieldClock = createFieldClock()
-    const clocks = Object.fromEntries(Object.keys(plainPatch).map(field => [field, fieldClock]))
-    result = { ...current.data, ...plainPatch, id: resolvedId }
+    const clocks = Object.fromEntries(Object.keys(changedPatch).map(field => [field, fieldClock]))
+    result = { ...current.data, ...changedPatch, id: resolvedId }
     await localDatabase.resources.put({
       ...current,
       data: result,
       fieldClocks: { ...current.fieldClocks, ...clocks },
       locallyModified: true,
     })
-    const operation = makeOperation(accountId, resource, resolvedId, 'patch', plainPatch, clocks, options)
+    const operation = makeOperation(accountId, resource, resolvedId, 'patch', changedPatch, clocks, options)
     const canCoalesce = !options.transactionId && !(options.dependsOn?.length)
     const existing = canCoalesce
       ? (await localDatabase.outbox
@@ -398,7 +409,7 @@ export async function putLocalPatch(
           .sortBy('sequence'))[0]
       : undefined
     if (existing) {
-      existing.payload = { ...existing.payload, ...plainPatch }
+      existing.payload = { ...existing.payload, ...changedPatch }
       existing.fieldClocks = { ...existing.fieldClocks, ...clocks }
       existing.nextAttemptAt = 0
       delete existing.error
@@ -407,8 +418,10 @@ export async function putLocalPatch(
       await localDatabase.outbox.add(operation)
     }
   })
-  notifyDataChanged(accountId, resource)
-  notifyOutboxChanged(accountId)
+  if (changed) {
+    notifyDataChanged(accountId, resource)
+    notifyOutboxChanged(accountId)
+  }
   return result!
 }
 
@@ -763,8 +776,9 @@ export async function applyExchangeResults(
           await saveLocalAlias(accountId, operation.resource, operation.recordId, acknowledgement.replacementId)
         }
         if (acknowledgement.resource) {
-          await mergeRemoteResource(accountId, acknowledgement.resource)
-          changedResources.add(acknowledgement.resource.resource)
+          if (await mergeRemoteResource(accountId, acknowledgement.resource)) {
+            changedResources.add(acknowledgement.resource.resource)
+          }
         }
         await localDatabase.outbox.delete(operation.operationId)
         const settledResource = acknowledgement.resource?.resource || operation.resource
@@ -794,8 +808,9 @@ export async function applyExchangeResults(
         }
       }
       for (const change of changes) {
-        await mergeRemoteResource(accountId, change)
-        changedResources.add(change.resource)
+        if (await mergeRemoteResource(accountId, change)) {
+          changedResources.add(change.resource)
+        }
       }
       const previous = await localDatabase.metadata.get(accountId)
       await localDatabase.metadata.put({
@@ -824,6 +839,7 @@ async function mergeRemoteResource(accountId: string, remote: SyncResource) {
   const key = resourceKey(accountId, remote.resource, remote.id)
   const current = await localDatabase.resources.get(key)
   if (remote.deleted) {
+    const changed = Boolean(current)
     await localDatabase.resources.delete(key)
     if (current?.locallyModified) {
       await localDatabase.outbox
@@ -831,11 +847,13 @@ async function mergeRemoteResource(accountId: string, remote: SyncResource) {
         .equals([accountId, remote.resource, remote.id])
         .delete()
     }
-    return
+    return changed
   }
   if (!current?.locallyModified || !current.data) {
+    const changed = !current
+      || JSON.stringify(current.data) !== JSON.stringify(remote.data)
     await localDatabase.resources.put({ key, accountId, ...remote, locallyModified: false })
-    return
+    return changed
   }
   const data = { ...(remote.data || {}) }
   const clocks = { ...remote.fieldClocks }
@@ -847,6 +865,7 @@ async function mergeRemoteResource(accountId: string, remote: SyncResource) {
       clocks[field] = localClock
     }
   }
+  const changed = JSON.stringify(current.data) !== JSON.stringify(data)
   await localDatabase.resources.put({
     key,
     accountId,
@@ -855,6 +874,7 @@ async function mergeRemoteResource(accountId: string, remote: SyncResource) {
     fieldClocks: clocks,
     locallyModified: true,
   })
+  return changed
 }
 
 async function saveLocalAlias(accountId: string, resource: string, localId: string, remoteId: string) {

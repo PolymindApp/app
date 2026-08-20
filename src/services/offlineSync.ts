@@ -38,7 +38,7 @@ import {
 
 const baseUrl = (import.meta.env.VITE_API_URL || '/api').replace(/\/+$/, '')
 const STATUS_EVENT = 'backontrack-sync-status-changed'
-const MUTATION_SYNC_DELAY_MS = 50
+const MUTATION_SYNC_DELAY_MS = 1_000
 const MAX_SYNC_REQUEST_BYTES = 2_400_000
 const MEDIA_CACHE_NAME = 'backontrack-media-v2'
 const RETIRED_MEDIA_CACHE_NAME = 'backontrack-media-v1'
@@ -193,8 +193,11 @@ function scheduleMutationSync() {
     return
   }
   if (mutationTimer !== undefined) window.clearTimeout(mutationTimer)
-  mutationTimer = window.setTimeout(() => {
+  mutationTimer = window.setTimeout(async () => {
     mutationTimer = undefined
+    const accountId = currentAccountId || api.authStore.record?.id || ''
+    if (!accountId) return
+    if (!(await pendingOperations(accountId, 1)).length) return
     void syncNow('mutation')
   }, MUTATION_SYNC_DELAY_MS)
 }
@@ -241,19 +244,15 @@ export function syncNow(reason = 'manual') {
     if (reason === 'mutation') syncRequested = true
     return syncPromise
   }
-  syncPromise = performRequestedSyncs().finally(() => {
+  syncRequested = false
+  syncPromise = performSync().finally(() => {
     syncPromise = undefined
+    if (syncRequested) {
+      syncRequested = false
+      scheduleMutationSync()
+    }
   })
   return syncPromise
-}
-
-async function performRequestedSyncs() {
-  let succeeded = false
-  do {
-    syncRequested = false
-    succeeded = await performSync()
-  } while (succeeded && syncRequested)
-  return succeeded
 }
 
 export async function flushBeforeSignOut(accountId: string) {
