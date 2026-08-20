@@ -403,6 +403,7 @@ onBeforeUnmount(() => {
           v-for="requirement in programStepRequirements"
           :key="requirement.id"
           class="task-detail-item"
+          :class="{ 'task-detail-item--done': requirement.complete }"
           :title="requirement.title"
           :subtitle="requirement.subtitle"
           :disabled="requirement.disabled || busy"
@@ -437,6 +438,7 @@ onBeforeUnmount(() => {
         <template v-for="tracker in trackers" :key="tracker.id">
           <v-list-item
             class="task-detail-item"
+            :class="{ 'task-detail-item--done': tracker.logged }"
             :title="tracker.name"
             :subtitle="tracker.loggedValue
               ? `${tracker.loggedValue} logged for this date`
@@ -615,7 +617,16 @@ onBeforeUnmount(() => {
 .metric-target { color: rgb(var(--v-theme-on-surface) / .52); font-size: .72rem; }
 
 .task-detail-list { display: grid; gap: .4rem; }
-.task-detail-item { min-height: 2.75rem; background: rgba(var(--v-theme-on-surface), .04); }
+.task-detail-item {
+  min-height: 2.75rem;
+  background: rgba(var(--v-theme-on-surface), .04);
+  transition: background-color .18s ease, opacity .18s ease;
+}
+.task-detail-item--done {
+  background: rgba(var(--v-theme-on-surface), .02);
+  filter: grayscale(1);
+  opacity: .5;
+}
 .task-detail-item__icon {
   display: grid;
   width: 2rem;
@@ -694,6 +705,7 @@ onBeforeUnmount(() => {
 
 @media (prefers-reduced-motion: reduce) {
   .task-card { transition-duration: 0s; }
+  .task-detail-item { transition-duration: 0s; }
   .metric-value--updated { animation-duration: 0s; }
 }
 </style>
