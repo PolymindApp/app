@@ -1358,9 +1358,12 @@ async function showIntervalFlashcardSide(
 
 function beginIntervalFlashcardSwipe(event: PointerEvent) {
   const review = session.value?.flashcardReview
+  const startedFromTagControl = (event.target as Element | null)
+    ?.closest('.interval-review-card__tag-actions')
   if (
     !event.isPrimary
     || (event.pointerType === 'mouse' && event.button !== 0)
+    || startedFromTagControl
     || !review
     || (review.cards.length < 2 && review.cardSides !== 'both')
     || isTemplatePreview.value
@@ -1370,8 +1373,12 @@ function beginIntervalFlashcardSwipe(event: PointerEvent) {
   ) return
 
   intervalFlashcardSwipeStart = { pointerId: event.pointerId, x: event.clientX, y: event.clientY }
-  if (event.currentTarget instanceof HTMLElement) {
-    event.currentTarget.setPointerCapture(event.pointerId)
+  try {
+    if (event.currentTarget instanceof HTMLElement) {
+      event.currentTarget.setPointerCapture(event.pointerId)
+    }
+  } catch {
+    // Pointer capture is optional; the stable card surface still receives ordinary pointer events.
   }
 }
 
@@ -1848,11 +1855,20 @@ async function runAgain(repetitions?: number) {
         key="runner"
         class="runner-view runner-view--active"
       >
-        <header class="runner-header">
+        <header
+          class="runner-header"
+          :class="{ 'runner-header--with-review': flashcardPhase && session.flashcardReview }"
+        >
           <v-btn icon="mdi-chevron-down" variant="text" aria-label="Leave runner" :to="returnTo" />
-          <div class="text-center min-width-0">
-            <p class="runner-label">Interval {{ current.index + 1 }} of {{ current.totalSteps }}</p>
-            <strong class="text-truncate d-block">{{ session.name }}</strong>
+          <div class="runner-header__title text-center min-width-0">
+            <div class="runner-header__standard-title">
+              <p class="runner-label">Interval {{ current.index + 1 }} of {{ current.totalSteps }}</p>
+              <strong class="text-truncate d-block">{{ session.name }}</strong>
+            </div>
+            <div class="runner-header__review-title">
+              <strong class="text-truncate">{{ session.name }}</strong>
+              <span class="runner-label">Interval {{ current.index + 1 }} of {{ current.totalSteps }}</span>
+            </div>
           </div>
           <div class="runner-header__actions">
             <v-btn
@@ -1867,7 +1883,10 @@ async function runAgain(repetitions?: number) {
           </div>
         </header>
 
-        <div class="runner-stage">
+        <div
+          class="runner-stage"
+          :class="{ 'runner-stage--with-review': flashcardPhase && session.flashcardReview }"
+        >
           <section class="runner-main" :class="{ 'runner-main--with-review': flashcardPhase }">
             <div class="runner-details">
               <p class="runner-session">{{ session.name }}</p>
@@ -1879,6 +1898,11 @@ async function runAgain(repetitions?: number) {
                 <span v-for="group in current.groups" :key="`${group.name}-${group.iteration}`">{{ group.name }} {{ group.iteration }}/{{ group.total }}</span>
               </div>
               <h1 class="runner-step">{{ current.step.name }}</h1>
+              <div v-if="current.groups.length" class="runner-review-groups">
+                <span v-for="group in current.groups" :key="`${group.name}-${group.iteration}`">
+                  {{ group.name }} {{ group.iteration }}/{{ group.total }}
+                </span>
+              </div>
             </div>
             <div class="runner-progress-stack">
               <div class="runner-progress">
@@ -1966,6 +1990,10 @@ async function runAgain(repetitions?: number) {
             v-if="flashcardPhase && session.flashcardReview"
             class="interval-review-card"
             :class="{ 'interval-review-card--playback-paused': !flashcardReviewPlaybackEnabled }"
+            @pointerdown="beginIntervalFlashcardSwipe"
+            @pointerup="finishIntervalFlashcardSwipe"
+            @pointercancel="cancelIntervalFlashcardSwipe"
+            @lostpointercapture="cancelIntervalFlashcardSwipe"
             @click="openFlashcardContext"
           >
             <button
@@ -1976,9 +2004,6 @@ async function runAgain(repetitions?: number) {
                 ? `${session.flashcardReview.name}, ${flashcardPhase.side}, card ${flashcardPhase.cardIndex + 1} of ${session.flashcardReview.cards.length}`
                 : `${session.flashcardReview.name} paused for this step, card ${flashcardPhase.cardIndex + 1} of ${session.flashcardReview.cards.length}`"
               :disabled="isTemplatePreview || syncing || openingFlashcardContext || flashcardNavigating"
-              @pointerdown="beginIntervalFlashcardSwipe"
-              @pointerup="finishIntervalFlashcardSwipe"
-              @pointercancel="cancelIntervalFlashcardSwipe"
             >
               <div class="interval-review-card__content">
                 <div class="interval-review-card__heading">
@@ -2522,6 +2547,7 @@ async function runAgain(repetitions?: number) {
   transform: translateY(-1rem);
 }
 .runner-header { display: grid; width: 100%; max-width: 54.25rem; margin-inline: auto; grid-template-columns: 3rem minmax(0, 1fr) auto; align-items: center; }
+.runner-header__review-title { display: none; }
 .runner-header__actions { display: flex; align-items: center; justify-content: flex-end; gap: .125rem; }
 .runner-actions-button { min-width: 2.75rem; min-height: 2.75rem; }
 .runner-label { color: rgb(var(--v-theme-on-surface) / .52); font-size: .68rem; font-weight: 850; letter-spacing: .1em; text-transform: uppercase; }
@@ -2555,8 +2581,9 @@ async function runAgain(repetitions?: number) {
 .runner-position { display: none; }
 .group-breadcrumb { display: flex; flex-wrap: wrap; justify-content: center; gap: .35rem; margin-bottom: 1.25rem; }
 .group-breadcrumb span { padding: 4px 8px; border-radius: 999px; background: rgb(var(--v-theme-surface-variant)); color: rgb(var(--v-theme-on-surface) / .7); font-size: .65rem; }
+.runner-review-groups { display: none; }
 .runner-step { min-width: 0; max-width: 40rem; margin-top: .5rem; font-size: clamp(2rem, 10vw, 4.5rem); font-weight: 900; line-height: 1; }
-.interval-review-card { position: relative; width: min(100%, 34rem); overflow: hidden; border: 1px solid rgba(var(--v-theme-on-surface), .08); border-radius: .75rem; background: rgba(var(--v-theme-on-surface), .055); box-shadow: none; color: inherit; font: inherit; text-align: left; }
+.interval-review-card { position: relative; width: min(100%, 34rem); overflow: hidden; border: .0625rem solid rgba(var(--v-theme-on-surface), .08); border-radius: .75rem; background: rgba(var(--v-theme-on-surface), .055); box-shadow: none; color: inherit; font: inherit; text-align: left; touch-action: none; }
 .interval-review-card__main { display: block; width: 100%; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; touch-action: none; cursor: pointer; }
 .interval-review-card__main:focus-visible { outline: .1875rem solid rgba(var(--v-theme-secondary), .72); outline-offset: -.1875rem; }
 .interval-review-card__main:disabled { cursor: default; opacity: .72; }
@@ -3007,6 +3034,178 @@ async function runAgain(repetitions?: number) {
 
   .runner-controls--landscape .runner-actions-button {
     grid-column: 3;
+  }
+
+  .runner-stage--with-review {
+    grid-template-columns: minmax(13rem, .75fr) minmax(0, 1.25fr);
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    gap: .5rem 1rem;
+  }
+
+  .runner-header--with-review {
+    display: grid;
+    max-width: none;
+    min-height: 2.75rem;
+    flex: 0 0 2.75rem;
+  }
+
+  .runner-header--with-review .runner-header__standard-title {
+    display: none;
+  }
+
+  .runner-header--with-review .runner-header__review-title {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: center;
+    gap: .75rem;
+  }
+
+  .runner-header--with-review .runner-header__review-title > strong {
+    min-width: 0;
+    max-width: 20rem;
+  }
+
+  .runner-header--with-review .runner-header__review-title > .runner-label {
+    flex: 0 0 auto;
+    color: rgb(var(--v-theme-secondary));
+  }
+
+  .runner-stage--with-review .runner-details {
+    padding: .5rem .75rem 0;
+    grid-column: 1;
+    grid-row: 1;
+    justify-content: flex-start;
+    align-items: center;
+    border-left: 0;
+    text-align: center;
+  }
+
+  .runner-stage--with-review .runner-task-link {
+    margin-top: 0;
+  }
+
+  .runner-stage--with-review .runner-session,
+  .runner-stage--with-review .runner-position,
+  .runner-stage--with-review .group-breadcrumb {
+    display: none;
+  }
+
+  .runner-stage--with-review .runner-step {
+    font-size: clamp(1.35rem, 5dvh, 2.5rem);
+  }
+
+  .runner-stage--with-review .runner-review-groups {
+    display: flex;
+    max-width: 100%;
+    margin-top: .5rem;
+    justify-content: center;
+    gap: .35rem;
+    overflow: hidden;
+  }
+
+  .runner-stage--with-review .runner-review-groups span {
+    min-width: 0;
+    padding: .25rem .5rem;
+    overflow: hidden;
+    border-radius: 999rem;
+    background: rgb(var(--v-theme-surface-variant));
+    color: rgb(var(--v-theme-on-surface) / .7);
+    font-size: .65rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .runner-stage--with-review .runner-progress-stack {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .runner-stage--with-review .runner-progress {
+    padding: .25rem;
+  }
+
+  .runner-stage--with-review .progress-rings {
+    width: min(15.833rem, 50dvh, calc(100% - .5rem));
+  }
+
+  .runner-stage--with-review .timer-value {
+    font-size: clamp(2.25rem, 12dvh, 3.75rem);
+  }
+
+  .runner-stage--with-review .next-copy {
+    display: none;
+  }
+
+  .runner-stage--with-review .runner-controls--landscape {
+    padding: .5rem .75rem 0;
+    grid-column: 1;
+    grid-row: 3;
+  }
+
+  .runner-stage--with-review .runner-back-button,
+  .runner-stage--with-review .runner-actions-button {
+    display: none;
+  }
+
+  .runner-stage--with-review > .interval-review-card {
+    display: flex;
+    width: 100%;
+    max-width: none;
+    height: 100%;
+    min-height: 0;
+    grid-column: 2;
+    grid-row: 1 / 4;
+    align-self: stretch;
+    flex-direction: column;
+    border-radius: 1.25rem;
+    background: rgb(var(--v-theme-surface));
+  }
+
+  .runner-stage--with-review > .interval-review-card--playback-paused {
+    background: rgb(var(--v-theme-surface) / .72);
+  }
+
+  .runner-stage--with-review .interval-review-card__main {
+    display: flex;
+    min-height: 0;
+    flex: 1 1 auto;
+  }
+
+  .runner-stage--with-review .interval-review-card__content {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    padding: 1rem;
+    gap: 1rem;
+  }
+
+  .runner-stage--with-review .interval-review-card__faces {
+    align-content: center;
+    overflow-y: auto;
+  }
+
+  .runner-stage--with-review .interval-review-card__content strong {
+    display: block;
+    overflow: visible;
+    -webkit-line-clamp: unset;
+  }
+
+  .runner-stage--with-review .interval-review-card__tag-actions {
+    padding: .5rem 1rem .75rem;
+  }
+
+  .runner-stage--with-review .interval-review-card__tag-control {
+    height: 2.75rem !important;
+    min-height: 2.75rem !important;
+  }
+
+  .runner-stage--with-review .interval-review-card__eject-button {
+    min-width: 2.75rem;
+  }
+
+  .runner-stage--with-review .interval-review-card__quick-tag {
+    --v-chip-height: 2.75rem;
   }
 
   .runner-page--finished {
