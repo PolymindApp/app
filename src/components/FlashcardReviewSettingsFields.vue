@@ -300,7 +300,6 @@ function updateSpeechEnabled(enabled: boolean | null) {
           <v-list-item v-bind="itemProps" :title="item.raw.title" :subtitle="item.raw.subtitle" />
         </template>
       </v-select>
-      <label class="field-label">Sort direction</label>
       <v-btn-toggle
         v-model="settings.sortDirection"
         mandatory
