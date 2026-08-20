@@ -62,7 +62,7 @@ import type {
 const route = useRoute()
 const router = useRouter()
 const store = useFlashcardStore()
-type ReviewCardTransitionDirection = 'previous' | 'next' | 'front' | 'back' | 'flip-front' | 'flip-back'
+type ReviewCardTransitionDirection = 'previous' | 'next' | 'front' | 'back'
 const loading = ref(true)
 const busy = ref(false)
 const error = ref('')
@@ -288,8 +288,10 @@ watch([
   if (!cardId || !side || !previousCardId || !previousSide) return
   if (reviewCardTransitionDirection.value) return
 
-  if (cardId !== previousCardId) reviewCardTransitionDirection.value = 'next'
-  else if (side !== previousSide) reviewCardTransitionDirection.value = side
+  if (cardId !== previousCardId) reviewCardTransitionDirection.value = 'back'
+  else if (side !== previousSide) {
+    reviewCardTransitionDirection.value = side === 'back' ? 'next' : 'previous'
+  }
 })
 
 watch(shouldKeepScreenAwake, (keepAwake) => {
@@ -503,7 +505,7 @@ function resetCurrentCardPhase() {
 }
 
 async function navigateLeft(
-  transitionDirection: ReviewCardTransitionDirection = 'previous',
+  transitionDirection: ReviewCardTransitionDirection = 'front',
 ) {
   if (!session.value || !canNavigateCards.value || busy.value) return
   reviewCardTransitionDirection.value = transitionDirection
@@ -511,7 +513,7 @@ async function navigateLeft(
 }
 
 async function navigateRight(
-  transitionDirection: ReviewCardTransitionDirection = 'next',
+  transitionDirection: ReviewCardTransitionDirection = 'back',
 ) {
   if (!session.value || !canNavigateCards.value || busy.value) return
   reviewCardTransitionDirection.value = transitionDirection
@@ -779,9 +781,13 @@ function beginReviewCardSwipe(event: PointerEvent) {
     x: event.clientX,
     y: event.clientY,
   }
+  const startedFromTagControl = (event.target as Element | null)
+    ?.closest('.review-card__tag-actions')
   try {
-    const target = event.currentTarget as HTMLElement
-    target.setPointerCapture(event.pointerId)
+    if (!startedFromTagControl) {
+      const target = event.currentTarget as HTMLElement
+      target.setPointerCapture(event.pointerId)
+    }
   } catch {
     // Pointer capture is optional; touch input still reports its final position without it.
   }
@@ -803,7 +809,7 @@ function finishReviewCardSwipe(event: PointerEvent) {
   }, 250)
   if (gesture.action === 'previous') void navigateLeft(gesture.transition)
   else if (gesture.action === 'next') void navigateRight(gesture.transition)
-  else void showReviewCardSide(gesture.action, `flip-${gesture.action}`)
+  else showReviewCardSide(gesture.action, gesture.transition)
 }
 
 function cancelReviewCardSwipe(event: PointerEvent) {
@@ -812,7 +818,7 @@ function cancelReviewCardSwipe(event: PointerEvent) {
 
 function showReviewCardSide(
   side: FlashcardReviewSide,
-  transitionDirection: ReviewCardTransitionDirection = side,
+  transitionDirection: ReviewCardTransitionDirection = side === 'back' ? 'next' : 'previous',
 ) {
   const value = session.value
   if (
@@ -842,6 +848,22 @@ function handlePassiveCardTap() {
     return
   }
   replayCurrentSide()
+}
+
+function handleReviewCardTap() {
+  if (session.value?.mode === 'manual') handleManualCardTap()
+  else handlePassiveCardTap()
+}
+
+function suppressTagClickAfterSwipe(event: MouseEvent) {
+  if (!suppressManualCardTap) return
+  suppressManualCardTap = false
+  if (manualCardTapResetTimer) {
+    window.clearTimeout(manualCardTapResetTimer)
+    manualCardTapResetTimer = undefined
+  }
+  event.preventDefault()
+  event.stopPropagation()
 }
 
 function finishReviewCardTransition() {
@@ -1285,121 +1307,129 @@ async function leaveRunner() {
           <span>{{ formatReviewDuration(elapsedSeconds) }}</span>
         </div>
 
-        <div class="review-card-stack">
+        <div
+          class="review-card-stack"
+          @pointerdown="beginReviewCardSwipe"
+          @pointerup="finishReviewCardSwipe"
+          @pointercancel="cancelReviewCardSwipe"
+          @lostpointercapture="cancelReviewCardSwipe"
+          @click="handleReviewCardTap"
+        >
           <div class="review-card-window">
-            <transition
-              :name="reviewCardTransitionDirection
-                ? `standalone-review-card-${reviewCardTransitionDirection}`
-                : undefined"
-              @after-enter="finishReviewCardTransition"
+            <button
+              v-if="session.mode === 'manual'"
+              v-ripple
+              type="button"
+              class="review-card"
+              :class="{ 'review-card--back': manualShowingBack }"
+              :aria-label="session.speechEnabled
+                ? `Replay ${currentSpeechSide} speech`
+                : session.cardSides === 'both' && !revealed ? 'Show answer' : `${currentSpeechSide} shown`"
+              :disabled="busy || (session.status !== 'running' && !canReplayCurrentSide)"
             >
-              <button
-                v-if="session.mode === 'manual'"
-                v-ripple
-                :key="reviewCardTransitionKey"
-                type="button"
-                class="review-card"
-                :class="{ 'review-card--revealed': manualShowingBack }"
-                :aria-label="session.speechEnabled
-                  ? `Replay ${currentSpeechSide} speech`
-                  : session.cardSides === 'both' && !revealed ? 'Show answer' : `${currentSpeechSide} shown`"
-                :disabled="busy || (session.status !== 'running' && !canReplayCurrentSide)"
-                @pointerdown="beginReviewCardSwipe"
-                @pointerup="finishReviewCardSwipe"
-                @pointercancel="cancelReviewCardSwipe"
-                @click="handleManualCardTap"
-              >
-                <span class="review-card__inner">
-              <span class="review-card__face review-card__front" :aria-hidden="manualShowingBack">
-                <small>Front</small>
-                <strong :style="{ fontSize: flashcardTextFontSize(currentCard.front) }">
-                  {{ currentCard.front }}
-                </strong>
-                <span v-if="session.speechEnabled" class="review-card__hint">
-                  <v-icon icon="mdi-volume-high" size="18" /> Tap to replay
-                </span>
-                <span v-else-if="session.cardSides === 'both' && !revealed" class="review-card__hint">
-                  <v-icon icon="mdi-gesture-tap" size="18" /> Tap to reveal
-                </span>
-              </span>
-              <span class="review-card__face review-card__back" :aria-hidden="!manualShowingBack">
-                <small>Back</small>
-                <span class="review-card__answer">
-                  <span v-if="session.cardSides === 'both'" class="review-card__front-reference">
-                    {{ currentCard.front }}
+              <small>{{ manualShowingBack ? 'Back' : 'Front' }}</small>
+              <span class="review-card__content-window">
+                <transition
+                  :name="reviewCardTransitionDirection
+                    ? `standalone-review-content-${reviewCardTransitionDirection}`
+                    : undefined"
+                  @after-enter="finishReviewCardTransition"
+                >
+                  <span :key="reviewCardTransitionKey" class="review-card__content">
+                    <span v-if="manualShowingBack" class="review-card__answer">
+                      <span v-if="session.cardSides === 'both'" class="review-card__front-reference">
+                        {{ currentCard.front }}
+                      </span>
+                      <FlashcardResponseText
+                        :back="currentCard.back"
+                        :note="currentCard.note"
+                        :note-before-back="session.noteBeforeBack"
+                      />
+                    </span>
+                    <strong
+                      v-else
+                      :style="{ fontSize: flashcardTextFontSize(currentCard.front) }"
+                    >
+                      {{ currentCard.front }}
+                    </strong>
                   </span>
-                  <FlashcardResponseText
-                    :back="currentCard.back"
-                    :note="currentCard.note"
-                    :note-before-back="session.noteBeforeBack"
-                  />
-                </span>
-                <span v-if="session.speechEnabled" class="review-card__hint">
-                  <v-icon icon="mdi-volume-high" size="18" /> Tap to replay
-                </span>
-              </span>
-                </span>
-              </button>
-
-              <div
-                v-else
-                v-ripple="canReplayCurrentSide"
-                :key="reviewCardTransitionKey"
-                class="passive-card"
-                :class="{ 'passive-card--interactive': canReplayCurrentSide }"
-                :role="session.speechEnabled ? 'button' : undefined"
-                :tabindex="canReplayCurrentSide ? 0 : undefined"
-                :aria-label="session.speechEnabled ? `Replay ${passiveSide} speech` : undefined"
-                :aria-disabled="session.speechEnabled ? !canReplayCurrentSide : undefined"
-                @pointerdown="beginReviewCardSwipe"
-                @pointerup="finishReviewCardSwipe"
-                @pointercancel="cancelReviewCardSwipe"
-                @click="handlePassiveCardTap"
-                @keydown.enter="replayCurrentSide"
-                @keydown.space.prevent="replayCurrentSide"
-              >
-                <div class="passive-card__content">
-              <small>{{ passiveSide === 'front' ? 'Front' : 'Back' }}</small>
-              <span class="review-card__answer">
-                <FlashcardResponseText
-                  v-if="passiveSide === 'back'"
-                  :back="currentCard.back"
-                  :note="currentCard.note"
-                  :note-before-back="session.noteBeforeBack"
-                />
-                <strong
-                  v-else
-                  :style="{
-                    fontSize: flashcardTextFontSize(currentCard.front),
-                  }"
-                >
-                  {{ currentCard.front }}
-                </strong>
-                <span
-                  v-if="passiveSide === 'back' && session.cardSides === 'both'"
-                  class="review-card__front-reference"
-                >
-                  {{ currentCard.front }}
-                </span>
+                </transition>
               </span>
               <span v-if="session.speechEnabled" class="review-card__hint">
                 <v-icon icon="mdi-volume-high" size="18" /> Tap to replay
               </span>
-                </div>
-                <v-progress-linear
-                  class="review-progress"
-                  :model-value="passiveProgress"
-                  color="secondary"
-                  bg-color="white"
-                  :bg-opacity="0.14"
-                  height="6"
-                  rounded
-                />
+              <span v-else-if="session.cardSides === 'both' && !revealed" class="review-card__hint">
+                <v-icon icon="mdi-gesture-tap" size="18" /> Tap to reveal
+              </span>
+            </button>
+
+            <div
+              v-else
+              v-ripple="canReplayCurrentSide"
+              class="passive-card"
+              :class="{ 'passive-card--interactive': canReplayCurrentSide }"
+              :role="session.speechEnabled ? 'button' : undefined"
+              :tabindex="canReplayCurrentSide ? 0 : undefined"
+              :aria-label="session.speechEnabled ? `Replay ${passiveSide} speech` : undefined"
+              :aria-disabled="session.speechEnabled ? !canReplayCurrentSide : undefined"
+              @keydown.enter="replayCurrentSide"
+              @keydown.space.prevent="replayCurrentSide"
+            >
+              <div class="passive-card__content">
+                <small>{{ passiveSide === 'front' ? 'Front' : 'Back' }}</small>
+                <span class="review-card__content-window">
+                  <transition
+                    :name="reviewCardTransitionDirection
+                      ? `standalone-review-content-${reviewCardTransitionDirection}`
+                      : undefined"
+                    @after-enter="finishReviewCardTransition"
+                  >
+                    <span :key="reviewCardTransitionKey" class="review-card__content">
+                      <span v-if="passiveSide === 'back'" class="review-card__answer">
+                        <FlashcardResponseText
+                          :back="currentCard.back"
+                          :note="currentCard.note"
+                          :note-before-back="session.noteBeforeBack"
+                        />
+                        <span
+                          v-if="session.cardSides === 'both'"
+                          class="review-card__front-reference"
+                        >
+                          {{ currentCard.front }}
+                        </span>
+                      </span>
+                      <strong
+                        v-else
+                        :style="{ fontSize: flashcardTextFontSize(currentCard.front) }"
+                      >
+                        {{ currentCard.front }}
+                      </strong>
+                    </span>
+                  </transition>
+                </span>
+                <span v-if="session.speechEnabled" class="review-card__hint">
+                  <v-icon icon="mdi-volume-high" size="18" /> Tap to replay
+                </span>
               </div>
-            </transition>
+              <v-progress-linear
+                class="review-progress"
+                :model-value="passiveProgress"
+                color="secondary"
+                bg-color="white"
+                :bg-opacity="0.14"
+                height="6"
+                rounded
+              />
+            </div>
           </div>
 
-          <footer v-if="store.tags" class="review-card__tag-actions" aria-label="Flashcard tags" @click.stop>
+          <footer
+            v-if="store.tags"
+            class="review-card__tag-actions"
+            aria-label="Flashcard tags"
+            @click.capture="suppressTagClickAfterSwipe"
+            @click.stop
+          >
             <div class="review-card__quick-tags">
               <v-chip
                 v-for="tag in quickTags"
@@ -1725,22 +1755,23 @@ async function leaveRunner() {
 .runner-body { display: flex; width: 100%; max-width: 44rem; min-height: 0; margin: 0 auto; padding: 1rem 1rem .5rem; flex: 1 1 auto; flex-direction: column; gap: .875rem; overflow-y: auto; overscroll-behavior: contain; }
 .runner-meta { display: flex; align-items: center; justify-content: space-between; gap: 1rem; color: rgba(var(--v-theme-on-surface), .68); font-size: .75rem; font-weight: 850; }
 .runner-meta > div { display: flex; align-items: center; gap: .4rem; }
-.review-card-stack { position: relative; display: flex; width: 100%; min-height: min(38dvh, 22rem); flex: 1 1 auto; flex-direction: column; }
-.review-card-window { display: grid; width: 100%; min-height: min(38dvh, 22rem); flex: 1 1 auto; overflow: hidden; border-radius: 1.5rem; perspective: 80rem; }
+.review-card-stack { position: relative; display: flex; width: 100%; min-height: min(38dvh, 22rem); flex: 1 1 auto; flex-direction: column; touch-action: none; }
+.review-card-window { display: grid; width: 100%; min-height: min(38dvh, 22rem); flex: 1 1 auto; overflow: hidden; border-radius: 1.5rem; }
+.review-card-window,
+.review-card-window * { pointer-events: none; }
 .review-card-window > * { width: 100%; min-height: inherit; grid-area: 1 / 1; }
-.review-card { position: relative; width: 100%; min-height: min(38dvh, 22rem); border: 0; border-radius: 1.5rem; flex: 1 1 auto; overflow: hidden; background: transparent; color: inherit; cursor: pointer; perspective: 80rem; touch-action: none; }
+.review-card { position: relative; display: flex; width: 100%; min-height: min(38dvh, 22rem); padding: 2rem 2rem 5.5rem; border: .0625rem solid rgba(var(--v-theme-on-surface), .1); border-radius: 1.5rem; align-items: center; flex: 1 1 auto; flex-direction: column; gap: 1.5rem; overflow: hidden; background: rgb(var(--v-theme-surface)); color: inherit; cursor: pointer; font: inherit; text-align: center; touch-action: none; box-shadow: 0 1rem 2.5rem rgba(0, 0, 0, .26); }
+.review-card--back { border-color: rgba(var(--v-theme-secondary), .34); }
 .review-card :deep(.v-ripple__container) { z-index: 2; }
 .review-card:focus-visible { outline: .1875rem solid rgba(var(--v-theme-secondary), .72); outline-offset: .25rem; }
-.review-card__inner { position: relative; display: grid; height: 100%; min-height: inherit; transform-style: preserve-3d; transition: transform 240ms cubic-bezier(.22, 1, .36, 1); }
-.review-card--revealed .review-card__inner { transform: rotateY(180deg); }
-.review-card__face { position: relative; display: flex; min-height: inherit; padding: 2rem 2rem 5.5rem; border: .0625rem solid rgba(var(--v-theme-on-surface), .1); border-radius: 1.5rem; grid-area: 1 / 1; align-items: center; justify-content: center; flex-direction: column; gap: 1.5rem; overflow: auto; background: rgb(var(--v-theme-surface)); box-shadow: 0 1rem 2.5rem rgba(0, 0, 0, .26); backface-visibility: hidden; }
-.review-card__face small,
+.review-card small,
 .passive-card small { color: rgba(var(--v-theme-on-surface), .48); font-size: .68rem; font-weight: 900; letter-spacing: .12em; text-transform: uppercase; }
-.review-card__face strong,
+.review-card strong,
 .passive-card strong { max-width: 34rem; overflow-wrap: anywhere; font-size: clamp(1.3rem, 5vw, 2.1rem); font-weight: 850; line-height: 1.35; white-space: pre-wrap; }
+.review-card__content-window { position: relative; display: grid; width: 100%; min-height: 0; flex: 1 1 auto; overflow: hidden; }
+.review-card__content { display: flex; width: 100%; min-height: 0; max-height: 100%; grid-area: 1 / 1; align-items: center; align-self: stretch; justify-content: center; flex-direction: column; overflow-y: auto; }
 .review-card__answer { display: flex; align-items: center; flex-direction: column; gap: .45rem; }
 .review-card__front-reference { max-width: 30rem; overflow-wrap: anywhere; color: rgba(var(--v-theme-on-surface), .48); font-size: clamp(.72rem, 2.2vw, .88rem); line-height: 1.4; white-space: pre-wrap; }
-.review-card__back { border-color: rgba(var(--v-theme-secondary), .34); transform: rotateY(180deg); }
 .review-card__hint { display: flex; align-items: center; gap: .4rem; color: rgba(var(--v-theme-on-surface), .48); font-size: .72rem; font-weight: 800; }
 .passive-card { position: relative; display: flex; width: 100%; min-height: min(38dvh, 22rem); padding: 2rem 2rem 5.5rem; border: .0625rem solid rgba(var(--v-theme-secondary), .28); border-radius: 1.5rem; align-items: center; flex: 1 1 auto; flex-direction: column; gap: 1.5rem; overflow: hidden; background: rgb(var(--v-theme-surface)); color: inherit; font: inherit; text-align: center; touch-action: none; box-shadow: 0 1rem 2.5rem rgba(0, 0, 0, .26); }
 .passive-card--interactive { cursor: pointer; }
@@ -1750,37 +1781,24 @@ async function leaveRunner() {
 .review-card__quick-tags { display: flex; grid-column: 1; justify-self: start; gap: .5rem; }
 .review-card__quick-tag.v-chip--variant-outlined { border-color: rgba(var(--v-theme-on-surface), .18); }
 .review-card__tag-menu-button { min-width: 0; grid-column: 3; justify-self: end; }
-.standalone-review-card-next-enter-active,
-.standalone-review-card-next-leave-active,
-.standalone-review-card-previous-enter-active,
-.standalone-review-card-previous-leave-active,
-.standalone-review-card-front-enter-active,
-.standalone-review-card-front-leave-active,
-.standalone-review-card-back-enter-active,
-.standalone-review-card-back-leave-active {
+.standalone-review-content-next-enter-active,
+.standalone-review-content-next-leave-active,
+.standalone-review-content-previous-enter-active,
+.standalone-review-content-previous-leave-active,
+.standalone-review-content-front-enter-active,
+.standalone-review-content-front-leave-active,
+.standalone-review-content-back-enter-active,
+.standalone-review-content-back-leave-active {
   transition: opacity 160ms ease, transform 180ms cubic-bezier(.22, 1, .36, 1);
 }
-.standalone-review-card-next-enter-from,
-.standalone-review-card-previous-leave-to { opacity: 0; transform: translateX(1.5rem); }
-.standalone-review-card-next-leave-to,
-.standalone-review-card-previous-enter-from { opacity: 0; transform: translateX(-1.5rem); }
-.standalone-review-card-back-enter-from,
-.standalone-review-card-front-leave-to { opacity: 0; transform: translateY(1.5rem); }
-.standalone-review-card-back-leave-to,
-.standalone-review-card-front-enter-from { opacity: 0; transform: translateY(-1.5rem); }
-.standalone-review-card-flip-front-enter-active,
-.standalone-review-card-flip-front-leave-active,
-.standalone-review-card-flip-back-enter-active,
-.standalone-review-card-flip-back-leave-active {
-  backface-visibility: hidden;
-  transform-origin: center;
-  transition: opacity 450ms ease, transform 450ms cubic-bezier(.22, 1, .36, 1);
-  will-change: opacity, transform;
-}
-.standalone-review-card-flip-back-enter-from,
-.standalone-review-card-flip-front-leave-to { opacity: .35; transform: rotateY(72deg); }
-.standalone-review-card-flip-back-leave-to,
-.standalone-review-card-flip-front-enter-from { opacity: .35; transform: rotateY(-72deg); }
+.standalone-review-content-next-enter-from,
+.standalone-review-content-previous-leave-to { opacity: 0; transform: translateX(1.5rem); }
+.standalone-review-content-next-leave-to,
+.standalone-review-content-previous-enter-from { opacity: 0; transform: translateX(-1.5rem); }
+.standalone-review-content-back-enter-from,
+.standalone-review-content-front-leave-to { opacity: 0; transform: translateY(1.5rem); }
+.standalone-review-content-back-leave-to,
+.standalone-review-content-front-enter-from { opacity: 0; transform: translateY(-1.5rem); }
 .review-navigation { display: grid; width: 100%; max-width: 54.25rem; margin: auto auto 0; padding-top: .25rem; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: center; justify-items: center; gap: 1rem; }
 .review-navigation__control { display: flex; min-width: 0; align-items: center; }
 .grading-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
@@ -1826,31 +1844,21 @@ async function leaveRunner() {
 .completion-stats strong { font-size: 1.25rem; }
 .completion-stats span { margin-top: .2rem; color: rgba(var(--v-theme-on-surface), .52); font-size: .65rem; font-weight: 800; text-transform: uppercase; }
 @media (prefers-reduced-motion: reduce) {
-  .review-card__inner { transition: opacity 160ms ease; }
-  .review-card--revealed .review-card__inner { transform: rotateY(180deg); }
-  .standalone-review-card-next-enter-active,
-  .standalone-review-card-next-leave-active,
-  .standalone-review-card-previous-enter-active,
-  .standalone-review-card-previous-leave-active,
-  .standalone-review-card-front-enter-active,
-  .standalone-review-card-front-leave-active,
-  .standalone-review-card-back-enter-active,
-  .standalone-review-card-back-leave-active,
-  .standalone-review-card-flip-front-enter-active,
-  .standalone-review-card-flip-front-leave-active,
-  .standalone-review-card-flip-back-enter-active,
-  .standalone-review-card-flip-back-leave-active { transition: none; }
-  .standalone-review-card-next-enter-from,
-  .standalone-review-card-next-leave-to,
-  .standalone-review-card-previous-enter-from,
-  .standalone-review-card-previous-leave-to,
-  .standalone-review-card-front-enter-from,
-  .standalone-review-card-front-leave-to,
-  .standalone-review-card-back-enter-from,
-  .standalone-review-card-back-leave-to,
-  .standalone-review-card-flip-front-enter-from,
-  .standalone-review-card-flip-front-leave-to,
-  .standalone-review-card-flip-back-enter-from,
-  .standalone-review-card-flip-back-leave-to { opacity: 1; transform: none; }
+  .standalone-review-content-next-enter-active,
+  .standalone-review-content-next-leave-active,
+  .standalone-review-content-previous-enter-active,
+  .standalone-review-content-previous-leave-active,
+  .standalone-review-content-front-enter-active,
+  .standalone-review-content-front-leave-active,
+  .standalone-review-content-back-enter-active,
+  .standalone-review-content-back-leave-active { transition: none; }
+  .standalone-review-content-next-enter-from,
+  .standalone-review-content-next-leave-to,
+  .standalone-review-content-previous-enter-from,
+  .standalone-review-content-previous-leave-to,
+  .standalone-review-content-front-enter-from,
+  .standalone-review-content-front-leave-to,
+  .standalone-review-content-back-enter-from,
+  .standalone-review-content-back-leave-to { opacity: 1; transform: none; }
 }
 </style>
