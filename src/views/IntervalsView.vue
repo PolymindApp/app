@@ -16,7 +16,7 @@ import type { IntervalSession } from '@/types/domain'
 const store = useIntervalStore()
 const router = useRouter()
 const recentWeekStart = ref(startOfWeek(new Date(), { weekStartsOn: 1 }))
-const expandedRecentRunDays = ref(new Set([format(new Date(), 'yyyy-MM-dd')]))
+const expandedRecentRunDays = ref(new Set<string>())
 const selectedRecentRun = ref<IntervalSession>()
 const recentRunActionsOpen = ref(false)
 const deleteRecentRunDialog = ref(false)
