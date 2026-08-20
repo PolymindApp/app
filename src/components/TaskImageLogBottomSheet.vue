@@ -14,7 +14,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  logged: []
+  logged: [amount: number]
 }>()
 
 const model = defineModel<boolean>({ default: false })
@@ -149,7 +149,7 @@ async function selectImageLog(imageLog: TaskLogImage) {
   try {
     await store.logTaskImage(props.progress, imageLog, props.completionId)
     model.value = false
-    emit('logged')
+    emit('logged', imageLog.amount)
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Could not log this amount.'
   } finally {
@@ -168,7 +168,7 @@ async function saveNew() {
       image: upload.value,
     }, props.completionId)
     model.value = false
-    emit('logged')
+    emit('logged', amount.value!)
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Could not save this image log.'
   } finally {

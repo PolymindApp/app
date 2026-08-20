@@ -83,6 +83,9 @@ const exactAction = ref<'add' | 'subtract' | 'set' | 'save'>()
 const imageLogSheet = ref(false)
 const imageLogProgress = ref<TaskProgress>()
 const imageLogCompletionId = ref('')
+const lockInSheet = ref(false)
+const lockInProgress = ref<TaskProgress>()
+const lockInUpdating = ref(false)
 const todayPage = ref<HTMLElement>()
 const nextIncompleteProgress = ref<TaskProgress>()
 const reviewSheet = ref(false)
@@ -130,6 +133,14 @@ const exactAmountError = computed(() => {
     return 'Enter a positive amount and use Subtract.'
   }
   return undefined
+})
+const lockInDescription = computed(() => {
+  const progress = lockInProgress.value
+  if (!progress) return ''
+  const target = progress.task.targetValue ?? 1
+  const unit = progress.task.customUnit || progress.task.unit || ''
+  const formattedTarget = Number(target.toFixed(2))
+  return `${progress.task.name} now totals ${formattedTarget}${unit ? ` ${unit}` : ''}. Locking prevents more changes for this day.`
 })
 const keypadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'backspace'] as const
 const taskActionTitle = computed(() =>
@@ -960,6 +971,39 @@ function openImageLogger(progress: TaskProgress, completionId = '') {
   imageLogSheet.value = true
 }
 
+function offerDailyTotalLock(progress: TaskProgress, amount: number) {
+  if (progress.programStep || progress.task.type !== 'daily_total' || progress.sealed) return
+  const remaining = (progress.task.targetValue ?? 1) - progress.value
+  if (
+    remaining <= 0
+    || Number(amount.toFixed(2)) !== Number(remaining.toFixed(2))
+  ) return
+  lockInProgress.value = progress
+  lockInSheet.value = true
+}
+
+function handleImageLog(amount: number) {
+  const progress = imageLogProgress.value
+  if (!progress) return
+  pulseProgressValue(progress)
+  offerDailyTotalLock(progress, amount)
+}
+
+async function lockInDailyTotal() {
+  const progress = lockInProgress.value
+  if (!progress || lockInUpdating.value) return
+  lockInUpdating.value = true
+  try {
+    await store.setDailyTotalSealed(progress)
+    lockInSheet.value = false
+    lockInProgress.value = undefined
+  } catch (cause) {
+    store.error = cause instanceof Error ? cause.message : 'Could not lock in this total.'
+  } finally {
+    lockInUpdating.value = false
+  }
+}
+
 function editTaskLogEntry(entry: Entry) {
   const progress = taskActionProgress.value
   if (!progress || progress.sealed || busy.value || isHealthConnectEntry(entry)) return
@@ -1177,6 +1221,10 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
     : mode === 'subtract'
       ? -exactAmount.value
       : exactAmount.value
+  const shouldOfferLockIn = mode === 'add'
+    && !exactCompletionId.value
+    && progress.task.type === 'daily_total'
+    && Number(amount.toFixed(2)) === Number(((progress.task.targetValue ?? 1) - progress.value).toFixed(2))
   if (amount === 0) {
     if (mode === 'set') exactDialog.value = false
     return
@@ -1192,6 +1240,7 @@ async function submitExact(mode: 'add' | 'subtract' | 'set') {
   exactDialog.value = false
   try {
     await update
+    if (shouldOfferLockIn) offerDailyTotalLock(progress, amount)
   } catch (cause) {
     exactError.value = cause instanceof Error ? cause.message : 'Could not save this log entry.'
     exactDialog.value = true
@@ -1571,8 +1620,38 @@ async function saveTaskLogEntry() {
       v-model="imageLogSheet"
       :progress="imageLogProgress"
       :completion-id="imageLogCompletionId"
-      @logged="imageLogProgress && pulseProgressValue(imageLogProgress)"
+      @logged="handleImageLog"
     />
+
+    <ActionBottomSheet
+      v-model="lockInSheet"
+      title="Lock in the numbers?"
+      :description="lockInDescription"
+      aria-label="Lock in daily total"
+    >
+      <template #content>
+        <v-btn
+          block
+          size="large"
+          color="secondary"
+          prepend-icon="mdi-lock-check-outline"
+          :loading="lockInUpdating"
+          @click="lockInDailyTotal"
+        >
+          Lock in total
+        </v-btn>
+        <v-btn
+          block
+          size="large"
+          variant="text"
+          class="mt-2"
+          :disabled="lockInUpdating"
+          @click="lockInSheet = false"
+        >
+          Skip for now
+        </v-btn>
+      </template>
+    </ActionBottomSheet>
 
     <TrackingLogBottomSheet
       v-model="trackingSheetOpen"
