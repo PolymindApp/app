@@ -14,6 +14,7 @@
     "build:prod": "vue-tsc --noEmit && vite build --mode prod",
     "build:tag": "bash scripts/release-android.sh",
     "android:push": "bash scripts/build-install-android-release.sh",
+    "android:push:dev": "BACKONTRACK_WEB_BUILD_MODE=dev bash scripts/build-install-android-release.sh",
     "android:sync": "pnpm build:prod && cap sync android",
     "android:assets": "capacitor-assets generate --android",
     "android:dev": "bash scripts/android-dev.sh",

@@ -8,9 +8,11 @@ application_id="app.backontrack.android"
 
 usage() {
   cat <<'EOF'
-Usage: pnpm android:build:install:release [-- --adb [DEVICE]]
+Usage: pnpm android:push [-- --adb [DEVICE]]
+       pnpm android:push:dev [-- --adb [DEVICE]]
 
-Build the signed release APK and install it.
+Build and install the signed release APK. android:push uses .env.prod, while
+android:push:dev uses .env.dev for the bundled web application.
 
 With no options, the script opens Android's package installer when running
 inside Termux and uses ADB on desktop hosts. Use --adb to force ADB instead

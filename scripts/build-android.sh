@@ -3,9 +3,19 @@
 set -euo pipefail
 
 build_variant="${1:-debug}"
+web_build_mode="${BACKONTRACK_WEB_BUILD_MODE:-prod}"
 signing_properties="private/android-signing.properties"
 release_keystore="private/backontrack-release.jks"
 termux_aapt2="private/android-sdk/qemu/aapt2"
+
+case "$web_build_mode" in
+  dev|prod)
+    ;;
+  *)
+    echo "BACKONTRACK_WEB_BUILD_MODE must be dev or prod." >&2
+    exit 2
+    ;;
+esac
 
 if [[ -z "${JAVA_HOME:-}" || ! -x "$JAVA_HOME/bin/java" ]]; then
   java_command="$(command -v java || true)"
@@ -44,7 +54,12 @@ case "$build_variant" in
     ;;
 esac
 
-pnpm build:prod
+if [[ "$web_build_mode" == prod ]]; then
+  pnpm build:prod
+else
+  pnpm exec vue-tsc --noEmit
+  pnpm exec vite build --mode "$web_build_mode"
+fi
 pnpm exec cap sync android
 
 if [[ "$(uname -o 2>/dev/null || true)" == Android && -x "$termux_aapt2" ]]; then
