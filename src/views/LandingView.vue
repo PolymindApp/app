@@ -42,14 +42,6 @@ const appSections = [
   },
 ]
 
-const systemFlow = [
-  { label: 'Plan', icon: 'mdi-clipboard-check-outline' },
-  { label: 'Practise', icon: 'mdi-timer-outline' },
-  { label: 'Learn', icon: 'mdi-cards-outline' },
-  { label: 'Measure', icon: 'mdi-chart-timeline-variant' },
-  { label: 'Reflect', icon: 'mdi-notebook-outline' },
-]
-
 const screenshots = [
   {
     title: 'Tasks',
@@ -155,7 +147,11 @@ function scrollToFeatures() {
             <p>Each tool does one job well. Together, they turn a plan into practice, evidence, and a better next step.</p>
           </div>
 
-          <v-row class="app-section-grid mt-10" align="stretch">
+          <v-row
+            class="app-section-grid mt-10"
+            align="stretch"
+            aria-label="BackOnTrack tools"
+          >
             <v-col
               v-for="section in appSections"
               :key="section.title"
@@ -181,33 +177,6 @@ function scrollToFeatures() {
             </v-col>
           </v-row>
 
-          <v-card class="system-flow surface-card mt-6 pa-5 pa-md-6" aria-label="How the main sections work together">
-            <div class="system-flow__intro">
-              <div class="system-flow__loop">
-                <v-icon icon="mdi-sync" size="23" />
-              </div>
-              <div>
-                <strong>Everything stays connected</strong>
-                <p>Schedule the work, do it your way, see what changed, and carry that context into tomorrow.</p>
-              </div>
-            </div>
-
-            <div class="system-flow__steps">
-              <template v-for="(step, index) in systemFlow" :key="step.label">
-                <div class="system-flow__step">
-                  <v-icon :icon="step.icon" size="18" />
-                  <span>{{ step.label }}</span>
-                </div>
-                <v-icon
-                  v-if="index < systemFlow.length - 1"
-                  class="system-flow__arrow"
-                  icon="mdi-arrow-right"
-                  size="17"
-                />
-              </template>
-              <v-icon class="system-flow__return" icon="mdi-arrow-u-left-top" size="19" />
-            </div>
-          </v-card>
         </section>
 
         <section class="closing-section px-6 px-lg-10">
@@ -524,82 +493,6 @@ function scrollToFeatures() {
   color: rgb(var(--v-theme-secondary));
 }
 
-.system-flow {
-  display: grid;
-  grid-template-columns: minmax(17rem, .8fr) minmax(0, 1.2fr);
-  align-items: center;
-  gap: 2rem;
-  border-color: rgba(var(--v-theme-secondary), .2);
-  background:
-    linear-gradient(105deg, rgba(var(--v-theme-secondary), .09), transparent 42%),
-    rgb(var(--v-theme-surface));
-}
-
-.system-flow__intro {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 1rem;
-}
-
-.system-flow__loop {
-  width: 3rem;
-  height: 3rem;
-  display: grid;
-  flex: 0 0 auto;
-  place-items: center;
-  border-radius: .9rem;
-  background: rgb(var(--v-theme-secondary));
-  color: rgb(var(--v-theme-on-secondary));
-}
-
-.system-flow__intro strong {
-  font-size: .95rem;
-  font-weight: 900;
-}
-
-.system-flow__intro p {
-  margin-top: .2rem;
-  color: rgb(var(--v-theme-on-surface) / .58);
-  font-size: .78rem;
-  line-height: 1.5;
-}
-
-.system-flow__steps {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  justify-content: flex-end;
-  gap: .4rem;
-}
-
-.system-flow__step {
-  display: inline-flex;
-  min-width: 0;
-  align-items: center;
-  gap: .4rem;
-  color: rgb(var(--v-theme-on-surface) / .82);
-  font-size: .74rem;
-  font-weight: 850;
-  white-space: nowrap;
-}
-
-.system-flow__step .v-icon,
-.system-flow__arrow,
-.system-flow__return {
-  color: rgb(var(--v-theme-secondary));
-}
-
-.system-flow__arrow {
-  flex: 0 0 auto;
-  opacity: .55;
-}
-
-.system-flow__return {
-  flex: 0 0 auto;
-  margin-left: .1rem;
-}
-
 .closing-section {
   padding-block: 3rem 8rem;
 }
@@ -672,14 +565,6 @@ function scrollToFeatures() {
     flex-direction: column;
   }
 
-  .system-flow {
-    grid-template-columns: 1fr;
-    gap: 1.5rem;
-  }
-
-  .system-flow__steps {
-    justify-content: flex-start;
-  }
 }
 
 @media (max-width: 47.998rem) {
@@ -732,24 +617,36 @@ function scrollToFeatures() {
     min-height: auto;
   }
 
-  .system-flow__intro {
-    align-items: flex-start;
+  .app-section-grid {
+    display: grid;
+    width: auto;
+    max-width: none;
+    grid-auto-columns: min(78vw, 21rem);
+    grid-auto-flow: column;
+    grid-template-columns: none;
+    align-items: stretch;
+    gap: 0;
+    margin-inline: -1.5rem;
+    padding-inline: 11vw;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scroll-padding-inline: 11vw;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+    touch-action: pan-x pan-y;
+    -webkit-overflow-scrolling: touch;
   }
 
-  .system-flow__steps {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: .35rem;
-    padding-left: .9rem;
-  }
-
-  .system-flow__arrow {
-    margin-left: .05rem;
-    transform: rotate(90deg);
-  }
-
-  .system-flow__return {
+  .app-section-grid::-webkit-scrollbar {
     display: none;
+  }
+
+  .app-section-col {
+    width: auto;
+    max-width: none;
+    padding: .5rem;
+    scroll-snap-align: center;
+    scroll-snap-stop: always;
   }
 
   .phone-gallery {
