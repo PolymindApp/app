@@ -151,7 +151,6 @@ function selectKind(kind: IntervalStepKind | null) {
 
     <v-expand-transition v-if="node.type === 'step'">
       <div v-show="isExpanded" :id="editorPanelId" class="node-fields mt-4">
-        <v-text-field v-model="node.name" label="Interval name" />
         <v-select
           :model-value="node.kind || null"
           label="Type"
@@ -176,6 +175,7 @@ function selectKind(kind: IntervalStepKind | null) {
             </v-list-item>
           </template>
         </v-select>
+        <v-text-field v-model="node.name" label="Interval name" />
         <fieldset v-if="node.kind !== 'confirmation'" class="duration-wheel">
           <legend>Duration</legend>
           <TimerWheelPicker v-model="durationSeconds" :active="isExpanded" />
