@@ -1,11 +1,17 @@
 package app.backontrack.android
 
 import android.content.Intent
+import android.app.AppOpsManager
+import android.app.usage.UsageEvents
+import android.app.usage.UsageStatsManager
+import android.os.Process
+import android.provider.Settings
 import androidx.activity.result.ActivityResult
 import androidx.activity.result.contract.ActivityResultContract
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.PermissionController
 import androidx.health.connect.client.permission.HealthPermission
+import androidx.health.connect.client.permission.HealthPermission.Companion.PERMISSION_READ_HEALTH_DATA_HISTORY
 import androidx.health.connect.client.records.StepsRecord
 import androidx.health.connect.client.request.AggregateRequest
 import androidx.health.connect.client.time.TimeRangeFilter
@@ -55,6 +61,11 @@ class HealthConnectPlugin : Plugin() {
     }
 
     @PluginMethod
+    fun getScreenTimeStatus(call: PluginCall) {
+        call.resolve(JSObject().put("authorized", hasUsageAccess()))
+    }
+
+    @PluginMethod
     override fun requestPermissions(call: PluginCall) {
         when (HealthConnectClient.getSdkStatus(context)) {
             HealthConnectClient.SDK_UNAVAILABLE_PROVIDER_UPDATE_REQUIRED -> {
@@ -73,7 +84,10 @@ class HealthConnectPlugin : Plugin() {
             }
         }
 
-        val intent = permissionContract.createIntent(context, setOf(readStepsPermission))
+        val intent = permissionContract.createIntent(
+            context,
+            setOf(readStepsPermission, PERMISSION_READ_HEALTH_DATA_HISTORY),
+        )
         startActivityForResult(call, intent, "permissionResult")
     }
 
@@ -147,6 +161,60 @@ class HealthConnectPlugin : Plugin() {
     }
 
     @PluginMethod
+    fun readScreenTime(call: PluginCall) {
+        val startTime = parseInstant(call, "startTime") ?: return
+        val endTime = parseInstant(call, "endTime") ?: return
+        if (!endTime.isAfter(startTime)) {
+            call.reject("The screen-time range is invalid.", "HEALTH_CONNECT_INVALID_RANGE")
+            return
+        }
+        if (!hasUsageAccess()) {
+            call.reject(
+                "Allow usage access for BackOnTrack in Settings.",
+                "SCREEN_TIME_PERMISSION_REQUIRED",
+            )
+            return
+        }
+
+        scope.launch {
+            try {
+                val manager = context.getSystemService(UsageStatsManager::class.java)
+                val startMs = startTime.toEpochMilli()
+                val endMs = endTime.toEpochMilli()
+                val events = manager.queryEvents(startMs - 86_400_000L, endMs)
+                val event = UsageEvents.Event()
+                var interactive = false
+                var interactiveSince = startMs
+                var totalMs = 0L
+
+                while (events.hasNextEvent()) {
+                    events.getNextEvent(event)
+                    when (event.eventType) {
+                        UsageEvents.Event.SCREEN_INTERACTIVE -> {
+                            interactive = true
+                            interactiveSince = maxOf(startMs, event.timeStamp)
+                        }
+                        UsageEvents.Event.SCREEN_NON_INTERACTIVE -> {
+                            if (interactive && event.timeStamp > startMs) {
+                                totalMs += maxOf(0L, minOf(endMs, event.timeStamp) - interactiveSince)
+                            }
+                            interactive = false
+                        }
+                    }
+                }
+                if (interactive) totalMs += maxOf(0L, endMs - interactiveSince)
+                call.resolve(JSObject().put("minutes", totalMs / 60_000.0))
+            } catch (exception: Exception) {
+                call.reject(
+                    exception.message ?: "BackOnTrack could not read screen time.",
+                    "SCREEN_TIME_READ_FAILED",
+                    exception,
+                )
+            }
+        }
+    }
+
+    @PluginMethod
     fun openSettings(call: PluginCall) {
         try {
             val intent = Intent(HealthConnectClient.ACTION_HEALTH_CONNECT_SETTINGS)
@@ -162,12 +230,36 @@ class HealthConnectPlugin : Plugin() {
         }
     }
 
+    @PluginMethod
+    fun openScreenTimeSettings(call: PluginCall) {
+        try {
+            val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
+            startActivityForResult(call, intent, "screenTimeSettingsResult")
+        } catch (exception: Exception) {
+            call.reject("Usage access settings could not be opened.", exception)
+        }
+    }
+
+    @ActivityCallback
+    private fun screenTimeSettingsResult(call: PluginCall?, result: ActivityResult) {
+        call?.resolve()
+    }
+
     override fun handleOnDestroy() {
         scope.cancel()
         super.handleOnDestroy()
     }
 
     private fun healthClient() = HealthConnectClient.getOrCreate(context)
+
+    private fun hasUsageAccess(): Boolean {
+        val manager = context.getSystemService(AppOpsManager::class.java)
+        return manager.checkOpNoThrow(
+            AppOpsManager.OPSTR_GET_USAGE_STATS,
+            Process.myUid(),
+            context.packageName,
+        ) == AppOpsManager.MODE_ALLOWED
+    }
 
     private fun parseInstant(call: PluginCall, field: String): Instant? {
         val value = call.getString(field)

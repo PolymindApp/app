@@ -6,9 +6,11 @@ import { api } from '@/lib/api'
 import {
   DEFAULT_STEP_SOURCE,
   getHealthConnectStatus,
+  getScreenTimeStatus,
   isNativeHealthConnectSupported,
   normalizeStepSource,
   openHealthConnectSettings,
+  openScreenTimeSettings,
   requestHealthConnectPermission,
   type HealthConnectStatus,
 } from '@/services/healthConnect'
@@ -43,6 +45,7 @@ const hiddenMenuItems = ref<MainNavItemId[]>(normalizeHiddenMainMenuItems(
 const intervalTypeSounds = ref(defaultIntervalTypeSounds())
 const loading = ref(true)
 const connecting = ref(false)
+const screenTimeConnecting = ref(false)
 const menuSaving = ref(false)
 const intervalSoundSaving = ref(false)
 const previewingIntervalType = ref<IntervalStepKind>()
@@ -53,6 +56,7 @@ const healthStatus = ref<HealthConnectStatus>({
   availability: 'unavailable',
   authorized: false,
 })
+const screenTimeAuthorized = ref(false)
 const isAndroidApp = isNativeHealthConnectSupported()
 const stepSources = [
   { title: 'Health Connect', value: 'health_connect' },
@@ -108,6 +112,7 @@ onMounted(async () => {
   }
 
   await refreshHealthStatus()
+  await refreshScreenTimeStatus()
   loading.value = false
 })
 
@@ -116,6 +121,31 @@ async function refreshHealthStatus() {
     healthStatus.value = await getHealthConnectStatus()
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Health Connect status could not be checked.'
+  }
+}
+
+async function refreshScreenTimeStatus() {
+  try {
+    screenTimeAuthorized.value = (await getScreenTimeStatus()).authorized
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : 'Screen-time access could not be checked.'
+  }
+}
+
+async function connectScreenTime() {
+  screenTimeConnecting.value = true
+  error.value = ''
+  try {
+    await openScreenTimeSettings()
+    await refreshScreenTimeStatus()
+    if (screenTimeAuthorized.value) {
+      noticeMessage.value = 'Screen time is ready for tracking insights.'
+      notice.value = true
+    }
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : 'Usage access settings could not be opened.'
+  } finally {
+    screenTimeConnecting.value = false
   }
 }
 
@@ -302,6 +332,43 @@ async function previewIntervalTypeSound(kind: IntervalStepKind, sound: IntervalC
           </v-btn>
         </div>
       </template>
+    </v-card>
+
+    <v-card class="surface-card pa-5 pa-sm-6">
+      <div class="settings-section-heading">
+        <div>
+          <h2>Screen time</h2>
+          <p>Used as a daily factor in tracking insights.</p>
+        </div>
+        <v-icon icon="mdi-cellphone-clock" />
+      </div>
+
+      <v-alert
+        :type="screenTimeAuthorized ? 'success' : 'info'"
+        variant="tonal"
+        :icon="screenTimeAuthorized ? 'mdi-check-circle-outline' : 'mdi-chart-timeline-variant'"
+        class="mt-5"
+      >
+        <strong>{{ screenTimeAuthorized ? 'Usage access allowed' : 'Usage access required' }}</strong>
+        <p class="mt-1">
+          {{ screenTimeAuthorized
+            ? 'BackOnTrack can read daily screen-interactive time for insights.'
+            : 'Allow BackOnTrack to read device usage before comparing screen time with outcomes.' }}
+        </p>
+      </v-alert>
+
+      <v-btn
+        v-if="isAndroidApp"
+        block
+        class="mt-4"
+        :variant="screenTimeAuthorized ? 'outlined' : 'flat'"
+        :color="screenTimeAuthorized ? undefined : 'secondary'"
+        prepend-icon="mdi-open-in-new"
+        :loading="screenTimeConnecting"
+        @click="connectScreenTime"
+      >
+        Open usage access
+      </v-btn>
     </v-card>
 
     <v-card class="surface-card pa-5 pa-sm-6">

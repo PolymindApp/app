@@ -9,6 +9,7 @@ import TrackingRelationshipChart from '@/components/TrackingRelationshipChart.vu
 import TrackingTimelineChart from '@/components/TrackingTimelineChart.vue'
 import {
   buildTrackingInsight,
+  dateRangeKeys,
   defaultTrackingInsightRangePreset,
   trackingDailyValuesForRange,
   type TrackingInsightResult,
@@ -22,6 +23,7 @@ import {
   reviewSetInsightRangeBounds,
 } from '@/services/reviewSetInsights'
 import { INTERVAL_INSIGHT_PROFILE, intervalInsightDailyValues } from '@/services/intervalInsights'
+import { isNativeHealthConnectSupported, readHealthConnectStepsForDates, readScreenTimeForDates } from '@/services/healthConnect'
 import { useIntervalStore } from '@/stores/intervals'
 import { useTaskStore } from '@/stores/tasks'
 import { useTrackingStore } from '@/stores/tracking'
@@ -35,7 +37,7 @@ import type {
 
 type DatePreset = '7' | '14' | '1-month' | '3-months' | '6-months' | 'custom'
 type TrackingFactorSource = Omit<TrackingAnalysisSource, 'source'> & {
-  source: TrackingAnalysisSource['source'] | 'review_set'
+  source: TrackingAnalysisSource['source'] | 'review_set' | 'health_connect'
 }
 
 const tracking = useTrackingStore()
@@ -62,7 +64,33 @@ const datePresets: Array<{ title: string; value: DatePreset }> = [
   { title: 'Custom', value: 'custom' },
 ]
 
+const healthConnectFactorSources: TrackingFactorSource[] = isNativeHealthConnectSupported() ? [
+  {
+    id: 'health_connect:steps',
+    source: 'health_connect',
+    name: 'Steps',
+    role: 'factor',
+    favorableDirection: 'neutral',
+    unit: 'steps',
+    color: 'rgb(var(--v-theme-secondary))',
+    factorMode: 'quantity',
+    scaleMin: 0,
+  },
+  {
+    id: 'health_connect:screen_time',
+    source: 'health_connect',
+    name: 'Screen time',
+    role: 'factor',
+    favorableDirection: 'neutral',
+    unit: 'minutes',
+    color: 'rgb(var(--v-theme-info))',
+    factorMode: 'quantity',
+    scaleMin: 0,
+  },
+] : []
+
 const factorSources = computed<TrackingFactorSource[]>(() => [
+  ...healthConnectFactorSources,
   ...tracking.activeTrackers.filter((tracker) => tracker.role === 'factor').map((tracker) => ({
     id: `tracker:${tracker.id}`,
     source: 'tracker' as const,
@@ -122,6 +150,7 @@ const outcomeSources = computed<TrackingAnalysisSource[]>(() =>
 )
 
 const factorItems = computed(() => [
+  { title: 'Health Connect', source: 'health_connect' as const },
   { title: 'Trackers', source: 'tracker' as const },
   { title: 'Tasks', source: 'task' as const },
   { title: 'Intervals', source: 'interval' as const },
@@ -266,6 +295,13 @@ async function analyze() {
 
 async function factorDailyValues(sourceId: string, start: string, end: string): Promise<TrackingDailyValue[]> {
   const [source, id] = sourceId.split(':', 2)
+  if (source === 'health_connect') {
+    const dates = dateRangeKeys(start, end)
+    const values = id === 'steps'
+      ? await readHealthConnectStepsForDates(dates)
+      : await readScreenTimeForDates(dates)
+    return dates.map((date) => ({ date, value: values[date] || 0 }))
+  }
   if (source === 'tracker') {
     return trackerDailyValues(id || '', start, end)
   }
