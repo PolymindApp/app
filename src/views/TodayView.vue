@@ -65,6 +65,7 @@ const {
   stepCountLoading,
   stepCountError,
 } = storeToRefs(store)
+selectedDate.value = startOfDay(new Date())
 const visibleWeekStart = ref(startOfWeek(selectedDate.value, { weekStartsOn: 1 }))
 const busy = ref(false)
 const busyProgressKeys = ref(new Set<string>())
