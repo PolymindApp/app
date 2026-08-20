@@ -57,6 +57,7 @@ function mapSession(record: Record<string, any>): IntervalSession {
             ? {
                 ejectBehavior: flashcardSnapshot.ejectBehavior === 'replace'
                   || flashcardSnapshot.ejectBehavior === 'exclude'
+                  || flashcardSnapshot.ejectBehavior === 'replace_exclude'
                   ? flashcardSnapshot.ejectBehavior
                   : 'remove',
               }

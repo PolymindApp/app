@@ -4239,7 +4239,11 @@ final class Api
                         'tags' => is_array($tags) ? array_values($tags) : [],
                     ]);
                     $ejectedCount--;
-                    if ((string) ($session['eject_behavior_snapshot'] ?? 'remove') === 'exclude') {
+                    if (in_array(
+                        (string) ($session['eject_behavior_snapshot'] ?? 'remove'),
+                        ['exclude', 'replace_exclude'],
+                        true,
+                    )) {
                         $excludedCardsSnapshot = $this->setFlashcardReviewEjectExclusion(
                             $session,
                             $owner,
@@ -4286,7 +4290,11 @@ final class Api
                                 $owner,
                             );
                             if (
-                                (string) ($session['eject_behavior_snapshot'] ?? 'remove') === 'exclude'
+                                in_array(
+                                    (string) ($session['eject_behavior_snapshot'] ?? 'remove'),
+                                    ['exclude', 'replace_exclude'],
+                                    true,
+                                )
                             ) {
                                 $excludedCardsSnapshot = $this->setFlashcardReviewEjectExclusion(
                                     $session,
@@ -4296,7 +4304,11 @@ final class Api
                                 );
                             }
                             if (
-                                (string) ($session['eject_behavior_snapshot'] ?? 'remove') === 'replace'
+                                in_array(
+                                    (string) ($session['eject_behavior_snapshot'] ?? 'remove'),
+                                    ['replace', 'replace_exclude'],
+                                    true,
+                                )
                                 && $reserveCardIds !== []
                             ) {
                                 $sourceOwner = (string) ($session['source_owner'] ?: $owner);
@@ -4388,7 +4400,11 @@ final class Api
 
             if (
                 $indefinite
-                && (string) ($session['eject_behavior_snapshot'] ?? 'remove') !== 'replace'
+                && !in_array(
+                    (string) ($session['eject_behavior_snapshot'] ?? 'remove'),
+                    ['replace', 'replace_exclude'],
+                    true,
+                )
             ) {
                 // Ejected cards permanently leave a looping queue, so its cycle size must
                 // follow the live queue rather than the original session snapshot.
@@ -4599,7 +4615,11 @@ final class Api
                 ? (int) $settings['max_cards']
                 : (int) $settings['max_cards'] - $processed;
             $queue = array_slice($eligibleQueue, 0, $remainingLimit);
-            $reserveCardIds = $settings['eject_behavior'] === 'replace'
+            $reserveCardIds = in_array(
+                $settings['eject_behavior'],
+                ['replace', 'replace_exclude'],
+                true,
+            )
                 ? array_values(array_map(
                     static fn (array $card): string => (string) $card['id'],
                     array_slice($eligibleQueue, $remainingLimit),
@@ -4878,7 +4898,11 @@ final class Api
             ];
         }, $cards);
         $queue = array_slice($allQueue, 0, (int) $reviewSet['max_cards']);
-        $reserveCardIds = (string) ($reviewSet['eject_behavior'] ?? 'remove') === 'replace'
+        $reserveCardIds = in_array(
+            (string) ($reviewSet['eject_behavior'] ?? 'remove'),
+            ['replace', 'replace_exclude'],
+            true,
+        )
             ? array_values(array_map(
                 static fn (array $card): string => (string) $card['id'],
                 array_slice($allQueue, count($queue)),

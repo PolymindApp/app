@@ -14,11 +14,13 @@ Standalone Review sets can optionally finish after a configured amount of active
 
 ## Review card ejection
 
-Each Review set defines how the eject button affects its session. The default **Remove from session** behavior permanently removes the current card from the active list and completes a standalone review after its last active card is ejected.
+Each Review set has two independent eject-button settings. With both settings cleared, eject permanently removes the current card from the active list and completes a standalone review after its last active card is ejected.
 
 The optional **Load the next card** behavior keeps the active list filled up to the configured maximum by injecting the next ordered, matching card whenever one is ejected. For example, a 50-card Review set with a 10-card session limit keeps 10 cards active while reserve cards remain, then drains the final 10 and completes after all 50 cards have been ejected. The ordered reserve is snapshotted when standalone and mini interval sessions start, so the behavior remains deterministic and available offline.
 
-The optional **Eject and exclude** behavior removes the current card from the session and adds it to the Review set's excluded cards, preventing it from appearing in future sessions. Undoing the last eject in a standalone review restores the card to the active queue and removes that exclusion.
+The optional **Exclude card** behavior also adds the ejected card to the Review set's excluded cards, preventing it from appearing in future sessions. Undoing the last eject in a standalone review restores the card to the active queue and removes that exclusion.
+
+Both settings can be enabled together so the ejected card is excluded while the active list is replenished from the ordered reserve.
 
 Ejecting the current card advances both standalone and mini interval Review set sessions to the next available card. An injected replacement always starts at the beginning of its first configured face instead of inheriting the ejected card's face or playback progress.
 

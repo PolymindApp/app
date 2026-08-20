@@ -4,6 +4,7 @@ import type {
   FlashcardReviewSession,
   FlashcardReviewSet,
   FlashcardReviewCardSides,
+  FlashcardReviewEjectBehavior,
   FlashcardReviewSettings,
   FlashcardReviewSide,
   FlashcardReviewSort,
@@ -136,23 +137,23 @@ export const FLASHCARD_REVIEW_SELECTION_MENU_ITEMS = [
   },
 ] as const
 
-export const FLASHCARD_REVIEW_EJECT_BEHAVIOR_OPTIONS = [
-  {
-    title: 'Remove from session',
-    value: 'remove',
-    subtitle: 'Ejected cards leave the active list without loading more cards.',
-  },
-  {
-    title: 'Load the next card',
-    value: 'replace',
-    subtitle: 'Keep the active list filled from the rest of the Review set until every card has appeared.',
-  },
-  {
-    title: 'Eject and exclude',
-    value: 'exclude',
-    subtitle: 'Remove the card now and exclude it from future sessions in this Review set.',
-  },
-] as const
+export function flashcardEjectLoadsNext(behavior: FlashcardReviewEjectBehavior) {
+  return behavior === 'replace' || behavior === 'replace_exclude'
+}
+
+export function flashcardEjectExcludes(behavior: FlashcardReviewEjectBehavior) {
+  return behavior === 'exclude' || behavior === 'replace_exclude'
+}
+
+export function flashcardEjectBehavior(
+  loadNext: boolean,
+  exclude: boolean,
+): FlashcardReviewEjectBehavior {
+  if (loadNext && exclude) return 'replace_exclude'
+  if (loadNext) return 'replace'
+  if (exclude) return 'exclude'
+  return 'remove'
+}
 
 export function updateFlashcardReviewExclusions(
   excludedCards: readonly string[],
@@ -445,7 +446,7 @@ export function flashcardReviewQueueState(
   const queue = candidates.slice(0, reviewSet.maxCards)
   return {
     queue,
-    reserveCardIds: reviewSet.ejectBehavior === 'replace'
+    reserveCardIds: flashcardEjectLoadsNext(reviewSet.ejectBehavior)
       ? candidates.slice(queue.length).map(card => card.id)
       : [],
   }

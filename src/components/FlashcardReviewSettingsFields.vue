@@ -1,17 +1,19 @@
 <script setup lang="ts">
-import { computed, inject, useId, watch } from 'vue'
+import { computed, inject, watch } from 'vue'
 import LabeledSlider from '@/components/LabeledSlider.vue'
 import TimerWheelPicker from '@/components/TimerWheelPicker.vue'
 import {
   DEFAULT_FLASHCARD_REVIEW_TIME_LIMIT_SECONDS,
   FLASHCARD_REVIEW_CARD_SIDE_OPTIONS,
-  FLASHCARD_REVIEW_EJECT_BEHAVIOR_OPTIONS,
   FLASHCARD_REVIEW_SORT_OPTIONS,
   MAX_FLASHCARD_BACK_SPEECH_REPEATS,
   MAX_FLASHCARD_REVIEW_TIME_LIMIT_SECONDS,
   MAX_FLASHCARD_SESSION_CARDS,
   MIN_FLASHCARD_REVIEW_TIME_LIMIT_SECONDS,
   MIN_FLASHCARD_BACK_SPEECH_REPEATS,
+  flashcardEjectBehavior,
+  flashcardEjectExcludes,
+  flashcardEjectLoadsNext,
 } from '@/services/flashcards'
 import {
   defaultFlashcardSpeechLanguage,
@@ -42,7 +44,24 @@ const props = withDefaults(defineProps<{
 const CUSTOM_MAX_CARDS_THRESHOLD = 50
 const settings = computed(() => props.modelValue)
 const vuetifyDefaultsAvailable = Boolean(inject(Symbol.for('vuetify:defaults'), null))
-const ejectBehaviorName = useId()
+const ejectLoadsNext = computed({
+  get: () => flashcardEjectLoadsNext(settings.value.ejectBehavior),
+  set: (enabled: boolean | null) => {
+    settings.value.ejectBehavior = flashcardEjectBehavior(
+      Boolean(enabled),
+      flashcardEjectExcludes(settings.value.ejectBehavior),
+    )
+  },
+})
+const ejectExcludes = computed({
+  get: () => flashcardEjectExcludes(settings.value.ejectBehavior),
+  set: (enabled: boolean | null) => {
+    settings.value.ejectBehavior = flashcardEjectBehavior(
+      flashcardEjectLoadsNext(settings.value.ejectBehavior),
+      Boolean(enabled),
+    )
+  },
+})
 const cardLimit = computed(() => {
   const minimum = Math.min(
     MAX_FLASHCARD_SESSION_CARDS,
@@ -413,43 +432,46 @@ function updateSpeechEnabled(enabled: boolean | null) {
       </p>
       <v-divider class="my-5" />
       <template v-if="settings.ejectBehavior">
-        <label class="field-label">Eject button behavior <span class="required-mark">*</span></label>
-        <v-radio-group
-          v-if="vuetifyDefaultsAvailable"
-          v-model="settings.ejectBehavior"
-          class="eject-behavior-options mt-2"
-          color="secondary"
-          hide-details="auto"
-        >
-          <v-radio
-            v-for="option in FLASHCARD_REVIEW_EJECT_BEHAVIOR_OPTIONS"
-            :key="option.value"
-            :value="option.value"
+        <label class="field-label">Eject button behavior</label>
+        <div v-if="vuetifyDefaultsAvailable" class="eject-behavior-options mt-2">
+          <v-checkbox
+            v-model="ejectLoadsNext"
+            color="secondary"
             hide-details="auto"
           >
             <template #label>
               <span class="eject-behavior-option py-2">
-                <strong>{{ option.title }}</strong>
-                <small>{{ option.subtitle }}</small>
+                <strong>Load the next card.</strong>
+                <small>Keep the active list filled from the rest of the Review set.</small>
               </span>
             </template>
-          </v-radio>
-        </v-radio-group>
-        <div v-else class="eject-behavior-options" role="radiogroup">
-          <label
-            v-for="option in FLASHCARD_REVIEW_EJECT_BEHAVIOR_OPTIONS"
-            :key="option.value"
-            class="eject-behavior-native-option"
+          </v-checkbox>
+          <v-checkbox
+            v-model="ejectExcludes"
+            color="secondary"
+            hide-details="auto"
           >
-            <input
-              v-model="settings.ejectBehavior"
-              type="radio"
-              :name="ejectBehaviorName"
-              :value="option.value"
-            >
+            <template #label>
+              <span class="eject-behavior-option py-2">
+                <strong>Exclude card.</strong>
+                <small>Prevent the ejected card from appearing in future sessions.</small>
+              </span>
+            </template>
+          </v-checkbox>
+        </div>
+        <div v-else class="eject-behavior-options mt-2">
+          <label class="eject-behavior-native-option">
+            <input v-model="ejectLoadsNext" type="checkbox">
             <span class="eject-behavior-option py-2">
-              <strong>{{ option.title }}</strong>
-              <small>{{ option.subtitle }}</small>
+              <strong>Load the next card.</strong>
+              <small>Keep the active list filled from the rest of the Review set.</small>
+            </span>
+          </label>
+          <label class="eject-behavior-native-option">
+            <input v-model="ejectExcludes" type="checkbox">
+            <span class="eject-behavior-option py-2">
+              <strong>Exclude card.</strong>
+              <small>Prevent the ejected card from appearing in future sessions.</small>
             </span>
           </label>
         </div>

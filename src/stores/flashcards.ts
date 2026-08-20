@@ -8,6 +8,8 @@ import {
   DEFAULT_FLASHCARD_BACK_SPEECH_REPEATS,
   DEFAULT_FLASHCARD_REVIEW_CARD_SIDES,
   DEFAULT_FLASHCARD_SESSION_CARDS,
+  flashcardEjectExcludes,
+  flashcardEjectLoadsNext,
   flashcardReviewQueueState,
   updateFlashcardReviewExclusions,
 } from '@/services/flashcards'
@@ -31,7 +33,9 @@ import type {
 } from '@/types/domain'
 
 function mapEjectBehavior(value: unknown): FlashcardReviewEjectBehavior {
-  return value === 'replace' || value === 'exclude' ? value : 'remove'
+  return value === 'replace' || value === 'exclude' || value === 'replace_exclude'
+    ? value
+    : 'remove'
 }
 
 function mapTag(record: Record<string, any>): FlashcardTag {
@@ -982,7 +986,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     else sessions.value.unshift(session)
 
     if (
-      session.ejectBehavior === 'exclude'
+      flashcardEjectExcludes(session.ejectBehavior)
       && (action === 'eject' || action === 'undo_eject')
       && session.reviewSet
     ) {
@@ -1044,13 +1048,13 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       const accountId = api.authStore.record?.id || ''
       const usingLocalDatabase = Boolean(accountId && await hasLocalBootstrap(accountId))
       let reserveCardIds = [...(current?.reserveCardIds || [])]
-      if (current && settings.ejectBehavior !== 'replace') {
+      if (current && !flashcardEjectLoadsNext(settings.ejectBehavior)) {
         reserveCardIds = []
       } else if (
         current
         && usingLocalDatabase
-        && settings.ejectBehavior === 'replace'
-        && current.ejectBehavior !== 'replace'
+        && flashcardEjectLoadsNext(settings.ejectBehavior)
+        && !flashcardEjectLoadsNext(current.ejectBehavior)
       ) {
         const reviewSet = reviewSets.value.find(item => item.id === current.reviewSet)
         if (!reviewSet) throw new Error('The Review set for this session is no longer available.')
@@ -1061,7 +1065,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
         const queueState = flashcardReviewQueueState({
           ...reviewSet,
           ...settings,
-          ejectBehavior: 'replace',
+          ejectBehavior: settings.ejectBehavior,
           tags: [...current.tags],
           excludedCards: [...(current.excludedCards || [])],
         }, availableCards)
@@ -1212,7 +1216,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
           tags: [...card.tags],
         })
         ejectedCount -= 1
-        if (current.ejectBehavior === 'exclude') {
+        if (flashcardEjectExcludes(current.ejectBehavior)) {
           excludedCards = updateFlashcardReviewExclusions(excludedCards, 'include', [card.id])
         }
         undoneEjectEventId = lastEject.id
@@ -1229,10 +1233,10 @@ export const useFlashcardStore = defineStore('flashcards', () => {
           const outcome = action === 'view' ? 'passive' : action === 'eject' ? 'ejected' : action
           if (action === 'eject') {
             ejectedCount += 1
-            if (current.ejectBehavior === 'exclude') {
+            if (flashcardEjectExcludes(current.ejectBehavior)) {
               excludedCards = updateFlashcardReviewExclusions(excludedCards, 'exclude', [card.id])
             }
-            if (current.ejectBehavior === 'replace' && reserveCardIds.length) {
+            if (flashcardEjectLoadsNext(current.ejectBehavior) && reserveCardIds.length) {
               const reviewSet = reviewSets.value.find(item => item.id === current.reviewSet)
               if (!reviewSet) {
                 throw new Error('The Review set for this session is no longer available.')
@@ -1289,7 +1293,9 @@ export const useFlashcardStore = defineStore('flashcards', () => {
         }
       }
     }
-    if (current.indefinite && current.ejectBehavior !== 'replace') totalCards = queue.length
+    if (current.indefinite && !flashcardEjectLoadsNext(current.ejectBehavior)) {
+      totalCards = queue.length
+    }
 
     const previous = {
       ...current,
