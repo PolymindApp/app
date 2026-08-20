@@ -634,7 +634,6 @@ function releaseLeavingPage(element: Element) {
     <ActionBottomSheet
       v-model="syncSheet"
       title="Synchronization"
-      :description="syncLabel"
       aria-label="Synchronization status"
     >
       <template #content>
@@ -648,7 +647,7 @@ function releaseLeavingPage(element: Element) {
               <p class="text-caption text-medium-emphasis mb-0">{{ lastSyncedLabel }}</p>
             </div>
           </div>
-          <p v-if="syncStore.status.message || auth.error" class="text-body-2 text-medium-emphasis mb-0">
+          <p v-if="syncStore.status.phase !== 'syncing' && (syncStore.status.message || auth.error)" class="text-body-2 text-medium-emphasis mb-0">
             {{ auth.error || syncStore.status.message }}
           </p>
           <p
