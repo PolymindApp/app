@@ -59,21 +59,6 @@ interface UserSettingsResponse {
   updated?: string
 }
 
-interface WebPushConfigurationResponse {
-  available: boolean
-  publicKey: string
-}
-
-interface WebPushSubscriptionInput {
-  endpoint: string
-  expirationTime: number | null
-  keys: {
-    p256dh: string
-    auth: string
-  }
-  contentEncoding?: 'aes128gcm' | 'aesgcm'
-}
-
 interface CompleteIntervalSessionResponse {
   session: RecordModel
   occurrence: RecordModel | null
@@ -463,30 +448,6 @@ class ApiClient {
 
   autoCancellation(_enabled: boolean) {
     // Kept as a no-op so existing store initialization remains compatible.
-  }
-
-  getWebPushConfiguration() {
-    return request<WebPushConfigurationResponse>(
-      '/web-push/config',
-      {},
-      this.authStore,
-    )
-  }
-
-  registerWebPushSubscription(subscription: WebPushSubscriptionInput) {
-    return request<{ registered: true }>(
-      '/web-push/subscriptions',
-      { method: 'POST', body: subscription },
-      this.authStore,
-    )
-  }
-
-  removeWebPushSubscription(endpoint: string) {
-    return request<void>(
-      '/web-push/subscriptions',
-      { method: 'DELETE', body: { endpoint } },
-      this.authStore,
-    )
   }
 
   registerAccount(name: string, email: string, password: string, timezone: string) {

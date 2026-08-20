@@ -6,7 +6,6 @@ import {
 } from '@capacitor/local-notifications'
 import { addDays, startOfDay } from 'date-fns'
 import type { Router } from 'vue-router'
-import { api } from '@/lib/api'
 import { isTaskScheduled, toDateKey } from '@/services/schedule'
 import type { Task } from '@/types/domain'
 
@@ -15,6 +14,11 @@ const TASK_EXTRA_KIND = 'backontrack-task-reminder'
 const LEGACY_TRACKING_EXTRA_KIND = 'backontrack-tracking-reminder'
 const TASK_REMINDER_LOOKAHEAD_DAYS = 30
 const MAX_SCHEDULED_TASK_REMINDERS = 400
+const MAX_BROWSER_TIMEOUT_MS = 2_147_000_000
+const DESKTOP_REMINDER_GRACE_MS = 60_000
+
+let desktopReminderTimer: number | undefined
+const shownDesktopReminders = new Set<string>()
 
 interface NativeTaskReminderStatus {
   notificationsEnabled: boolean
@@ -62,8 +66,6 @@ export function desktopTaskRemindersAvailable() {
     && Capacitor.getPlatform() === 'web'
     && typeof window !== 'undefined'
     && 'Notification' in window
-    && 'PushManager' in window
-    && 'serviceWorker' in navigator
     && window.matchMedia('(min-width: 960px)').matches
 }
 
@@ -77,10 +79,10 @@ export async function requestDesktopTaskReminderPermission(tasks: Task[]) {
     || !tasks.some(task => task.active && task.reminderEnabled)
   ) return false
 
-  return requestDesktopTaskPushPermission()
+  return requestDesktopTaskNotificationPermission()
 }
 
-async function requestDesktopTaskPushPermission() {
+async function requestDesktopTaskNotificationPermission() {
   if (!desktopTaskRemindersAvailable()) return false
 
   try {
@@ -88,7 +90,6 @@ async function requestDesktopTaskPushPermission() {
       await window.Notification.requestPermission()
     }
     if (window.Notification.permission !== 'granted') return false
-    void synchronizeDesktopTaskPushSubscription().catch(() => undefined)
     return true
   } catch {
     // Browser notification support and permission policies vary by browser.
@@ -96,52 +97,8 @@ async function requestDesktopTaskPushPermission() {
   }
 }
 
-async function synchronizeDesktopTaskPushSubscription() {
-  const configuration = await api.getWebPushConfiguration()
-  if (!configuration.available || !configuration.publicKey) return false
-
-  const registration = await navigator.serviceWorker.getRegistration()
-    ?? await navigator.serviceWorker.register('/sw.js')
-  let subscription = await registration.pushManager.getSubscription()
-  const applicationServerKey = base64UrlBytes(configuration.publicKey)
-  const subscribedKey = subscription?.options.applicationServerKey
-  if (subscription && (!subscribedKey || !sameBytes(subscribedKey, applicationServerKey))) {
-    const previousEndpoint = subscription.endpoint
-    await subscription.unsubscribe()
-    subscription = null
-    await api.removeWebPushSubscription(previousEndpoint).catch(() => undefined)
-  }
-  subscription ??= await registration.pushManager.subscribe({
-    userVisibleOnly: true,
-    applicationServerKey,
-  })
-  const serialized = subscription.toJSON()
-  const p256dh = serialized.keys?.p256dh
-  const auth = serialized.keys?.auth
-  if (!serialized.endpoint || !p256dh || !auth) return false
-  await api.registerWebPushSubscription({
-    endpoint: serialized.endpoint,
-    expirationTime: serialized.expirationTime ?? null,
-    keys: { p256dh, auth },
-    contentEncoding: 'aes128gcm',
-  })
-  return true
-}
-
-function base64UrlBytes(value: string) {
-  const normalized = value.replace(/-/g, '+').replace(/_/g, '/')
-  const decoded = window.atob(normalized + '='.repeat((4 - normalized.length % 4) % 4))
-  return Uint8Array.from(decoded, character => character.charCodeAt(0))
-}
-
-function sameBytes(left: ArrayBuffer, right: Uint8Array) {
-  const leftBytes = new Uint8Array(left)
-  return leftBytes.length === right.length
-    && leftBytes.every((value, index) => value === right[index])
-}
-
 export async function requestTaskReminderPermission() {
-  if (desktopTaskRemindersAvailable()) return requestDesktopTaskPushPermission()
+  if (desktopTaskRemindersAvailable()) return requestDesktopTaskNotificationPermission()
   if (!taskRemindersAvailable()) return false
   let status = await LocalNotifications.checkPermissions()
   if (status.display === 'prompt' || status.display === 'prompt-with-rationale') {
@@ -195,7 +152,7 @@ export async function checkTaskReminderCapabilities(): Promise<TaskReminderCapab
 
 export async function openTaskReminderCapabilitySettings(capability: TaskReminderCapability) {
   if (desktopTaskRemindersAvailable()) {
-    if (capability === 'notifications') await requestDesktopTaskPushPermission()
+    if (capability === 'notifications') await requestDesktopTaskNotificationPermission()
     return
   }
   if (!taskRemindersAvailable()) return
@@ -221,6 +178,10 @@ export async function reconcileTaskReminders(
   tasks: Task[],
   options: TaskReminderReconcileOptions = {},
 ) {
+  if (desktopTaskRemindersAvailable()) {
+    reconcileDesktopTaskReminders(tasks, options)
+    return
+  }
   if (!taskRemindersAvailable()) return
   const now = options.now ?? new Date()
   const lookaheadDays = Math.max(1, options.lookaheadDays ?? TASK_REMINDER_LOOKAHEAD_DAYS)
@@ -284,6 +245,71 @@ export async function reconcileTaskReminders(
 
   await LocalNotifications.createChannel(CHANNEL)
   await LocalNotifications.schedule({ notifications: missing })
+}
+
+function reconcileDesktopTaskReminders(
+  tasks: Task[],
+  options: TaskReminderReconcileOptions,
+) {
+  if (desktopReminderTimer !== undefined) {
+    window.clearTimeout(desktopReminderTimer)
+    desktopReminderTimer = undefined
+  }
+  if (window.Notification.permission !== 'granted') return
+
+  const now = options.now ?? new Date()
+  const lookaheadDays = Math.max(1, options.lookaheadDays ?? TASK_REMINDER_LOOKAHEAD_DAYS)
+  const reminder = tasks
+    .filter(task => task.active && task.reminderEnabled)
+    .flatMap(task => Array.from(
+      { length: lookaheadDays },
+      (_, offset) => addDays(startOfDay(now), offset),
+    ).filter(date => (
+      isTaskScheduled(task, date)
+      && (options.isTaskIncomplete?.(task, date) ?? true)
+    )).flatMap(date => [...new Set(task.reminderTimes)].map(time => {
+      const [hour = 20, minute = 0] = time.split(':').map(Number)
+      const at = new Date(date)
+      at.setHours(hour, minute, 0, 0)
+      return {
+        task,
+        at,
+        key: `${task.id}:${toDateKey(at)}:${time}`,
+      }
+    })))
+    .filter(({ at, key }) => (
+      !shownDesktopReminders.has(key)
+      && at.getTime() >= now.getTime() - DESKTOP_REMINDER_GRACE_MS
+    ))
+    .sort((left, right) => left.at.getTime() - right.at.getTime())[0]
+
+  if (!reminder) return
+  const delay = Math.max(0, reminder.at.getTime() - now.getTime())
+  desktopReminderTimer = window.setTimeout(() => {
+    desktopReminderTimer = undefined
+    if (delay > MAX_BROWSER_TIMEOUT_MS) {
+      reconcileDesktopTaskReminders(tasks, options)
+      return
+    }
+    if (!desktopTaskRemindersAvailable() || window.Notification.permission !== 'granted') return
+    shownDesktopReminders.add(reminder.key)
+    try {
+      const notification = new window.Notification('Task reminder', {
+        body: reminder.task.name,
+        icon: '/brand/backontrack-mark.png',
+        tag: reminder.key,
+      })
+      notification.onclick = () => {
+        window.focus()
+        if (window.location.pathname !== '/tasks') window.location.assign('/tasks')
+        notification.close()
+      }
+    } catch {
+      // Notification construction can still fail under browser-specific policies.
+    } finally {
+      reconcileDesktopTaskReminders(tasks, options)
+    }
+  }, Math.min(delay, MAX_BROWSER_TIMEOUT_MS))
 }
 
 function taskReminderMatches(

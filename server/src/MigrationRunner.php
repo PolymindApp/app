@@ -45,6 +45,10 @@ final class MigrationRunner
             'nameHash' => '83b98131967a2faca3ac177272e0172d48cc70636892ec23ef4e11a5db31d167',
             'checksum' => 'bce1f8a527b66b15457f54eefb06859db00f0f332bfd3078163a1bfcaeb51af4',
         ],
+        '202608200002' => [
+            'nameHash' => '8103728748cc9b24c4599478a6ee1b0a1fc3ad3a03238be1c494e2090c150025',
+            'checksum' => 'ba95b2d6150d2165965c9350a9253f393b92e59389930342b235f08f1a9fac96',
+        ],
     ];
 
     public function __construct(

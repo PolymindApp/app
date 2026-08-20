@@ -68,8 +68,6 @@ php -r 'echo bin2hex(random_bytes(32)), PHP_EOL;'
 
 Generate a second, independent value for `BACKONTRACK_MIGRATION_KEY`. Store it in the host's root `.env` and as the `BACKONTRACK_MIGRATION_KEY` secret in the GitHub `Web` environment so the release workflow can run migrations after uploading the server.
 
-Desktop task reminders use Web Push. Run `pnpm web-push:keys` once, store the generated public and private VAPID keys in the matching `BACKONTRACK_WEB_PUSH_VAPID_*` settings, and configure `BACKONTRACK_WEB_PUSH_VAPID_SUBJECT` as a `mailto:` address or public HTTPS URL. The private key remains server-only. Run `php server/push-reminders.php` every minute from the host's scheduler.
-
 The PHP server reads the root `.env` itself. Vite exposes only variables beginning with `VITE_`, so `BACKONTRACK_API_SECRET`, `BACKONTRACK_DB_PATH`, and other server settings are not embedded in browser JavaScript.
 
 Prepare the web build with:
@@ -89,8 +87,6 @@ On the host, place a copy of `.env.prod` named `.env` at the project root becaus
 - `pnpm dev` — run the Vue client
 - `pnpm api:serve` — run the PHP API
 - `pnpm api:migrate` — apply pending SQLite migrations and report the current version
-- `pnpm web-push:keys` — generate a persistent VAPID key pair for desktop notifications
-- `pnpm web-push:dispatch` — send task reminders currently due for Web Push subscribers
 - `pnpm dev:all` — run the Vue client and PHP API
 - `pnpm typecheck` — validate TypeScript and Vue templates
 - `pnpm test` — run unit tests

@@ -350,7 +350,8 @@ async function checkDesktopTaskNotificationPermission() {
   try {
     if (taskStore.loading) await waitForTaskLoad()
     else await taskStore.load()
-    await requestDesktopTaskReminderPermission(taskStore.tasks)
+    const permitted = await requestDesktopTaskReminderPermission(taskStore.tasks)
+    if (permitted) await taskStore.syncTaskReminders()
   } catch {
     // Task loading already exposes its error state; permission checks are best-effort.
   }
