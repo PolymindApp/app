@@ -26,6 +26,7 @@ export const useAuthStore = defineStore('auth', () => {
   const user = ref(api.authStore.record)
   const loading = ref(false)
   const accountLoading = ref(false)
+  const passwordLoading = ref(false)
   const avatarLoading = ref(false)
   const passkeyLoading = ref(false)
   const error = ref('')
@@ -118,6 +119,19 @@ export const useAuthStore = defineStore('auth', () => {
       throw cause
     } finally {
       loading.value = false
+    }
+  }
+
+  async function changePassword(currentPassword: string, password: string) {
+    passwordLoading.value = true
+    error.value = ''
+    try {
+      return await api.changePassword(currentPassword, password)
+    } catch (cause) {
+      error.value = cause instanceof Error ? cause.message : 'Unable to change your password.'
+      throw cause
+    } finally {
+      passwordLoading.value = false
     }
   }
 
@@ -268,6 +282,7 @@ export const useAuthStore = defineStore('auth', () => {
     user,
     loading,
     accountLoading,
+    passwordLoading,
     avatarLoading,
     passkeyLoading,
     error,
@@ -282,6 +297,7 @@ export const useAuthStore = defineStore('auth', () => {
     resendEmailVerification,
     requestPasswordReset,
     resetPassword,
+    changePassword,
     clearError,
     registerPasskey,
     disconnectPasskeys,

@@ -11,7 +11,14 @@ type BiometricState = 'checking' | 'available' | 'connected' | 'unavailable' | '
 
 const auth = useAuthStore()
 const form = ref()
+const passwordForm = ref()
 const name = ref(auth.user?.name || '')
+const currentPassword = ref('')
+const newPassword = ref('')
+const passwordConfirm = ref('')
+const currentPasswordVisible = ref(false)
+const newPasswordVisible = ref(false)
+const passwordConfirmVisible = ref(false)
 const biometricState = ref<BiometricState>('checking')
 const disconnectBiometricsDialog = ref(false)
 const notice = ref(false)
@@ -31,9 +38,26 @@ const accountInitials = computed(() => {
 const nameChanged = computed(() => (
   name.value.trim() !== (auth.user?.name || '').trim()
 ))
+const passwordChangeReady = computed(() => (
+  currentPassword.value.length > 0
+  && currentPassword.value.length <= 128
+  && newPassword.value.length >= 8
+  && newPassword.value.length <= 128
+  && newPassword.value !== currentPassword.value
+  && passwordConfirm.value === newPassword.value
+))
 
 const required = (value: string) => Boolean(value.trim()) || 'Enter your name'
 const validLength = (value: string) => value.trim().length <= 160 || 'Use 160 characters or fewer'
+const passwordRequired = (value: string) => Boolean(value) || 'Required'
+const passwordMaximum = (value: string) => value.length <= 128 || 'Use 128 characters or fewer'
+const strongPassword = (value: string) => value.length >= 8 || 'Use at least 8 characters'
+const differentPassword = (value: string) => (
+  value !== currentPassword.value || 'Choose a different password'
+)
+const matchingPassword = (value: string) => (
+  value === newPassword.value || 'Passwords must match'
+)
 
 onMounted(checkBiometricStatus)
 
@@ -47,6 +71,25 @@ async function saveProfile() {
     showNotice('success', 'Your name has been updated.')
   } catch {
     showNotice('error', auth.error || 'Your name could not be updated.')
+  }
+}
+
+async function savePassword() {
+  const result = await passwordForm.value?.validate()
+  if (!result?.valid || !passwordChangeReady.value) return
+
+  try {
+    const response = await auth.changePassword(currentPassword.value, newPassword.value)
+    currentPassword.value = ''
+    newPassword.value = ''
+    passwordConfirm.value = ''
+    currentPasswordVisible.value = false
+    newPasswordVisible.value = false
+    passwordConfirmVisible.value = false
+    passwordForm.value?.resetValidation()
+    showNotice('success', response.message)
+  } catch {
+    showNotice('error', auth.error || 'Your password could not be changed.')
   }
 }
 
@@ -175,6 +218,74 @@ function showNotice(color: 'success' | 'error', text: string) {
     <v-card class="surface-card pa-5 pa-sm-6">
       <div class="account-section-heading">
         <div>
+          <h2>Password</h2>
+          <p>Choose a new password with at least 8 characters.</p>
+        </div>
+        <v-icon icon="mdi-lock-reset" />
+      </div>
+
+      <AppForm ref="passwordForm" validate-on="submit" @submit.prevent="savePassword">
+        <v-row class="mt-4" dense>
+          <v-col cols="12">
+            <v-text-field
+              v-model="currentPassword"
+              :type="currentPasswordVisible ? 'text' : 'password'"
+              autocomplete="current-password"
+              maxlength="128"
+              prepend-inner-icon="mdi-lock-outline"
+              :append-inner-icon="currentPasswordVisible ? 'mdi-eye-off' : 'mdi-eye'"
+              :rules="[passwordRequired, passwordMaximum]"
+              @click:append-inner="currentPasswordVisible = !currentPasswordVisible"
+            >
+              <template #label>Current password <span class="required-marker">*</span></template>
+            </v-text-field>
+          </v-col>
+          <v-col cols="12" sm="6">
+            <v-text-field
+              v-model="newPassword"
+              :type="newPasswordVisible ? 'text' : 'password'"
+              autocomplete="new-password"
+              maxlength="128"
+              prepend-inner-icon="mdi-lock-plus-outline"
+              :append-inner-icon="newPasswordVisible ? 'mdi-eye-off' : 'mdi-eye'"
+              :rules="[passwordRequired, strongPassword, passwordMaximum, differentPassword]"
+              @click:append-inner="newPasswordVisible = !newPasswordVisible"
+            >
+              <template #label>New password <span class="required-marker">*</span></template>
+            </v-text-field>
+          </v-col>
+          <v-col cols="12" sm="6">
+            <v-text-field
+              v-model="passwordConfirm"
+              :type="passwordConfirmVisible ? 'text' : 'password'"
+              autocomplete="new-password"
+              maxlength="128"
+              prepend-inner-icon="mdi-lock-check-outline"
+              :append-inner-icon="passwordConfirmVisible ? 'mdi-eye-off' : 'mdi-eye'"
+              :rules="[passwordRequired, matchingPassword]"
+              @click:append-inner="passwordConfirmVisible = !passwordConfirmVisible"
+            >
+              <template #label>Confirm new password <span class="required-marker">*</span></template>
+            </v-text-field>
+          </v-col>
+        </v-row>
+
+        <div class="account-actions">
+          <v-btn
+            type="submit"
+            color="secondary"
+            :disabled="!passwordChangeReady"
+            :loading="auth.passwordLoading"
+          >
+            Change password
+          </v-btn>
+        </div>
+      </AppForm>
+    </v-card>
+
+    <v-card class="surface-card pa-5 pa-sm-6">
+      <div class="account-section-heading">
+        <div>
           <h2>Biometric sign-in</h2>
           <p>Use your fingerprint, face, or device screen lock instead of typing your password.</p>
         </div>
@@ -292,6 +403,10 @@ function showNotice(color: 'success' | 'error', text: string) {
   color: rgb(var(--v-theme-on-surface) / .56);
   font-size: .78rem;
   line-height: 1.45;
+}
+
+.required-marker {
+  color: rgb(var(--v-theme-error));
 }
 
 .account-section-heading {

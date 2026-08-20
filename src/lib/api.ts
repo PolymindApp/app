@@ -45,6 +45,10 @@ interface AuthResponse {
   record: AuthRecord
 }
 
+interface ChangePasswordResponse extends AuthResponse {
+  message: string
+}
+
 interface PasskeyOptionsResponse {
   ceremonyId: string
   requestJson: string
@@ -486,6 +490,19 @@ class ApiClient {
       this.authStore,
     )
     this.authStore.clear()
+    return response
+  }
+
+  async changePassword(currentPassword: string, password: string) {
+    const response = await request<ChangePasswordResponse>(
+      '/auth/password/change',
+      {
+        method: 'POST',
+        body: { currentPassword, password, passwordConfirm: password },
+      },
+      this.authStore,
+    )
+    this.authStore.save(response.token, response.record)
     return response
   }
 

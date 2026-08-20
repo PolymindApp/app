@@ -96,6 +96,9 @@ final class Api
             if ($method === 'POST' && $path === '/auth/password/reset') {
                 $this->resetPassword();
             }
+            if ($method === 'POST' && $path === '/auth/password/change') {
+                $this->changePassword();
+            }
             if (($method === 'GET' || $method === 'PATCH') && $path === '/auth/account') {
                 $this->account($method);
             }
@@ -799,6 +802,75 @@ final class Api
         }
 
         $this->respond(['message' => 'Your password has been reset. You can now sign in.']);
+    }
+
+    private function changePassword(): never
+    {
+        $user = $this->authenticate();
+        $this->rateLimit('password-change:' . $user['id'], 10, 900);
+        $body = $this->jsonBody();
+        $currentPassword = $this->validatePassword($body['currentPassword'] ?? null, false);
+        $password = $this->validatePassword($body['password'] ?? null, true);
+        $passwordConfirm = $body['passwordConfirm'] ?? null;
+
+        if (!password_verify($currentPassword, (string) $user['password'])) {
+            throw new ApiException(422, 'Your current password is incorrect.', [
+                'currentPassword' => 'incorrect',
+            ]);
+        }
+        if (!is_string($passwordConfirm) || !hash_equals($password, $passwordConfirm)) {
+            throw new ApiException(422, 'The password confirmation does not match.', [
+                'passwordConfirm' => 'Passwords must match.',
+            ]);
+        }
+        if (hash_equals($currentPassword, $password)) {
+            throw new ApiException(422, 'Choose a password different from your current password.', [
+                'password' => 'different',
+            ]);
+        }
+
+        $updated = $this->now();
+        $passwordHash = password_hash($password, PASSWORD_DEFAULT);
+        $tokenKey = $this->randomTokenVersionKey();
+        $pdo = $this->database->pdo;
+        $transactionOpen = false;
+        try {
+            $pdo->exec('BEGIN IMMEDIATE');
+            $transactionOpen = true;
+            $statement = $pdo->prepare(
+                'UPDATE users
+                 SET password = :password,
+                     token_key = :token_key,
+                     updated = :updated
+                 WHERE id = :id',
+            );
+            $statement->execute([
+                'password' => $passwordHash,
+                'token_key' => $tokenKey,
+                'updated' => $updated,
+                'id' => $user['id'],
+            ]);
+            $statement = $pdo->prepare(
+                'DELETE FROM backontrack_auth_tokens WHERE user_id = :user_id',
+            );
+            $statement->execute(['user_id' => $user['id']]);
+            $pdo->exec('COMMIT');
+            $transactionOpen = false;
+        } catch (Throwable $exception) {
+            if ($transactionOpen) {
+                $pdo->exec('ROLLBACK');
+            }
+            throw $exception;
+        }
+
+        $user['password'] = $passwordHash;
+        $user['token_key'] = $tokenKey;
+        $user['updated'] = $updated;
+        $this->respond([
+            'message' => 'Your password has been changed.',
+            'token' => $this->createToken($user),
+            'record' => $this->publicUser($user),
+        ]);
     }
 
     private function account(string $method): never
