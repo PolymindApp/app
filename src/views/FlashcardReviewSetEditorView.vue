@@ -51,10 +51,6 @@ const isOwner = computed(() => !isEditing.value || currentReviewSet.value?.acces
 const canEditCards = computed(() => (
   isEditing.value && currentReviewSet.value?.accessRole !== 'readonly'
 ))
-const editorReturnTo = computed(() => router.resolve({
-  name: 'flashcard-review-set-edit',
-  params: { id: draft.id },
-}).href)
 const draft = reactive<FlashcardReviewSetDraft>({
   name: '',
   tags: [],
@@ -74,6 +70,12 @@ const draft = reactive<FlashcardReviewSetDraft>({
   sortDirection: 'asc',
   sortOrder: 0,
 })
+const editorReturnTo = computed(() => draft.id
+  ? router.resolve({
+      name: 'flashcard-review-set-edit',
+      params: { id: draft.id },
+    }).href
+  : route.fullPath)
 
 function serializedDraft() {
   const excludedCards = [...(draft.excludedCards || [])].sort()
@@ -87,6 +89,12 @@ function serializedDraft() {
       settings: flashcardReviewSettingsSignature(draft),
       excludedCards,
     })
+}
+
+if (!isEditing.value) {
+  draft.sortOrder = store.reviewSets.length
+  original.value = serializedDraft()
+  ready.value = true
 }
 
 const changed = computed(() => ready.value && serializedDraft() !== original.value)
@@ -161,12 +169,14 @@ onMounted(async () => {
         sortOrder: reviewSet.sortOrder,
       })
       if (reviewSet.accessRole !== 'owner') await store.loadReviewSetCards(reviewSet.id)
+      original.value = serializedDraft()
+      ready.value = true
     } else {
+      const wasPristine = !changed.value
       draft.sortOrder = store.reviewSets.length
       ensureSpeechLanguages()
+      if (wasPristine) original.value = serializedDraft()
     }
-    original.value = serializedDraft()
-    ready.value = true
   } catch (cause) {
     speechLoading.value = false
     error.value = cause instanceof Error ? cause.message : 'Could not load this Review set.'
