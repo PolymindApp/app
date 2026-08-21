@@ -92,6 +92,7 @@ const reviewSheet = ref(false)
 const taskSheet = ref(false)
 const taskSheetMode = ref<'actions' | 'history'>('actions')
 const taskActionProgress = ref<TaskProgress>()
+const taskActionCompletionId = ref('')
 const taskStatusDialog = ref(false)
 const taskStatusUpdating = ref(false)
 const taskSkipDialog = ref(false)
@@ -256,17 +257,45 @@ const taskActionIsScheduled = computed(() => {
   const progress = taskActionProgress.value
   return Boolean(progress && selectedProgress.value.some(item => progressKey(item) === progressKey(progress)))
 })
+const taskActionCompletion = computed(() => taskActionProgress.value?.completionItems?.find(
+  item => item.id === taskActionCompletionId.value,
+))
 const taskMainActionItems = computed<TaskMainActionItem[]>(() => {
   const progress = taskActionProgress.value
   if (!progress || !taskActionIsScheduled.value || progress.status === 'skipped') return []
   const items: TaskMainActionItem[] = []
-  if (progress.programStep) return items
+  if (taskActionCompletion.value) {
+    if (taskActionCompletion.value.complete && taskActionCompletion.value.type !== 'quantity') {
+      items.push({
+        id: 'toggle-complete',
+        title: 'Mark incomplete',
+        icon: 'mdi-undo-variant',
+        disabled: false,
+      })
+    }
+    return items
+  }
+  const locked = Boolean(progress.locked)
+  if (progress.programStep) {
+    const canMarkIncomplete = progress.complete && (
+      progress.sealed
+      || Boolean(progress.completionItems?.some(item => item.type !== 'quantity' && item.complete))
+    )
+    if (canMarkIncomplete) {
+      items.push({
+        id: 'toggle-complete',
+        title: 'Mark incomplete',
+        icon: 'mdi-undo-variant',
+        disabled: false,
+      })
+    }
+    return items
+  }
   const completionType = progress.programStep?.completionType || progress.task.type
   const completionDriven = ['check', 'interval', 'flashcards'].includes(completionType)
-  const locked = Boolean(progress.locked)
 
   if (completionDriven && progress.complete) {
-    items.push({ id: 'toggle-complete', title: 'Undone', icon: 'mdi-undo-variant', disabled: locked })
+    items.push({ id: 'toggle-complete', title: 'Mark incomplete', icon: 'mdi-undo-variant', disabled: locked })
     return items
   }
 
@@ -354,31 +383,34 @@ const taskMainActionItems = computed<TaskMainActionItem[]>(() => {
   }
   return items
 })
-const taskCardActionItems = computed(() => TASK_CARD_ACTION_ITEMS.filter((action) =>
-  action.id === 'skip-task'
-    ? taskActionIsScheduled.value
-    : action.id !== 'view-log-history'
-      || taskCanLogAmounts(taskActionProgress.value)
-      || (taskCanLogAdditionalValue(taskActionProgress.value) && taskActionProgress.value
-        ? store.entriesFor(
-            taskActionProgress.value.task,
-            parseISO(taskActionProgress.value.scheduledDate),
-            taskActionProgress.value.programStep,
-          ).length > 0
-        : false),
-).map(action => action.id === 'toggle-task-status'
-  ? {
-      ...action,
-      title: taskActionProgress.value?.task.active ? 'Pause task' : 'Unpause task',
-      icon: taskActionProgress.value?.task.active ? 'mdi-pause' : 'mdi-play',
-    }
-  : action.id === 'skip-task'
+const taskCardActionItems = computed(() => {
+  if (taskActionCompletion.value) return []
+  return TASK_CARD_ACTION_ITEMS.filter((action) =>
+    action.id === 'skip-task'
+      ? taskActionIsScheduled.value
+      : action.id !== 'view-log-history'
+        || taskCanLogAmounts(taskActionProgress.value)
+        || (taskCanLogAdditionalValue(taskActionProgress.value) && taskActionProgress.value
+          ? store.entriesFor(
+              taskActionProgress.value.task,
+              parseISO(taskActionProgress.value.scheduledDate),
+              taskActionProgress.value.programStep,
+            ).length > 0
+          : false),
+  ).map(action => action.id === 'toggle-task-status'
     ? {
         ...action,
-        title: taskActionProgress.value?.status === 'skipped' ? 'Unskip' : 'Skip',
-        icon: taskActionProgress.value?.status === 'skipped' ? 'mdi-backup-restore' : 'mdi-skip-next-outline',
+        title: taskActionProgress.value?.task.active ? 'Pause task' : 'Unpause task',
+        icon: taskActionProgress.value?.task.active ? 'mdi-pause' : 'mdi-play',
       }
-    : action))
+    : action.id === 'skip-task'
+      ? {
+          ...action,
+          title: taskActionProgress.value?.status === 'skipped' ? 'Unskip' : 'Skip',
+          icon: taskActionProgress.value?.status === 'skipped' ? 'mdi-backup-restore' : 'mdi-skip-next-outline',
+        }
+      : action)
+})
 const visibleWeekDates = computed(() => Array.from(
   { length: 7 },
   (_, index) => addDays(visibleWeekStart.value, index),
@@ -774,6 +806,18 @@ async function resolveReview(item: TaskProgress, status: 'missed' | 'carried') {
 function openTaskActions(progress: TaskProgress) {
   taskLogRequest += 1
   taskActionProgress.value = progress
+  taskActionCompletionId.value = ''
+  taskSheetMode.value = 'actions'
+  taskLogEntries.value = []
+  taskLogLoading.value = false
+  taskLogError.value = ''
+  taskSheet.value = true
+}
+
+function openProgramStepRequirementActions(progress: TaskProgress, completionId: string) {
+  taskLogRequest += 1
+  taskActionProgress.value = progress
+  taskActionCompletionId.value = completionId
   taskSheetMode.value = 'actions'
   taskLogEntries.value = []
   taskLogLoading.value = false
@@ -786,7 +830,15 @@ function runTaskMainAction(action: TaskMainActionItem) {
   if (!progress || action.disabled) return
   taskSheet.value = false
   if (action.id === 'toggle-complete') {
-    void runForProgress(progress, () => store.setStatus(progress, progress.complete ? 'pending' : 'completed'))
+    if (progress.programStep && taskActionCompletionId.value) {
+      const completionId = taskActionCompletionId.value
+      taskActionCompletionId.value = ''
+      void runForProgress(progress, () => store.setProgramStepCompletion(progress, completionId, false))
+      return
+    }
+    void runForProgress(progress, () => progress.programStep
+      ? store.markProgramStepIncomplete(progress)
+      : store.setStatus(progress, progress.complete ? 'pending' : 'completed'))
     return
   }
   if (action.id === 'start-interval') {
@@ -823,7 +875,14 @@ function runTaskMainAction(action: TaskMainActionItem) {
 function runProgramStepRequirement(progress: TaskProgress, completionId: string) {
   const completion = progress.completionItems?.find(item => item.id === completionId)
   const requirement = programStepRequirementItems(progress).find(item => item.id === completionId)
-  if (!completion || requirement?.disabled || progressIsBusy(progress)) return
+  if (!completion || progressIsBusy(progress)) return
+
+  if (completion.complete && completion.type !== 'quantity') {
+    openProgramStepRequirementActions(progress, completion.id)
+    return
+  }
+
+  if (requirement?.disabled) return
 
   if (completion.type === 'check') {
     void runForProgress(progress, () => store.setProgramStepCompletion(
@@ -836,10 +895,6 @@ function runProgramStepRequirement(progress: TaskProgress, completionId: string)
   if (completion.type === 'quantity') {
     if (progress.task.logWithImagesEnabled) openImageLogger(progress, completion.id)
     else void openExact(progress, false, completion.id)
-    return
-  }
-  if (completion.complete) {
-    void runForProgress(progress, () => store.setProgramStepCompletion(progress, completion.id, false))
     return
   }
   if (completion.type === 'interval') {
