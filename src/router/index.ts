@@ -14,6 +14,7 @@ const router = createRouter({
       name: 'landing',
       component: () => import('@/views/LandingView.vue'),
       meta: {
+        guest: true,
         webOnly: true,
         title: 'BackOnTrack — Build your way forward',
         seo: {
