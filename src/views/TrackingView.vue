@@ -5,10 +5,12 @@ import { useRoute, useRouter } from 'vue-router'
 import ActionBottomSheet from '@/components/ActionBottomSheet.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import TrackingLogBottomSheet from '@/components/TrackingLogBottomSheet.vue'
+import TrackingRatingValue from '@/components/TrackingRatingValue.vue'
 import TrackingTrackerCard from '@/components/TrackingTrackerCard.vue'
 import TrackingWeeklyBarChart from '@/components/TrackingWeeklyBarChart.vue'
 import WeekDateNavigator from '@/components/WeekDateNavigator.vue'
-import { TRACKING_PRESETS, trackerDraftFromPreset } from '@/services/tracking'
+import { getScreenTimeStatus, isNativeHealthConnectSupported, readScreenTimeForDates } from '@/services/healthConnect'
+import { formatTrackingValue, TRACKING_PRESETS, trackerDraftFromPreset } from '@/services/tracking'
 import { useTrackingStore } from '@/stores/tracking'
 import { useTaskStore } from '@/stores/tasks'
 import type { TrackingEntry, TrackingTracker } from '@/types/domain'
@@ -31,6 +33,8 @@ const addingPreset = ref('')
 const error = ref('')
 const weeklyChartError = ref('')
 const weeklyChartLoading = ref(true)
+const screenTimeEnabled = ref(false)
+const screenTimeValues = ref<Record<string, number>>({})
 let weeklyLoadRequest = 0
 
 const dateKey = computed(() => format(selectedDate.value, 'yyyy-MM-dd'))
@@ -67,6 +71,11 @@ const dayEntriesByTracker = computed(() => {
   }
   return grouped
 })
+const dayLogs = computed(() => dayEntries.value.flatMap((entry) => {
+  const tracker = store.trackers.find(item => item.id === entry.tracker)
+  return tracker ? [{ entry, tracker }] : []
+}))
+const dayLogCountLabel = computed(() => `${dayLogs.value.length} ${dayLogs.value.length === 1 ? 'entry' : 'entries'}`)
 
 function entriesForTracker(trackerId: string) {
   return dayEntriesByTracker.value.get(trackerId) || []
@@ -204,16 +213,20 @@ function openRequestedTracker() {
 
 watch(() => [route.query.log, route.query.task, route.query.tracker, route.query.date], () => nextTick(openRequestedTracker))
 watch(visibleWeekStart, () => {
-  if (store.loaded) void loadVisibleWeekEntries()
+  if (store.loaded || screenTimeEnabled.value) void loadVisibleWeekEntries()
 })
 
 onMounted(async () => {
   applyRequestedDate()
-  await Promise.all([
+  const [, , screenTimeStatus] = await Promise.all([
     store.load().catch(() => undefined),
     taskStore.tasks.length ? Promise.resolve() : taskStore.load().catch(() => undefined),
+    isNativeHealthConnectSupported()
+      ? getScreenTimeStatus().catch(() => ({ authorized: false }))
+      : Promise.resolve({ authorized: false }),
   ])
-  if (store.loaded) await loadVisibleWeekEntries()
+  screenTimeEnabled.value = screenTimeStatus.authorized
+  if (store.loaded || screenTimeEnabled.value) await loadVisibleWeekEntries()
   else weeklyChartLoading.value = false
   openRequestedTracker()
 })
@@ -222,11 +235,25 @@ async function loadVisibleWeekEntries() {
   const request = ++weeklyLoadRequest
   weeklyChartError.value = ''
   weeklyChartLoading.value = true
+  const start = format(visibleWeekStart.value, 'yyyy-MM-dd')
+  const end = format(addDays(visibleWeekStart.value, 6), 'yyyy-MM-dd')
+  const screenTimeDates = Array.from({ length: 7 }, (_, index) => format(addDays(visibleWeekStart.value, index), 'yyyy-MM-dd'))
+    .filter(date => date <= format(new Date(), 'yyyy-MM-dd'))
   try {
-    await store.loadRange(
-      format(visibleWeekStart.value, 'yyyy-MM-dd'),
-      format(addDays(visibleWeekStart.value, 6), 'yyyy-MM-dd'),
-    )
+    const [trackingResult, screenTimeResult] = await Promise.allSettled([
+      store.loaded ? store.loadRange(start, end) : Promise.resolve(),
+      screenTimeEnabled.value && screenTimeDates.length
+        ? readScreenTimeForDates(screenTimeDates)
+        : Promise.resolve({}),
+    ])
+    if (request !== weeklyLoadRequest) return
+    if (screenTimeResult.status === 'fulfilled') screenTimeValues.value = screenTimeResult.value
+    const failure = trackingResult.status === 'rejected'
+      ? trackingResult.reason
+      : screenTimeResult.status === 'rejected'
+        ? screenTimeResult.reason
+        : undefined
+    if (failure) throw failure
   } catch (cause) {
     if (request === weeklyLoadRequest) {
       weeklyChartError.value = cause instanceof Error ? cause.message : 'Could not load this week’s entries.'
@@ -250,13 +277,14 @@ async function loadVisibleWeekEntries() {
       class="mb-5"
     />
 
-    <v-card v-if="weeklyChartLoading || store.trackers.length" class="weekly-chart-card surface-card pa-5 mb-5">
+    <v-card v-if="weeklyChartLoading || store.trackers.length || screenTimeEnabled" class="weekly-chart-card surface-card pa-5 mb-5">
       <v-alert v-if="weeklyChartError" type="error" variant="tonal" class="mb-4">
         {{ weeklyChartError }}
       </v-alert>
       <TrackingWeeklyBarChart
         :trackers="store.trackers"
         :entries="store.entries"
+        :screen-time-values="screenTimeEnabled ? screenTimeValues : undefined"
         :week-start="visibleWeekStart"
         :selected-date="selectedDate"
         :loading="weeklyChartLoading"
@@ -300,7 +328,6 @@ async function loadVisibleWeekEntries() {
             :entries="entriesForTracker(tracker.id)"
             @log="startLog"
             @actions="openTrackerActions"
-            @entry="startLog(tracker, $event)"
           />
         </div>
         <p v-else class="tracker-section-empty muted py-4 text-center">No things tracked yet.</p>
@@ -326,10 +353,55 @@ async function loadVisibleWeekEntries() {
             :entries="entriesForTracker(tracker.id)"
             @log="startLog"
             @actions="openTrackerActions"
-            @entry="startLog(tracker, $event)"
           />
         </div>
         <p v-else class="tracker-section-empty muted py-4 text-center">No feelings tracked yet.</p>
+      </section>
+
+      <section class="tracking-log-section">
+        <div class="section-heading">
+          <h2>Log · {{ format(selectedDate, 'EEE, MMM d') }}</h2>
+          <span class="text-caption muted">{{ dayLogCountLabel }}</span>
+        </div>
+        <v-card v-if="dayLogs.length" class="tracking-log surface-card">
+          <v-list bg-color="transparent" class="py-1">
+            <template v-for="({ entry, tracker }, index) in dayLogs" :key="entry.id">
+              <v-divider v-if="index" class="mx-4" />
+              <v-list-item
+                class="tracking-log__entry px-4 py-3"
+                :aria-label="`Edit ${tracker.name} log from ${format(new Date(entry.occurredAt), 'h:mm a')}`"
+                @click="startLog(tracker, entry)"
+              >
+                <div class="tracking-log__row">
+                  <span class="tracking-log__icon" :style="{ color: tracker.color }">
+                    <v-icon :icon="tracker.icon" size="20" />
+                  </span>
+                  <span class="tracking-log__content">
+                    <strong class="tracking-log__name">{{ tracker.name }}</strong>
+                    <span class="tracking-log__time">{{ format(new Date(entry.occurredAt), 'h:mm a') }}</span>
+                    <span v-if="entry.note" class="tracking-log__note">{{ entry.note }}</span>
+                  </span>
+                  <TrackingRatingValue
+                    v-if="tracker.kind === 'rating'"
+                    class="tracking-log__rating"
+                    :value="entry.value"
+                    :max="tracker.scaleMax"
+                    :color="tracker.color"
+                    :label="tracker.name"
+                  />
+                  <strong v-else class="tracking-log__value">
+                    {{ formatTrackingValue(tracker, entry.value) }}
+                  </strong>
+                </div>
+              </v-list-item>
+            </template>
+          </v-list>
+        </v-card>
+        <v-card v-else class="tracking-log-empty surface-card pa-7 text-center">
+          <v-icon icon="mdi-text-box-outline" size="34" color="medium-emphasis" />
+          <h3 class="text-body-1 font-weight-black mt-3">No logs yet</h3>
+          <p class="text-body-2 muted mt-1">Tap a tracker to add an entry for this day.</p>
+        </v-card>
       </section>
     </template>
 
@@ -415,6 +487,20 @@ async function loadVisibleWeekEntries() {
 <style scoped>
 .tracker-grid { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 270px), 1fr)); }
 .tracker-section-empty { font-size: .8rem; }
+.tracking-log-section { margin-bottom: .5rem; }
+.tracking-log { overflow: hidden; }
+.tracking-log__entry { min-height: 4.5rem; }
+.tracking-log__entry :deep(.v-list-item__content) { width: 100%; }
+.tracking-log__row { display: grid; width: 100%; grid-template-columns: 2.5rem minmax(0, 1fr) min-content; align-items: center; column-gap: .75rem; }
+.tracking-log__icon { display: grid; width: 2.5rem; height: 2.5rem; place-items: center; border-radius: .75rem; background: currentColor; }
+.tracking-log__icon :deep(.v-icon) { color: rgb(var(--v-theme-background)); }
+.tracking-log__content { display: grid; min-width: 0; align-content: center; row-gap: .125rem; }
+.tracking-log__name { overflow: hidden; font-size: .875rem; text-overflow: ellipsis; white-space: nowrap; }
+.tracking-log__time { color: rgb(var(--v-theme-on-surface) / .58); font-size: .7rem; font-weight: 750; }
+.tracking-log__note { display: -webkit-box; overflow: hidden; color: rgb(var(--v-theme-on-surface) / .5); font-size: .7rem; line-height: 1.35; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.tracking-log__rating { align-self: center; }
+.tracking-log__value { color: rgb(var(--v-theme-on-surface)); font-size: .75rem; white-space: nowrap; }
+.tracking-log-empty p { font-size: .75rem; }
 .preset-grid { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); }
 .preset-card { display: grid; min-height: 150px; grid-template-rows: 1fr auto; align-items: start; gap: 1rem; }
 .preset-card__content { display: flex; align-items: flex-start; gap: .8rem; }

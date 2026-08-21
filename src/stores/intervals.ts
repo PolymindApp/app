@@ -57,6 +57,7 @@ function mapSession(record: Record<string, any>): IntervalSession {
             ? {
                 ejectBehavior: flashcardSnapshot.ejectBehavior === 'replace'
                   || flashcardSnapshot.ejectBehavior === 'exclude'
+                  || flashcardSnapshot.ejectBehavior === 'replace_exclude'
                   ? flashcardSnapshot.ejectBehavior
                   : 'remove',
               }
@@ -257,6 +258,22 @@ export const useIntervalStore = defineStore('intervals', () => {
       error.value = cause instanceof Error
         ? `${cause.message}${attachedTasks.length ? ` Attached tasks: ${attachedTasks.join(', ')}.` : ''}${attachedProgramSteps.length ? ` Attached program steps: ${attachedProgramSteps.join(', ')}.` : ''}`
         : 'Could not delete the interval.'
+      throw cause
+    }
+  }
+
+  async function deleteSession(sessionId: string) {
+    error.value = ''
+    const index = sessions.value.findIndex(session => session.id === sessionId)
+    if (index < 0) throw new Error('Interval session not found.')
+    const session = sessions.value[index]!
+    sessions.value.splice(index, 1)
+    try {
+      await api.collection('interval_sessions').delete(sessionId)
+      useSnackbarStore().showDeletion('Run')
+    } catch (cause) {
+      if (!sessions.value.includes(session)) sessions.value.splice(index, 0, session)
+      error.value = cause instanceof Error ? cause.message : 'Could not delete this run.'
       throw cause
     }
   }
@@ -643,6 +660,7 @@ export const useIntervalStore = defineStore('intervals', () => {
     load,
     saveTemplate,
     deleteTemplate,
+    deleteSession,
     reorderTemplates,
     startSession,
     updateSession,

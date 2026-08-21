@@ -1,8 +1,20 @@
 # Flashcards
 
+## Recent session history
+
+Recent reviews are grouped by day, with every group collapsed by default.
+
+Selecting a recent Review opens its action menu. **See details** reopens the saved completion summary; **Delete** asks for confirmation and removes the history item immediately. Reviews recorded inside an Interval open that Interval's details, and deleting one removes the shared Interval run from both histories. Deleting session history does not reverse task progress already recorded by the completed session.
+
 ## CSV import
 
-The card importer shows an example with the required `front,back,note,tags` header and sample rows. Copy example places the displayed CSV directly on the clipboard so it can be used as a starting template. Front and back are required, while notes and tags are optional; imported Review set cards inherit the destination set's tags.
+Cards include an optional transliteration alongside the front, back, note, and tags. The transliteration is editable on card forms, searchable, and shown as its own column in the card manager and Review set card table.
+
+The card importer shows an example with the `front,back,transliteration,note,tags` header and sample rows. Copy example places the displayed CSV directly on the clipboard so it can be used as a starting template. Front and back are required, while transliteration, notes, and tags are optional; imported Review set cards inherit the destination set's tags.
+
+## Bulk column swaps
+
+The card manager and owned Review set card table expose one **Swap column content** bulk action. Its modal can swap any two of Front, Back, Transliteration, and Note across the selected cards. Apply stays disabled when the result would leave a required face empty or move content beyond the destination column's length limit. Repeating the same swap restores the original content.
 
 ## Runner settings
 
@@ -10,17 +22,23 @@ Active Interval settings include the same Review cards section as the Interval f
 
 ## Standalone review time limits
 
-Standalone Review sets can optionally finish after a configured amount of active review time. The Review set and active-session settings use an hours-and-minutes wheel, with limits from one minute through 23 hours 59 minutes. Paused time does not count. Reaching the limit completes the session even when cards remain, including looping Passive reviews, and Android background Passive playback stops at the same limit. Mini Review sets inside Interval sessions continue to follow the Interval step duration instead.
+Passive Review sets finish after a configured amount of active review time. The limit is enabled at one hour by default when Passive mode is selected and can be disabled. The Review set and active-session settings use an hours-and-minutes wheel, with limits from one minute through 23 hours 59 minutes. Paused time does not count. Reaching the limit completes the session even when cards remain, including looping reviews, and Android background playback stops at the same limit. Manual Review sets do not use a time limit. Mini Review sets inside Interval sessions continue to follow the Interval step duration instead.
 
 ## Review card ejection
 
-Each Review set defines how the eject button affects its session. The default **Remove from session** behavior permanently removes the current card from the active list and completes a standalone review after its last active card is ejected.
+Each Review set has two independent eject-button settings. With both settings cleared, eject permanently removes the current card from the active list and completes a standalone review after its last active card is ejected.
 
-The optional **Load the next card** behavior keeps the active list filled up to the configured maximum by injecting the next ordered, matching card whenever one is ejected. For example, a 50-card Review set with a 10-card session limit keeps 10 cards active while reserve cards remain, then drains the final 10 and completes after all 50 cards have been ejected. The ordered reserve is snapshotted when standalone and mini interval sessions start, so the behavior remains deterministic and available offline.
+The **Load the next card** behavior is enabled by default for new Review sets. It keeps the active list filled up to the configured maximum by injecting the next ordered, matching card whenever one is ejected. For example, a 50-card Review set with a 10-card session limit keeps 10 cards active while reserve cards remain, then drains the final 10 and completes after all 50 cards have been ejected. The ordered reserve is snapshotted when standalone and mini interval sessions start, so the behavior remains deterministic and available offline.
 
-The optional **Eject and exclude** behavior removes the current card from the session and adds it to the Review set's excluded cards, preventing it from appearing in future sessions. Undoing the last eject in a standalone review restores the card to the active queue and removes that exclusion.
+The optional **Exclude card** behavior also adds the ejected card to the Review set's excluded cards, preventing it from appearing in future sessions. Undoing the last eject in a standalone review restores the card to the active queue and removes that exclusion.
+
+Both settings can be enabled together so the ejected card is excluded while the active list is replenished from the ordered reserve.
 
 Ejecting the current card advances both standalone and mini interval Review set sessions to the next available card. An injected replacement always starts at the beginning of its first configured face instead of inheriting the ejected card's face or playback progress.
+
+Opening a Review set and starting its session use the same forward horizontal navigation as interval runners. The welcome screen remains intact while the running session enters, preventing an intermediate session-layout flash during startup; reduced-motion preferences continue to disable directional movement.
+
+The standalone review header reports the current card's position within the live queue. Its position follows previous and next swipes, while its queue size immediately follows session-setting changes, grading, ejection, undo, card additions, and card removal.
 
 ## Standalone review motion
 

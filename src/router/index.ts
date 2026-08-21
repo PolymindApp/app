@@ -14,6 +14,7 @@ const router = createRouter({
       name: 'landing',
       component: () => import('@/views/LandingView.vue'),
       meta: {
+        guest: true,
         webOnly: true,
         title: 'BackOnTrack — Build your way forward',
         seo: {
@@ -119,8 +120,8 @@ const router = createRouter({
         { path: 'flashcards/review-sets/:id/cards', name: 'flashcard-review-set-cards', component: () => import('@/views/FlashcardReviewSetCardsView.vue'), meta: { title: 'Review set cards', pageDepth: 2, pageOrder: 2, backTo: '/flashcards' } },
         { path: 'flashcards/review-sets/:reviewSetId/cards/new', name: 'flashcard-review-set-card-new', component: () => import('@/views/FlashcardEditorView.vue'), meta: { title: 'New shared card', pageDepth: 3, pageOrder: 2, backTo: '/flashcards' } },
         { path: 'flashcards/review-sets/:reviewSetId/cards/:id/edit', name: 'flashcard-review-set-card-edit', component: () => import('@/views/FlashcardEditorView.vue'), meta: { title: 'Edit shared card', pageDepth: 3, pageOrder: 2, backTo: '/flashcards' } },
-        { path: 'flashcards/review/set/:reviewSetId', name: 'flashcard-review-set-runner', component: () => import('@/views/FlashcardReviewRunnerView.vue'), meta: { title: 'Review', immersive: true, pageDepth: 2, pageOrder: 2, backTo: '/flashcards' } },
-        { path: 'flashcards/review/:sessionId', name: 'flashcard-review-runner', component: () => import('@/views/FlashcardReviewRunnerView.vue'), meta: { title: 'Review', immersive: true, pageDepth: 2, pageOrder: 2, backTo: '/flashcards' } },
+        { path: 'flashcards/review/set/:reviewSetId', name: 'flashcard-review-set-runner', component: () => import('@/views/FlashcardReviewRunnerView.vue'), meta: { title: 'Review', immersive: true, pageDepth: 2, pageOrder: 2, pageMotion: 'horizontal', backTo: '/flashcards' } },
+        { path: 'flashcards/review/:sessionId', name: 'flashcard-review-runner', component: () => import('@/views/FlashcardReviewRunnerView.vue'), meta: { title: 'Review', immersive: true, pageDepth: 2, pageOrder: 2, pageMotion: 'horizontal', backTo: '/flashcards' } },
         { path: 'tracking', name: 'tracking', component: MAIN_NAVIGATION_VIEW_LOADERS['/tracking'], meta: { title: 'Tracking', pageDepth: 0, pageOrder: 3 } },
         { path: 'journal', name: 'journal', component: MAIN_NAVIGATION_VIEW_LOADERS['/journal'], meta: { title: 'Journal', pageDepth: 0, pageOrder: 4 } },
         { path: 'journal/new', name: 'journal-new', component: () => import('@/views/JournalEditorView.vue'), meta: { title: 'New reflection', pageDepth: 1, pageOrder: 4, backTo: '/journal' } },
@@ -131,6 +132,8 @@ const router = createRouter({
         { path: 'tasks/manage', redirect: '/tasks' },
         { path: 'account', name: 'account', component: () => import('@/views/AccountView.vue'), meta: { title: 'Account', pageDepth: 1, pageOrder: 2, backTo: '/tasks' } },
         { path: 'settings', name: 'settings', component: () => import('@/views/SettingsView.vue'), meta: { title: 'Settings', pageDepth: 1, pageOrder: 2, backTo: '/tasks' } },
+        { path: 'settings/privacy', name: 'settings-privacy', component: () => import('@/views/SettingsLegalView.vue'), meta: { title: 'Privacy policy', pageDepth: 2, pageOrder: 2, backTo: '/settings' } },
+        { path: 'settings/terms', name: 'settings-terms', component: () => import('@/views/SettingsLegalView.vue'), meta: { title: 'Terms and conditions', pageDepth: 2, pageOrder: 2, backTo: '/settings' } },
         { path: 'intervals/quick', name: 'interval-quick', component: () => import('@/views/QuickIntervalView.vue'), meta: { title: 'Quick interval', pageDepth: 1, pageOrder: 1, backTo: '/intervals' } },
         { path: 'intervals/new', name: 'interval-new', component: () => import('@/views/IntervalEditorView.vue'), meta: { title: 'New interval', pageDepth: 1, pageOrder: 1, backTo: '/intervals' } },
         { path: 'intervals/:id/edit', name: 'interval-edit', component: () => import('@/views/IntervalEditorView.vue'), meta: { title: 'Edit interval', pageDepth: 1, pageOrder: 1, backTo: '/intervals' } },

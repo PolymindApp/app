@@ -28,10 +28,11 @@ export function formatFlashcardsCsv(cards: readonly Flashcard[], tags: readonly 
   const rows = cards.map(card => [
     card.front,
     card.back,
+    card.transliteration || '',
     card.note,
     card.tags.flatMap(tag => tagNameById.get(tag) || []).join('|'),
   ].map(formatCsvField).join(','))
-  return ['front,back,note,tags', ...rows].join('\n')
+  return ['front,back,transliteration,note,tags', ...rows].join('\n')
 }
 
 function normalizeClipboardText(value: string) {
@@ -162,7 +163,7 @@ export function parseFlashcardCsv(input: string): FlashcardCsvParseResult {
   if (!parsed.records.length) return { rows: [], errors: ['Add a CSV header and at least one card.'] }
 
   const headers = recordHeaders(parsed.records[parsed.headerIndex])
-  const allowedHeaders = new Set(['front', 'back', 'note', 'tags'])
+  const allowedHeaders = new Set(['front', 'back', 'transliteration', 'note', 'tags'])
   const unknownHeaders = headers.filter(header => header && !allowedHeaders.has(header))
   const duplicateHeaders = headers.filter((header, index) => header && headers.indexOf(header) !== index)
   const errors: string[] = []
@@ -171,6 +172,7 @@ export function parseFlashcardCsv(input: string): FlashcardCsvParseResult {
 
   const frontIndex = headers.indexOf('front')
   const backIndex = headers.indexOf('back')
+  const transliterationIndex = headers.indexOf('transliteration')
   const noteIndex = headers.indexOf('note')
   const tagsIndex = headers.indexOf('tags')
   if (frontIndex < 0) errors.push('The front header is required.')
@@ -185,6 +187,9 @@ export function parseFlashcardCsv(input: string): FlashcardCsvParseResult {
     }
     const front = (record.fields[frontIndex] || '').trim()
     const back = (record.fields[backIndex] || '').trim()
+    const transliteration = transliterationIndex >= 0
+      ? (record.fields[transliterationIndex] || '').trim()
+      : ''
     const note = noteIndex >= 0 ? (record.fields[noteIndex] || '').trim() : ''
     const tags = tagsIndex >= 0 ? distinctTags(record.fields[tagsIndex] || '') : []
     if (!front || !back) {
@@ -195,6 +200,10 @@ export function parseFlashcardCsv(input: string): FlashcardCsvParseResult {
       errors.push(`Line ${record.line}: front and back must each be 5,000 characters or fewer.`)
       continue
     }
+    if (transliteration.length > 5000) {
+      errors.push(`Line ${record.line}: transliteration must be 5,000 characters or fewer.`)
+      continue
+    }
     if (note.length > 2000) {
       errors.push(`Line ${record.line}: note must be 2,000 characters or fewer.`)
       continue
@@ -203,7 +212,13 @@ export function parseFlashcardCsv(input: string): FlashcardCsvParseResult {
       errors.push(`Line ${record.line}: tag names must be 50 characters or fewer.`)
       continue
     }
-    rows.push({ front, back, note, tags })
+    rows.push({
+      front,
+      back,
+      ...(transliteration ? { transliteration } : {}),
+      note,
+      tags,
+    })
   }
 
   if (rows.length > MAX_FLASHCARD_IMPORT_ROWS) {

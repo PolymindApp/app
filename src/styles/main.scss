@@ -195,6 +195,12 @@ html.platform-android .app-page {
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2) !important;
 }
 
+.expand-transition-enter-active,
+.expand-transition-leave-active {
+  transition-duration: 200ms !important;
+  transition-timing-function: cubic-bezier(.22, 1, .36, 1) !important;
+}
+
 .digit-pad-scale-transition-enter-active {
   transition:
     transform 220ms cubic-bezier(.22, 1, .36, 1),

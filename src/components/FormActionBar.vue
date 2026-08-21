@@ -7,6 +7,10 @@ withDefaults(defineProps<{
   showDelete?: boolean
   deleteLabel?: string
   deleteDisabled?: boolean
+  showArchive?: boolean
+  archiveLabel?: string
+  archiveDisabled?: boolean
+  archived?: boolean
   embedded?: boolean
 }>(), {
   primaryText: 'Save',
@@ -16,6 +20,10 @@ withDefaults(defineProps<{
   showDelete: false,
   deleteLabel: 'Delete',
   deleteDisabled: false,
+  showArchive: false,
+  archiveLabel: 'Archive',
+  archiveDisabled: false,
+  archived: false,
   embedded: false,
 })
 
@@ -23,6 +31,7 @@ const emit = defineEmits<{
   submit: []
   cancel: []
   delete: []
+  archive: []
 }>()
 </script>
 
@@ -30,15 +39,17 @@ const emit = defineEmits<{
   <div class="form-action-bar page-action-area" :class="{ 'form-action-bar--embedded': embedded }">
     <div class="form-action-bar__inner">
       <v-btn
-        v-if="showDelete"
+        v-if="showDelete || showArchive"
         class="form-action-bar__delete"
-        icon="mdi-delete-outline"
-        color="error"
+        :icon="showArchive
+          ? archived ? 'mdi-archive-arrow-up-outline' : 'mdi-archive-arrow-down-outline'
+          : 'mdi-delete-outline'"
+        :color="showArchive ? archived ? 'secondary' : 'warning' : 'error'"
         variant="text"
         type="button"
-        :aria-label="deleteLabel"
-        :disabled="deleteDisabled || loading"
-        @click="emit('delete')"
+        :aria-label="showArchive ? archiveLabel : deleteLabel"
+        :disabled="(showArchive ? archiveDisabled : deleteDisabled) || loading"
+        @click="showArchive ? emit('archive') : emit('delete')"
       />
       <v-btn
         class="form-action-bar__cancel"

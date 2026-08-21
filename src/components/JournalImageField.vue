@@ -70,17 +70,18 @@ function releaseUploadPreview() {
     <v-expand-transition>
       <div
         v-if="previewUrl && modelValue.source !== 'none' && !previewFailed"
-        class="journal-image-field__preview mt-4"
       >
-        <v-img
-          :src="previewUrl"
-          alt="Reflection image preview"
-          width="512"
-          max-width="100%"
-          aspect-ratio="1"
+        <div class="journal-image-field__preview mt-4">
+          <v-img
+            :src="previewUrl"
+            alt="Reflection image preview"
+            width="512"
+            max-width="100%"
+            aspect-ratio="1"
 
-          @error="previewFailed = true"
-        />
+            @error="previewFailed = true"
+          />
+        </div>
       </div>
     </v-expand-transition>
 

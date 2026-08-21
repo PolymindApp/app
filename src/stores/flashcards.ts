@@ -8,7 +8,11 @@ import {
   DEFAULT_FLASHCARD_BACK_SPEECH_REPEATS,
   DEFAULT_FLASHCARD_REVIEW_CARD_SIDES,
   DEFAULT_FLASHCARD_SESSION_CARDS,
+  flashcardEjectExcludes,
+  flashcardEjectLoadsNext,
   flashcardReviewQueueState,
+  flashcardSwapColumnsError,
+  swapFlashcardColumns,
   updateFlashcardReviewExclusions,
 } from '@/services/flashcards'
 import { useSnackbarStore } from '@/stores/snackbar'
@@ -17,6 +21,7 @@ import type {
   Flashcard,
   FlashcardAudioValue,
   FlashcardBulkRecordAction,
+  FlashcardBulkSwapColumn,
   FlashcardDraft,
   FlashcardImportRow,
   FlashcardReviewAction,
@@ -31,7 +36,9 @@ import type {
 } from '@/types/domain'
 
 function mapEjectBehavior(value: unknown): FlashcardReviewEjectBehavior {
-  return value === 'replace' || value === 'exclude' ? value : 'remove'
+  return value === 'replace' || value === 'exclude' || value === 'replace_exclude'
+    ? value
+    : 'remove'
 }
 
 function mapTag(record: Record<string, any>): FlashcardTag {
@@ -47,6 +54,7 @@ function mapCard(record: Record<string, any>): Flashcard {
     id: record.id,
     front: record.front,
     back: record.back,
+    transliteration: record.transliteration || '',
     note: record.note || '',
     frontAudio: frontAudioFile
       ? apiAssetUrl(`/flashcard-audio/${frontAudioFile}`)
@@ -81,7 +89,7 @@ function mapReviewSet(record: Record<string, any>): FlashcardReviewSet {
     mode: record.mode,
     cardSides: record.card_sides || DEFAULT_FLASHCARD_REVIEW_CARD_SIDES,
     indefinite: Boolean(record.indefinite),
-    timeLimitSeconds: Number(record.time_limit_seconds || 0),
+    timeLimitSeconds: record.mode === 'passive' ? Number(record.time_limit_seconds || 0) : 0,
     maxCards: Number(record.max_cards || DEFAULT_FLASHCARD_SESSION_CARDS),
     ejectBehavior: mapEjectBehavior(record.eject_behavior),
     frontSeconds: Number(record.front_seconds || 5),
@@ -121,7 +129,9 @@ function mapSession(record: Record<string, any>): FlashcardReviewSession {
     mode: record.mode_snapshot,
     cardSides: record.card_sides_snapshot || DEFAULT_FLASHCARD_REVIEW_CARD_SIDES,
     indefinite: Boolean(record.indefinite_snapshot),
-    timeLimitSeconds: Number(record.time_limit_seconds_snapshot || 0),
+    timeLimitSeconds: record.mode_snapshot === 'passive'
+      ? Number(record.time_limit_seconds_snapshot || 0)
+      : 0,
     maxCards: Number(record.max_cards_snapshot || DEFAULT_FLASHCARD_SESSION_CARDS),
     ejectBehavior: mapEjectBehavior(record.eject_behavior_snapshot),
     sortMode: record.sort_snapshot,
@@ -358,6 +368,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       owner: api.authStore.record!.id,
       front: draft.front,
       back: draft.back,
+      transliteration: draft.transliteration || '',
       note: draft.note,
       tags: draft.tags,
     }
@@ -372,6 +383,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       id: draft.id || createLocalRecordId(),
       front: draft.front,
       back: draft.back,
+      transliteration: draft.transliteration || '',
       note: draft.note,
       frontAudio: audio?.front.recording
         ? existing?.frontAudio
@@ -425,6 +437,25 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     useSnackbarStore().showDeletion('Card')
   }
 
+  async function deleteSession(sessionId: string) {
+    error.value = ''
+    const index = sessions.value.findIndex(session => session.id === sessionId)
+    if (index < 0) throw new Error('Review session not found.')
+    const session = sessions.value[index]!
+    const previousEvents = events.value
+    sessions.value.splice(index, 1)
+    events.value = events.value.filter(event => event.session !== sessionId)
+    try {
+      await api.collection('flashcard_review_sessions').delete(sessionId)
+      useSnackbarStore().showDeletion('Review')
+    } catch (cause) {
+      if (!sessions.value.includes(session)) sessions.value.splice(index, 0, session)
+      events.value = previousEvents
+      error.value = cause instanceof Error ? cause.message : 'Could not delete this review.'
+      throw cause
+    }
+  }
+
   async function importCards(rows: FlashcardImportRow[]) {
     const response = await api.importFlashcards(rows)
     const importedTags = response.tags.map(mapTag)
@@ -442,11 +473,31 @@ export const useFlashcardStore = defineStore('flashcards', () => {
   async function bulkUpdateCards(
     action: FlashcardBulkRecordAction,
     cardIds: string[],
-    tagIds: string[] = [],
+    values: string[] = [],
   ) {
     const uniqueCardIds = [...new Set(cardIds)]
     if (!uniqueCardIds.length) return []
-    const uniqueTagIds = [...new Set(tagIds)]
+    const uniqueValues = [...new Set(values)]
+    const swapColumns = action === 'swap_columns'
+      ? uniqueValues as FlashcardBulkSwapColumn[]
+      : action === 'swap_front_back'
+        ? ['front', 'back'] as FlashcardBulkSwapColumn[]
+        : action === 'swap_note_back'
+          ? ['note', 'back'] as FlashcardBulkSwapColumn[]
+          : []
+    const allowedSwapColumns: FlashcardBulkSwapColumn[] = [
+      'front', 'back', 'transliteration', 'note',
+    ]
+    if (
+      action === 'swap_columns'
+      && (
+        swapColumns.length !== 2
+        || swapColumns[0] === swapColumns[1]
+        || swapColumns.some(column => !allowedSwapColumns.includes(column))
+      )
+    ) {
+      throw new ApiError(422, 'Choose two different flashcard columns.')
+    }
     const selectedIds = new Set(uniqueCardIds)
     const previousCards = cards.value.map(card => ({ ...card, tags: [...card.tags] }))
     const sessionSnapshots = sessions.value.map(session => ({
@@ -454,21 +505,29 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       queue: session.queue.map(card => ({ ...card, tags: [...card.tags] })),
       totalCards: session.totalCards,
     }))
+    if (swapColumns.length) {
+      const swapError = flashcardSwapColumnsError(
+        cards.value.filter(card => selectedIds.has(card.id)),
+        swapColumns,
+      )
+      if (swapError) throw new ApiError(422, swapError)
+    }
     if (action === 'delete') {
       cards.value = cards.value.filter(card => !selectedIds.has(card.id))
     } else {
       cards.value.filter(card => selectedIds.has(card.id)).forEach((card) => {
-        if (action === 'set_tags') card.tags = [...uniqueTagIds]
-        if (action === 'add_tags') card.tags = [...new Set([...card.tags, ...uniqueTagIds])]
-        if (action === 'remove_tags') card.tags = card.tags.filter(tag => !uniqueTagIds.includes(tag))
+        if (action === 'set_tags') card.tags = [...uniqueValues]
+        if (action === 'add_tags') card.tags = [...new Set([...card.tags, ...uniqueValues])]
+        if (action === 'remove_tags') card.tags = card.tags.filter(tag => !uniqueValues.includes(tag))
         if (action === 'clear_tags') card.tags = []
-        if (action === 'swap_front_back') [card.front, card.back] = [card.back, card.front]
-        if (action === 'swap_note_back') [card.note, card.back] = [card.back, card.note]
+        if (swapColumns.length === 2) {
+          swapFlashcardColumns(card, swapColumns as [FlashcardBulkSwapColumn, FlashcardBulkSwapColumn])
+        }
         cacheCard(card)
       })
     }
     try {
-      const response = await api.bulkUpdateFlashcards(action, uniqueCardIds, uniqueTagIds)
+      const response = await api.bulkUpdateFlashcards(action, uniqueCardIds, uniqueValues)
       if (action === 'delete') {
         const deleted = new Set(response.deleted_ids)
         cards.value = previousCards.filter(card => !deleted.has(card.id))
@@ -497,7 +556,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
       mode: draft.mode,
       card_sides: draft.cardSides,
       indefinite: draft.mode === 'passive' && draft.indefinite,
-      time_limit_seconds: draft.timeLimitSeconds || 0,
+      time_limit_seconds: draft.mode === 'passive' ? draft.timeLimitSeconds || 0 : 0,
       max_cards: draft.maxCards,
       eject_behavior: draft.ejectBehavior,
       front_seconds: draft.frontSeconds,
@@ -551,7 +610,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     Object.assign(reviewSet, {
       ...settings,
       indefinite: settings.mode === 'passive' && settings.indefinite,
-      timeLimitSeconds: settings.timeLimitSeconds || 0,
+      timeLimitSeconds: settings.mode === 'passive' ? settings.timeLimitSeconds || 0 : 0,
       excludedCards: [...(settings.excludedCards || [])],
     })
     try {
@@ -671,6 +730,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     const payload: Record<string, unknown> = {
       front: draft.front,
       back: draft.back,
+      transliteration: draft.transliteration || '',
       note: draft.note,
     }
     const previousReviewSetCards = reviewSetCards.value[reviewSetId] || []
@@ -689,6 +749,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
         ...existing,
         front: draft.front,
         back: draft.back,
+        transliteration: draft.transliteration || '',
         note: draft.note,
         frontAudio: audio?.front.recording
           ? existing.frontAudio
@@ -982,7 +1043,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     else sessions.value.unshift(session)
 
     if (
-      session.ejectBehavior === 'exclude'
+      flashcardEjectExcludes(session.ejectBehavior)
       && (action === 'eject' || action === 'undo_eject')
       && session.reviewSet
     ) {
@@ -1043,22 +1104,18 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     try {
       const accountId = api.authStore.record?.id || ''
       const usingLocalDatabase = Boolean(accountId && await hasLocalBootstrap(accountId))
+      let queue = current?.queue.map(card => ({ ...card, tags: [...card.tags] })) || []
+      let totalCards = current?.totalCards || 0
       let reserveCardIds = [...(current?.reserveCardIds || [])]
-      if (current && settings.ejectBehavior !== 'replace') {
-        reserveCardIds = []
-      } else if (
-        current
-        && usingLocalDatabase
-        && settings.ejectBehavior === 'replace'
-        && current.ejectBehavior !== 'replace'
-      ) {
+      if (current && usingLocalDatabase) {
+        const indefinite = settings.mode === 'passive' && settings.indefinite
         const reviewSet = reviewSets.value.find(item => item.id === current.reviewSet)
         if (!reviewSet) throw new Error('The Review set for this session is no longer available.')
         let availableCards = reviewSet.accessRole === 'owner'
           ? cards.value
           : reviewSetCards.value[reviewSet.id]
         if (!availableCards) availableCards = await loadReviewSetCards(reviewSet.id)
-        const queueState = flashcardReviewQueueState({
+        const selection = flashcardReviewQueueState({
           ...reviewSet,
           ...settings,
           ejectBehavior: 'replace',
@@ -1068,22 +1125,46 @@ export const useFlashcardStore = defineStore('flashcards', () => {
         const events = await api.collection('flashcard_review_events').getFullList({
           filter: `session = "${sessionId}"`,
         })
-        const unavailableIds = new Set(current.queue.map(card => card.id))
+        const unavailableIds = new Set<string>()
         events.forEach((event) => {
-          if (!settings.indefinite || event.outcome === 'ejected' || event.outcome === 'eject') {
+          if (!indefinite || event.outcome === 'ejected' || event.outcome === 'eject') {
             unavailableIds.add(event.card)
           }
         })
-        reserveCardIds = [
-          ...queueState.queue.map(card => card.id),
-          ...queueState.reserveCardIds,
-        ].filter(id => !unavailableIds.has(id))
+        const eligibleCards = [...selection.queue, ...selection.reserveCardIds
+          .map(id => availableCards.find(card => card.id === id))
+          .filter((card): card is Flashcard => Boolean(card))]
+          .filter(card => !unavailableIds.has(card.id))
+        const processedCards = current.viewedCount + current.ejectedCount
+        const remainingLimit = indefinite
+          ? settings.maxCards
+          : settings.maxCards - processedCards
+        queue = eligibleCards.slice(0, remainingLimit).map(card => ({
+          id: card.id,
+          front: card.front,
+          back: card.back,
+          note: card.note,
+          frontAudio: card.frontAudio,
+          backAudio: card.backAudio,
+          tags: [...card.tags],
+        }))
+        if (!queue.length) throw new Error('No eligible cards remain for these session settings.')
+        reserveCardIds = flashcardEjectLoadsNext(settings.ejectBehavior)
+          ? eligibleCards.slice(remainingLimit).map(card => card.id)
+          : []
+        totalCards = indefinite
+          ? queue.length
+          : processedCards + queue.length
+      } else if (current && !flashcardEjectLoadsNext(settings.ejectBehavior)) {
+        reserveCardIds = []
       }
       if (current) {
         Object.assign(current, {
           ...settings,
           indefinite: settings.mode === 'passive' && settings.indefinite,
+          queue,
           reserveCardIds,
+          totalCards,
         })
       }
       const record = usingLocalDatabase
@@ -1103,7 +1184,9 @@ export const useFlashcardStore = defineStore('flashcards', () => {
           back_language_snapshot: settings.backLanguage,
           sort_snapshot: settings.sortMode,
           sort_direction_snapshot: settings.sortDirection,
+          queue_state: queue,
           reserve_card_ids: reserveCardIds,
+          total_cards: totalCards,
           updated_at: new Date().toISOString(),
           })
         : await api.updateFlashcardReviewSessionSettings(sessionId, settings)
@@ -1212,7 +1295,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
           tags: [...card.tags],
         })
         ejectedCount -= 1
-        if (current.ejectBehavior === 'exclude') {
+        if (flashcardEjectExcludes(current.ejectBehavior)) {
           excludedCards = updateFlashcardReviewExclusions(excludedCards, 'include', [card.id])
         }
         undoneEjectEventId = lastEject.id
@@ -1229,10 +1312,10 @@ export const useFlashcardStore = defineStore('flashcards', () => {
           const outcome = action === 'view' ? 'passive' : action === 'eject' ? 'ejected' : action
           if (action === 'eject') {
             ejectedCount += 1
-            if (current.ejectBehavior === 'exclude') {
+            if (flashcardEjectExcludes(current.ejectBehavior)) {
               excludedCards = updateFlashcardReviewExclusions(excludedCards, 'exclude', [card.id])
             }
-            if (current.ejectBehavior === 'replace' && reserveCardIds.length) {
+            if (flashcardEjectLoadsNext(current.ejectBehavior) && reserveCardIds.length) {
               const reviewSet = reviewSets.value.find(item => item.id === current.reviewSet)
               if (!reviewSet) {
                 throw new Error('The Review set for this session is no longer available.')
@@ -1289,7 +1372,9 @@ export const useFlashcardStore = defineStore('flashcards', () => {
         }
       }
     }
-    if (current.indefinite && current.ejectBehavior !== 'replace') totalCards = queue.length
+    if (current.indefinite && !flashcardEjectLoadsNext(current.ejectBehavior)) {
+      totalCards = queue.length
+    }
 
     const previous = {
       ...current,
@@ -1367,6 +1452,7 @@ export const useFlashcardStore = defineStore('flashcards', () => {
     deleteTag,
     saveCard,
     deleteCard,
+    deleteSession,
     importCards,
     bulkUpdateCards,
     saveReviewSet,

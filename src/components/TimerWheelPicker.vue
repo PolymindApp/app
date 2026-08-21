@@ -146,7 +146,10 @@ function setLocalValue(value: number | string) {
 }
 
 function scrollToValue(element: HTMLElement | undefined, value: number, behavior: ScrollBehavior = 'auto') {
-  element?.scrollTo({ top: value * itemHeight, behavior })
+  if (!element) return
+  const top = value * itemHeight
+  if (typeof element.scrollTo === 'function') element.scrollTo({ top, behavior })
+  else element.scrollTop = top
 }
 
 function syncScrollers() {

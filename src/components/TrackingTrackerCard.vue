@@ -1,8 +1,5 @@
 <script setup lang="ts">
-import { format } from 'date-fns'
 import { Ripple } from 'vuetify/directives'
-import TrackingRatingValue from '@/components/TrackingRatingValue.vue'
-import { formatTrackingValue } from '@/services/tracking'
 import type { TrackingEntry, TrackingTracker } from '@/types/domain'
 
 defineProps<{
@@ -13,7 +10,6 @@ defineProps<{
 const emit = defineEmits<{
   log: [tracker: TrackingTracker]
   actions: [tracker: TrackingTracker]
-  entry: [entry: TrackingEntry]
 }>()
 const vRipple = Ripple
 </script>
@@ -36,7 +32,9 @@ const vRipple = Ripple
         <span class="min-width-0 flex-grow-1">
           <strong class="d-block text-truncate">{{ tracker.name }}</strong>
           <v-expand-transition>
-            <span v-if="!tracker.active" class="tracker-card__status">Paused</span>
+            <span v-if="!tracker.active" class="tracker-card__status-expand">
+              <span class="tracker-card__status">Paused</span>
+            </span>
           </v-expand-transition>
           <span class="tracker-card__description">
             {{ tracker.description || 'No description added.' }}
@@ -54,35 +52,7 @@ const vRipple = Ripple
       />
     </div>
 
-    <template v-if="tracker.active && entries.length">
-      <v-divider />
-      <div class="tracker-entry-list" :aria-label="`${tracker.name} logs`">
-        <button
-          v-for="entry in entries"
-          :key="entry.id"
-          v-ripple
-          type="button"
-          class="tracker-entry"
-          :aria-label="`Edit ${tracker.name} log from ${format(new Date(entry.occurredAt), 'h:mm a')}`"
-          @touchstart.stop
-          @click.stop="emit('entry', entry)"
-        >
-          <span class="tracker-entry__time">{{ format(new Date(entry.occurredAt), 'h:mm a') }}</span>
-          <TrackingRatingValue
-            v-if="tracker.kind === 'rating'"
-            :value="entry.value"
-            :max="tracker.scaleMax"
-            :color="tracker.color"
-            :label="tracker.name"
-          />
-          <strong v-else class="tracker-entry__value">
-            {{ formatTrackingValue(tracker, entry.value) }}
-          </strong>
-          <span v-if="entry.note" class="tracker-entry__note">{{ entry.note }}</span>
-        </button>
-      </div>
-    </template>
-    <div v-else-if="tracker.active && tracker.kind === 'event'" class="tracker-event-absence">
+    <div v-if="tracker.active && tracker.kind === 'event' && !entries.length" class="tracker-event-absence">
       <v-icon icon="mdi-minus-circle-outline" size="17" />
       <span>Not occurred</span>
     </div>
@@ -132,8 +102,7 @@ const vRipple = Ripple
 }
 
 .tracker-card__log:focus-visible,
-.tracker-card__menu:focus-visible,
-.tracker-entry:focus-visible {
+.tracker-card__menu:focus-visible {
   outline: .125rem solid rgba(var(--v-theme-secondary), .72);
   outline-offset: -.1875rem;
 }
@@ -189,6 +158,10 @@ const vRipple = Ripple
   white-space: nowrap;
 }
 
+.tracker-card__status-expand {
+  display: block;
+}
+
 .tracker-card--paused .tracker-card__log {
   cursor: default;
 }
@@ -201,12 +174,6 @@ const vRipple = Ripple
   line-height: 1.45;
 }
 
-.tracker-entry-list {
-  display: grid;
-  gap: .25rem;
-  padding: .35rem .55rem .55rem .75rem;
-}
-
 .tracker-event-absence {
   display: flex;
   min-height: 2.75rem;
@@ -217,50 +184,6 @@ const vRipple = Ripple
   color: rgb(var(--v-theme-on-surface) / .52);
   font-size: .72rem;
   font-weight: 800;
-}
-
-.tracker-entry {
-  position: relative;
-  display: grid;
-  overflow: hidden;
-  width: 100%;
-  min-height: 2.75rem;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: .2rem .75rem;
-  padding: .5rem .65rem;
-  border: 0;
-  border-radius: .75rem;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.tracker-entry:active {
-  background: rgb(var(--v-theme-on-surface) / .06);
-}
-
-.tracker-entry__time {
-  color: rgb(var(--v-theme-on-surface) / .72);
-  font-size: .72rem;
-  font-weight: 850;
-}
-
-.tracker-entry__note {
-  grid-column: 1 / -1;
-  min-width: 0;
-  color: rgb(var(--v-theme-on-surface) / .5);
-  font-size: .7rem;
-  line-height: 1.4;
-  overflow-wrap: anywhere;
-}
-
-.tracker-entry__value {
-  color: rgb(var(--v-theme-on-surface));
-  font-size: .75rem;
-  white-space: nowrap;
 }
 
 .min-width-0 {

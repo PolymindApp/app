@@ -50,6 +50,7 @@ function mapTask(record: Record<string, any>): Task {
     mandatory: record.mandatory,
     reviewWhenMissed: record.review_when_missed,
     active: record.active,
+    archived: record.archived === true,
     scheduleMode: record.schedule_mode === 'time_based' ? 'time_based' : 'all_day',
     scheduledTime: record.schedule_mode === 'time_based' ? record.scheduled_time || undefined : undefined,
     startDate: record.start_date,
@@ -179,6 +180,7 @@ export const useTaskStore = defineStore('tasks', () => {
   let reminderSyncPromise: Promise<void> | undefined
   let reminderSyncRequested = false
   let optimisticOccurrenceRevision = 0
+  let occurrenceMutationRevision = 0
   let entryMutationRevision = 0
   const loadedProgressRanges = new Set<string>()
   const pendingOccurrenceCreates = new Map<string, Promise<Occurrence>>()
@@ -186,7 +188,7 @@ export const useTaskStore = defineStore('tasks', () => {
   const pendingEntryUpserts = new Set<Entry>()
   const pendingEntryDeletes = new Set<string>()
 
-  const activeTasks = computed(() => tasks.value.filter((task) => task.active))
+  const activeTasks = computed(() => tasks.value.filter((task) => task.active && !task.archived))
 
   function occurrenceStatusKey(taskId: string, scheduledDate: string, programStepId = '') {
     return `${scheduledDate}:${taskId}:${programStepId}`
@@ -504,7 +506,7 @@ export const useTaskStore = defineStore('tasks', () => {
     const dateKey = toDateKey(date)
     const progress: TaskProgress[] = []
     const includedStatusKeys = new Set<string>()
-    if (task.active && isTaskScheduled(task, date)) {
+    if (task.active && !task.archived && isTaskScheduled(task, date)) {
       const scheduledSteps = task.type === 'program'
         ? stepsForDate(task, steps.value, date)
         : [undefined]
@@ -549,6 +551,7 @@ export const useTaskStore = defineStore('tasks', () => {
 
   async function load() {
     if (!api.authStore.record) return
+    const startedAtOccurrenceMutationRevision = occurrenceMutationRevision
     const startedAtEntryMutationRevision = entryMutationRevision
     loading.value = true
     error.value = ''
@@ -563,8 +566,13 @@ export const useTaskStore = defineStore('tasks', () => {
       ])
       tasks.value = taskRecords.map(mapTask)
       steps.value = stepRecords.map(mapStep)
-      if (startedAtEntryMutationRevision === entryMutationRevision) {
+      if (
+        startedAtOccurrenceMutationRevision === occurrenceMutationRevision
+        && startedAtEntryMutationRevision === entryMutationRevision
+      ) {
         occurrences.value = mergePendingOccurrences(occurrenceRecords.map(mapOccurrence))
+      }
+      if (startedAtEntryMutationRevision === entryMutationRevision) {
         entries.value = mergePendingEntries(entryRecords.map(mapEntry))
       }
       const reconciliationKey = `${api.authStore.record.id}:${since}`
@@ -591,6 +599,7 @@ export const useTaskStore = defineStore('tasks', () => {
     const rangeKey = `${start}:${end}`
     if (loadedProgressRanges.has(rangeKey)) return true
     const request = ++progressRangeRequest
+    const startedAtOccurrenceMutationRevision = occurrenceMutationRevision
     const startedAtEntryMutationRevision = entryMutationRevision
     try {
       const [occurrenceRecords, entryRecords] = await Promise.all([
@@ -604,10 +613,15 @@ export const useTaskStore = defineStore('tasks', () => {
         }),
       ])
       if (request !== progressRangeRequest) return false
-      if (startedAtEntryMutationRevision === entryMutationRevision) {
+      if (
+        startedAtOccurrenceMutationRevision === occurrenceMutationRevision
+        && startedAtEntryMutationRevision === entryMutationRevision
+      ) {
         const mergedOccurrences = new Map(occurrences.value.map((item) => [item.id, item]))
         occurrenceRecords.map(mapOccurrence).forEach((item) => mergedOccurrences.set(item.id, item))
         occurrences.value = mergePendingOccurrences([...mergedOccurrences.values()])
+      }
+      if (startedAtEntryMutationRevision === entryMutationRevision) {
         const mergedEntries = new Map(entries.value.map((item) => [item.id, item]))
         entryRecords.map(mapEntry).forEach((item) => mergedEntries.set(item.id, item))
         entries.value = mergePendingEntries([...mergedEntries.values()])
@@ -766,6 +780,7 @@ export const useTaskStore = defineStore('tasks', () => {
     },
     waitFor?: Promise<unknown>,
   ) {
+    occurrenceMutationRevision += 1
     const progressDate = parseISO(progress.scheduledDate)
     const key = occurrenceStatusKey(
       progress.task.id,
@@ -791,14 +806,14 @@ export const useTaskStore = defineStore('tasks', () => {
       if (patch.completedAt !== undefined) payload.completed_at = patch.completedAt
       if (patch.completionState !== undefined) payload.completion_state = patch.completionState
       const record = await api.collection('occurrences').update(occurrence.id, payload)
-      Object.assign(occurrence, mapOccurrence(record))
-      return occurrence
+      return upsertOccurrenceRecord(record)
     } finally {
       if (optimisticOccurrencePatches.value[key]?.revision === revision) {
         const nextPatches = { ...optimisticOccurrencePatches.value }
         delete nextPatches[key]
         optimisticOccurrencePatches.value = nextPatches
       }
+      occurrenceMutationRevision += 1
     }
   }
 
@@ -819,6 +834,8 @@ export const useTaskStore = defineStore('tasks', () => {
     complete: boolean,
   ) {
     if (!progress.programStep?.completions?.some(item => item.id === completionId)) return
+    const currentCompletion = progress.completionItems?.find(item => item.id === completionId)
+    if (currentCompletion?.complete === complete) return
     const completionState = {
       ...(progress.occurrence?.completionState || {}),
       ...(optimisticOccurrencePatches.value[
@@ -839,11 +856,36 @@ export const useTaskStore = defineStore('tasks', () => {
     void syncTaskReminders()
   }
 
+  async function markProgramStepIncomplete(progress: TaskProgress) {
+    if (!progress.programStep || !progress.complete) return
+    const completionState = {
+      ...(progress.occurrence?.completionState || {}),
+      ...(optimisticOccurrencePatches.value[
+        occurrenceStatusKey(progress.task.id, progress.scheduledDate, progress.programStep.id)
+      ]?.completionState || {}),
+    }
+    const clearableCompletionIds = (progress.completionItems || [])
+      .filter(item => item.type !== 'quantity' && item.complete)
+      .map(item => item.id)
+    if (!clearableCompletionIds.length && !progress.sealed) return
+    clearableCompletionIds.forEach((completionId) => {
+      completionState[completionId] = false
+    })
+    await updateOccurrenceOptimistically(progress, {
+      completionState,
+      status: 'pending',
+      sealed: false,
+      completedAt: '',
+    })
+    void syncTaskReminders()
+  }
+
   async function completeAttributedTask(
     taskId: string,
     dateKey: string,
     programStepId = '',
     programStepCompletionId = '',
+    preserveRecordedCompletion = false,
   ) {
     if (!taskId || !dateKey) return undefined
     const progress = progressForDate(parseISO(dateKey)).find(item => (
@@ -852,6 +894,13 @@ export const useTaskStore = defineStore('tasks', () => {
     ))
     if (!progress) return undefined
     if (programStepId && programStepCompletionId) {
+      if (
+        preserveRecordedCompletion
+        && Object.prototype.hasOwnProperty.call(
+          progress.occurrence?.completionState || {},
+          programStepCompletionId,
+        )
+      ) return progress.occurrence
       await setProgramStepCompletion(progress, programStepCompletionId, true)
     } else if (!progress.complete) await toggleComplete(progress, true)
     return occurrenceFor(progress.task, parseISO(dateKey), progress.programStep)
@@ -869,7 +918,7 @@ export const useTaskStore = defineStore('tasks', () => {
     status: 'completed' | 'ended'
     elapsedSeconds: number
     completedAt: string
-  }, syncReminders = true) {
+  }, syncReminders = true, preserveRecordedProgramCompletion = false) {
     if (!tasks.value.length) await load()
     const taskDate = input.taskDate || toDateKey(new Date(input.startedAt))
     if (input.programStepId && input.taskId && input.status === 'completed') {
@@ -878,6 +927,7 @@ export const useTaskStore = defineStore('tasks', () => {
         taskDate,
         input.programStepId,
         input.programStepCompletionId,
+        preserveRecordedProgramCompletion,
       )
     }
     if (!input.sourceId) return
@@ -885,6 +935,7 @@ export const useTaskStore = defineStore('tasks', () => {
     const date = parseISO(taskDate)
     const candidates = tasks.value.filter(task => (
       task.active
+      && !task.archived
       && task.type === input.sourceType
       && (input.sourceType === 'interval'
         ? task.intervalTemplate === input.sourceId
@@ -970,7 +1021,7 @@ export const useTaskStore = defineStore('tasks', () => {
         status,
         elapsedSeconds: Number(record.elapsed_seconds || 0),
         completedAt: String(record.ended_at || record.updated_at || new Date().toISOString()),
-      }, false)
+      }, false, true)
       if (sourceType !== 'interval') continue
       const snapshot = record.flashcard_snapshot
       const definition = record.definition_snapshot
@@ -1319,6 +1370,7 @@ export const useTaskStore = defineStore('tasks', () => {
       mandatory: draft.mandatory,
       review_when_missed: draft.reviewWhenMissed,
       active: draft.active,
+      archived: draft.archived === true,
       schedule_mode: draft.scheduleMode === 'time_based' ? 'time_based' : 'all_day',
       scheduled_time: draft.scheduleMode === 'time_based' ? draft.scheduledTime || '' : '',
       start_date: draft.startDate,
@@ -1463,6 +1515,20 @@ export const useTaskStore = defineStore('tasks', () => {
     }
   }
 
+  async function setTaskArchived(task: Task, archived: boolean) {
+    const previous = { ...task }
+    task.archived = archived
+    try {
+      const record = await api.collection('tasks').update(task.id, { archived })
+      Object.assign(task, mapTask(record))
+    } catch (cause) {
+      Object.assign(task, previous)
+      throw cause
+    } finally {
+      void syncTaskReminders()
+    }
+  }
+
   function progressIsScheduled(progress: TaskProgress) {
     const date = parseISO(progress.scheduledDate)
     if (progress.programStep) {
@@ -1500,6 +1566,7 @@ export const useTaskStore = defineStore('tasks', () => {
   }
 
   function upsertOccurrenceRecord(record: Record<string, any>) {
+    occurrenceMutationRevision += 1
     const occurrence = mapOccurrence(record)
     const index = occurrences.value.findIndex((item) => item.id === occurrence.id)
     if (index >= 0) occurrences.value.splice(index, 1, occurrence)
@@ -1635,6 +1702,7 @@ export const useTaskStore = defineStore('tasks', () => {
     entriesFor,
     toggleComplete,
     setProgramStepCompletion,
+    markProgramStepIncomplete,
     completeAttributedTask,
     applyLocalSessionProgress,
     setDailyTotalSealed,
@@ -1653,6 +1721,7 @@ export const useTaskStore = defineStore('tasks', () => {
     shiftProgram,
     saveTask,
     toggleTaskActive,
+    setTaskArchived,
     upsertOccurrenceRecord,
     upsertEntryRecord,
     reorderTasks,

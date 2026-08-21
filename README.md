@@ -1,4 +1,4 @@
-# BackOnTrack — Make life programmable.
+# BackOnTrack — Build your way forward.
 
 A mobile-first personal management app for tasks, plans, habits, workouts, and programmable intervals. The client uses Vue 3, Vuetify, and TypeScript. A PHP API provides password/passkey authentication and secure SQLite access.
 
@@ -96,6 +96,8 @@ On the host, place a copy of `.env.prod` named `.env` at the project root becaus
 - `pnpm android:sync` — build with `.env.prod` and sync the web app into Android
 - `pnpm android:assets` — regenerate launcher and splash assets
 - `pnpm android:dev` — launch a connected device with live reload and the PHP API
+- `pnpm android:push` — build a signed release APK with `.env.prod` and install it
+- `pnpm android:push:dev` — build a signed release APK with `.env.dev` and install it
 - `pnpm android:open` — open the native project in Android Studio
 - `pnpm android:run` — sync and run on an emulator or device
 - `pnpm android:build` — create a debug APK using `.env.prod`

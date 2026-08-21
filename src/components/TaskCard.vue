@@ -406,7 +406,7 @@ onBeforeUnmount(() => {
           :class="{ 'task-detail-item--done': requirement.complete }"
           :title="requirement.title"
           :subtitle="requirement.subtitle"
-          :disabled="requirement.disabled || busy"
+          :disabled="busy || (!requirement.complete && requirement.disabled)"
           rounded="lg"
           @click="emit('runProgramStepRequirement', progress, requirement.id)"
         >

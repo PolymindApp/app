@@ -1,10 +1,13 @@
 import type {
+  Flashcard,
   FlashcardBulkRecordAction,
+  FlashcardBulkSwapColumn,
   FlashcardImportRow,
   FlashcardReviewAction,
   FlashcardReviewSetAccessRole,
   FlashcardReviewSettings,
 } from '@/types/domain'
+import { flashcardSwapColumnsError, swapFlashcardColumns } from '@/services/flashcards'
 import type { AuthActionResponse } from '@/types/auth'
 import {
   createLocalRecordId,
@@ -145,7 +148,7 @@ function localCreateDefaults(resource: string, body: Record<string, unknown>) {
   const now = new Date().toISOString()
   if (resource === 'flashcards') {
     return {
-      note: '',
+      transliteration: '', note: '',
       front_audio_url: '', front_audio_file: '', back_audio_url: '', back_audio_file: '',
       tags: [], created_at: now, updated_at: now, last_reviewed_at: '',
       passive_views: 0, success_count: 0, error_count: 0,
@@ -216,19 +219,32 @@ export class ApiError extends Error {
 
 function localFlashcardSwapPatch(
   record: RecordModel,
-  action: Extract<FlashcardBulkRecordAction, 'swap_front_back' | 'swap_note_back'>,
+  action: Extract<FlashcardBulkRecordAction, 'swap_columns' | 'swap_front_back' | 'swap_note_back'>,
+  values: string[],
 ) {
-  const front = String(record.front || '').trim()
-  const back = String(record.back || '').trim()
-  const note = String(record.note || '').trim()
-  if (action === 'swap_note_back') {
-    if (!note) throw new ApiError(422, 'Every selected card needs a note before swapping note and back.')
-    if ([...back].length > 2000) {
-      throw new ApiError(422, 'A selected back is too long to become a note.')
-    }
-    return { back: note, note: back }
+  const columns = (action === 'swap_columns'
+    ? values
+    : action === 'swap_note_back' ? ['note', 'back'] : ['front', 'back']) as FlashcardBulkSwapColumn[]
+  const allowedColumns: FlashcardBulkSwapColumn[] = ['front', 'back', 'transliteration', 'note']
+  if (
+    columns.length !== 2
+    || columns[0] === columns[1]
+    || columns.some(column => !allowedColumns.includes(column))
+  ) {
+    throw new ApiError(422, 'Choose two different flashcard columns.')
   }
-  return { front: back, back: front }
+  const card = {
+    ...record,
+    front: String(record.front || ''),
+    back: String(record.back || ''),
+    transliteration: String(record.transliteration || ''),
+    note: String(record.note || ''),
+  } as Flashcard
+  const error = flashcardSwapColumnsError([card], columns)
+  if (error) throw new ApiError(422, error)
+  const pair = columns as [FlashcardBulkSwapColumn, FlashcardBulkSwapColumn]
+  swapFlashcardColumns(card, pair)
+  return { [pair[0]]: card[pair[0]] || '', [pair[1]]: card[pair[1]] || '' }
 }
 
 class AuthStore {
@@ -793,6 +809,7 @@ class ApiClient {
         cards.push(await putLocalCreate(accountId, 'flashcards', localCreateDefaults('flashcards', {
           front: row.front,
           back: row.back,
+          transliteration: row.transliteration || '',
           note: row.note,
           tags: [...new Set(tagIds)],
         })) as RecordModel)
@@ -806,7 +823,7 @@ class ApiClient {
     )
   }
 
-  async bulkUpdateFlashcards(action: FlashcardBulkRecordAction, cardIds: string[], tagIds: string[] = []) {
+  async bulkUpdateFlashcards(action: FlashcardBulkRecordAction, cardIds: string[], values: string[] = []) {
     const accountId = this.authStore.record?.id || ''
     if (accountId && await hasLocalBootstrap(accountId)) {
       if (action === 'delete') {
@@ -817,20 +834,20 @@ class ApiClient {
       for (const id of cardIds) {
         const current = await getLocalRecord(accountId, 'flashcards', id)
         if (!current) continue
-        if (action === 'swap_front_back' || action === 'swap_note_back') {
+        if (action === 'swap_columns' || action === 'swap_front_back' || action === 'swap_note_back') {
           cards.push(await putLocalPatch(accountId, 'flashcards', id, {
-            ...localFlashcardSwapPatch(current as RecordModel, action),
+            ...localFlashcardSwapPatch(current as RecordModel, action, values),
             updated_at: new Date().toISOString(),
           }) as RecordModel)
           continue
         }
         const currentTags = Array.isArray(current.tags) ? current.tags : []
         const tags = action === 'add_tags'
-          ? [...new Set([...currentTags, ...tagIds])]
+          ? [...new Set([...currentTags, ...values])]
           : action === 'set_tags'
-            ? [...new Set(tagIds)]
+            ? [...new Set(values)]
             : action === 'remove_tags'
-              ? currentTags.filter((tag: string) => !tagIds.includes(tag))
+              ? currentTags.filter((tag: string) => !values.includes(tag))
               : []
         cards.push(await putLocalPatch(accountId, 'flashcards', id, { tags }) as RecordModel)
       }
@@ -840,7 +857,9 @@ class ApiClient {
       '/flashcards/bulk',
       {
         method: 'POST',
-        body: { action, card_ids: cardIds, tag_ids: tagIds },
+        body: action === 'swap_columns'
+          ? { action, card_ids: cardIds, columns: values }
+          : { action, card_ids: cardIds, tag_ids: values },
       },
       this.authStore,
     )
@@ -1009,6 +1028,7 @@ class ApiClient {
         const card = await putLocalCreate(accountId, 'flashcards', localCreateDefaults('flashcards', {
           front: sourceCard.front,
           back: sourceCard.back,
+          transliteration: sourceCard.transliteration || '',
           note: sourceCard.note || '',
           tags: [scopeTag.id],
         }))
@@ -1062,6 +1082,7 @@ class ApiClient {
       return putLocalSharedCardCreate(accountId, reviewSetId, {
         ...body,
         tags: Array.isArray(reviewSet?.tags) ? reviewSet.tags : [],
+        transliteration: typeof body.transliteration === 'string' ? body.transliteration : '',
         note: typeof body.note === 'string' ? body.note : '',
         created_at: now,
         updated_at: now,
@@ -1086,6 +1107,7 @@ class ApiClient {
         cards.push(await this.createFlashcardReviewSetCard(reviewSetId, {
           front: row.front,
           back: row.back,
+          transliteration: row.transliteration || '',
           note: row.note,
         }))
       }

@@ -92,6 +92,7 @@ const reviewSheet = ref(false)
 const taskSheet = ref(false)
 const taskSheetMode = ref<'actions' | 'history'>('actions')
 const taskActionProgress = ref<TaskProgress>()
+const taskActionCompletionId = ref('')
 const taskStatusDialog = ref(false)
 const taskStatusUpdating = ref(false)
 const taskSkipDialog = ref(false)
@@ -112,6 +113,7 @@ const trackingSheetDate = ref(toDateKey(new Date()))
 const trackingSheetContext = ref('')
 const valuePulseVersions = ref<Record<string, number>>({})
 const notScheduledExpanded = ref(false)
+const archiveExpanded = ref(false)
 const reorderingTasks = ref(false)
 const exactAmount = computed(() => {
   if (!exactAmountInput.value || exactAmountInput.value === '.') return null
@@ -255,17 +257,45 @@ const taskActionIsScheduled = computed(() => {
   const progress = taskActionProgress.value
   return Boolean(progress && selectedProgress.value.some(item => progressKey(item) === progressKey(progress)))
 })
+const taskActionCompletion = computed(() => taskActionProgress.value?.completionItems?.find(
+  item => item.id === taskActionCompletionId.value,
+))
 const taskMainActionItems = computed<TaskMainActionItem[]>(() => {
   const progress = taskActionProgress.value
   if (!progress || !taskActionIsScheduled.value || progress.status === 'skipped') return []
   const items: TaskMainActionItem[] = []
-  if (progress.programStep) return items
+  if (taskActionCompletion.value) {
+    if (taskActionCompletion.value.complete && taskActionCompletion.value.type !== 'quantity') {
+      items.push({
+        id: 'toggle-complete',
+        title: 'Mark incomplete',
+        icon: 'mdi-undo-variant',
+        disabled: false,
+      })
+    }
+    return items
+  }
+  const locked = Boolean(progress.locked)
+  if (progress.programStep) {
+    const canMarkIncomplete = progress.complete && (
+      progress.sealed
+      || Boolean(progress.completionItems?.some(item => item.type !== 'quantity' && item.complete))
+    )
+    if (canMarkIncomplete) {
+      items.push({
+        id: 'toggle-complete',
+        title: 'Mark incomplete',
+        icon: 'mdi-undo-variant',
+        disabled: false,
+      })
+    }
+    return items
+  }
   const completionType = progress.programStep?.completionType || progress.task.type
   const completionDriven = ['check', 'interval', 'flashcards'].includes(completionType)
-  const locked = Boolean(progress.locked)
 
   if (completionDriven && progress.complete) {
-    items.push({ id: 'toggle-complete', title: 'Undone', icon: 'mdi-undo-variant', disabled: locked })
+    items.push({ id: 'toggle-complete', title: 'Mark incomplete', icon: 'mdi-undo-variant', disabled: locked })
     return items
   }
 
@@ -353,31 +383,34 @@ const taskMainActionItems = computed<TaskMainActionItem[]>(() => {
   }
   return items
 })
-const taskCardActionItems = computed(() => TASK_CARD_ACTION_ITEMS.filter((action) =>
-  action.id === 'skip-task'
-    ? taskActionIsScheduled.value
-    : action.id !== 'view-log-history'
-      || taskCanLogAmounts(taskActionProgress.value)
-      || (taskCanLogAdditionalValue(taskActionProgress.value) && taskActionProgress.value
-        ? store.entriesFor(
-            taskActionProgress.value.task,
-            parseISO(taskActionProgress.value.scheduledDate),
-            taskActionProgress.value.programStep,
-          ).length > 0
-        : false),
-).map(action => action.id === 'toggle-task-status'
-  ? {
-      ...action,
-      title: taskActionProgress.value?.task.active ? 'Pause task' : 'Unpause task',
-      icon: taskActionProgress.value?.task.active ? 'mdi-pause' : 'mdi-play',
-    }
-  : action.id === 'skip-task'
+const taskCardActionItems = computed(() => {
+  if (taskActionCompletion.value) return []
+  return TASK_CARD_ACTION_ITEMS.filter((action) =>
+    action.id === 'skip-task'
+      ? taskActionIsScheduled.value
+      : action.id !== 'view-log-history'
+        || taskCanLogAmounts(taskActionProgress.value)
+        || (taskCanLogAdditionalValue(taskActionProgress.value) && taskActionProgress.value
+          ? store.entriesFor(
+              taskActionProgress.value.task,
+              parseISO(taskActionProgress.value.scheduledDate),
+              taskActionProgress.value.programStep,
+            ).length > 0
+          : false),
+  ).map(action => action.id === 'toggle-task-status'
     ? {
         ...action,
-        title: taskActionProgress.value?.status === 'skipped' ? 'Unskip' : 'Skip',
-        icon: taskActionProgress.value?.status === 'skipped' ? 'mdi-backup-restore' : 'mdi-skip-next-outline',
+        title: taskActionProgress.value?.task.active ? 'Pause task' : 'Unpause task',
+        icon: taskActionProgress.value?.task.active ? 'mdi-pause' : 'mdi-play',
       }
-    : action))
+    : action.id === 'skip-task'
+      ? {
+          ...action,
+          title: taskActionProgress.value?.status === 'skipped' ? 'Unskip' : 'Skip',
+          icon: taskActionProgress.value?.status === 'skipped' ? 'mdi-backup-restore' : 'mdi-skip-next-outline',
+        }
+      : action)
+})
 const visibleWeekDates = computed(() => Array.from(
   { length: 7 },
   (_, index) => addDays(visibleWeekStart.value, index),
@@ -397,6 +430,10 @@ const notScheduledProgress = computed(() => tasksWithoutProgress(
   store.tasks,
   selectedProgress.value,
 ).map(task => store.makeProgress(task, selectedDate.value)))
+const archivedProgress = computed(() => store.tasks
+  .filter(task => task.archived)
+  .sort((left, right) => left.sortOrder - right.sortOrder)
+  .map(task => store.makeProgress(task, selectedDate.value)))
 const scheduleLayout = computed(() => groupTaskProgressBySchedule(selectedProgress.value))
 const allDayProgress = computed(() => scheduleLayout.value.allDay)
 const timedProgressGroups = computed(() => scheduleLayout.value.timed)
@@ -477,26 +514,34 @@ function updateNextIncompleteTask() {
   const atPageBottom = scrollingElement.scrollTop + scrollingElement.clientHeight
     >= scrollingElement.scrollHeight - 1
   const rootFontSize = Number.parseFloat(getComputedStyle(document.documentElement).fontSize)
-  const key = nextIncompleteTaskKey(
-    taskElements.flatMap((element) => {
-      const progressKey = element.dataset.taskProgressKey
-      const progress = progressKey ? progressByVisibilityKey.value.get(progressKey) : undefined
-      if (!progressKey || !progress) return []
-      const bounds = element.getBoundingClientRect()
-      return [{
-        key: progressKey,
-        incomplete: !progress.complete && progress.status !== 'skipped',
-        top: bounds.top,
-        left: bounds.left,
-        bottom: bounds.bottom,
-      }]
-    }),
-    appBarBottom,
-    visibleBottom,
-    window.scrollY <= 1,
-    NEXT_TASK_SCROLL_GAP_REM * rootFontSize,
-    atPageBottom,
-  )
+  const taskCandidates = taskElements.flatMap((element) => {
+    const progressKey = element.dataset.taskProgressKey
+    const progress = progressKey ? progressByVisibilityKey.value.get(progressKey) : undefined
+    if (!progressKey || !progress) return []
+    const bounds = element.getBoundingClientRect()
+    return [{
+      key: progressKey,
+      incomplete: !progress.complete && progress.status !== 'skipped',
+      top: bounds.top,
+      left: bounds.left,
+      bottom: bounds.bottom,
+    }]
+  })
+  const incompleteTaskIsVisible = taskCandidates.some(candidate => (
+    candidate.incomplete
+    && candidate.bottom > appBarBottom
+    && candidate.top < bottomNavigationTop
+  ))
+  const key = incompleteTaskIsVisible
+    ? undefined
+    : nextIncompleteTaskKey(
+        taskCandidates,
+        appBarBottom,
+        visibleBottom,
+        window.scrollY <= 1,
+        NEXT_TASK_SCROLL_GAP_REM * rootFontSize,
+        atPageBottom,
+      )
   const nextProgress = key ? progressByVisibilityKey.value.get(key) : undefined
 
   if (nextProgress === nextIncompleteProgress.value) return
@@ -761,6 +806,18 @@ async function resolveReview(item: TaskProgress, status: 'missed' | 'carried') {
 function openTaskActions(progress: TaskProgress) {
   taskLogRequest += 1
   taskActionProgress.value = progress
+  taskActionCompletionId.value = ''
+  taskSheetMode.value = 'actions'
+  taskLogEntries.value = []
+  taskLogLoading.value = false
+  taskLogError.value = ''
+  taskSheet.value = true
+}
+
+function openProgramStepRequirementActions(progress: TaskProgress, completionId: string) {
+  taskLogRequest += 1
+  taskActionProgress.value = progress
+  taskActionCompletionId.value = completionId
   taskSheetMode.value = 'actions'
   taskLogEntries.value = []
   taskLogLoading.value = false
@@ -773,7 +830,15 @@ function runTaskMainAction(action: TaskMainActionItem) {
   if (!progress || action.disabled) return
   taskSheet.value = false
   if (action.id === 'toggle-complete') {
-    void runForProgress(progress, () => store.setStatus(progress, progress.complete ? 'pending' : 'completed'))
+    if (progress.programStep && taskActionCompletionId.value) {
+      const completionId = taskActionCompletionId.value
+      taskActionCompletionId.value = ''
+      void runForProgress(progress, () => store.setProgramStepCompletion(progress, completionId, false))
+      return
+    }
+    void runForProgress(progress, () => progress.programStep
+      ? store.markProgramStepIncomplete(progress)
+      : store.setStatus(progress, progress.complete ? 'pending' : 'completed'))
     return
   }
   if (action.id === 'start-interval') {
@@ -810,7 +875,14 @@ function runTaskMainAction(action: TaskMainActionItem) {
 function runProgramStepRequirement(progress: TaskProgress, completionId: string) {
   const completion = progress.completionItems?.find(item => item.id === completionId)
   const requirement = programStepRequirementItems(progress).find(item => item.id === completionId)
-  if (!completion || requirement?.disabled || progressIsBusy(progress)) return
+  if (!completion || progressIsBusy(progress)) return
+
+  if (completion.complete && completion.type !== 'quantity') {
+    openProgramStepRequirementActions(progress, completion.id)
+    return
+  }
+
+  if (requirement?.disabled) return
 
   if (completion.type === 'check') {
     void runForProgress(progress, () => store.setProgramStepCompletion(
@@ -823,10 +895,6 @@ function runProgramStepRequirement(progress: TaskProgress, completionId: string)
   if (completion.type === 'quantity') {
     if (progress.task.logWithImagesEnabled) openImageLogger(progress, completion.id)
     else void openExact(progress, false, completion.id)
-    return
-  }
-  if (completion.complete) {
-    void runForProgress(progress, () => store.setProgramStepCompletion(progress, completion.id, false))
     return
   }
   if (completion.type === 'interval') {
@@ -1309,17 +1377,19 @@ async function saveTaskLogEntry() {
         </v-progress-circular>
       </div>
       <v-expand-transition>
-        <v-btn
-          v-if="reviewItems.length"
-          size="small"
-          variant="tonal"
-          color="secondary"
-          class="mt-5"
-          prepend-icon="mdi-clipboard-check-outline"
-          @click="reviewSheet = true"
-        >
-          Review {{ reviewItems.length }} open
-        </v-btn>
+        <div v-if="reviewItems.length">
+          <div class="pt-5">
+            <v-btn
+              size="small"
+              variant="tonal"
+              color="secondary"
+              prepend-icon="mdi-clipboard-check-outline"
+              @click="reviewSheet = true"
+            >
+              Review {{ reviewItems.length }} open
+            </v-btn>
+          </div>
+        </div>
       </v-expand-transition>
     </v-card>
 
@@ -1477,6 +1547,64 @@ async function saveTaskLogEntry() {
                 </span>
                 <span
                   v-if="item.task.mandatory && !item.complete"
+                  class="not-scheduled-task__required"
+                  role="img"
+                  aria-label="Required task"
+                  title="Required"
+                />
+              </div>
+            </template>
+            <template #append>
+              <v-icon icon="mdi-chevron-right" size="small" color="medium-emphasis" />
+            </template>
+          </v-list-item>
+        </v-list>
+      </v-expand-transition>
+    </section>
+
+    <section
+      v-if="archivedProgress.length"
+      class="not-scheduled-section"
+      :class="notScheduledProgress.length ? 'mt-2' : 'mt-6'"
+    >
+      <v-btn
+        block
+        variant="text"
+        class="not-scheduled-section__heading px-4"
+        :aria-expanded="archiveExpanded"
+        aria-controls="archived-tasks"
+        @click="archiveExpanded = !archiveExpanded"
+      >
+        <h3>Archive</h3>
+        <span class="not-scheduled-section__count">{{ archivedProgress.length }}</span>
+        <v-icon :icon="archiveExpanded ? 'mdi-chevron-up' : 'mdi-chevron-down'" size="small" />
+      </v-btn>
+      <v-expand-transition>
+        <v-list
+          v-show="archiveExpanded"
+          id="archived-tasks"
+          bg-color="transparent"
+          class="pa-0"
+        >
+          <v-list-item
+            v-for="item in archivedProgress"
+            :key="item.task.id"
+            :title="item.task.name"
+            :subtitle="item.task.active ? 'Archived' : 'Archived · Paused'"
+            rounded="lg"
+            class="not-scheduled-task"
+            @click="router.push(`/tasks/${item.task.id}`)"
+          >
+            <template #prepend>
+              <div class="not-scheduled-task__icon-wrap mr-3">
+                <span
+                  class="not-scheduled-task__icon"
+                  :style="{ background: item.task.color || taskPresentation(item).color }"
+                >
+                  <v-icon icon="mdi-archive-outline" size="1rem" />
+                </span>
+                <span
+                  v-if="item.task.mandatory"
                   class="not-scheduled-task__required"
                   role="img"
                   aria-label="Required task"

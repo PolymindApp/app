@@ -1,17 +1,19 @@
 <script setup lang="ts">
-import { computed, inject, useId, watch } from 'vue'
+import { computed, inject, watch } from 'vue'
 import LabeledSlider from '@/components/LabeledSlider.vue'
 import TimerWheelPicker from '@/components/TimerWheelPicker.vue'
 import {
   DEFAULT_FLASHCARD_REVIEW_TIME_LIMIT_SECONDS,
   FLASHCARD_REVIEW_CARD_SIDE_OPTIONS,
-  FLASHCARD_REVIEW_EJECT_BEHAVIOR_OPTIONS,
   FLASHCARD_REVIEW_SORT_OPTIONS,
   MAX_FLASHCARD_BACK_SPEECH_REPEATS,
   MAX_FLASHCARD_REVIEW_TIME_LIMIT_SECONDS,
   MAX_FLASHCARD_SESSION_CARDS,
   MIN_FLASHCARD_REVIEW_TIME_LIMIT_SECONDS,
   MIN_FLASHCARD_BACK_SPEECH_REPEATS,
+  flashcardEjectBehavior,
+  flashcardEjectExcludes,
+  flashcardEjectLoadsNext,
 } from '@/services/flashcards'
 import {
   defaultFlashcardSpeechLanguage,
@@ -42,7 +44,24 @@ const props = withDefaults(defineProps<{
 const CUSTOM_MAX_CARDS_THRESHOLD = 50
 const settings = computed(() => props.modelValue)
 const vuetifyDefaultsAvailable = Boolean(inject(Symbol.for('vuetify:defaults'), null))
-const ejectBehaviorName = useId()
+const ejectLoadsNext = computed({
+  get: () => flashcardEjectLoadsNext(settings.value.ejectBehavior),
+  set: (enabled: boolean | null) => {
+    settings.value.ejectBehavior = flashcardEjectBehavior(
+      Boolean(enabled),
+      flashcardEjectExcludes(settings.value.ejectBehavior),
+    )
+  },
+})
+const ejectExcludes = computed({
+  get: () => flashcardEjectExcludes(settings.value.ejectBehavior),
+  set: (enabled: boolean | null) => {
+    settings.value.ejectBehavior = flashcardEjectBehavior(
+      flashcardEjectLoadsNext(settings.value.ejectBehavior),
+      Boolean(enabled),
+    )
+  },
+})
 const cardLimit = computed(() => {
   const minimum = Math.min(
     MAX_FLASHCARD_SESSION_CARDS,
@@ -115,6 +134,9 @@ watch(cardLimit, ({ minimum, maximum }) => {
 function updateMode(mode: 'manual' | 'passive') {
   settings.value.mode = mode
   settings.value.indefinite = mode === 'passive'
+  settings.value.timeLimitSeconds = mode === 'passive'
+    ? settings.value.timeLimitSeconds || DEFAULT_FLASHCARD_REVIEW_TIME_LIMIT_SECONDS
+    : 0
 }
 
 function updateSpeechEnabled(enabled: boolean | null) {
@@ -163,7 +185,7 @@ function updateSpeechEnabled(enabled: boolean | null) {
               <div class="setting-row pt-3">
                 <div>
                   <strong>Run indefinitely</strong>
-                  <p>Loop through these cards until you end the review; it will not finish on its own</p>
+                  <p>Loop through these cards until the time limit is reached or you end the review</p>
                 </div>
                 <v-switch
                   v-model="settings.indefinite"
@@ -174,37 +196,37 @@ function updateSpeechEnabled(enabled: boolean | null) {
                 />
               </div>
             </div>
+            <v-divider class="my-5" />
+            <div class="setting-row">
+              <div>
+                <strong>Time limit</strong>
+                <p>Finish the review automatically after this much active time</p>
+              </div>
+              <v-switch
+                v-model="timeLimitEnabled"
+                color="secondary"
+                hide-details="auto"
+                inset
+                aria-label="Set a Review set time limit"
+              />
+            </div>
+            <v-expand-transition>
+              <div v-if="timeLimitEnabled">
+                <div class="time-limit-picker mt-4">
+                  <TimerWheelPicker
+                    v-model="timeLimitSeconds"
+                    mode="hours-minutes"
+                    :active="timeLimitEnabled"
+                  />
+                  <p class="mode-hint mt-3">
+                    <v-icon icon="mdi-timer-outline" size="18" />
+                    Only active review time counts toward the limit.
+                  </p>
+                </div>
+              </div>
+            </v-expand-transition>
           </div>
         </v-expand-transition>
-        <template v-if="!interval">
-          <v-divider class="my-5" />
-          <div class="setting-row">
-            <div>
-              <strong>Time limit</strong>
-              <p>Finish the review automatically after this much active time</p>
-            </div>
-            <v-switch
-              v-model="timeLimitEnabled"
-              color="secondary"
-              hide-details="auto"
-              inset
-              aria-label="Set a Review set time limit"
-            />
-          </div>
-          <v-expand-transition>
-            <div v-if="timeLimitEnabled" class="time-limit-picker mt-4">
-              <TimerWheelPicker
-                v-model="timeLimitSeconds"
-                mode="hours-minutes"
-                :active="timeLimitEnabled"
-              />
-              <p class="mode-hint mt-3">
-                <v-icon icon="mdi-timer-outline" size="18" />
-                Only active review time counts toward the limit.
-              </p>
-            </div>
-          </v-expand-transition>
-        </template>
         <v-divider class="my-5" />
       </template>
       <label class="field-label">Faces to show <span class="required-mark">*</span></label>
@@ -230,46 +252,50 @@ function updateSpeechEnabled(enabled: boolean | null) {
       </p>
 
       <v-expand-transition>
-        <div v-if="settings.cardSides !== 'front'" class="response-order-setting mt-5">
-          <v-divider class="mb-3" />
-          <div class="setting-row">
-            <div>
-              <strong>Show note before answer</strong>
-              <p>Place the card note above the back text when the response appears</p>
+        <div v-if="settings.cardSides !== 'front'">
+          <div class="response-order-setting mt-5">
+            <v-divider class="mb-3" />
+            <div class="setting-row">
+              <div>
+                <strong>Show note before answer</strong>
+                <p>Place the card note above the back text when the response appears</p>
+              </div>
+              <v-switch
+                v-model="settings.noteBeforeBack"
+                color="secondary"
+                hide-details="auto"
+                inset
+                aria-label="Show flashcard note before answer"
+              />
             </div>
-            <v-switch
-              v-model="settings.noteBeforeBack"
-              color="secondary"
-              hide-details="auto"
-              inset
-              aria-label="Show flashcard note before answer"
-            />
           </div>
         </div>
       </v-expand-transition>
 
       <v-expand-transition>
-        <div v-if="settings.mode === 'passive'" class="passive-settings mt-5">
-          <v-number-input
-            v-if="settings.cardSides !== 'back'"
-            v-model="settings.frontSeconds"
-            label="Front duration"
-            suffix="seconds"
-            :min="1"
-            :max="60"
-            :step="1"
-            :rules="[value => value >= 1 && value <= 60 || 'Use 1–60 seconds']"
-          />
-          <v-number-input
-            v-if="settings.cardSides !== 'front'"
-            v-model="settings.backSeconds"
-            label="Back duration"
-            suffix="seconds"
-            :min="1"
-            :max="60"
-            :step="1"
-            :rules="[value => value >= 1 && value <= 60 || 'Use 1–60 seconds']"
-          />
+        <div v-if="settings.mode === 'passive'">
+          <div class="passive-settings mt-5">
+            <v-number-input
+              v-if="settings.cardSides !== 'back'"
+              v-model="settings.frontSeconds"
+              label="Front duration"
+              suffix="seconds"
+              :min="1"
+              :max="60"
+              :step="1"
+              :rules="[value => value >= 1 && value <= 60 || 'Use 1–60 seconds']"
+            />
+            <v-number-input
+              v-if="settings.cardSides !== 'front'"
+              v-model="settings.backSeconds"
+              label="Back duration"
+              suffix="seconds"
+              :min="1"
+              :max="60"
+              :step="1"
+              :rules="[value => value >= 1 && value <= 60 || 'Use 1–60 seconds']"
+            />
+          </div>
         </div>
       </v-expand-transition>
     </v-card>
@@ -299,53 +325,55 @@ function updateSpeechEnabled(enabled: boolean | null) {
       </div>
 
       <v-expand-transition>
-        <div v-if="settings.speechEnabled" class="speech-language-fields mt-5">
-          <v-select
-            v-if="settings.cardSides !== 'back'"
-            v-model="settings.frontLanguage"
-            :items="speechLanguages"
-            item-title="title"
-            item-value="tag"
-            :disabled="!speechSupport.available"
-            :rules="[value => Boolean(value) || 'Select a front language']"
-          >
-            <template #label>Front language <span class="required-mark">*</span></template>
-          </v-select>
-          <v-select
-            v-if="settings.cardSides !== 'front'"
-            v-model="settings.backLanguage"
-            :items="speechLanguages"
-            item-title="title"
-            item-value="tag"
-            :disabled="!speechSupport.available"
-            :rules="[value => Boolean(value) || 'Select a back language']"
-          >
-            <template #label>Back language <span class="required-mark">*</span></template>
-          </v-select>
-          <div
-            v-if="settings.mode === 'passive' && settings.cardSides !== 'front'"
-            class="speech-repeat-setting"
-          >
-            <LabeledSlider
-              v-model="settings.backSpeechRepeatCount"
-              title="Repeat back aloud"
-              :min="MIN_FLASHCARD_BACK_SPEECH_REPEATS"
-              :max="MAX_FLASHCARD_BACK_SPEECH_REPEATS"
-              :step="1"
-              :value-label="settings.backSpeechRepeatCount === 1 ? 'Once' : `${settings.backSpeechRepeatCount} times`"
-              min-label="Once"
-              :max-label="`${MAX_FLASHCARD_BACK_SPEECH_REPEATS} times`"
-              aria-label="Number of times to read each flashcard back aloud"
-            />
-            <p class="mode-hint mt-3">
-              <v-icon icon="mdi-information-outline" size="18" />
-              Each repeat adds the configured back duration before advancing to the next card.
+        <div v-if="settings.speechEnabled">
+          <div class="speech-language-fields mt-5">
+            <v-select
+              v-if="settings.cardSides !== 'back'"
+              v-model="settings.frontLanguage"
+              :items="speechLanguages"
+              item-title="title"
+              item-value="tag"
+              :disabled="!speechSupport.available"
+              :rules="[value => Boolean(value) || 'Select a front language']"
+            >
+              <template #label>Front language <span class="required-mark">*</span></template>
+            </v-select>
+            <v-select
+              v-if="settings.cardSides !== 'front'"
+              v-model="settings.backLanguage"
+              :items="speechLanguages"
+              item-title="title"
+              item-value="tag"
+              :disabled="!speechSupport.available"
+              :rules="[value => Boolean(value) || 'Select a back language']"
+            >
+              <template #label>Back language <span class="required-mark">*</span></template>
+            </v-select>
+            <div
+              v-if="settings.mode === 'passive' && settings.cardSides !== 'front'"
+              class="speech-repeat-setting"
+            >
+              <LabeledSlider
+                v-model="settings.backSpeechRepeatCount"
+                title="Repeat back aloud"
+                :min="MIN_FLASHCARD_BACK_SPEECH_REPEATS"
+                :max="MAX_FLASHCARD_BACK_SPEECH_REPEATS"
+                :step="1"
+                :value-label="settings.backSpeechRepeatCount === 1 ? 'Once' : `${settings.backSpeechRepeatCount} times`"
+                min-label="Once"
+                :max-label="`${MAX_FLASHCARD_BACK_SPEECH_REPEATS} times`"
+                aria-label="Number of times to read each flashcard back aloud"
+              />
+              <p class="mode-hint mt-3">
+                <v-icon icon="mdi-information-outline" size="18" />
+                Each repeat adds the configured back duration before advancing to the next card.
+              </p>
+            </div>
+            <p class="speech-background-hint">
+              <v-icon icon="mdi-cellphone-sound" size="18" />
+              Passive reviews keep speaking on Android while the app is in the background or the screen is locked.
             </p>
           </div>
-          <p class="speech-background-hint">
-            <v-icon icon="mdi-cellphone-sound" size="18" />
-            Passive reviews keep speaking on Android while the app is in the background or the screen is locked.
-          </p>
         </div>
       </v-expand-transition>
     </v-card>
@@ -386,25 +414,26 @@ function updateSpeechEnabled(enabled: boolean | null) {
         aria-label="Maximum cards per Review set session"
       />
       <v-expand-transition>
-        <v-number-input
-          v-if="customMaxCardsVisible"
-          v-model="settings.maxCards"
-          class="mt-4"
-          :min="Math.max(CUSTOM_MAX_CARDS_THRESHOLD, cardLimit.minimum)"
-          :max="cardLimit.maximum"
-          :step="1"
-          :rules="[
-            value => Number.isInteger(Number(value)) || 'Use a whole number',
-            value => Number(value) >= Math.max(CUSTOM_MAX_CARDS_THRESHOLD, cardLimit.minimum)
-              && Number(value) <= cardLimit.maximum
-              || `Use ${Math.max(CUSTOM_MAX_CARDS_THRESHOLD, cardLimit.minimum)}–${cardLimit.maximum} cards`,
-          ]"
-          autocomplete="off"
-          persistent-hint
-          :hint="`Choose a custom limit up to ${cardLimit.maximum} available cards`"
-        >
-          <template #label>Custom max cards <span class="required-mark">*</span></template>
-        </v-number-input>
+        <div v-if="customMaxCardsVisible">
+          <v-number-input
+            v-model="settings.maxCards"
+            class="mt-4"
+            :min="Math.max(CUSTOM_MAX_CARDS_THRESHOLD, cardLimit.minimum)"
+            :max="cardLimit.maximum"
+            :step="1"
+            :rules="[
+              value => Number.isInteger(Number(value)) || 'Use a whole number',
+              value => Number(value) >= Math.max(CUSTOM_MAX_CARDS_THRESHOLD, cardLimit.minimum)
+                && Number(value) <= cardLimit.maximum
+                || `Use ${Math.max(CUSTOM_MAX_CARDS_THRESHOLD, cardLimit.minimum)}–${cardLimit.maximum} cards`,
+            ]"
+            autocomplete="off"
+            persistent-hint
+            :hint="`Choose a custom limit up to ${cardLimit.maximum} available cards`"
+          >
+            <template #label>Custom max cards <span class="required-mark">*</span></template>
+          </v-number-input>
+        </div>
       </v-expand-transition>
       <p class="mode-hint mt-3">
         <v-icon icon="mdi-information-outline" size="18" />
@@ -413,43 +442,46 @@ function updateSpeechEnabled(enabled: boolean | null) {
       </p>
       <v-divider class="my-5" />
       <template v-if="settings.ejectBehavior">
-        <label class="field-label">Eject button behavior <span class="required-mark">*</span></label>
-        <v-radio-group
-          v-if="vuetifyDefaultsAvailable"
-          v-model="settings.ejectBehavior"
-          class="eject-behavior-options mt-2"
-          color="secondary"
-          hide-details="auto"
-        >
-          <v-radio
-            v-for="option in FLASHCARD_REVIEW_EJECT_BEHAVIOR_OPTIONS"
-            :key="option.value"
-            :value="option.value"
+        <label class="field-label">Eject button behavior</label>
+        <div v-if="vuetifyDefaultsAvailable" class="eject-behavior-options mt-2">
+          <v-checkbox
+            v-model="ejectLoadsNext"
+            color="secondary"
             hide-details="auto"
           >
             <template #label>
               <span class="eject-behavior-option py-2">
-                <strong>{{ option.title }}</strong>
-                <small>{{ option.subtitle }}</small>
+                <strong>Load the next card.</strong>
+                <small>Keep the active list filled from the rest of the Review set.</small>
               </span>
             </template>
-          </v-radio>
-        </v-radio-group>
-        <div v-else class="eject-behavior-options" role="radiogroup">
-          <label
-            v-for="option in FLASHCARD_REVIEW_EJECT_BEHAVIOR_OPTIONS"
-            :key="option.value"
-            class="eject-behavior-native-option"
+          </v-checkbox>
+          <v-checkbox
+            v-model="ejectExcludes"
+            color="secondary"
+            hide-details="auto"
           >
-            <input
-              v-model="settings.ejectBehavior"
-              type="radio"
-              :name="ejectBehaviorName"
-              :value="option.value"
-            >
+            <template #label>
+              <span class="eject-behavior-option py-2">
+                <strong>Exclude card.</strong>
+                <small>Prevent the ejected card from appearing in future sessions.</small>
+              </span>
+            </template>
+          </v-checkbox>
+        </div>
+        <div v-else class="eject-behavior-options mt-2">
+          <label class="eject-behavior-native-option">
+            <input v-model="ejectLoadsNext" type="checkbox">
             <span class="eject-behavior-option py-2">
-              <strong>{{ option.title }}</strong>
-              <small>{{ option.subtitle }}</small>
+              <strong>Load the next card.</strong>
+              <small>Keep the active list filled from the rest of the Review set.</small>
+            </span>
+          </label>
+          <label class="eject-behavior-native-option">
+            <input v-model="ejectExcludes" type="checkbox">
+            <span class="eject-behavior-option py-2">
+              <strong>Exclude card.</strong>
+              <small>Prevent the ejected card from appearing in future sessions.</small>
             </span>
           </label>
         </div>

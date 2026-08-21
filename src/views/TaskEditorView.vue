@@ -37,8 +37,8 @@ const flashcardStore = useFlashcardStore()
 const trackingStore = useTrackingStore()
 const form = ref()
 const saving = ref(false)
-const deleting = ref(false)
-const deleteDialog = ref(false)
+const archiving = ref(false)
+const archiveDialog = ref(false)
 const openStep = ref<number>()
 const error = ref('')
 const reminderAvailable = taskReminderSettingsAvailable()
@@ -111,8 +111,8 @@ const completionStyleItems = computed<ProgramStepCompletionStyleItem[]>(() => [
 ])
 
 const weekdays = [
-  { value: 1, label: 'M' }, { value: 2, label: 'T' }, { value: 3, label: 'W' },
-  { value: 4, label: 'T' }, { value: 5, label: 'F' }, { value: 6, label: 'S' }, { value: 0, label: 'S' },
+  { value: 1, label: 'Monday' }, { value: 2, label: 'Tuesday' }, { value: 3, label: 'Wednesday' },
+  { value: 4, label: 'Thursday' }, { value: 5, label: 'Friday' }, { value: 6, label: 'Saturday' }, { value: 0, label: 'Sunday' },
 ]
 const units = [
   { title: 'Hours', value: 'hours' },
@@ -130,6 +130,7 @@ const draft = reactive<TaskDraft>({
   mandatory: true,
   reviewWhenMissed: false,
   active: true,
+  archived: false,
   scheduleMode: 'time_based',
   scheduledTime: '09:00',
   startDate: format(new Date(), 'yyyy-MM-dd'),
@@ -154,7 +155,7 @@ const draft = reactive<TaskDraft>({
   sessionTargetSeconds: 20 * 60,
   trackingTrackers: [],
   reminderEnabled: false,
-  reminderTimes: ['20:00'],
+  reminderTimes: [],
   steps: [],
 })
 const scheduledTimeModel = computed({
@@ -551,19 +552,23 @@ async function save() {
   }
 }
 
-async function removeTask() {
+async function setTaskArchived() {
   if (!draft.id) return
-  deleting.value = true
+  const task = store.tasks.find(item => item.id === draft.id)
+  if (!task) return
+  archiving.value = true
   error.value = ''
   try {
-    await store.deleteTask(draft.id)
-    deleteDialog.value = false
+    await store.setTaskArchived(task, !task.archived)
+    archiveDialog.value = false
     await router.replace('/tasks')
   } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : 'Could not delete the task.'
-    deleteDialog.value = false
+    error.value = cause instanceof Error
+      ? cause.message
+      : `Could not ${draft.archived ? 'restore' : 'archive'} the task.`
+    archiveDialog.value = false
   } finally {
-    deleting.value = false
+    archiving.value = false
   }
 }
 
@@ -687,28 +692,32 @@ async function removeTask() {
           label="What counts"
           :items="sessionCountItems"
         />
-        <v-select
-          v-model="draft.sessionGoalType"
-          label="Goal"
-          :items="[
-            { title: 'Complete one session', value: 'complete' },
-            { title: 'Reach a duration', value: 'duration' },
-          ]"
-        />
-        <v-expand-transition>
-          <div v-if="draft.sessionGoalType === 'duration'" class="session-duration-setting">
-            <label class="field-label">Daily duration</label>
-            <TimerWheelPicker
-              v-model="draft.sessionTargetSeconds"
-              :max-minutes="180"
-              mode="duration"
-              class="mt-2"
-            />
-            <p class="field-help mt-2">
-              Time from completed sessions and sessions you end early is added to this task.
-            </p>
-          </div>
-        </v-expand-transition>
+        <div>
+          <v-select
+            v-model="draft.sessionGoalType"
+            label="Goal"
+            :items="[
+              { title: 'Complete one session', value: 'complete' },
+              { title: 'Reach a duration', value: 'duration' },
+            ]"
+          />
+          <v-expand-transition>
+            <div v-if="draft.sessionGoalType === 'duration'">
+              <div class="session-duration-setting pt-4">
+                <label class="field-label">Daily duration</label>
+                <TimerWheelPicker
+                  v-model="draft.sessionTargetSeconds"
+                  :max-minutes="180"
+                  mode="duration"
+                  class="mt-2"
+                />
+                <p class="field-help mt-2">
+                  Time from completed sessions and sessions you end early is added to this task.
+                </p>
+              </div>
+            </div>
+          </v-expand-transition>
+        </div>
       </v-card>
 
       <v-card v-if="draft.type === 'tracking'" class="surface-card field-stack pa-5 mb-4">
@@ -770,36 +779,41 @@ async function removeTask() {
           <h2 class="text-body-1 font-weight-black">Time</h2>
           <p class="text-body-2 muted mt-1">Place this task in the all-day list or at a specific time.</p>
         </div>
-        <v-btn-toggle
-          v-model="draft.scheduleMode"
-          class="schedule-mode-toggle"
-          color="secondary"
-          selected-class="schedule-mode-toggle--selected"
-          mandatory
-        >
-          <v-btn value="all_day" prepend-icon="mdi-calendar-blank-outline">
-            All day
-          </v-btn>
-          <v-btn value="time_based" prepend-icon="mdi-clock-outline">
-            Time based
-          </v-btn>
-        </v-btn-toggle>
-        <v-expand-transition>
-          <div v-if="draft.scheduleMode === 'time_based'" class="scheduled-time-setting">
-            <label class="field-label">Scheduled time <span class="text-error">*</span></label>
-            <TimerWheelPicker
-              v-model="scheduledTimeModel"
-              mode="time"
-              class="mt-2"
-            />
-          </div>
-        </v-expand-transition>
+        <div>
+          <v-btn-toggle
+            v-model="draft.scheduleMode"
+            class="schedule-mode-toggle"
+            color="secondary"
+            selected-class="schedule-mode-toggle--selected"
+            mandatory
+          >
+            <v-btn value="all_day" prepend-icon="mdi-calendar-blank-outline">
+              All day
+            </v-btn>
+            <v-btn value="time_based" prepend-icon="mdi-clock-outline">
+              Time based
+            </v-btn>
+          </v-btn-toggle>
+          <v-expand-transition>
+            <div v-if="draft.scheduleMode === 'time_based'">
+              <div class="scheduled-time-setting pt-4">
+                <label class="field-label">Scheduled time <span class="text-error">*</span></label>
+                <TimerWheelPicker
+                  v-model="scheduledTimeModel"
+                  mode="time"
+                  class="mt-2"
+                />
+              </div>
+            </div>
+          </v-expand-transition>
+        </div>
       </v-card>
 
       <TaskReminderSettings
         v-model:enabled="draft.reminderEnabled"
         v-model:times="draft.reminderTimes"
         :available="reminderAvailable"
+        :default-time="draft.scheduleMode === 'time_based' ? draft.scheduledTime : undefined"
       />
 
       <v-card v-if="draft.type !== 'program'" class="surface-card field-stack pa-5 mb-4">
@@ -1079,22 +1093,26 @@ async function removeTask() {
     <FormActionBar
       :primary-text="isEditing ? 'Save' : 'Create'"
       :loading="saving"
-      :show-delete="isEditing"
-      delete-label="Delete routine"
-      :delete-disabled="deleting"
+      :show-archive="isEditing"
+      :archived="draft.archived"
+      :archive-label="draft.archived ? 'Restore routine' : 'Archive routine'"
+      :archive-disabled="archiving"
       @submit="save"
       @cancel="router.back()"
-      @delete="deleteDialog = true"
+      @archive="archiveDialog = true"
     />
 
     <ConfirmDialog
-      v-model="deleteDialog"
-      title="Delete this routine?"
-      message="This permanently removes the routine, its program steps, logged entries, and history. This action cannot be undone."
-      confirm-text="Delete routine"
-      icon="mdi-delete-outline"
-      :loading="deleting"
-      @confirm="removeTask"
+      v-model="archiveDialog"
+      :title="draft.archived ? 'Restore this routine?' : 'Archive this routine?'"
+      :message="draft.archived
+        ? 'This routine will return to the Tasks view with its previous active or paused state.'
+        : 'This routine will leave your schedule, while its settings, logged entries, and history remain available.'"
+      :confirm-text="draft.archived ? 'Restore routine' : 'Archive routine'"
+      :confirm-color="draft.archived ? 'secondary' : 'warning'"
+      :icon="draft.archived ? 'mdi-archive-arrow-up-outline' : 'mdi-archive-arrow-down-outline'"
+      :loading="archiving"
+      @confirm="setTaskArchived"
     />
   </main>
 </template>
@@ -1115,7 +1133,7 @@ async function removeTask() {
 .field-label { color: rgb(var(--v-theme-on-surface) / .68); font-size: .75rem; font-weight: 750; }
 .scheduled-days, .weekday-wrap { width: 100%; min-width: 0; max-width: 100%; }
 .weekday-picker { display: flex; width: 100%; min-width: 0; max-width: 100%; flex-wrap: wrap; justify-content: flex-start; gap: .5rem; height: auto }
-.weekday-picker :deep(.v-btn) { width: auto; min-width: 2.75rem; flex: 1 1 calc(25% - .5rem); height: 2rem !important; }
+.weekday-picker :deep(.v-btn) { width: auto; min-width: 2.75rem; flex: 1 1 calc(50% - .5rem); min-height: 2.75rem; }
 .weekday-picker :deep(.day-picker--selected) {
   background: rgb(var(--v-theme-secondary)) !important;
   color: rgb(var(--v-theme-on-secondary)) !important;

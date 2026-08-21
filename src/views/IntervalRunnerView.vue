@@ -30,6 +30,8 @@ import {
 import {
   cardMatchesTags,
   createIntervalFlashcardReviewSnapshot,
+  flashcardEjectExcludes,
+  flashcardEjectLoadsNext,
   flashcardReviewActionFromSwipe,
   intervalFlashcardEjectionOffsetMs,
   intervalFlashcardNavigationOffsetMs,
@@ -404,6 +406,7 @@ const eligibleTaskProgress = computed(() => {
       )))
       && !item.locked
       && item.task.active
+      && !item.task.archived
       && (Boolean(item.occurrence)
         || (item.programStep
           ? stepsForDate(item.task, taskStore.steps, today).some((step) => step.id === item.programStep?.id)
@@ -1598,7 +1601,7 @@ async function ejectIntervalFlashcard() {
     const cards = review.cards.filter(card => card.id !== cardId)
     const reserveCardIds = [...(review.reserveCardIds || [])]
     const maxCards = review.maxCards || review.cards.length
-    if (review.ejectBehavior === 'replace' && reserveCardIds.length) {
+    if (flashcardEjectLoadsNext(review.ejectBehavior) && reserveCardIds.length) {
       await ensureIntervalFlashcardSource()
       while (reserveCardIds.length && cards.length < maxCards) {
         const replacementId = reserveCardIds.shift()!
@@ -1615,7 +1618,7 @@ async function ejectIntervalFlashcard() {
         })
       }
     }
-    if (review.ejectBehavior === 'exclude') {
+    if (flashcardEjectExcludes(review.ejectBehavior)) {
       if (!reviewSet) throw new Error('The Review set for this session is no longer available.')
       await flashcardStore.saveReviewSetPreferences(reviewSet.id, {
         ...reviewSet,
@@ -1638,7 +1641,7 @@ async function ejectIntervalFlashcard() {
     })
     playFlashcardEjectCue()
   } catch (cause) {
-    if (review.ejectBehavior === 'exclude' && reviewSet) {
+    if (flashcardEjectExcludes(review.ejectBehavior) && reviewSet) {
       try {
         await flashcardStore.saveReviewSetPreferences(reviewSet.id, {
           ...reviewSet,

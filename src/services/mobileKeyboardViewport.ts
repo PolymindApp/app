@@ -117,6 +117,7 @@ export function installMobileKeyboardViewport(
   const revealFocusedField = () => {
     scrollTimer = undefined
     if (!focusedField?.isConnected || root.activeElement !== focusedField) return
+    if (focusedField.closest('[data-keyboard-viewport-fill="true"]')) return
 
     const fieldContainer = focusedField.closest<HTMLElement>('.v-input') ?? focusedField
     const bounds = fieldContainer.getBoundingClientRect()

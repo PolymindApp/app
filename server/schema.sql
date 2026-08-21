@@ -43,6 +43,7 @@ CREATE TABLE flashcards (
     owner TEXT NOT NULL,
     front TEXT NOT NULL DEFAULT '',
     back TEXT NOT NULL DEFAULT '',
+    transliteration TEXT NOT NULL DEFAULT '',
     note VARCHAR(2000) NOT NULL DEFAULT '',
     front_audio_url VARCHAR(2048) NOT NULL DEFAULT '',
     front_audio_file VARCHAR(64) NOT NULL DEFAULT '',
@@ -158,6 +159,7 @@ CREATE TABLE tasks (
     mandatory BOOLEAN NOT NULL DEFAULT FALSE,
     review_when_missed BOOLEAN NOT NULL DEFAULT FALSE,
     active BOOLEAN NOT NULL DEFAULT FALSE,
+    archived BOOLEAN NOT NULL DEFAULT FALSE,
     schedule_mode TEXT NOT NULL DEFAULT 'all_day',
     scheduled_time TEXT NOT NULL DEFAULT '',
     start_date TEXT NOT NULL DEFAULT '',
@@ -188,6 +190,7 @@ CREATE TABLE tasks (
 );
 
 CREATE INDEX idx_tasks_owner_active ON tasks (owner, active);
+CREATE INDEX idx_tasks_owner_archived_order ON tasks (owner, archived, sort_order);
 CREATE INDEX idx_tasks_owner_interval_template
     ON tasks (owner, interval_template);
 CREATE INDEX idx_tasks_owner_flashcard_review_set

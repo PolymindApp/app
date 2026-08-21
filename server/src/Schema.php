@@ -40,6 +40,7 @@ final class Schema
                 'fields' => [
                     'front' => self::text(5000, true),
                     'back' => self::text(5000, true),
+                    'transliteration' => self::text(5000),
                     'note' => self::text(2000),
                     'front_audio_url' => self::text(2048),
                     'front_audio_file' => self::text(64),
@@ -70,7 +71,7 @@ final class Schema
                     'indefinite' => self::boolean(),
                     'time_limit_seconds' => self::integer(0, 86340),
                     'max_cards' => self::integer(1, 100),
-                    'eject_behavior' => self::choice(['remove', 'replace', 'exclude'], true),
+                    'eject_behavior' => self::choice(['remove', 'replace', 'exclude', 'replace_exclude'], true),
                     'front_seconds' => self::integer(1, 60),
                     'back_seconds' => self::integer(1, 60),
                     'back_speech_repeat_count' => self::integer(1, 5),
@@ -105,6 +106,7 @@ final class Schema
                     'mandatory' => self::boolean(),
                     'review_when_missed' => self::boolean(),
                     'active' => self::boolean(),
+                    'archived' => self::boolean(),
                     'schedule_mode' => self::choice(['all_day', 'time_based']),
                     'scheduled_time' => self::timeKey(false, true),
                     'start_date' => self::dateKey(true),
@@ -135,7 +137,7 @@ final class Schema
                 ],
                 'required' => ['name', 'type', 'start_date', 'recurrence_type'],
                 'sort' => ['name', 'sort_order', 'start_date'],
-                'filter' => ['active', 'type', 'start_date'],
+                'filter' => ['active', 'archived', 'type', 'start_date'],
             ],
             'program_steps' => [
                 'fields' => [
@@ -283,7 +285,7 @@ final class Schema
                     'indefinite_snapshot' => self::boolean(),
                     'time_limit_seconds_snapshot' => self::integer(0, 86340),
                     'max_cards_snapshot' => self::integer(1, 100),
-                    'eject_behavior_snapshot' => self::choice(['remove', 'replace', 'exclude'], true),
+                    'eject_behavior_snapshot' => self::choice(['remove', 'replace', 'exclude', 'replace_exclude'], true),
                     'sort_snapshot' => self::choice([
                         'difficult', 'never_reviewed', 'least_recent', 'recently_added', 'random',
                     ], true),

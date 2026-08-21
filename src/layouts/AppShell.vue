@@ -17,7 +17,6 @@ import {
   MAIN_MENU_VISIBILITY_CHANGED_EVENT,
   readStoredHiddenMainMenuItems,
   readStoredMainMenuOrder,
-  routeTransitionIsInstant,
   visibleMainNavItems,
 } from '@/services/navigation'
 import {
@@ -65,7 +64,7 @@ const reducedMotion = ref(
   && window.matchMedia('(prefers-reduced-motion: reduce)').matches,
 )
 const documentTitle = typeof document === 'undefined'
-  ? 'BackOnTrack — Make life programmable.'
+  ? 'BackOnTrack — Build your way forward.'
   : document.title
 let documentTitleFrame = 0
 let documentTitleTimer: number | undefined
@@ -269,14 +268,8 @@ function restoreEarlyPageLeave(route?: string) {
 }
 
 const removeTransitionGuard = router.beforeEach((to, from) => {
-  const instantTransition = routeTransitionIsInstant(from.name, to.name)
-  if (to.meta.auth && from.meta.auth && to.path !== from.path && !instantTransition) {
+  if (to.meta.auth && from.meta.auth && to.path !== from.path) {
     beginEarlyPageLeave(to.fullPath)
-  }
-
-  if (instantTransition) {
-    pageTransition.value = 'page-instant'
-    return
   }
 
   const menuDirection = mainMenuTransitionDirection(items.value, from.path, to.path)
@@ -289,6 +282,11 @@ const removeTransitionGuard = router.beforeEach((to, from) => {
 
   const toDepth = Number(to.meta.pageDepth ?? 0)
   const fromDepth = Number(from.meta.pageDepth ?? 0)
+
+  if (to.meta.pageMotion === 'horizontal' || from.meta.pageMotion === 'horizontal') {
+    pageTransition.value = toDepth < fromDepth ? 'page-level-back' : 'page-level-forward'
+    return
+  }
 
   if (toDepth > fromDepth) {
     pageTransition.value = 'page-depth-deeper'

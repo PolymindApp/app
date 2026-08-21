@@ -30,6 +30,7 @@ export interface Task {
   mandatory: boolean
   reviewWhenMissed: boolean
   active: boolean
+  archived?: boolean
   scheduleMode?: TaskScheduleMode
   scheduledTime?: string
   startDate: string
@@ -341,7 +342,7 @@ export type FlashcardReviewSide = 'front' | 'back'
 export type FlashcardReviewCardSides = 'both' | FlashcardReviewSide
 export type FlashcardReviewSort = 'difficult' | 'never_reviewed' | 'least_recent' | 'recently_added' | 'random'
 export type FlashcardReviewSortDirection = 'asc' | 'desc'
-export type FlashcardReviewEjectBehavior = 'remove' | 'replace' | 'exclude'
+export type FlashcardReviewEjectBehavior = 'remove' | 'replace' | 'exclude' | 'replace_exclude'
 export type FlashcardReviewStatus = 'running' | 'paused' | 'completed' | 'ended'
 export type FlashcardReviewOutcome = 'success' | 'error' | 'passive' | 'ejected'
 export type FlashcardReviewAction = 'success' | 'error' | 'view' | 'previous' | 'next' | 'push' | 'eject' | 'undo_eject' | 'pause' | 'resume' | 'restart' | 'end'
@@ -375,6 +376,7 @@ export interface RunnerSessionMenuItem {
 }
 
 export type FlashcardBulkAction =
+  | 'swap_columns'
   | 'swap_front_back'
   | 'swap_note_back'
   | 'add_tags'
@@ -384,6 +386,7 @@ export type FlashcardBulkAction =
   | 'export_clipboard'
   | 'delete'
 export type FlashcardBulkRecordAction = Exclude<FlashcardBulkAction, 'export_clipboard'>
+export type FlashcardBulkSwapColumn = 'front' | 'back' | 'transliteration' | 'note'
 export type FlashcardSelectionAction = 'exclude' | 'include'
 export interface FlashcardSelectionActionItem {
   action: FlashcardSelectionAction
@@ -417,6 +420,7 @@ export interface Flashcard {
   id: string
   front: string
   back: string
+  transliteration?: string
   note: string
   frontAudio?: string
   backAudio?: string
@@ -434,6 +438,7 @@ export interface FlashcardDraft {
   id?: string
   front: string
   back: string
+  transliteration?: string
   note: string
   tags: string[]
 }
@@ -441,6 +446,7 @@ export interface FlashcardDraft {
 export interface FlashcardImportRow {
   front: string
   back: string
+  transliteration?: string
   note: string
   tags: string[]
 }

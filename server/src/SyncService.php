@@ -613,6 +613,7 @@ final class SyncService
             );
             if ($settings['mode'] !== 'passive') {
                 $settings['indefinite'] = false;
+                $settings['time_limit_seconds'] = 0;
             }
             if ((int) $settings['time_limit_seconds'] % 60 !== 0) {
                 throw new ApiException(422, 'Set the Review set time limit in whole minutes.');
@@ -1034,6 +1035,12 @@ final class SyncService
     private function deleteOwnedRecord(string $resource, array $config, string $recordId, string $account): array
     {
         $current = $this->ownedRecord($resource, $recordId, $account);
+        if (
+            $resource === 'flashcard_review_sessions'
+            && in_array((string) ($current['status'] ?? ''), ['running', 'paused'], true)
+        ) {
+            throw new ApiException(409, 'An active review cannot be deleted. End it first.');
+        }
         $taskLogImageFiles = [];
         if ($resource === 'tasks') {
             $statement = $this->database->pdo->prepare(
@@ -1144,7 +1151,7 @@ final class SyncService
             throw new ApiException(500, 'Flashcard schema is unavailable.');
         }
         $payload = array_intersect_key($payload, array_flip([
-            'front', 'back', 'note', 'front_audio_url', 'back_audio_url',
+            'front', 'back', 'transliteration', 'note', 'front_audio_url', 'back_audio_url',
         ]));
         if ($kind === 'create') {
             $tags = $this->stringArray($reviewSet['tags'] ?? []);
@@ -1229,7 +1236,7 @@ final class SyncService
         }
         if ($resource === 'flashcards') {
             $values += [
-                'note' => '',
+                'transliteration' => '', 'note' => '',
                 'front_audio_url' => '', 'front_audio_file' => '',
                 'back_audio_url' => '', 'back_audio_file' => '',
                 'tags' => [], 'created_at' => $now, 'updated_at' => $now,
@@ -1299,6 +1306,10 @@ final class SyncService
                 ->execute(['id' => $recordId]);
             $pdo->prepare('DELETE FROM flashcard_review_card_stats WHERE card = :id')
                 ->execute(['id' => $recordId]);
+        } elseif ($resource === 'flashcard_review_sessions') {
+            $pdo->prepare(
+                'DELETE FROM flashcard_review_events WHERE session = :id AND owner = :owner',
+            )->execute(['id' => $recordId, 'owner' => $account]);
         }
         $pdo->prepare("DELETE FROM {$resource} WHERE id = :id AND owner = :owner")
             ->execute(['id' => $recordId, 'owner' => $account]);

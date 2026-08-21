@@ -1,9 +1,11 @@
 import type {
   Flashcard,
   FlashcardBulkAction,
+  FlashcardBulkSwapColumn,
   FlashcardReviewSession,
   FlashcardReviewSet,
   FlashcardReviewCardSides,
+  FlashcardReviewEjectBehavior,
   FlashcardReviewSettings,
   FlashcardReviewSide,
   FlashcardReviewSort,
@@ -15,7 +17,7 @@ import type {
 export const MIN_FLASHCARD_SESSION_CARDS = 1
 export const MAX_FLASHCARD_SESSION_CARDS = 100
 export const DEFAULT_FLASHCARD_SESSION_CARDS = 20
-export const DEFAULT_FLASHCARD_REVIEW_TIME_LIMIT_SECONDS = 30 * 60
+export const DEFAULT_FLASHCARD_REVIEW_TIME_LIMIT_SECONDS = 60 * 60
 export const MIN_FLASHCARD_REVIEW_TIME_LIMIT_SECONDS = 60
 export const MAX_FLASHCARD_REVIEW_TIME_LIMIT_SECONDS = 23 * 3600 + 59 * 60
 export const MIN_FLASHCARD_BACK_SPEECH_REPEATS = 1
@@ -136,23 +138,23 @@ export const FLASHCARD_REVIEW_SELECTION_MENU_ITEMS = [
   },
 ] as const
 
-export const FLASHCARD_REVIEW_EJECT_BEHAVIOR_OPTIONS = [
-  {
-    title: 'Remove from session',
-    value: 'remove',
-    subtitle: 'Ejected cards leave the active list without loading more cards.',
-  },
-  {
-    title: 'Load the next card',
-    value: 'replace',
-    subtitle: 'Keep the active list filled from the rest of the Review set until every card has appeared.',
-  },
-  {
-    title: 'Eject and exclude',
-    value: 'exclude',
-    subtitle: 'Remove the card now and exclude it from future sessions in this Review set.',
-  },
-] as const
+export function flashcardEjectLoadsNext(behavior: FlashcardReviewEjectBehavior) {
+  return behavior === 'replace' || behavior === 'replace_exclude'
+}
+
+export function flashcardEjectExcludes(behavior: FlashcardReviewEjectBehavior) {
+  return behavior === 'exclude' || behavior === 'replace_exclude'
+}
+
+export function flashcardEjectBehavior(
+  loadNext: boolean,
+  exclude: boolean,
+): FlashcardReviewEjectBehavior {
+  if (loadNext && exclude) return 'replace_exclude'
+  if (loadNext) return 'replace'
+  if (exclude) return 'exclude'
+  return 'remove'
+}
 
 export function updateFlashcardReviewExclusions(
   excludedCards: readonly string[],
@@ -169,7 +171,7 @@ export function flashcardReviewSettingsSignature(settings: FlashcardReviewSettin
     mode: settings.mode,
     cardSides: settings.cardSides,
     indefinite: settings.indefinite,
-    timeLimitSeconds: settings.timeLimitSeconds || 0,
+    timeLimitSeconds: settings.mode === 'passive' ? settings.timeLimitSeconds || 0 : 0,
     maxCards: settings.maxCards,
     ejectBehavior: settings.ejectBehavior || 'remove',
     frontSeconds: settings.frontSeconds,
@@ -205,8 +207,7 @@ export function flashcardReviewSettingsAreValid(
 }
 
 export const FLASHCARD_BULK_MENU_ITEMS = [
-  { action: 'swap_front_back', title: 'Swap front and back', icon: 'mdi-swap-horizontal' },
-  { action: 'swap_note_back', title: 'Swap note and back', icon: 'mdi-swap-horizontal' },
+  { action: 'swap_columns', title: 'Swap column content', icon: 'mdi-swap-horizontal' },
   { action: 'add_tags', title: 'Add tags', icon: 'mdi-tag-plus-outline', divider: true },
   { action: 'set_tags', title: 'Set tags', icon: 'mdi-tag-check-outline' },
   { action: 'remove_tags', title: 'Remove tags', icon: 'mdi-tag-minus-outline', requiresTags: true },
@@ -226,6 +227,73 @@ export const FLASHCARD_BULK_MENU_ITEMS = [
   color?: 'error'
   divider?: boolean
 }>
+
+export const FLASHCARD_BULK_SWAP_COLUMN_OPTIONS: ReadonlyArray<{
+  title: string
+  value: FlashcardBulkSwapColumn
+}> = [
+  { title: 'Front', value: 'front' },
+  { title: 'Back', value: 'back' },
+  { title: 'Transliteration', value: 'transliteration' },
+  { title: 'Note', value: 'note' },
+]
+
+const FLASHCARD_BULK_SWAP_COLUMN_RULES: Record<FlashcardBulkSwapColumn, {
+  required: boolean
+  maxLength: number
+}> = {
+  front: { required: true, maxLength: 5000 },
+  back: { required: true, maxLength: 5000 },
+  transliteration: { required: false, maxLength: 5000 },
+  note: { required: false, maxLength: 2000 },
+}
+
+function flashcardBulkColumnLabel(column: FlashcardBulkSwapColumn) {
+  return FLASHCARD_BULK_SWAP_COLUMN_OPTIONS.find(option => option.value === column)?.title
+    || column
+}
+
+function flashcardBulkColumnValue(card: Flashcard, column: FlashcardBulkSwapColumn) {
+  return card[column] || ''
+}
+
+export function flashcardSwapColumnsError(
+  cards: readonly Flashcard[],
+  columns: readonly FlashcardBulkSwapColumn[],
+) {
+  const [firstColumn, secondColumn] = columns
+  if (!firstColumn || !secondColumn || firstColumn === secondColumn) {
+    return 'Choose two different columns.'
+  }
+  for (const [target, source] of [
+    [firstColumn, secondColumn],
+    [secondColumn, firstColumn],
+  ] as const) {
+    const rules = FLASHCARD_BULK_SWAP_COLUMN_RULES[target]
+    const invalidRequired = cards.some(card => !flashcardBulkColumnValue(card, source).trim())
+    if (rules.required && invalidRequired) {
+      return `Every selected card needs ${flashcardBulkColumnLabel(source).toLocaleLowerCase()} content because it will become the ${flashcardBulkColumnLabel(target).toLocaleLowerCase()}.`
+    }
+    const tooLong = cards.some(card => (
+      [...flashcardBulkColumnValue(card, source)].length > rules.maxLength
+    ))
+    if (tooLong) {
+      return `${flashcardBulkColumnLabel(source)} content must be ${rules.maxLength.toLocaleString()} characters or fewer to become the ${flashcardBulkColumnLabel(target).toLocaleLowerCase()}.`
+    }
+  }
+  return ''
+}
+
+export function swapFlashcardColumns(
+  card: Flashcard,
+  columns: readonly [FlashcardBulkSwapColumn, FlashcardBulkSwapColumn],
+) {
+  const [firstColumn, secondColumn] = columns
+  const firstValue = flashcardBulkColumnValue(card, firstColumn)
+  card[firstColumn] = flashcardBulkColumnValue(card, secondColumn)
+  card[secondColumn] = firstValue
+  return card
+}
 
 const MIN_FLASHCARD_SWIPE_DISTANCE = 56
 const FLASHCARD_SWIPE_AXIS_RATIO = 1.2
@@ -329,13 +397,13 @@ export function cardMatchesTags(card: Pick<Flashcard, 'tags'>, selectedTags: str
 }
 
 export function cardMatchesSearch(
-  card: Pick<Flashcard, 'front' | 'back' | 'note'>,
+  card: Pick<Flashcard, 'front' | 'back' | 'transliteration' | 'note'>,
   tagNames: readonly string[],
   query: string,
 ) {
   const terms = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean)
   if (!terms.length) return true
-  const searchableText = [card.front, card.back, card.note, ...tagNames]
+  const searchableText = [card.front, card.back, card.transliteration || '', card.note, ...tagNames]
     .join('\n')
     .toLocaleLowerCase()
   return terms.every(term => searchableText.includes(term))
@@ -445,7 +513,7 @@ export function flashcardReviewQueueState(
   const queue = candidates.slice(0, reviewSet.maxCards)
   return {
     queue,
-    reserveCardIds: reviewSet.ejectBehavior === 'replace'
+    reserveCardIds: flashcardEjectLoadsNext(reviewSet.ejectBehavior)
       ? candidates.slice(queue.length).map(card => card.id)
       : [],
   }
@@ -469,7 +537,7 @@ export function createFlashcardReviewPreviewSession(
     mode: reviewSet.mode,
     cardSides: reviewSet.cardSides,
     indefinite: reviewSet.mode === 'passive' && reviewSet.indefinite,
-    timeLimitSeconds: reviewSet.timeLimitSeconds || 0,
+    timeLimitSeconds: reviewSet.mode === 'passive' ? reviewSet.timeLimitSeconds || 0 : 0,
     maxCards: reviewSet.maxCards,
     ejectBehavior: reviewSet.ejectBehavior || 'remove',
     sortMode: reviewSet.sortMode,

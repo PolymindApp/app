@@ -480,10 +480,24 @@ async function previewIntervalTypeSound(kind: IntervalStepKind, sound: IntervalC
       </div>
 
       <div class="settings-legal-actions mt-5">
-        <v-btn to="/privacy" variant="outlined" prepend-icon="mdi-shield-lock-outline">
+        <v-btn
+          block
+          spaced="end"
+          to="/settings/privacy"
+          variant="outlined"
+          prepend-icon="mdi-shield-lock-outline"
+          append-icon="mdi-chevron-right"
+        >
           Privacy policy
         </v-btn>
-        <v-btn to="/terms" variant="outlined" prepend-icon="mdi-file-document-check-outline">
+        <v-btn
+          block
+          spaced="end"
+          to="/settings/terms"
+          variant="outlined"
+          prepend-icon="mdi-file-document-check-outline"
+          append-icon="mdi-chevron-right"
+        >
           Terms and conditions
         </v-btn>
       </div>
