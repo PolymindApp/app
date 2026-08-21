@@ -678,10 +678,6 @@ async function startPreviewReview() {
         : {}),
       taskDate: preview.taskDate,
     })
-    currentSessionId.value = started.id
-    previewSession.value = undefined
-    initializeLocalState(started)
-    lastSpokenKey = ''
     skipLeavePause = true
     try {
       await router.replace({
@@ -694,8 +690,19 @@ async function startPreviewReview() {
     } finally {
       skipLeavePause = false
     }
-    const restoredBackground = await reconcileBackgroundReview()
-    if (!restoredBackground) await syncNativeBackground()
+
+    // A normal route handoff mounts the running session separately. Keeping this
+    // preview intact lets it slide away instead of flashing the session layout
+    // before navigation begins. Finish locally only if the router host kept this
+    // preview route instance mounted.
+    if (typeof route.params.reviewSetId === 'string') {
+      currentSessionId.value = started.id
+      previewSession.value = undefined
+      initializeLocalState(started)
+      lastSpokenKey = ''
+      const restoredBackground = await reconcileBackgroundReview()
+      if (!restoredBackground) await syncNativeBackground()
+    }
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Could not start this review.'
   } finally {
@@ -1295,7 +1302,7 @@ async function leaveRunner() {
       <v-btn color="secondary" @click="router.replace(exitDestination)">Back to Flashcards</v-btn>
     </div>
 
-    <template v-else-if="session">
+    <div v-else-if="session" class="review-screen">
       <header v-if="!isReviewSetPreview" class="runner-header">
         <v-btn
           icon="mdi-chevron-down"
@@ -1656,7 +1663,7 @@ async function leaveRunner() {
         </div>
 
       </section>
-    </template>
+    </div>
 
     <RunnerSessionActions
       v-if="session && !isReviewSetPreview && !loading"
@@ -1834,6 +1841,7 @@ async function leaveRunner() {
 
 <style scoped>
 .review-runner { position: fixed; z-index: 1003; inset: 0; display: flex; width: 100%; max-width: 100vw; height: 100dvh; min-height: 0; flex-direction: column; overflow: hidden; background: radial-gradient(circle at 50% 26%, rgba(var(--v-theme-secondary), .08), transparent 34rem), rgb(var(--v-theme-background)); color: rgb(var(--v-theme-on-background)); }
+.review-screen { display: flex; width: 100%; min-height: 0; flex: 1 1 auto; flex-direction: column; }
 .review-progress,
 .review-progress :deep(.v-progress-linear__determinate) { transition: none; }
 .runner-header { display: grid; width: 100%; max-width: 54.25rem; min-height: calc(4rem + max(env(safe-area-inset-top), var(--safe-area-inset-top, 0rem))); margin-inline: auto; padding: max(env(safe-area-inset-top), var(--safe-area-inset-top, 0rem)) 1rem 0; grid-template-columns: 2.75rem minmax(0, 1fr) auto; align-items: center; gap: .75rem; }

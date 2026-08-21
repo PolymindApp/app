@@ -36,6 +36,8 @@ Both settings can be enabled together so the ejected card is excluded while the 
 
 Ejecting the current card advances both standalone and mini interval Review set sessions to the next available card. An injected replacement always starts at the beginning of its first configured face instead of inheriting the ejected card's face or playback progress.
 
+Opening a Review set and starting its session use the same forward horizontal navigation as interval runners. The welcome screen remains intact while the running session enters, preventing an intermediate session-layout flash during startup; reduced-motion preferences continue to disable directional movement.
+
 The standalone review header reports the current card's position within the live queue. Its position follows previous and next swipes, while its queue size immediately follows session-setting changes, grading, ejection, undo, card additions, and card removal.
 
 ## Standalone review motion
