@@ -74,6 +74,21 @@ export interface TrackingInsightOptions {
 
 export type TrackingInsightRangePreset = '7' | '14' | '1-month' | '3-months' | '6-months'
 
+export const TRACKING_CATEGORY_ICONS: Record<TrackerCategory, string> = {
+  mindfulness: 'mdi-meditation',
+  medication: 'mdi-pill',
+  nutrition: 'mdi-food-apple-outline',
+  mood: 'mdi-emoticon-outline',
+  symptom: 'mdi-bandage',
+  sleep: 'mdi-sleep',
+  activity: 'mdi-run',
+  other: 'mdi-chart-box-outline',
+}
+
+export function trackingCategoryIcon(category: TrackerCategory) {
+  return TRACKING_CATEGORY_ICONS[category] || TRACKING_CATEGORY_ICONS.other
+}
+
 const TRACKING_INSIGHT_RANGE_PRESETS: Array<{ maximumDataPoints: number; preset: TrackingInsightRangePreset }> = [
   { maximumDataPoints: 7, preset: '7' },
   { maximumDataPoints: 14, preset: '14' },

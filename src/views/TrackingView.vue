@@ -62,28 +62,23 @@ const requestedTaskProgress = computed(() => {
   if (!requestedTask.value || currentTrackerIndex < 0) return ''
   return `${requestedTask.value.name} · Tracker ${currentTrackerIndex + 1} of ${requestedTaskTrackerIds.value.length}`
 })
-const dayEntriesByTracker = computed(() => {
-  const grouped = new Map<string, TrackingEntry[]>()
-  for (const entry of dayEntries.value) {
-    const trackerEntries = grouped.get(entry.tracker) || []
-    trackerEntries.push(entry)
-    grouped.set(entry.tracker, trackerEntries)
-  }
-  return grouped
-})
 const dayLogs = computed(() => dayEntries.value.flatMap((entry) => {
   const tracker = store.trackers.find(item => item.id === entry.tracker)
   return tracker ? [{ entry, tracker }] : []
 }))
 const dayLogCountLabel = computed(() => `${dayLogs.value.length} ${dayLogs.value.length === 1 ? 'entry' : 'entries'}`)
 
-function entriesForTracker(trackerId: string) {
-  return dayEntriesByTracker.value.get(trackerId) || []
-}
-
 function openTrackerActions(tracker: TrackingTracker) {
   actionTracker.value = tracker
   trackerActionsOpen.value = true
+}
+
+async function logActionTracker() {
+  const tracker = actionTracker.value
+  if (!tracker?.active) return
+  trackerActionsOpen.value = false
+  await nextTick()
+  startLog(tracker)
 }
 
 function editActionTracker() {
@@ -325,8 +320,6 @@ async function loadVisibleWeekEntries() {
             v-for="tracker in factors"
             :key="tracker.id"
             :tracker="tracker"
-            :entries="entriesForTracker(tracker.id)"
-            @log="startLog"
             @actions="openTrackerActions"
           />
         </div>
@@ -350,8 +343,6 @@ async function loadVisibleWeekEntries() {
             v-for="tracker in outcomes"
             :key="tracker.id"
             :tracker="tracker"
-            :entries="entriesForTracker(tracker.id)"
-            @log="startLog"
             @actions="openTrackerActions"
           />
         </div>
@@ -428,9 +419,17 @@ async function loadVisibleWeekEntries() {
       v-model="trackerActionsOpen"
       :title="actionTracker?.name || 'Tracker actions'"
       hide-title
-      :aria-label="actionTracker ? `${actionTracker.name} journal or edit actions` : 'Tracker actions'"
+      :aria-label="actionTracker ? `${actionTracker.name} logging and tracker actions` : 'Tracker actions'"
     >
       <template v-if="actionTracker">
+        <v-list-item
+          prepend-icon="mdi-plus-box-outline"
+          title="Log entry"
+          rounded="lg"
+          :disabled="!actionTracker.active"
+          @click="logActionTracker"
+        />
+        <v-divider class="my-1" />
         <v-list-item
           prepend-icon="mdi-pencil-outline"
           title="Edit"
@@ -485,7 +484,7 @@ async function loadVisibleWeekEntries() {
 </template>
 
 <style scoped>
-.tracker-grid { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 270px), 1fr)); }
+.tracker-grid { display: grid; gap: .75rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .tracker-section-empty { font-size: .8rem; }
 .tracking-log-section { margin-bottom: .5rem; }
 .tracking-log { overflow: hidden; }
@@ -508,4 +507,16 @@ async function loadVisibleWeekEntries() {
 .preset-card__icon :deep(.v-icon) { color: rgb(var(--v-theme-background)); }
 .preset-card span { display: block; margin-top: .25rem; color: rgb(var(--v-theme-on-surface) / .58); font-size: .72rem; line-height: 1.45; }
 .min-width-0 { min-width: 0; }
+
+@media (min-width: 37.5rem) {
+  .tracker-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (min-width: 60rem) {
+  .tracker-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+@media (min-width: 80rem) {
+  .tracker-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+}
 </style>

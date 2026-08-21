@@ -324,7 +324,6 @@ function onKeydown(event: KeyboardEvent) {
             size="x-small"
             variant="tonal"
             class="chart-series-chip"
-            style="font-size: 0.1rem"
           >
             <span class="chart-series-color" :style="{ background: item.raw.color }" />
             <span class="text-truncate">{{ item.raw.selectionTitle }}</span>

@@ -3,7 +3,7 @@ import { defineStore } from 'pinia'
 import { format, subDays } from 'date-fns'
 import { api } from '@/lib/api'
 import { createLocalRecordId } from '@/lib/localDatabase'
-import { aggregateTrackingEntries } from '@/services/tracking'
+import { aggregateTrackingEntries, trackingCategoryIcon } from '@/services/tracking'
 import { useSnackbarStore } from '@/stores/snackbar'
 import { useTaskStore } from '@/stores/tasks'
 import type {
@@ -29,7 +29,7 @@ export function mapTrackingTracker(record: Record<string, any>): TrackingTracker
     active: record.active !== false,
     sortOrder: Number(record.sort_order || 0),
     color: record.color || '#C7F464',
-    icon: record.icon || 'mdi-checkbox-marked-circle-outline',
+    icon: trackingCategoryIcon(record.category),
   }
 }
 
@@ -121,7 +121,7 @@ export const useTrackingStore = defineStore('tracking', () => {
       active: draft.active,
       sort_order: draft.sortOrder,
       color: draft.color,
-      icon: draft.icon,
+      icon: trackingCategoryIcon(draft.category),
     }
     const index = draft.id ? trackers.value.findIndex(item => item.id === draft.id) : -1
     const previous = index >= 0 ? trackers.value[index] : undefined
