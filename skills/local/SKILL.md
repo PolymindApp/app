@@ -9,10 +9,6 @@ description: Preserve and extend the BackOnTrack application's established UI di
 
 - Always update immediately through optimistic local state, including when no occurrence exists yet. App is offline-first, always.
 
-## After each tasks
-
-- Run android:push
-
 ## Tests
 
 - Only write tests for logic, not UI/UX.

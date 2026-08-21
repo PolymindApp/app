@@ -647,7 +647,7 @@ async function reorderReviewSets(result: LongPressDragResult) {
 </template>
 
 <style scoped>
-.flashcards-page:not(.flashcards-page--active) { padding-bottom: calc(8.5rem + var(--page-safe-area-bottom)); }
+.flashcards-page:not(.flashcards-page--active) { padding-bottom: calc(7.5rem + var(--page-safe-area-bottom)); }
 .flashcards-page--active { padding-bottom: calc(13rem + var(--page-safe-area-bottom)); }
 .flashcards-action-stack { position: fixed; z-index: 20; right: 0; bottom: calc(4.5rem + env(safe-area-inset-bottom)); left: 0; display: flex; flex-direction: column; }
 .card-library-action-bar { padding: .75rem 1rem; border-top: .0625rem solid rgba(var(--v-theme-on-surface), .08); background: rgb(var(--v-theme-background)); }
