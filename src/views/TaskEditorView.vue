@@ -155,7 +155,7 @@ const draft = reactive<TaskDraft>({
   sessionTargetSeconds: 20 * 60,
   trackingTrackers: [],
   reminderEnabled: false,
-  reminderTimes: ['20:00'],
+  reminderTimes: [],
   steps: [],
 })
 const scheduledTimeModel = computed({
@@ -805,6 +805,7 @@ async function setTaskArchived() {
         v-model:enabled="draft.reminderEnabled"
         v-model:times="draft.reminderTimes"
         :available="reminderAvailable"
+        :default-time="draft.scheduleMode === 'time_based' ? draft.scheduledTime : undefined"
       />
 
       <v-card v-if="draft.type !== 'program'" class="surface-card field-stack pa-5 mb-4">

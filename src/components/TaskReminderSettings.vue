@@ -11,6 +11,7 @@ const props = defineProps<{
   enabled: boolean
   times: string[]
   available: boolean
+  defaultTime?: string
 }>()
 const emit = defineEmits<{
   'update:enabled': [value: boolean]
@@ -48,7 +49,7 @@ async function openCapabilitySettings(capability: TaskReminderCapability) {
 const enabledModel = computed({
   get: () => props.enabled,
   set: (enabled: boolean) => {
-    if (enabled && !props.times.length) emit('update:times', ['20:00'])
+    if (enabled && !props.times.length) emit('update:times', [props.defaultTime || '20:00'])
     emit('update:enabled', enabled)
     if (enabled) void checkCapabilities()
     else capabilityIssues.value = []
