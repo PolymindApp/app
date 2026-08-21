@@ -67,28 +67,30 @@ const selectedReviewTiming = computed(() => {
       </v-select>
 
       <v-expand-transition>
-        <div v-if="selectedReviewSet" class="review-attachment-summary mt-4">
-          <div class="review-attachment-summary__chips">
-            <v-chip size="small" variant="tonal" prepend-icon="mdi-infinity">Repeating passive</v-chip>
-            <v-chip size="small" variant="tonal" prepend-icon="mdi-cards-outline">
-              {{ selectedReviewCardCount }} {{ selectedReviewCardCount === 1 ? 'card' : 'cards' }}
-            </v-chip>
-            <v-chip size="small" variant="tonal" prepend-icon="mdi-timer-outline">{{ selectedReviewTiming }}</v-chip>
-            <v-chip
-              v-if="selectedReviewSet.speechEnabled"
-              size="small"
-              variant="tonal"
-              prepend-icon="mdi-account-voice"
-            >
-              Read aloud
-            </v-chip>
+        <div v-if="selectedReviewSet">
+          <div class="review-attachment-summary mt-4">
+            <div class="review-attachment-summary__chips">
+              <v-chip size="small" variant="tonal" prepend-icon="mdi-infinity">Repeating passive</v-chip>
+              <v-chip size="small" variant="tonal" prepend-icon="mdi-cards-outline">
+                {{ selectedReviewCardCount }} {{ selectedReviewCardCount === 1 ? 'card' : 'cards' }}
+              </v-chip>
+              <v-chip size="small" variant="tonal" prepend-icon="mdi-timer-outline">{{ selectedReviewTiming }}</v-chip>
+              <v-chip
+                v-if="selectedReviewSet.speechEnabled"
+                size="small"
+                variant="tonal"
+                prepend-icon="mdi-account-voice"
+              >
+                Read aloud
+              </v-chip>
+            </div>
+            <p class="text-caption muted mt-3">
+              {{ reviewSortTitle(selectedReviewSet.sortMode) }} order.
+              {{ selectedReviewSet.mode === 'manual'
+                ? 'This Manual set will use 5 seconds for the front and 5 seconds for the back.'
+                : 'Its Passive timing will be used.' }}
+            </p>
           </div>
-          <p class="text-caption muted mt-3">
-            {{ reviewSortTitle(selectedReviewSet.sortMode) }} order.
-            {{ selectedReviewSet.mode === 'manual'
-              ? 'This Manual set will use 5 seconds for the front and 5 seconds for the back.'
-              : 'Its Passive timing will be used.' }}
-          </p>
         </div>
       </v-expand-transition>
     </template>

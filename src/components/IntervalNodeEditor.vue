@@ -150,53 +150,55 @@ function selectKind(kind: IntervalStepKind | null) {
     </div>
 
     <v-expand-transition v-if="node.type === 'step'">
-      <div v-show="isExpanded" :id="editorPanelId" class="node-fields mt-4">
-        <v-select
-          :model-value="node.kind || null"
-          label="Type"
-          :items="INTERVAL_STEP_TYPES"
-          item-title="title"
-          item-value="value"
-          autocomplete="off"
-          :menu-props="{ transition: 'slide-y-transition' }"
-          @update:model-value="selectKind"
-        >
-          <template #selection="{ item }">
-            <div class="type-select-option">
-              <IntervalTypeIcon :kind="item.raw.value" size="1.25rem" />
-              <span>{{ item.raw.title }}</span>
-            </div>
-          </template>
-          <template #item="{ props: optionProps, item }">
-            <v-list-item v-bind="optionProps">
-              <template #prepend>
-                <IntervalTypeIcon :kind="item.raw.value" size="1.25rem" class="mr-3" />
-              </template>
-            </v-list-item>
-          </template>
-        </v-select>
-        <v-text-field v-model="node.name" label="Interval name" />
-        <fieldset v-if="node.kind !== 'confirmation'" class="duration-wheel">
-          <legend>Duration</legend>
-          <TimerWheelPicker v-model="durationSeconds" :active="isExpanded" />
-        </fieldset>
-        <div>
+      <div v-show="isExpanded" :id="editorPanelId">
+        <div class="node-fields mt-4">
+          <v-select
+            :model-value="node.kind || null"
+            label="Type"
+            :items="INTERVAL_STEP_TYPES"
+            item-title="title"
+            item-value="value"
+            autocomplete="off"
+            :menu-props="{ transition: 'slide-y-transition' }"
+            @update:model-value="selectKind"
+          >
+            <template #selection="{ item }">
+              <div class="type-select-option">
+                <IntervalTypeIcon :kind="item.raw.value" size="1.25rem" />
+                <span>{{ item.raw.title }}</span>
+              </div>
+            </template>
+            <template #item="{ props: optionProps, item }">
+              <v-list-item v-bind="optionProps">
+                <template #prepend>
+                  <IntervalTypeIcon :kind="item.raw.value" size="1.25rem" class="mr-3" />
+                </template>
+              </v-list-item>
+            </template>
+          </v-select>
+          <v-text-field v-model="node.name" label="Interval name" />
+          <fieldset v-if="node.kind !== 'confirmation'" class="duration-wheel">
+            <legend>Duration</legend>
+            <TimerWheelPicker v-model="durationSeconds" :active="isExpanded" />
+          </fieldset>
+          <div>
             <v-checkbox
-            v-if="reviewSetSpeechEnabled"
-            v-model="flashcardReviewEnabled"
-            label="Play Review set during this step"
-            color="secondary"
-            density="comfortable"
-            hide-details="auto"
+              v-if="reviewSetSpeechEnabled"
+              v-model="flashcardReviewEnabled"
+              label="Play Review set during this step"
+              color="secondary"
+              density="comfortable"
+              hide-details="auto"
             />
             <v-checkbox
-            v-if="canSkipOnLastRound"
-            v-model="node.skipOnLastRound"
-            label="Skip this step on the final round"
-            color="secondary"
-            density="comfortable"
-            hide-details
+              v-if="canSkipOnLastRound"
+              v-model="node.skipOnLastRound"
+              label="Skip this step on the final round"
+              color="secondary"
+              density="comfortable"
+              hide-details
             />
+          </div>
         </div>
       </div>
     </v-expand-transition>

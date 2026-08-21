@@ -692,28 +692,32 @@ async function setTaskArchived() {
           label="What counts"
           :items="sessionCountItems"
         />
-        <v-select
-          v-model="draft.sessionGoalType"
-          label="Goal"
-          :items="[
-            { title: 'Complete one session', value: 'complete' },
-            { title: 'Reach a duration', value: 'duration' },
-          ]"
-        />
-        <v-expand-transition>
-          <div v-if="draft.sessionGoalType === 'duration'" class="session-duration-setting">
-            <label class="field-label">Daily duration</label>
-            <TimerWheelPicker
-              v-model="draft.sessionTargetSeconds"
-              :max-minutes="180"
-              mode="duration"
-              class="mt-2"
-            />
-            <p class="field-help mt-2">
-              Time from completed sessions and sessions you end early is added to this task.
-            </p>
-          </div>
-        </v-expand-transition>
+        <div>
+          <v-select
+            v-model="draft.sessionGoalType"
+            label="Goal"
+            :items="[
+              { title: 'Complete one session', value: 'complete' },
+              { title: 'Reach a duration', value: 'duration' },
+            ]"
+          />
+          <v-expand-transition>
+            <div v-if="draft.sessionGoalType === 'duration'">
+              <div class="session-duration-setting pt-4">
+                <label class="field-label">Daily duration</label>
+                <TimerWheelPicker
+                  v-model="draft.sessionTargetSeconds"
+                  :max-minutes="180"
+                  mode="duration"
+                  class="mt-2"
+                />
+                <p class="field-help mt-2">
+                  Time from completed sessions and sessions you end early is added to this task.
+                </p>
+              </div>
+            </div>
+          </v-expand-transition>
+        </div>
       </v-card>
 
       <v-card v-if="draft.type === 'tracking'" class="surface-card field-stack pa-5 mb-4">
@@ -775,30 +779,34 @@ async function setTaskArchived() {
           <h2 class="text-body-1 font-weight-black">Time</h2>
           <p class="text-body-2 muted mt-1">Place this task in the all-day list or at a specific time.</p>
         </div>
-        <v-btn-toggle
-          v-model="draft.scheduleMode"
-          class="schedule-mode-toggle"
-          color="secondary"
-          selected-class="schedule-mode-toggle--selected"
-          mandatory
-        >
-          <v-btn value="all_day" prepend-icon="mdi-calendar-blank-outline">
-            All day
-          </v-btn>
-          <v-btn value="time_based" prepend-icon="mdi-clock-outline">
-            Time based
-          </v-btn>
-        </v-btn-toggle>
-        <v-expand-transition>
-          <div v-if="draft.scheduleMode === 'time_based'" class="scheduled-time-setting">
-            <label class="field-label">Scheduled time <span class="text-error">*</span></label>
-            <TimerWheelPicker
-              v-model="scheduledTimeModel"
-              mode="time"
-              class="mt-2"
-            />
-          </div>
-        </v-expand-transition>
+        <div>
+          <v-btn-toggle
+            v-model="draft.scheduleMode"
+            class="schedule-mode-toggle"
+            color="secondary"
+            selected-class="schedule-mode-toggle--selected"
+            mandatory
+          >
+            <v-btn value="all_day" prepend-icon="mdi-calendar-blank-outline">
+              All day
+            </v-btn>
+            <v-btn value="time_based" prepend-icon="mdi-clock-outline">
+              Time based
+            </v-btn>
+          </v-btn-toggle>
+          <v-expand-transition>
+            <div v-if="draft.scheduleMode === 'time_based'">
+              <div class="scheduled-time-setting pt-4">
+                <label class="field-label">Scheduled time <span class="text-error">*</span></label>
+                <TimerWheelPicker
+                  v-model="scheduledTimeModel"
+                  mode="time"
+                  class="mt-2"
+                />
+              </div>
+            </div>
+          </v-expand-transition>
+        </div>
       </v-card>
 
       <TaskReminderSettings

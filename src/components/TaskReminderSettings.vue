@@ -107,53 +107,55 @@ function removeTime(index: number) {
     </v-alert>
 
     <v-expand-transition>
-      <div v-if="enabled && available" class="reminder-list mt-4">
-        <v-alert
-          v-if="capabilityIssues.length"
-          type="warning"
-          variant="tonal"
-          density="compact"
-          class="reminder-capabilities"
-        >
-          <strong>Reminder setup needs attention</strong>
-          <div
-            v-for="issue in capabilityIssues"
-            :key="issue.code"
-            class="reminder-capability mt-3"
+      <div v-if="enabled && available">
+        <div class="reminder-list mt-4">
+          <v-alert
+            v-if="capabilityIssues.length"
+            type="warning"
+            variant="tonal"
+            density="compact"
+            class="reminder-capabilities"
           >
-            <span>{{ issue.message }}</span>
-            <v-btn
-              size="small"
-              variant="tonal"
-              :loading="openingCapability === issue.code"
-              :disabled="checkingCapabilities || Boolean(openingCapability)"
-              @click="openCapabilitySettings(issue.code)"
+            <strong>Reminder setup needs attention</strong>
+            <div
+              v-for="issue in capabilityIssues"
+              :key="issue.code"
+              class="reminder-capability mt-3"
             >
-              {{ issue.action }}
-            </v-btn>
-          </div>
-        </v-alert>
-        <div v-for="(time, index) in times" :key="index" class="reminder-time">
-          <div class="d-flex align-center justify-space-between">
-            <strong>Notification {{ index + 1 }}</strong>
-            <v-btn
-              v-if="times.length > 1"
-              icon="mdi-close"
-              size="small"
-              variant="text"
-              :aria-label="`Remove notification ${index + 1}`"
-              @click="removeTime(index)"
+              <span>{{ issue.message }}</span>
+              <v-btn
+                size="small"
+                variant="tonal"
+                :loading="openingCapability === issue.code"
+                :disabled="checkingCapabilities || Boolean(openingCapability)"
+                @click="openCapabilitySettings(issue.code)"
+              >
+                {{ issue.action }}
+              </v-btn>
+            </div>
+          </v-alert>
+          <div v-for="(time, index) in times" :key="index" class="reminder-time">
+            <div class="d-flex align-center justify-space-between">
+              <strong>Notification {{ index + 1 }}</strong>
+              <v-btn
+                v-if="times.length > 1"
+                icon="mdi-close"
+                size="small"
+                variant="text"
+                :aria-label="`Remove notification ${index + 1}`"
+                @click="removeTime(index)"
+              />
+            </div>
+            <TimerWheelPicker
+              :model-value="time"
+              mode="time"
+              @update:model-value="updateTime(index, $event)"
             />
           </div>
-          <TimerWheelPicker
-            :model-value="time"
-            mode="time"
-            @update:model-value="updateTime(index, $event)"
-          />
+          <v-btn variant="tonal" prepend-icon="mdi-plus" @click="addTime">
+            Add notification
+          </v-btn>
         </div>
-        <v-btn variant="tonal" prepend-icon="mdi-plus" @click="addTime">
-          Add notification
-        </v-btn>
       </div>
     </v-expand-transition>
   </v-card>
